@@ -5,6 +5,7 @@ import {
 	formatGameDate,
 	formatMonth,
 	formatSeasonSpan,
+	weekdayName,
 } from "../../../common/calendarDates.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { helpers } from "../../util/helpers.ts";
@@ -24,11 +25,15 @@ import { menuItems } from "../../util/menuItems.tsx";
 import type { Phase } from "../../../common/types.ts";
 import type { LeagueUrlParts } from "../../router/types.ts";
 
-// Today's date, as a page off a desk calendar.
+// Today's date, as a page off a desk calendar: the weekday on its band, the
+// day, the month.
 const DateTile = ({ date }: { date: string }) => (
 	<span className="league-date-tile" aria-hidden="true">
-		<span className="league-date-tile-month">{formatMonth(date, true)}</span>
+		<span className="league-date-tile-weekday">
+			{weekdayName(date).slice(0, 3)}
+		</span>
 		<span className="league-date-tile-day">{Number(date.slice(8))}</span>
+		<span className="league-date-tile-month">{formatMonth(date, true)}</span>
 	</span>
 );
 
@@ -49,8 +54,8 @@ const PhaseStatusBlock = () => {
 		"statusText",
 	]);
 
-	// On the NBA calendar, today's date leads, with the year, and the season
-	// is named the NBA's way ("2025-26"). The date holds still while a live
+	// On the NBA calendar, today's date leads, as a desk calendar's page, and
+	// the season is named the NBA's way ("2025-26"). The date holds still while a live
 	// game is on screen: the sim is already past it, and the next night - or
 	// none, once the Finals are over - would give the result away.
 	const [date, setDate] = useState(calendarDate);
@@ -60,43 +65,68 @@ const PhaseStatusBlock = () => {
 		}
 	}, [calendarDate, liveGameInProgress]);
 
+	const urls: Record<Phase, LeagueUrlParts> = {
+		[PHASE.EXPANSION_DRAFT]: ["draft"],
+		[PHASE.FANTASY_DRAFT]: ["draft"],
+		[PHASE.PRESEASON]: ["roster"],
+		[PHASE.REGULAR_SEASON]: ["roster"],
+		[PHASE.AFTER_TRADE_DEADLINE]: ["roster"],
+		[PHASE.PLAYOFFS]: ["playoffs"],
+		// Hack because we don't know repeatSeason and draftType, see updatePhase
+		[PHASE.DRAFT_LOTTERY]: phaseText.includes("after playoffs")
+			? ["draft_scouting"]
+			: ["draft_lottery"],
+		[PHASE.DRAFT]: ["draft"],
+		[PHASE.AFTER_DRAFT]: ["draft_history"],
+		[PHASE.RESIGN_PLAYERS]: ["negotiation"],
+		[PHASE.FREE_AGENCY]: ["free_agents"],
+	};
+	const urlParts = urls[phase];
+
 	if (date !== undefined) {
 		const seasonPrefix = `${season} `;
-		const phaseName = phaseText.startsWith(seasonPrefix)
-			? `${formatSeasonSpan(season)} ${phaseText.slice(seasonPrefix.length)}`
-			: phaseText;
+		// The season the NBA's way over its phase: "2025-26" / "Regular season".
+		const [seasonName, phaseName] = phaseText.startsWith(seasonPrefix)
+			? [
+					formatSeasonSpan(season),
+					helpers.upperCaseFirstLetter(phaseText.slice(seasonPrefix.length)),
+				]
+			: [phaseText, undefined];
+		// The tile opens the night's games; the words, the phase's page.
 		return (
 			<div className="dropdown-links navbar-nav flex-shrink-1 overflow-hidden text-nowrap">
-				<div className="nav-item overflow-hidden">
+				<div
+					className="nav-item d-flex align-items-center overflow-hidden"
+					style={{ padding: "4px 0 4px 16px" }}
+				>
 					<a
-						href={helpers.leagueUrl(["calendar"])}
-						className="nav-link d-flex align-items-center"
-						style={{
-							lineHeight: 1.35,
-							padding: "9px 0 8px 16px",
-						}}
-						title="Calendar"
+						href={helpers.leagueUrl(["daily_schedule"])}
+						className="league-date-tile-link"
+						title={`Daily Schedule: ${formatGameDate(date, "full")}`}
+						aria-label="Daily Schedule"
 					>
 						<DateTile date={date} />
-						<span className="overflow-hidden">
-							{liveGameInProgress ? (
-								<>
-									Live game
-									<br />
-									in progress
-								</>
-							) : (
-								<>
-									<span className="fw-semibold">
-										{formatGameDate(date, "shortWithYear")}
-									</span>
-									<br />
-									{statusText === "Idle" ? phaseName : statusText}
-								</>
-							)}
-							<AutoPlayCountdown />
-							<SyncUploadIndicator />
-						</span>
+					</a>
+					<a
+						href={helpers.leagueUrl(urlParts)}
+						className="nav-link p-0 overflow-hidden"
+						style={{ lineHeight: 1.35 }}
+					>
+						{liveGameInProgress ? (
+							<>
+								Live game
+								<br />
+								in progress
+							</>
+						) : (
+							<>
+								<span className="fw-semibold">{seasonName}</span>
+								<br />
+								{statusText === "Idle" ? phaseName : statusText}
+							</>
+						)}
+						<AutoPlayCountdown />
+						<SyncUploadIndicator />
 					</a>
 				</div>
 			</div>
@@ -120,24 +150,6 @@ const PhaseStatusBlock = () => {
 			<SyncUploadIndicator />
 		</>
 	);
-
-	const urls: Record<Phase, LeagueUrlParts> = {
-		[PHASE.EXPANSION_DRAFT]: ["draft"],
-		[PHASE.FANTASY_DRAFT]: ["draft"],
-		[PHASE.PRESEASON]: ["roster"],
-		[PHASE.REGULAR_SEASON]: ["roster"],
-		[PHASE.AFTER_TRADE_DEADLINE]: ["roster"],
-		[PHASE.PLAYOFFS]: ["playoffs"],
-		// Hack because we don't know repeatSeason and draftType, see updatePhase
-		[PHASE.DRAFT_LOTTERY]: phaseText.includes("after playoffs")
-			? ["draft_scouting"]
-			: ["draft_lottery"],
-		[PHASE.DRAFT]: ["draft"],
-		[PHASE.AFTER_DRAFT]: ["draft_history"],
-		[PHASE.RESIGN_PLAYERS]: ["negotiation"],
-		[PHASE.FREE_AGENCY]: ["free_agents"],
-	};
-	const urlParts = urls[phase];
 
 	return (
 		<div className="dropdown-links navbar-nav flex-shrink-1 overflow-hidden text-nowrap">

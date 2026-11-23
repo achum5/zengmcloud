@@ -536,11 +536,20 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 }
 
 // Today in the top bar, as a page off a desk calendar.
+.league-date-tile-link {
+	display: flex;
+	flex-shrink: 0;
+	text-decoration: none;
+	&:hover .league-date-tile {
+		border-color: var(--bs-secondary-color);
+	}
+}
+
 .league-date-tile {
 	display: inline-flex;
 	flex-direction: column;
 	flex-shrink: 0;
-	width: 2.15rem;
+	width: 2.3rem;
 	margin-right: 0.55rem;
 	overflow: hidden;
 	line-height: 1;
@@ -550,9 +559,9 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	border-radius: 0.3rem;
 }
 
-.league-date-tile-month {
+.league-date-tile-weekday {
 	padding: 2px 0 1px;
-	font-size: 0.55rem;
+	font-size: 0.52rem;
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -560,9 +569,18 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	background: var(--bs-danger);
 }
 
+.league-date-tile-month {
+	padding-bottom: 2px;
+	font-size: 0.48rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+
 .league-date-tile-day {
-	padding: 3px 0;
-	font-size: 1rem;
+	padding: 2px 0 0;
+	font-size: 0.95rem;
 	font-weight: 700;
 	color: var(--bs-body-color);
 }
