@@ -170,7 +170,10 @@ export const StickyDraftInfo = ({
 	userTids: number[];
 	mpBlocked: boolean;
 }) => {
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const { teamInfoCache, mpSyncActive } = useLocal([
+		"teamInfoCache",
+		"mpSyncActive",
+	]);
 
 	const currentPickIndex = drafted.findIndex((p) => p.pid === -1);
 	if (currentPickIndex === -1) {
@@ -188,6 +191,10 @@ export const StickyDraftInfo = ({
 
 	const userRemaining = yourNextPickIndex !== -1;
 	const usersTurn = yourNextPick === 0;
+	// (Solo, nothing else makes picks, so the page is never behind.)
+	const currentDpid: number | undefined = mpSyncActive
+		? currentPick.dpid
+		: undefined;
 
 	// Treat as equal size, unless we need to shrink
 	const flex = "1 1 0";
@@ -211,6 +218,7 @@ export const StickyDraftInfo = ({
 			>
 				<div className="d-none d-xxl-block me-3">
 					<DraftButtons
+						currentDpid={currentDpid}
 						spectator={spectator}
 						userRemaining={userRemaining}
 						usersTurn={usersTurn}
@@ -307,6 +315,7 @@ export const StickyDraftInfo = ({
 					}}
 				>
 					<DraftButtons
+						currentDpid={currentDpid}
 						spectator={spectator}
 						userRemaining={userRemaining}
 						usersTurn={usersTurn}

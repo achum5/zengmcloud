@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 455,
+		date: "2026-11-23",
+		text: "Draft fixes for shared leagues. Once a stretch of picks was running because everyone had readied up, Ready for the next pick and Not ready didn't work until it stopped, so the draft could run on to your pick. Both now work at any time: the pick being made finishes and the draft waits. And Sim one pick makes one pick, even if your team had readied up further.",
+	},
+	{
 		n: 454,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players run with their own stride. Their steps go about as quickly as a real player's of their height at that pace, so going hard they take long strides instead of quick little ones, and a jog lengthens smoothly into a run and a run into a sprint. Each player also gets his own way of running, walking and sitting in his stance, picked from his ratings.",

@@ -4,11 +4,16 @@ import { confirm } from "../../util/confirm.tsx";
 import { confirmPlayMenuAdvance } from "../../util/confirmPlayMenuAdvance.tsx";
 
 export const DraftButtons = ({
+	currentDpid,
 	spectator,
 	userRemaining,
 	usersTurn,
 	mpBlocked,
 }: {
+	// The pick on the clock as this page shows it - in a shared league, where
+	// the room can make it a moment before the page hears, "Sim one pick" is
+	// that pick or none, never the one after it.
+	currentDpid: number | undefined;
 	spectator: boolean;
 	userRemaining: boolean;
 	usersTurn: boolean;
@@ -41,7 +46,7 @@ export const DraftButtons = ({
 						) {
 							return;
 						}
-						await toWorker("playMenu", "onePick", undefined);
+						await toWorker("playMenu", "onePick", currentDpid);
 					} finally {
 						setRunning(false);
 					}

@@ -15,6 +15,7 @@ import { runDraft } from "./actions.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { cleanupAutoPlay } from "../core/league/autoPlay.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
+import { capDraftReadyForOnePick } from "../core/sync/draftReady.ts";
 
 const getNumDaysThisRound = (playoffSeries: PlayoffSeries) => {
 	let numDaysThisRound = 0;
@@ -242,8 +243,19 @@ const playMenu = {
 			await phase.newPhase(PHASE.DRAFT, conditions);
 		}
 	},
+	// `param`: the pick the Draft page showed on the clock, when it sent one -
+	// so a click on a page a moment behind the room makes that pick or none,
+	// never the one after it.
 	onePick: async (param: unknown, conditions: Conditions) => {
-		await runDraft({ type: "onePick" }, conditions);
+		const dpid = typeof param === "number" ? param : undefined;
+		// One pick, then the room waits - not on to wherever this team had
+		// readied up through (see capDraftReadyForOnePick).
+		try {
+			await capDraftReadyForOnePick(dpid);
+		} catch (error) {
+			console.error(error);
+		}
+		await runDraft({ type: "onePick", dpid }, conditions);
 	},
 	untilYourNextPick: async (param: unknown, conditions: Conditions) => {
 		await runDraft({ type: "untilYourNextPick" }, conditions);
