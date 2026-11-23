@@ -8,11 +8,12 @@ import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../PlayerPicture.tsx";
 import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
+import { spreadLine } from "./spreadLine.ts";
 
 // A NIGHT'S GAME IN THE HUB, as NBA.com's scoreboard shows one: a card with
 // each team's colors at its end, its city, name and score, "Final" and the
 // series between them, linked to the box score, with the game's recap line
-// under it; beside both, each team's best line of the night.
+// under it; beside both, each team's two best lines of the night.
 
 type Branding = { region: string; name: string; abbrev: string };
 
@@ -35,6 +36,8 @@ export type GameCardGame = {
 	numPeriods?: number;
 	playoffs?: boolean;
 	numGamesToWinSeries?: number;
+	// The pregame line, home's side (Game.spread).
+	spread?: number;
 	teams: [GameCardTeam, GameCardTeam];
 };
 
@@ -137,22 +140,27 @@ const Face = ({ pid, season }: { pid: number; season: number }) => {
 	);
 };
 
-const Leader = ({ t, season }: { t: GameCardTeam; season: number }) => {
-	const brand = useBrand(t);
-	const best = t.players ? getBestPlayerBoxScore(t.players) : undefined;
-	if (!best) {
-		return null;
+// A team's two best lines of the night, best first.
+const bestTwo = (players: any[] | undefined) => {
+	if (!players) {
+		return [];
 	}
-	const p = best.p as any;
+	const first = getBestPlayerBoxScore(players);
+	if (!first) {
+		return [];
+	}
+	const rest = players.filter((p) => p !== first.p);
+	const second = getBestPlayerBoxScore(rest);
+	return second ? [first.p, second.p] : [first.p];
+};
+
+const Leader = ({ p, season }: { p: any; season: number }) => {
 	const name: string = p.name ?? "";
 	const space = name.indexOf(" ");
 	const first = space > 0 ? name.slice(0, space) : "";
 	const last = space > 0 ? name.slice(space + 1) : name;
 	return (
 		<div className="lh-gc-leader">
-			<span className="lh-gc-leader-logo">
-				<Logo url={brand.smallLogo} size={18} />
-			</span>
 			<Face pid={p.pid} season={season} />
 			<a
 				className="lh-gc-leader-name"
@@ -170,6 +178,26 @@ const Leader = ({ t, season }: { t: GameCardTeam; season: number }) => {
 						<b>{value}</b>
 						<span>{label}</span>
 					</div>
+				))}
+			</div>
+		</div>
+	);
+};
+
+const TeamLeaders = ({ t, season }: { t: GameCardTeam; season: number }) => {
+	const brand = useBrand(t);
+	const players = bestTwo(t.players);
+	if (players.length === 0) {
+		return null;
+	}
+	return (
+		<div className="lh-gc-team-leaders">
+			<span className="lh-gc-leader-logo">
+				<Logo url={brand.smallLogo} size={18} />
+			</span>
+			<div className="lh-gc-team-players">
+				{players.map((p) => (
+					<Leader key={p.pid} p={p} season={season} />
 				))}
 			</div>
 		</div>
@@ -251,6 +279,7 @@ export const GameCard = ({
 	const winner = getWinner(game.teams);
 	const ot = helpers.overtimeText(game.overtimes, game.numPeriods);
 	const series = seriesLine(game, [homeBrand.abbrev, awayBrand.abbrev]);
+	const line = spreadLine(game.spread, homeBrand.abbrev, awayBrand.abbrev);
 	const boxScore = helpers.leagueUrl([
 		"game_log",
 		`${homeBrand.abbrev}_${home.tid}`,
@@ -288,6 +317,11 @@ export const GameCard = ({
 						<TeamWords t={away} side="away" lost={winner === 0} />
 						<div className="lh-gc-mid">
 							<div className="lh-gc-final">Final{ot ? `/${ot}` : ""}</div>
+							{line ? (
+								<div className="lh-gc-line" title="Pregame spread">
+									{line}
+								</div>
+							) : null}
 							{series ? (
 								<div className="lh-gc-series">
 									{series[0]}
@@ -307,8 +341,8 @@ export const GameCard = ({
 					{children}
 				</div>
 				<div className="lh-gc-leaders">
-					<Leader t={away} season={season} />
-					<Leader t={home} season={season} />
+					<TeamLeaders t={away} season={season} />
+					<TeamLeaders t={home} season={season} />
 				</div>
 			</div>
 		</div>

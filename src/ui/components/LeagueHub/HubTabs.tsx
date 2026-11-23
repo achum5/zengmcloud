@@ -20,7 +20,9 @@ let picked: HubTabId | undefined;
 export const useHubTab = (tabs: HubTabId[]) => {
 	const [choice, setChoice] = useState(picked);
 	const tab =
-		choice !== undefined && tabs.includes(choice) ? choice : (tabs[0] ?? "scores");
+		choice !== undefined && tabs.includes(choice)
+			? choice
+			: (tabs[0] ?? "scores");
 	const choose = (id: HubTabId) => {
 		picked = id;
 		setChoice(id);

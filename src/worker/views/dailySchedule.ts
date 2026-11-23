@@ -11,7 +11,11 @@ import {
 	type RecapDayStandings,
 	type RecapGame,
 } from "../util/getDayGamesForRecap.ts";
-import { buildHub } from "./dailyScheduleHub.ts";
+import {
+	buildHub,
+	toHubRecord,
+	type HubComingGame,
+} from "./dailyScheduleHub.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
@@ -497,10 +501,42 @@ export default defineView({
 					}))
 					.sort((a, b) => a.day - b.day);
 
-				// The next night with games, for "Coming up".
+				// The next night with games, for "Coming up", with each team's
+				// record and the line when it's still to be played.
 				const nextNight = nights.find(
 					(night) => night.day > day && night.numGames > 0,
 				);
+				let nextGames: HubComingGame[] = nextNight
+					? (gamesByDay.get(nextNight.day) ?? [])
+					: [];
+				if (
+					__SPORT === "basketball" &&
+					nextNight &&
+					nextGames.length > 0 &&
+					inputs.season === currentSeason
+				) {
+					const lines = new Map(
+						(await getUpcoming({ day: nextNight.day })).map((game) => [
+							game.gid,
+							game,
+						]),
+					);
+					nextGames = nextGames.map((game) => {
+						const line = lines.get(game.gid);
+						if (!line) {
+							return game;
+						}
+						const [home, away] = line.teams;
+						return {
+							...game,
+							spread: line.spread,
+							records:
+								"won" in home && "won" in away
+									? [toHubRecord(home), toHubRecord(away)]
+									: undefined,
+						};
+					});
+				}
 
 				return {
 					cid,
@@ -512,7 +548,7 @@ export default defineView({
 							? {
 									day: nextNight.day,
 									date: nextNight.date,
-									games: gamesByDay.get(nextNight.day) ?? [],
+									games: nextGames,
 								}
 							: undefined,
 					},

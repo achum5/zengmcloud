@@ -2,14 +2,17 @@ import clsx from "clsx";
 import { useState, type ReactNode } from "react";
 import { formatGameDate } from "../../../common/calendarDates.ts";
 import type {
+	HubComingGame,
 	HubInjury,
 	HubPerformer,
+	HubRecord,
 } from "../../../worker/views/dailyScheduleHub.ts";
 import type { RecapDayStandings } from "../../../worker/util/getDayGamesForRecap.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../PlayerPicture.tsx";
+import { spreadLine } from "./spreadLine.ts";
 
 // THE HUB'S SIDE PANELS, ESPN's right rail: the night's top performers, the
 // night's headlines, the standings, who got hurt and what's next. Each is a
@@ -357,6 +360,24 @@ export const InjuryReport = ({
 
 const MAX_COMING = 5;
 
+const ComingTeam = ({
+	tid,
+	abbrev,
+	record,
+}: {
+	tid: number;
+	abbrev: string;
+	record: HubRecord | undefined;
+}) => (
+	<span className="lh-coming-team">
+		<Logo tid={tid} size={18} />
+		{abbrev}
+		{record ? (
+			<span className="lh-coming-record">{helpers.formatRecord(record)}</span>
+		) : null}
+	</span>
+);
+
 export const ComingUp = ({
 	next,
 	season,
@@ -366,7 +387,7 @@ export const ComingUp = ({
 		| {
 				day: number;
 				date: string | undefined;
-				games: { gid: number; homeTid: number; awayTid: number }[];
+				games: HubComingGame[];
 		  }
 		| undefined;
 	season: number;
@@ -398,19 +419,31 @@ export const ComingUp = ({
 			}}
 		>
 			<ul className="lh-list">
-				{games.slice(0, MAX_COMING).map((game) => (
-					<li key={game.gid} className="lh-coming">
-						<span className="lh-coming-team">
-							<Logo tid={game.awayTid} size={18} />
-							{teamInfoCache[game.awayTid]?.abbrev}
-						</span>
-						<span className="text-body-secondary">@</span>
-						<span className="lh-coming-team">
-							<Logo tid={game.homeTid} size={18} />
-							{teamInfoCache[game.homeTid]?.abbrev}
-						</span>
-					</li>
-				))}
+				{games.slice(0, MAX_COMING).map((game) => {
+					const homeAbbrev = teamInfoCache[game.homeTid]?.abbrev ?? "";
+					const awayAbbrev = teamInfoCache[game.awayTid]?.abbrev ?? "";
+					const line = spreadLine(game.spread, homeAbbrev, awayAbbrev);
+					return (
+						<li key={game.gid} className="lh-coming">
+							<ComingTeam
+								tid={game.awayTid}
+								abbrev={awayAbbrev}
+								record={game.records?.[1]}
+							/>
+							<span className="text-body-secondary">@</span>
+							<ComingTeam
+								tid={game.homeTid}
+								abbrev={homeAbbrev}
+								record={game.records?.[0]}
+							/>
+							{line ? (
+								<span className="lh-coming-line" title="Point spread">
+									{line}
+								</span>
+							) : null}
+						</li>
+					);
+				})}
 			</ul>
 			{more > 0 ? (
 				<div className="lh-coming-more text-body-secondary">
