@@ -848,6 +848,7 @@ const YELLS: Partial<Record<string, [number, number, number?]>> = {
 	tomahawk: [0.35, 0.95],
 	tomahawkTwo: [0.35, 0.95],
 	windmill: [0.4, 0.95],
+	dunk360: [0.4, 0.95],
 	block: [0.3, 0.85],
 	blockTwo: [0.3, 0.85],
 	blockSwat: [0.3, 0.85],

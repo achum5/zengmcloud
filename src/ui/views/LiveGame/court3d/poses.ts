@@ -5791,6 +5791,175 @@ export const ANIMS = {
 			[1, P.land],
 		],
 	},
+	// A 360 (NBA 2K's "Athletic 360s"), an athlete's flier instead of the
+	// windmill: loaded low with it at his hips, up off two feet with the ball
+	// tucked in at his chest and his knees coming up under him as he turns
+	// right round in the air (see spinYawAt in evaluate.ts), round to the rim
+	// again with it already going up over his head in both hands - and
+	// thrown down, and hanging on the rim like any other.
+	dunk360: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -20,
+					kneeN: 70,
+					hipF: 18,
+					kneeF: 72,
+					shN: 40,
+					elN: 95,
+					shF: 36,
+					elF: 98,
+					lean: 18,
+				}),
+			],
+			// Loaded low, the ball down at his hips in both hands,
+			[
+				0.087,
+				pose({
+					hipN: -12,
+					kneeN: 62,
+					hipF: 20,
+					kneeF: 66,
+					shN: 22,
+					elN: 34,
+					shF: 22,
+					elF: 36,
+					lean: 18,
+				}),
+			],
+			// up, the ball pulled in to his chest,
+			[
+				0.16,
+				pose({
+					hipN: 8,
+					kneeN: 34,
+					hipF: 26,
+					kneeF: 48,
+					shN: 44,
+					elN: 112,
+					shF: 42,
+					elF: 114,
+					lean: 6,
+					toe: 0.7,
+				}),
+			],
+			// tucked in round it as he turns - his knees up under him,
+			[
+				0.232,
+				pose({
+					hipN: 44,
+					kneeN: 76,
+					hipF: 52,
+					kneeF: 84,
+					shN: 52,
+					elN: 108,
+					shF: 50,
+					elF: 110,
+					lean: 2,
+					toe: 1,
+				}),
+			],
+			[
+				0.304,
+				pose({
+					hipN: 36,
+					kneeN: 66,
+					hipF: 46,
+					kneeF: 76,
+					shN: 96,
+					elN: 78,
+					shF: 94,
+					elF: 80,
+					lean: 0,
+					toe: 1,
+				}),
+			],
+			// round to the rim, and it up over his head,
+			[
+				0.376,
+				pose({
+					hipN: 10,
+					kneeN: 34,
+					hipF: 22,
+					kneeF: 52,
+					shN: 172,
+					elN: 30,
+					shF: 170,
+					elF: 32,
+					lean: -6,
+					toe: 1,
+				}),
+			],
+			// and down through the rim with both.
+			[
+				0.446,
+				pose({
+					hipN: 10,
+					kneeN: 30,
+					hipF: 20,
+					kneeF: 50,
+					shN: 150,
+					elN: 6,
+					shF: 148,
+					elF: 8,
+					wrN: -70,
+					wrF: -70,
+					lean: 12,
+					toe: 1,
+				}),
+			],
+			[
+				0.502,
+				pose({
+					hipN: 4,
+					kneeN: 24,
+					hipF: 10,
+					kneeF: 36,
+					shN: 172,
+					elN: 6,
+					shF: 170,
+					elF: 8,
+					lean: 6,
+					toe: 1,
+				}),
+			],
+			[
+				0.66,
+				pose({
+					hipN: -2,
+					kneeN: 20,
+					hipF: 8,
+					kneeF: 30,
+					shN: 174,
+					elN: 4,
+					shF: 172,
+					elF: 6,
+					lean: 2,
+					toe: 1,
+				}),
+			],
+			[
+				0.78,
+				pose({
+					hipN: 0,
+					kneeN: 28,
+					hipF: 12,
+					kneeF: 34,
+					shN: 120,
+					elN: 30,
+					shF: 116,
+					elF: 34,
+					lean: 4,
+					toe: 0.5,
+				}),
+			],
+			[0.914, P.land],
+			[1, P.land],
+		],
+	},
 	// One hand, cocked way back behind his head and whipped over.
 	tomahawk: {
 		kind: "act",
@@ -11736,6 +11905,7 @@ const HANGS: Partial<Record<AnimName, [number, number, number?]>> = {
 	dunkPump: [22, 30, 4],
 	dunkPump1: [22, 30, 4],
 	windmill: [22, 30, 4],
+	dunk360: [22, 30, 4],
 	tomahawk: [22, 30, 4],
 	tomahawkTwo: [22, 30, 4],
 	dunkKnee: [24, 0],
@@ -13225,6 +13395,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	tomahawk: "palm",
 	tomahawkTwo: "palm",
 	windmill: "cup",
+	dunk360: "palm",
 	hook: "palm",
 	hookSky: "palm",
 	reverseLayup: "palm",
@@ -13527,6 +13698,9 @@ export const thanksWith = (pid: number): AnimName =>
 // And his own tomahawk and his own way of spotting up.
 export const tomahawkWith = (pid: number): AnimName =>
 	styleUnit(pid, 34) < 0.35 ? "tomahawkTwo" : "tomahawk";
+// An athlete's flier: some windmill it, some go round with it (a 360).
+export const millWith = (pid: number): AnimName =>
+	styleUnit(pid, 54) < 0.45 ? "dunk360" : "windmill";
 export const spotUpWith = (pid: number): AnimName =>
 	styleUnit(pid, 35) < 0.4 ? "spotUpLow" : "spotUp";
 // And his own reach for it.
@@ -13607,6 +13781,7 @@ const WAYS: Partial<Record<AnimName, AnimName[]>> = {
 	dunk1: ["dunk1Wing"],
 	thanks: ["thanksBoth"],
 	tomahawk: ["tomahawkTwo"],
+	windmill: ["dunk360"],
 	spotUp: ["spotUpLow"],
 	roar: ["roarUp"],
 	celebrate: ["celebrateBoth"],
@@ -13705,6 +13880,8 @@ export const ownWay = (anim: AnimName, pid: number, t0: number): AnimName => {
 			return thanksWith(pid);
 		case "tomahawk":
 			return tomahawkWith(pid);
+		case "windmill":
+			return millWith(pid);
 		case "spotUp":
 			return spotUpWith(pid);
 		case "roar":

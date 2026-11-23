@@ -2122,12 +2122,28 @@ const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
 // director.ts).
 const SPIN_IN = 0.06;
 const SPIN_OUT = 0.9;
+// (Of a 360: from his takeoff to the ball going up over his head - see the
+// dunk360's keys.)
+const SPIN_360: [number, number] = [0.15, 0.42];
 const spinYawAt = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
 ): number | undefined => {
 	const a = actAt(tr, t);
+	// (A 360 - his own way of a windmill, see millWith: right round in the
+	// air from his takeoff to the ball going up over his head, the way his
+	// right hand takes him.)
+	if (a?.anim === "windmill" && ownWay(a.anim, tr.pid, a.t0) === "dunk360") {
+		const u = clamp01(
+			((t - a.t0) / (a.t1 - a.t0) - SPIN_360[0]) / (SPIN_360[1] - SPIN_360[0]),
+		);
+		return u <= 0 || u >= 1
+			? undefined
+			: wrapAngle(
+					yawAt(tl, tr, t) + (a.mirror ? -TAU : TAU) * (u * u * (3 - 2 * u)),
+				);
+	}
 	if (a?.anim !== "spinMove") {
 		return undefined;
 	}

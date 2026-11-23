@@ -2405,6 +2405,7 @@ const SHOOTING = new Set([
 	"tomahawk",
 	"tomahawkTwo",
 	"windmill",
+	"dunk360",
 ]);
 
 // Where the main camera looks - never tighter than `fit` lets it, so the

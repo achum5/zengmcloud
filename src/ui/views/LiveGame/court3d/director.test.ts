@@ -337,9 +337,12 @@ describe("3D director", () => {
 					let d = st.yaw - p.yaw;
 					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
 					// (A spin move goes right round, quick - but round, all the
-					// same, not in a snap.)
+					// same, not in a snap. And so does a 360 dunk.)
 					const spin =
-						baseOf(st.anim) === "spinMove" || baseOf(p.anim) === "spinMove";
+						baseOf(st.anim) === "spinMove" ||
+						baseOf(p.anim) === "spinMove" ||
+						st.anim === "dunk360" ||
+						p.anim === "dunk360";
 					assert.isBelow(
 						Math.abs(d),
 						spin ? 0.5 : 0.25,
