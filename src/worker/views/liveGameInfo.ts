@@ -12,6 +12,14 @@ import { idb } from "../db/index.ts";
 import { season as seasonCore } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { Game, PlayoffSeries } from "../../common/types.ts";
+import {
+	DEFAULT_GAME_TOTAL,
+	expectedTotalFromRates,
+	leagueAvgGameTotal,
+	toHalfPointLine,
+	type ScoringRate,
+} from "../../common/sportsbookOdds.ts";
+import { BASKETBALL_PLAYOFF_TOTAL_FACTOR } from "../../common/getGameSpread.ts";
 
 export type SeriesGame = {
 	gid: number;
@@ -95,6 +103,8 @@ export type GamecastInfo = {
 	standings: { name: string; teams: StandingsTeam[] }[];
 	// Each team's last few games, latest first.
 	recent: { tid: number; games: RecentGame[] }[];
+	// The over/under at the tip (see totalAsOf) - a live game's only.
+	total?: number;
 };
 
 type Played = Pick<Game, "gid" | "day" | "playoffs" | "teams">;
@@ -244,6 +254,71 @@ export const standingsAsOf = (
 		}
 	}
 	return out;
+};
+
+// THE OVER/UNDER AT THE TIP, as the sportsbook set it (see gameLines.ts):
+// from each team's regular-season scoring going into the game's day, worked
+// out from the season's games - so a live game, or an old one on replay,
+// quotes the line it was played under. (The spread needs none of this: the
+// sim keeps it on the game - Game.spread.) Undefined when the games can't
+// account for a team's record - an old season's box scores deleted - rather
+// than quote a line off part of a season.
+export const totalAsOf = (
+	game: Played,
+	played: readonly Played[],
+	// Each side's regular-season games going into it (its record), box
+	// score order - what the games found have to add up to.
+	gpAtTip: [number, number],
+): number | undefined => {
+	const sameDay = (p: Played) =>
+		p.day !== undefined && game.day !== undefined && p.day === game.day;
+	const totals = new Map<number, ScoringRate>();
+	for (const p of played) {
+		if (
+			p.playoffs ||
+			(p as { exhibition?: boolean }).exhibition ||
+			!before(p, game) ||
+			sameDay(p)
+		) {
+			continue;
+		}
+		for (const i of [0, 1] as const) {
+			const tid = p.teams[i].tid;
+			if (tid < 0) {
+				continue;
+			}
+			let r = totals.get(tid);
+			if (!r) {
+				r = { gp: 0, pts: 0, oppPts: 0 };
+				totals.set(tid, r);
+			}
+			r.gp += 1;
+			r.pts += p.teams[i].pts;
+			r.oppPts += p.teams[i === 0 ? 1 : 0].pts;
+		}
+	}
+	// Per game, as the sportsbook reads a team's stats.
+	const rates = new Map<number, ScoringRate>();
+	for (const [tid, r] of totals) {
+		rates.set(tid, { gp: r.gp, pts: r.pts / r.gp, oppPts: r.oppPts / r.gp });
+	}
+	const none: ScoringRate = { gp: 0, pts: 0, oppPts: 0 };
+	const home = rates.get(game.teams[0].tid) ?? none;
+	const away = rates.get(game.teams[1].tid) ?? none;
+	if (home.gp !== gpAtTip[0] || away.gp !== gpAtTip[1]) {
+		return undefined;
+	}
+	return toHalfPointLine(
+		expectedTotalFromRates({
+			home,
+			away,
+			leagueAvgTotal: leagueAvgGameTotal(rates.values(), DEFAULT_GAME_TOTAL),
+			factor:
+				game.playoffs && __SPORT === "basketball"
+					? BASKETBALL_PLAYOFF_TOTAL_FACTOR
+					: 1,
+		}),
+	);
 };
 
 // A team's last few games, latest first: up to and including this one on
@@ -464,12 +539,30 @@ export const gamecastInfo = async (
 		}
 	}
 
+	// The over/under, for a live game's header. Its record as it went in:
+	// the game's own is written after it, this one counted - in the regular
+	// season.
+	let total: number | undefined;
+	if (!final) {
+		const gpAtTip = game.teams.map((t) =>
+			t.won === undefined || t.lost === undefined
+				? -1
+				: t.won +
+					t.lost +
+					(t.tied ?? 0) +
+					(t.otl ?? 0) -
+					(game.playoffs ? 0 : 1),
+		) as [number, number];
+		total = totalAsOf(game, played, gpAtTip);
+	}
+
 	return {
 		series,
 		standings,
 		recent,
 		...(bracket ? { bracket } : {}),
 		...(playIn ? { playIn } : {}),
+		...(total !== undefined ? { total } : {}),
 	};
 };
 

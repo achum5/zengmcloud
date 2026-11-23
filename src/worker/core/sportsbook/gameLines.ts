@@ -9,16 +9,18 @@ import {
 } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 import { PHASE } from "../../../common/constants.ts";
-import { bySport } from "../../../common/sportFunctions.ts";
 import {
 	probToAmerican,
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
 import {
-	expectedGameTotal,
+	DEFAULT_GAME_TOTAL,
+	expectedTotalFromRates,
+	leagueAvgGameTotal,
 	MARGIN_SIGMA,
 	marginToWinProb,
 	overProb,
+	regressedScoring,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
 import {
@@ -219,36 +221,21 @@ export const buildGameLinePricer = async ({
 			oppPts: s?.oppPts ?? 0,
 		};
 	};
-	let totalPtsPerGame = 0;
-	let teamsWithGames = 0;
-	for (const t of activeTeams) {
-		const s = statsOf(t);
-		if (s.gp > 0) {
-			totalPtsPerGame += s.pts;
-			teamsWithGames += 1;
-		}
-	}
-	const leagueAvgTotal =
-		teamsWithGames > 0
-			? (2 * totalPtsPerGame) / teamsWithGames
-			: bySport({ basketball: 220, football: 45, baseball: 9, hockey: 6 });
+	const leagueAvgTotal = leagueAvgGameTotal(
+		activeTeams.map(statsOf),
+		DEFAULT_GAME_TOTAL,
+	);
 
-	// team.getFormattedAll returns PER-GAME stats by default, so pts/oppPts are already the
-	// genuine per-game averages. Early in the season, regress toward the league
-	// mean (fully trusted after ~8 games) so a hot opening week doesn't swing
-	// totals wildly.
-	const halfLeague = leagueAvgTotal / 2;
-	const regress = (perGame: number, gp: number) => {
-		const w = Math.min(1, gp / 8);
-		return halfLeague + (perGame - halfLeague) * w;
-	};
+	// team.getFormattedAll returns PER-GAME stats by default, so pts/oppPts are
+	// already the genuine per-game averages - regressed toward the league mean
+	// early in the season (see regressedScoring).
 	const scoringFor = (t: PricerTeam) => {
 		const s = statsOf(t);
-		return s.gp > 0 ? regress(s.pts, s.gp) : undefined;
+		return regressedScoring(s.pts, s.gp, leagueAvgTotal);
 	};
 	const scoringAgainst = (t: PricerTeam) => {
 		const s = statsOf(t);
-		return s.gp > 0 ? regress(s.oppPts, s.gp) : undefined;
+		return regressedScoring(s.oppPts, s.gp, leagueAvgTotal);
 	};
 
 	// Neutral site drops home-court advantage, matching ScoreBox: an upcoming
@@ -306,15 +293,14 @@ export const buildGameLinePricer = async ({
 				playoffs && __SPORT === "basketball"
 					? BASKETBALL_PLAYOFF_TOTAL_FACTOR
 					: 1;
-			const expectedTotal =
-				playoffTotalFactor *
-				expectedGameTotal({
-					homeFor: scoringFor(home),
-					homeAgainst: scoringAgainst(home),
-					awayFor: scoringFor(away),
-					awayAgainst: scoringAgainst(away),
-					leagueAvgTotal,
-				});
+			// (The same formula the live game's header quotes the line by - see
+			// liveGameLine.ts.)
+			const expectedTotal = expectedTotalFromRates({
+				home: statsOf(home),
+				away: statsOf(away),
+				leagueAvgTotal,
+				factor: playoffTotalFactor,
+			});
 			const totalLine = toHalfPointLine(expectedTotal);
 			const pOver = overProb(expectedTotal, totalLine);
 			// Home spread: home favored by `margin2`, so the line is -margin2.
