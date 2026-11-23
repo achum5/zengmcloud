@@ -1,17 +1,12 @@
-import clsx from "clsx";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
 import { isAllStarGame } from "../../../common/specialGames.ts";
-import {
-	addDays,
-	formatGameDate,
-	formatMonth,
-	weekdayOf,
-} from "../../../common/calendarDates.ts";
+import { addDays } from "../../../common/calendarDates.ts";
 import type { LocalStateUI } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
+import { TopBarDay } from "./TopBarDay.tsx";
 
 // The strip of recent scores under the navbar. Shown or hidden from Global
 // Settings (Scores Bar) rather than by a chevron pinned to its own right edge -
@@ -19,41 +14,14 @@ import { PHASE } from "../../../common/constants.ts";
 // strip, and on iOS it was reserved twice over, which read as a dead gap after
 // the last score.
 //
-// On the NBA calendar it goes night by night instead: every night of the
-// season so far, today, and the coming nights, each with its weekday and
-// date, and the team's game that night if it has one.
+// On the NBA calendar it's the team's calendar in one row instead: every day
+// of the season so far, today and the coming days, bye days too, each with the
+// team's game that day if it has one (TopBarDay.tsx).
 
 type BarGame = LocalStateUI["games"][number];
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 // How many nights past today to show. The worker sends the games in them.
 const NIGHTS_AHEAD = 5;
-
-// A night as a page off a desk calendar, like today's date in the navbar.
-const DayStub = ({
-	date,
-	game,
-	today,
-}: {
-	date: string;
-	game: boolean;
-	today: string | undefined;
-}) => (
-	<div
-		className={clsx(
-			"ltb-stub",
-			game && "ltb-stub-game",
-			date === today && "ltb-stub-today",
-			today !== undefined && date > today && "ltb-stub-future",
-		)}
-		title={`${date === today ? "Today, " : ""}${formatGameDate(date, "full")}`}
-	>
-		<span className="ltb-stub-weekday">{WEEKDAYS[weekdayOf(date)]}</span>
-		<span className="ltb-stub-day">{Number(date.slice(8))}</span>
-		<span className="ltb-stub-month">{formatMonth(date, true)}</span>
-	</div>
-);
 
 // Every night from the first game to the coming nights, with the team's game
 // on each. In the playoffs the coming nights are the team's series' planned
@@ -102,6 +70,71 @@ const nightsOf = (
 		nights.push({ date, game: byDate.get(date) });
 	}
 	return nights;
+};
+
+// Arrows at the strip's ends to page through it, as on ESPN's - for a mouse; a
+// phone swipes (hidden below md).
+const ScrollButtons = ({ wrapper }: { wrapper: HTMLDivElement | null }) => {
+	const [ends, setEnds] = useState({ left: false, right: false });
+
+	useEffect(() => {
+		if (!wrapper) {
+			return;
+		}
+		const update = () => {
+			// The strip is flex-row-reverse: scrollLeft is 0 at its right end and
+			// negative toward the left.
+			const max = wrapper.scrollWidth - wrapper.clientWidth;
+			const left = max + wrapper.scrollLeft > 2;
+			const right = wrapper.scrollLeft < -2;
+			setEnds((prev) =>
+				prev.left === left && prev.right === right ? prev : { left, right },
+			);
+		};
+		update();
+		wrapper.addEventListener("scroll", update, { passive: true });
+		const observer = new ResizeObserver(update);
+		observer.observe(wrapper);
+		if (wrapper.firstElementChild) {
+			observer.observe(wrapper.firstElementChild);
+		}
+		return () => {
+			wrapper.removeEventListener("scroll", update);
+			observer.disconnect();
+		};
+	}, [wrapper]);
+
+	const page = (direction: -1 | 1) => {
+		wrapper?.scrollBy({
+			left: direction * wrapper.clientWidth * 0.8,
+			behavior: "smooth",
+		});
+	};
+
+	return (
+		<>
+			{ends.left ? (
+				<button
+					type="button"
+					className="tbd-arrow tbd-arrow-left"
+					onClick={() => page(-1)}
+					aria-label="Earlier games"
+				>
+					<span className="glyphicon glyphicon-menu-left" />
+				</button>
+			) : null}
+			{ends.right ? (
+				<button
+					type="button"
+					className="tbd-arrow tbd-arrow-right"
+					onClick={() => page(1)}
+					aria-label="Later games"
+				>
+					<span className="glyphicon glyphicon-menu-right" />
+				</button>
+			) : null}
+		</>
+	);
 };
 
 export const LeagueTopBar = memo(() => {
@@ -159,7 +192,7 @@ export const LeagueTopBar = memo(() => {
 		});
 	});
 
-	// On the NBA calendar, today stays in view when the coming nights fill a
+	// On the NBA calendar, today stays in view when the coming days fill a
 	// narrow screen, so a phone opens on today rather than next week.
 	const dated = games.some((game) => game.date !== undefined);
 	useLayoutEffect(() => {
@@ -167,14 +200,15 @@ export const LeagueTopBar = memo(() => {
 			return;
 		}
 		const showToday = () => {
-			const todayElement = wrapperElement.querySelector(".ltb-stub-today");
+			const todayElement = wrapperElement.querySelector(".tbd-today");
 			if (!todayElement) {
 				return;
 			}
 			const wrapperLeft = wrapperElement.getBoundingClientRect().left;
 			const todayLeft = todayElement.getBoundingClientRect().left;
 			if (todayLeft < wrapperLeft) {
-				wrapperElement.scrollBy({ left: todayLeft - wrapperLeft - 8 });
+				// (Clear of the left arrow.)
+				wrapperElement.scrollBy({ left: todayLeft - wrapperLeft - 30 });
 			}
 		};
 		showToday();
@@ -246,66 +280,79 @@ export const LeagueTopBar = memo(() => {
 		}
 	}
 
-	const nights = dated
-		? nightsOf(prevGames.current, calendarDate, phase === PHASE.PLAYOFFS)
-		: [];
+	if (!dated) {
+		return (
+			<div
+				className="league-top-bar flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row-reverse mt-2"
+				ref={setWrapperElement}
+			>
+				<div className="d-flex flex-shrink-0 ps-1" ref={contentRef}>
+					{games2.map((game) => (
+						<ScoreBox
+							key={game.gid}
+							className="me-2"
+							game={game}
+							livePts={livePtsOf(game)}
+							small
+						/>
+					))}
+					{games2.length > 0 ? (
+						<>
+							<a
+								className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
+								style={{ height: 56 }}
+								href={helpers.leagueUrl(["daily_schedule", "yesterday"])}
+								title="Yesterday's games"
+							>
+								<span className="glyphicon glyphicon-menu-left" />
+							</a>
+							<a
+								className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
+								style={{ height: 56 }}
+								href={helpers.leagueUrl(["daily_schedule", "today"])}
+								title="Today's games"
+							>
+								<span className="glyphicon glyphicon-menu-right" />
+							</a>
+						</>
+					) : null}
+				</div>
+			</div>
+		);
+	}
+
+	const nights = nightsOf(
+		prevGames.current,
+		calendarDate,
+		phase === PHASE.PLAYOFFS,
+	);
 
 	return (
-		<div
-			className="league-top-bar flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row-reverse mt-2"
-			ref={setWrapperElement}
-		>
-			<div className="d-flex flex-shrink-0 ps-1" ref={contentRef}>
-				{nights.length > 0
-					? nights.map(({ date, game }) => (
-							<div
-								key={date}
-								className={clsx(
-									"ltb-night me-2",
-									date === calendarDate && "ltb-night-today",
-								)}
-							>
-								<DayStub date={date} game={!!game} today={calendarDate} />
-								{game ? (
-									<div
-										className={clsx(game.ifNecessary && "ltb-maybe")}
-										title={game.ifNecessary ? "If necessary" : undefined}
-									>
-										<ScoreBox game={game} livePts={livePtsOf(game)} small />
-									</div>
-								) : null}
-							</div>
-						))
-					: games2.map((game) => (
-							<ScoreBox
-								key={game.gid}
-								className="me-2"
-								game={game}
-								livePts={livePtsOf(game)}
-								small
-							/>
-						))}
-				{games2.length > 0 ? (
-					<>
-						<a
-							className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
-							style={{ height: 56 }}
-							href={helpers.leagueUrl(["daily_schedule", "yesterday"])}
-							title="Yesterday's games"
-						>
-							<span className="glyphicon glyphicon-menu-left" />
-						</a>
-						<a
-							className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
-							style={{ height: 56 }}
-							href={helpers.leagueUrl(["daily_schedule", "today"])}
-							title="Today's games"
-						>
-							<span className="glyphicon glyphicon-menu-right" />
-						</a>
-					</>
-				) : null}
+		<div className="league-top-bar-wrap position-relative flex-shrink-0 mt-2">
+			<div
+				className="league-top-bar d-flex overflow-auto small-scrollbar flex-row-reverse"
+				ref={setWrapperElement}
+			>
+				<div className="tbd-track d-flex flex-shrink-0" ref={contentRef}>
+					{nights.map(({ date, game }) => (
+						<TopBarDay
+							key={date}
+							date={date}
+							game={game}
+							livePts={game ? livePtsOf(game) : undefined}
+							today={calendarDate}
+						/>
+					))}
+					<a
+						className="tbd-more"
+						href={helpers.leagueUrl(["daily_schedule", "today"])}
+					>
+						All scores
+						<span className="glyphicon glyphicon-menu-right" />
+					</a>
+				</div>
 			</div>
+			<ScrollButtons wrapper={wrapperElement} />
 		</div>
 	);
 });
