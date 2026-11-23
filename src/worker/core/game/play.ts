@@ -28,7 +28,11 @@ import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { dayTickFromGames } from "./calendarTicks.ts";
 import { ensureClassicDays } from "./saveClassicDays.ts";
-import { saveRecapReels, wantsRecapReel } from "./saveRecapReels.ts";
+import {
+	RECAP_REELS_ON,
+	saveRecapReels,
+	wantsRecapReel,
+} from "./saveRecapReels.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
@@ -694,10 +698,12 @@ const play = async (
 
 		// The night's recap plays (see saveRecapReels.ts), in the same capture
 		// window. Best-effort too.
-		try {
-			await saveRecapReels(results);
-		} catch (error) {
-			console.error("Failed to save recap plays", error);
+		if (RECAP_REELS_ON) {
+			try {
+				await saveRecapReels(results);
+			} catch (error) {
+				console.error("Failed to save recap plays", error);
+			}
 		}
 
 		// If this was a live sim, route the UI to the live game and (in a sync
@@ -881,7 +887,7 @@ const play = async (
 				saveDramaticGames ||
 				saveReplaysTids.has(game.homeTid) ||
 				saveReplaysTids.has(game.awayTid) ||
-				wantsRecapReel(game.homeTid, game.awayTid);
+				(RECAP_REELS_ON && wantsRecapReel(game.homeTid, game.awayTid));
 
 			const teamsInput = [teams[game.homeTid], teams[game.awayTid]] as any;
 
