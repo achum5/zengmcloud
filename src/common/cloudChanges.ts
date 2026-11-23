@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 458,
+		date: "2026-11-23",
+		text: "Draft night: everyone wears proper trousers down to their shoes, with socks to match, instead of shorts. Each prospect comes in his own suit, from dark classics to bold colors, with his own shirt and tie (or none), and it's the same one every time you watch him. His tie is no longer in the colors of the team that drafts him. The commissioner is now bald with thin glasses, in a navy pinstripe suit, pale blue shirt and navy tie. The shot of the commissioner at the podium no longer lags.",
+	},
+	{
+		n: 457,
+		date: "2026-11-23",
+		text: "Draft night: the family hug at the table is a real hug now. The player and his mom or dad come in close and wrap their arms right around each other, rocking a little, him bending down over his mom (more the taller he is), with back pats in a hug with his dad or brother, then a step back before he lets go. The camera goes in tight over their shoulder on his face, like the broadcast. Photographers' flashes no longer white out the picture.",
+	},
+	{
 		n: 456,
 		date: "2026-11-23",
 		text: "Smart CPU GM: a team clearing cap room for a free agent now asks for a pick back when the team taking the salary gains plenty from it, and weighs every team with room instead of the first that would take it.",

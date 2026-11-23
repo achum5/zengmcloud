@@ -108,6 +108,21 @@ export type Pose = {
 	onKneeF: number;
 	flexN: number;
 	flexF: number;
+	// Each arm wrapped round someone held close in front of him, the elbow
+	// out round their side (0 to 1); and where his wrists go on them: so far
+	// out in front of his feet, so far over to his left (the middle of
+	// them), so high off the floor, and so far apart (feet) - his left a
+	// little under his right.
+	hugN: number;
+	hugF: number;
+	hugFwd: number;
+	hugSide: number;
+	hugUp: number;
+	hugWide: number;
+	// Holding them, how high off the floor his head comes down to (feet; 0
+	// for wherever his lean has it): bent over to it, as far as he must -
+	// a tall man further than a short one - never straightened up for it.
+	hugHead: number;
 };
 
 const BASE: Pose = {
@@ -159,6 +174,13 @@ const BASE: Pose = {
 	onKneeF: 0,
 	flexN: 0,
 	flexF: 0,
+	hugN: 0,
+	hugF: 0,
+	hugFwd: 0,
+	hugSide: 0,
+	hugUp: 0,
+	hugWide: 0,
+	hugHead: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -180,6 +202,7 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["onHeadN", "onHeadF"],
 	["onKneeN", "onKneeF"],
 	["flexN", "flexF"],
+	["hugN", "hugF"],
 ];
 export const mirror = (q: Pose): Pose => {
 	const out = {
@@ -192,6 +215,7 @@ export const mirror = (q: Pose): Pose => {
 		spinF: -q.spinN,
 		footN: -q.footF,
 		footF: -q.footN,
+		hugSide: -q.hugSide,
 	};
 	for (const [n, f] of SIDES) {
 		out[n] = q[f];
@@ -2782,22 +2806,155 @@ const HUG = pose({
 	kneeF: 18,
 });
 const HUG_PAT = { ...HUG, shF: 85, elF: 80, abF: -40 };
-// Held in a long hug (see embrace): both arms round them, his head down on
-// their shoulder - and rocked a little, side to side.
+// And held in a long hug (see below), this far apart, feet to feet: someone
+// a good deal shorter, and two men much of a height - those over to his
+// left this far, each head past the other's.
+export const EMBRACE = { apart: 1.38, manApart: 1.3, manSide: 0.35 };
+
+// HELD IN A LONG HUG - his family, his name just read (see draftStage.ts).
+// Pressed in close, both arms right round them, held and rocked a little
+// side to side; and at the last pulled back a little, his hands still on
+// them, before he lets go. Who is the taller has it differently:
+//
+// Him round someone a good deal shorter (see embrace): bent right over
+// them, his knees bent and his shoulders tipped to his right so his head
+// comes down past theirs, cheek to their hair - his arms over their
+// shoulders, his wrists on their shoulder blades. And them up round him
+// (see embraceUp): arms round his ribs, the side of their face against his
+// chest.
+//
+// Two men much of a height (see embraceMan): chest to chest, each head
+// past the other's to its own right, his right arm over the other's
+// shoulder, his left under it - and a couple of pats on the back.
+//
+// Where the wrists go (see Pose.hugFwd) is set for them standing as
+// EMBRACE has them, in feet off his own feet: the other's back, the height
+// of it.
 const HOLD = pose({
-	shN: 80,
-	elN: 72,
-	abN: -30,
-	shF: 75,
-	elF: 66,
-	abF: -45,
-	lean: 14,
-	twist: -8,
-	tilt: 6,
+	lean: 16,
+	kneeN: 18,
+	kneeF: 20,
+	tilt: -12,
+	hugN: 1,
+	hugF: 1,
+	hugFwd: 1.62,
+	hugUp: 3.6,
+	hugWide: 0.7,
+	hugHead: 5.05,
+});
+const HOLD_ROCK = { ...HOLD, lean: 18, tilt: -8, twist: 6, hugUp: 3.55 };
+// (Reaching for them as they come in; and pulled back to look at them,
+// his hands on their shoulders.)
+const HOLD_REACH = {
+	...HOLD,
+	lean: 10,
+	kneeN: 14,
+	kneeF: 16,
+	tilt: -3,
+	hugN: 0.55,
+	hugF: 0.55,
+};
+const HOLD_BACK = {
+	...HOLD,
+	lean: 12,
 	kneeN: 16,
 	kneeF: 18,
+	tilt: 0,
+	hugFwd: 1.2,
+	hugUp: 3.55,
+	hugWide: 1.3,
+	hugHead: 5.7,
+};
+const HELD = pose({
+	lean: 8,
+	kneeN: 12,
+	kneeF: 14,
+	tilt: -7,
+	hugN: 1,
+	hugF: 1,
+	hugFwd: 1.2,
+	hugUp: 3.25,
+	hugWide: 1.25,
 });
-const HOLD_ROCK = { ...HOLD, twist: -14, tilt: 1, shF: 82, elF: 74 };
+const HELD_ROCK = { ...HELD, lean: 10, tilt: -4, twist: 6 };
+const HELD_REACH = { ...HELD, lean: 4, tilt: -2, hugN: 0.5, hugF: 0.5 };
+const HELD_BACK = {
+	...HELD,
+	lean: 3,
+	tilt: 0,
+	hugFwd: 1.0,
+	hugUp: 3.1,
+	hugWide: 1.4,
+};
+const MAN_HOLD = pose({
+	lean: 16,
+	kneeN: 18,
+	kneeF: 20,
+	tilt: -8,
+	hugN: 1,
+	hugF: 1,
+	hugFwd: 1.55,
+	hugSide: EMBRACE.manSide,
+	hugUp: 4.15,
+	hugWide: 0.7,
+	hugHead: 5.75,
+});
+const MAN_PAT = { ...MAN_HOLD, hugN: 0.82, hugUp: 4.4 };
+const MAN_ROCK = { ...MAN_HOLD, tilt: -5, twist: 5 };
+const MAN_HELD = pose({
+	lean: 12,
+	kneeN: 16,
+	kneeF: 18,
+	tilt: -8,
+	hugN: 1,
+	hugF: 1,
+	hugFwd: 1.5,
+	hugSide: EMBRACE.manSide,
+	hugUp: 3.9,
+	hugWide: 1.1,
+	hugHead: 5.6,
+});
+const MAN_HELD_PAT = { ...MAN_HELD, hugN: 0.82, hugUp: 4.15 };
+const MAN_HELD_ROCK = { ...MAN_HELD, tilt: -5, twist: 5 };
+// The keys of a long hug, given its pose held, rocked, reached in and
+// pulled back - and patted, if it is.
+const embraceKeys = (
+	hold: Pose,
+	rock: Pose,
+	reach: Pose,
+	back: Pose,
+	pat?: Pose,
+): [number, Pose][] => [
+	[0, { ...P.ready, ...where(hold) }],
+	[0.1, reach],
+	[0.2, hold],
+	[0.34, rock],
+	...(pat
+		? ([
+				[0.42, hold],
+				[0.47, pat],
+				[0.52, hold],
+				[0.57, pat],
+				[0.62, hold],
+			] as [number, Pose][])
+		: ([
+				[0.48, hold],
+				[0.62, rock],
+			] as [number, Pose][])),
+	[0.74, hold],
+	[0.84, back],
+	[0.92, back],
+	[1, { ...P.ready, ...where(back) }],
+];
+// (Where the wrists are going, before the arms are up - so they come up
+// to it, not from somewhere else.)
+const where = (q: Pose): Partial<Pose> => ({
+	hugFwd: q.hugFwd,
+	hugSide: q.hugSide,
+	hugUp: q.hugUp,
+	hugWide: q.hugWide,
+	hugHead: q.hugHead,
+});
 // Two men in that hug stand this far apart (feet, middle to middle, the way
 // they face) and this far over to each one's right of the other - right
 // shoulder to right shoulder, the gripped hands between their chests, heads
@@ -11518,32 +11675,39 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
-	// A long hug, held: in close, both arms round them, rocked a little,
-	// and apart - his family, his name just read.
+	// A long hug, held (see HOLD): round someone a good deal shorter; them
+	// round him; and two men much of a height, either one.
 	embrace: {
 		kind: "act",
-		n: 10,
-		keys: [
-			[0, P.ready],
-			[
-				0.1,
-				pose({
-					shN: 50,
-					elN: 50,
-					abN: 5,
-					shF: 50,
-					elF: 50,
-					abF: 5,
-					lean: 8,
-				}),
-			],
-			[0.2, HOLD],
-			[0.38, HOLD_ROCK],
-			[0.56, HOLD],
-			[0.74, HOLD_ROCK],
-			[0.88, HOLD],
-			[1, P.ready],
-		],
+		n: 12,
+		keys: embraceKeys(HOLD, HOLD_ROCK, HOLD_REACH, HOLD_BACK),
+	},
+	embraceUp: {
+		kind: "act",
+		n: 12,
+		keys: embraceKeys(HELD, HELD_ROCK, HELD_REACH, HELD_BACK),
+	},
+	embraceMan: {
+		kind: "act",
+		n: 12,
+		keys: embraceKeys(
+			MAN_HOLD,
+			MAN_ROCK,
+			{ ...MAN_HOLD, lean: 8, tilt: -3, hugN: 0.55, hugF: 0.55 },
+			{ ...MAN_HOLD, lean: 6, tilt: 0, hugFwd: 1.2, hugUp: 4.2, hugWide: 1.6 },
+			MAN_PAT,
+		),
+	},
+	embraceManUp: {
+		kind: "act",
+		n: 12,
+		keys: embraceKeys(
+			MAN_HELD,
+			MAN_HELD_ROCK,
+			{ ...MAN_HELD, lean: 6, tilt: -3, hugN: 0.55, hugF: 0.55 },
+			{ ...MAN_HELD, lean: 5, tilt: 0, hugFwd: 1.15, hugUp: 4.0, hugWide: 1.6 },
+			MAN_HELD_PAT,
+		),
 	},
 	// Handed his cap: up onto his head with both hands, pulled down onto it,
 	// the brim set with the one.
@@ -12751,6 +12915,41 @@ export const footDown = (q: Pose, w: number, b: Body = bodyOf()): Pose => {
 		: { ...q, hipF: hip, kneeF: knee, toeF: q.toeF * (1 - w) };
 };
 
+// Bent over someone in his arms (see Pose.hugHead): as far as it takes to
+// bring his head down to theirs - at the knees as much as at the waist, so
+// it comes down beside theirs, not out over their back - as much of it as
+// his arms are round them.
+const BENT = { most: 26, knee: 1.6, lean: 0.9 };
+const bentTo = (b: Body, q: Pose): Pose => {
+	const by = (x: number): Pose => ({
+		...q,
+		lean: q.lean + BENT.lean * x,
+		kneeN: q.kneeN + BENT.knee * x,
+		kneeF: q.kneeF + BENT.knee * x,
+		hugHead: 0,
+	});
+	const at = (x: number) => skeleton(b, by(x)).head.u - q.hugHead;
+	let x0 = 0;
+	let h0 = at(x0);
+	if (h0 <= 0) {
+		return q;
+	}
+	let x1 = 10;
+	let h1 = at(x1);
+	for (let i = 0; i < 3 && Math.abs(h1) > 0.02 && h1 !== h0; i++) {
+		const x2 = Math.min(
+			BENT.most,
+			Math.max(0, x1 - (h1 * (x1 - x0)) / (h1 - h0)),
+		);
+		x0 = x1;
+		h0 = h1;
+		x1 = x2;
+		h1 = at(x1);
+	}
+	const w = Math.min(1, Math.max(q.hugN, q.hugF));
+	return { ...by(x1 * w), hugHead: q.hugHead };
+};
+
 // The pose's angles live in the plane he faces along; arms swing out from
 // his sides a little (more in a stance), feet spread with the knees.
 //
@@ -12777,7 +12976,8 @@ const NECK_SAT = [60, 80] as const;
 // hands on his knees: he looks up from there.)
 const NECK_DOWN = 18;
 const NECK_DOWN_LEAN = [45, 70] as const;
-export const skeleton = (b: Body, q: Pose): Skeleton => {
+export const skeleton = (b: Body, q0: Pose): Skeleton => {
+	const q = q0.hugHead > 0 && (q0.hugN > 0 || q0.hugF > 0) ? bentTo(b, q0) : q0;
 	const rad = Math.PI / 180;
 	// An angle in the facing plane: 0 straight down, 90 straight ahead.
 	const dir = (deg: number) => ({
@@ -12991,6 +13191,8 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		q.flexN,
 		q.teeN,
 		q.onHeadN,
+		q.hugN,
+		q,
 	);
 	const armL = shapedArm(
 		b,
@@ -13005,6 +13207,8 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		q.flexF,
 		q.teeF,
 		q.onHeadF,
+		q.hugF,
+		q,
 	);
 	if (q.twist === 0 && q.tilt === 0) {
 		return overFeet(b, q, { pelvis, chest, head, legR, legL, armR, armL });
@@ -13438,6 +13642,8 @@ const shapedArm = (
 	flex: number,
 	tee = 0,
 	head = 0,
+	hug = 0,
+	wrap?: Pick<Pose, "hugFwd" | "hugSide" | "hugUp" | "hugWide">,
 ): Limb => {
 	let out = arm;
 	if (flex > 0) {
@@ -13492,7 +13698,71 @@ const shapedArm = (
 		);
 		out = mixArm(out, flared(armTo(b, chest, at, 60, side), 105, side), head);
 	}
+	if (hug > 0 && wrap) {
+		// Round them: the wrist on their back past its middle, the hand flat
+		// on it, the elbow out round their side.
+		const to = v3(
+			wrap.hugFwd,
+			wrap.hugSide + (side * wrap.hugWide) / 2,
+			wrap.hugUp - (side > 0 ? HUG_WRAP.under : 0),
+		);
+		out = mixArm(out, wrapped(b, chest, to, side), hug);
+	}
 	return out;
+};
+// (A wrapped arm's wrist: the left so far under the right - feet; its
+// elbow out to his side and down, so much down for out; and its fingers
+// turned down their back, so much down for across.)
+const HUG_WRAP = { under: 0.25, down: 0.35, fingers: 0.6 };
+// An arm round someone: the wrist on their back, the elbow as far out to
+// his side as the arm's two bones let it go (and a little down - not
+// hitched up past his shoulder), so the arm goes round them, not through
+// them; the hand laid along their back.
+const wrapped = (b: Body, chest: V3, to: V3, side: 1 | -1): Limb => {
+	const arm = armTo(b, chest, to, 0, side);
+	const { root, end } = arm;
+	const sub = (p: V3, o: V3) => v3(p.f - o.f, p.s - o.s, p.u - o.u);
+	const len = (v: V3) => Math.hypot(v.f, v.s, v.u);
+	const L1 = len(sub(arm.mid, root));
+	const L2 = len(sub(end, arm.mid));
+	const toEnd = sub(end, root);
+	const d = len(toEnd) || 1e-6;
+	const k = v3(toEnd.f / d, toEnd.s / d, toEnd.u / d);
+	const x = (d * d + L1 * L1 - L2 * L2) / (2 * d);
+	const h = Math.sqrt(Math.max(0, L1 * L1 - x * x));
+	const want = v3(0, side, -HUG_WRAP.down);
+	const along = want.f * k.f + want.s * k.s + want.u * k.u;
+	const pole = v3(
+		want.f - k.f * along,
+		want.s - k.s * along,
+		want.u - k.u * along,
+	);
+	const pl = len(pole) || 1;
+	const mid = v3(
+		root.f + k.f * x + (pole.f / pl) * h,
+		root.s + k.s * x + (pole.s / pl) * h,
+		root.u + k.u * x + (pole.u / pl) * h,
+	);
+	// (Its fingers spread across their back, and down it.)
+	const fore = sub(end, mid);
+	const fl = len(fore) || 1;
+	const hand = v3(
+		(fore.f / fl) * 0.25,
+		fore.s / fl,
+		fore.u / fl - HUG_WRAP.fingers,
+	);
+	const hl = len(hand) || 1;
+	const reach = b.handR * 2.2;
+	return {
+		root,
+		mid,
+		end,
+		tip: v3(
+			end.f + (hand.f / hl) * reach,
+			end.s + (hand.s / hl) * reach,
+			end.u + (hand.u / hl) * reach,
+		),
+	};
 };
 // (The wrist of a hand on his head: so far over the back of his head and
 // out to its side, and up - head radii, from his chest's middle and the top

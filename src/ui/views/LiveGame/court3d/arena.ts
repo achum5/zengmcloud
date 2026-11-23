@@ -2842,6 +2842,16 @@ export const drawBall = (
 ) => {
 	const c = project(cam, ball);
 	const r = Math.max(1.6, BALL_R * c.k);
+	// (Off the picture - or nowhere the cameras look, a show with no ball in
+	// it - nothing to paint.)
+	if (
+		c.x + r < 0 ||
+		c.x - r > cam.viewW ||
+		c.y + r < 0 ||
+		c.y - r > cam.viewH
+	) {
+		return;
+	}
 	if (squash > 0.01) {
 		ctx.save();
 		ctx.translate(c.x, c.y + r);

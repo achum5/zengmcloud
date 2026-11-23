@@ -5204,12 +5204,16 @@ const curveThrough = (
 		(3 * b - a - 3 * c + d) * u * u * u);
 
 // (Not two men meant to be up against each other: dapping up after the
-// game, hugging - see dapHug - or one pulling the other up off the floor by
-// the hands.)
+// game, hugging - see dapHug, and embrace - or one pulling the other up off
+// the floor by the hands.)
 const EMBRACES = new Set<AnimName>([
 	"dap",
 	"dapPat",
 	"dapHug",
+	"embrace",
+	"embraceUp",
+	"embraceMan",
+	"embraceManUp",
 	"helpUp",
 	"pulledUp",
 ]);

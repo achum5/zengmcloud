@@ -97,6 +97,10 @@ const MESH_LIFT = MESH_SHELLS.map((sh) =>
 );
 const MESH_FACED = MESH_KINDS.map((name) => name === "head" || name === "neck");
 
+// A pinstripe (feet): how far apart, how wide - and the fewest sprite
+// pixels apart they are drawn at all.
+const PIN = { pitch: 0.075, line: 0.008, fewest: 5 };
+
 // ONE PLAYER, SCULPTED - the body of his sprite (see sprite.ts).
 //
 // He is built out of rounded masses laid along his skeleton: a chest and a
@@ -2247,7 +2251,8 @@ export const build = (
 
 	// His legs (see legMasses): the kneecap in front of the knee, and over
 	// the thigh his shorts' leg - loose, flaring a little, cut square above
-	// the knee.
+	// the knee (or his trousers, down to his shoes).
+	const trousers = look.outfit?.trousers === true;
 	const leg = (limb: Limb, side: 0 | 1) => {
 		const gl = G_LEG + side;
 		legMasses(
@@ -2270,6 +2275,35 @@ export const build = (
 				);
 			},
 			() => {
+				if (trousers) {
+					// Trousers: straight down from his hip, loose over his knee,
+					// to his shoe.
+					add(
+						lerpV(limb.root, limb.mid, 0.16),
+						limb.mid,
+						[
+							[0, body.thighR * 1.12],
+							[1, body.kneeR * 1.5],
+						],
+						SHORTS,
+						G_SHORTS + side,
+						side,
+						true,
+					);
+					add(
+						limb.mid,
+						lerpV(limb.mid, limb.end, 0.94),
+						[
+							[0, body.kneeR * 1.5],
+							[1, body.ankleR * 1.75],
+						],
+						SHORTS,
+						G_SHORTS + side,
+						side,
+						true,
+					);
+					return;
+				}
 				add(
 					lerpV(limb.root, limb.mid, 0.16),
 					lerpV(limb.root, limb.mid, 0.84),
@@ -2515,6 +2549,7 @@ export type Palette = {
 	tie?: RGB;
 	stripes?: RGB;
 	sides?: RGB;
+	pin?: RGB;
 	lapel?: RGB;
 };
 
@@ -2589,6 +2624,7 @@ export const paletteOf = (look: Look): Palette => {
 		...(outfit?.tie ? { tie: rgb(outfit.tie) } : {}),
 		...(outfit?.stripes ? { stripes: rgb(outfit.stripes) } : {}),
 		...(outfit?.sides ? { sides: rgb(outfit.sides) } : {}),
+		...(outfit?.pin ? { pin: rgb(outfit.pin) } : {}),
 	};
 	palettes.set(look, p);
 	return p;
@@ -3165,6 +3201,13 @@ export const sculpt = (
 ): Sculpted => {
 	const b = build(cam, st, body, look, px, ox, oy);
 	const pal = paletteOf(look);
+	const trousers = look.outfit?.trousers === true;
+	// A pinstriped jacket's stripes: this far apart round him (in pitches),
+	// each so much of the way across - only close enough to tell apart.
+	const pinShare =
+		pal.pin && b.k * PIN.pitch >= PIN.fewest
+			? Math.max(PIN.line / PIN.pitch, 1 / (b.k * PIN.pitch))
+			: 0;
 	// The ball in his hands faces round from him as it came to him (see
 	// facesTo in evaluate.ts): turned so from the way HELD has it, square
 	// on to the camera.
@@ -3313,6 +3356,13 @@ export const sculpt = (
 				}
 			} else {
 				c = pal.jersey;
+				if (pinShare > 0) {
+					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
+					const across = (th * cut.side * 0.8) / PIN.pitch;
+					if (across - Math.floor(across) < pinShare) {
+						c = pal.pin!;
+					}
+				}
 				if (outfit?.stripes && pal.stripes) {
 					const th = Math.atan2(S / (cut.side * 0.8), F / (cut.side * 0.4));
 					if (Math.floor((th * cut.side * 0.8) / 0.17 + 100) % 2 === 0) {
@@ -3463,15 +3513,16 @@ export const sculpt = (
 				os -= ls * along;
 				ou -= lu * along;
 				const ol = len3(of, os, ou) || 1;
-				// (Hanging in folds down his leg, deeper toward the hem.)
+				// (Hanging in folds down his leg, deeper toward the hem - his
+				// trousers' the same all the way down, over his knee too.)
 				ink.tone =
 					CLOTH.shorts *
 					Math.sin(
 						Math.atan2(os, of) * CLOTH.legs[0] +
-							t * CLOTH.legs[1] +
+							(trousers ? 0 : t * CLOTH.legs[1]) +
 							side * CLOTH.legs[2],
 					) *
-					(0.35 + 0.65 * t);
+					(trousers ? 0.45 : 0.35 + 0.65 * t);
 				let c =
 					!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
 						? pal.stripe
@@ -3815,8 +3866,9 @@ export const sculpt = (
 				const l2 = lf * lf + ls * ls + lu * lu || 1;
 				return ((Pf - m.A.f) * lf + (Ps - m.A.s) * ls + (Pu - m.A.u) * lu) / l2;
 			};
-			// (His shorts, painted down his thighs to their hem.)
-			if (MESH_PAINTED && fc.kind === THIGH) {
+			// (His shorts, painted down his thighs to their hem - his trousers
+			// all one cloth to his shoes.)
+			if (MESH_PAINTED && fc.kind === THIGH && !trousers) {
 				const sh = mkShorts[k]!;
 				const r = raw(sh);
 				if (r <= 1) {
@@ -4071,7 +4123,7 @@ export const sculpt = (
 					// (The hem of his shorts cut square, and the top of each shoe
 					// round his ankle: not along the mesh's own edges.)
 					if (shell === "shorts") {
-						return along <= 1;
+						return !trousers && along <= 1;
 					}
 					// (And up to the top of their waistband, over his jersey.)
 					if (shell === "shortsTop") {

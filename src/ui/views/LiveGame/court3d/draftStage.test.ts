@@ -328,13 +328,81 @@ describe("a pick made on draft night", () => {
 			for (const [t, pid] of hugs) {
 				const himThen = scene.moment(t, bodyFor).players[0]!;
 				const them = family(t).find((c) => c.pid === pid)!;
-				assert.strictEqual(himThen.anim, "embrace", name(take));
-				assert.strictEqual(them.anim, "embrace", name(take));
+				// (Bent over his mother; chest to chest with his father or his
+				// brother.)
+				const man = pid !== MOTHER;
+				assert.strictEqual(
+					himThen.anim,
+					man ? "embraceMan" : "embrace",
+					name(take),
+				);
+				assert.strictEqual(
+					them.anim,
+					man ? "embraceManUp" : "embraceUp",
+					name(take),
+				);
 				assert.isBelow(Math.hypot(them.x - himThen.x, them.y - himThen.y), 2);
 			}
 			// All of them their own people, below any pid of the crew's.
 			for (const m of scene.cast!) {
 				assert.isBelow(m.pid, -200);
+			}
+		}
+	});
+
+	test("in each hug his arms go right round them, and his head comes down beside theirs - however tall he is", () => {
+		// (His family as they are drawn: see kinOf.)
+		const theirs: Record<number, ReturnType<typeof bodyOf>> = {
+			[MOTHER]: bodyOf(65, 140),
+			[FATHER]: bodyOf(74, 215),
+			[BROTHER]: bodyOf(75, 190),
+		};
+		for (const hgt of [73, 78, 85]) {
+			const his = bodyOf(hgt, 215);
+			for (const { take, scene } of scenes.filter((_, i) => i % 7 === 0)) {
+				const N = scene.night;
+				const hugs: [number, number][] = [
+					[(N.hug + N.hugEnd) / 2, KIN[take.hugger]!],
+				];
+				if (take.other !== "none") {
+					hugs.push([(N.hug2 + N.hug2End) / 2, KIN[take.other]!]);
+				}
+				for (const [t, pid] of hugs) {
+					const where = `${name(take)} ${hgt}in, ${pid} at ${t}`;
+					const him = scene.moment(t, () => his).players[0]!;
+					const them = scene.castAt!(t).find((c) => c.pid === pid)!;
+					const body = theirs[pid]!;
+					const me = skeleton(his, poseOf(him));
+					const you = skeleton(body, poseOf(them));
+					// (Across from him: how far out in front of him, and over to
+					// his left.)
+					const c = Math.cos(him.yaw);
+					const sn = Math.sin(him.yaw);
+					const mine = (p: { x: number; y: number }) => ({
+						f: (p.x - him.x) * c + (p.y - him.y) * sn,
+						s: (p.x - him.x) * sn - (p.y - him.y) * c,
+					});
+					const center = mine(them);
+					for (const arm of [me.armR, me.armL]) {
+						const wrist = mine(bodyPoint(him, arm.end));
+						const elbow = mine(bodyPoint(him, arm.mid));
+						// His wrists on their back, past the middle of them...
+						assert.isAbove(wrist.f, center.f, where);
+						// ...and his elbows out round their sides, not through them.
+						assert.isAbove(
+							Math.abs(elbow.s - center.s),
+							body.shoulderW * 0.9,
+							where,
+						);
+					}
+					const a = bodyPoint(him, me.head);
+					const b = bodyPoint(them, you.head);
+					assert.isAbove(
+						Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z),
+						(his.headR + body.headR) * 0.8,
+						where,
+					);
+				}
 			}
 		}
 	});
