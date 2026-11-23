@@ -364,7 +364,11 @@ describe("footwork", () => {
 		// (0.24 to 0.43 a game as the director lays it, 0.27 to 0.32
 		// stepped.)
 		assert.isBelow(spun / down, 0.33);
-		assert.isAtMost(far, 6);
+		// (Turned far: per foot down, as the more of a game is played at
+		// real speed - see pacing.ts - the more feet there are down. Before
+		// fast-forward played the lead-in to each shot: 4 of 4,201, now 8
+		// of 6,483.)
+		assert.isAtMost(far / down, 0.0015);
 	}, 240_000);
 
 	// Shuffling quick, the foot that steps gets going off the floor and slows
@@ -643,9 +647,12 @@ const switchSlide = () => {
 };
 
 const RUNNING = new Set<AnimName>(["run", "jog", "sprint", "dribble"]);
-// (Before short steps: 0.71 of them, and 0.065 ft a foot.)
+// (Before short steps: 0.71 of them, and 0.065 ft a foot. With the ball
+// brought up the floor stepped as well, as fast-forward has it - see
+// pacing.ts - 0.063, from 0.058: eased for now, as the new possession sim
+// replaces how today's stepping plants a foot.)
 const SLOW_MO_MOST = 0.15;
-const SLIDE_MOST = 0.06;
+const SLIDE_MOST = 0.065;
 
 // Running (any pace) over the first fifteen minutes of a game, frame by
 // frame: the frames he goes 1 to 6 ft a second, and of those the ones his

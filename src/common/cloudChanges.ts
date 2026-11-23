@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 452,
+		date: "2026-11-23",
+		text: "3D game: more of each possession plays at real speed. The ball brought up the floor still runs by fast, but the picture now slows down about five seconds before each shot, turnover or foul (it was about three), so you see the play that leads to it. To watch every possession whole at real speed, turn off Fast-forward to the action in the live game's settings (the button next to Key plays).",
+	},
+	{
 		n: 451,
 		date: "2026-11-23",
 		text: "Global Settings has a new 3D Game Sim switch, kept on each device, for trying the new 3D game while it is being built. It stays on Current, today's 3D game, unless you change it. New is early: for now it only changes how players get about the floor, each moving the way his own ratings let him.",

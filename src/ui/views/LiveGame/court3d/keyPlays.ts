@@ -2,7 +2,7 @@ import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 import { takeHighlightsAsk } from "../../../util/highlightsAsk.ts";
 import type { Beat, CourtTimeline } from "./director.ts";
 import type { Beats } from "./timeline.ts";
-import { fastAt } from "./evaluate.ts";
+import { fastAtIn } from "./evaluate.ts";
 import { momentsOf } from "../winProb.ts";
 
 // KEY PLAYS. A game watched as its big moments: a reel of them - the dunks,
@@ -249,11 +249,12 @@ const ballOf = (tl: CourtTimeline) => {
 };
 
 // How long a stretch takes to watch at 1x (ms): the dead time in it runs
-// fast (see fastAt).
+// fast (see fastAt). (As shown by default - whole possessions or not, see
+// pacing.ts, the plays picked are the same on every device.)
 const costOf = (tl: CourtTimeline, t0: number, t1: number): number => {
 	let ms = 0;
 	for (let t = t0; t < t1; t += 50) {
-		ms += Math.min(50, t1 - t) / fastAt(tl, t);
+		ms += Math.min(50, t1 - t) / fastAtIn(tl.fast, t);
 	}
 	return ms;
 };

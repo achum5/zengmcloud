@@ -4011,8 +4011,12 @@ const ARM_OUT = 0.25;
 // altogether.)
 const ARM_FAST = 4;
 const ARM_SEEN = 300;
-const armSeen = new WeakMap<Gesture, boolean>();
+const armSeens = [
+	new WeakMap<Gesture, boolean>(),
+	new WeakMap<Gesture, boolean>(),
+];
 const seenOnScreen = (tl: CourtTimeline, g: Gesture): boolean => {
+	const armSeen = armSeens[whole && tl.calm ? 1 : 0]!;
 	let seen = armSeen.get(g);
 	if (seen === undefined) {
 		let screen = 0;
@@ -9358,9 +9362,24 @@ export const recentFx = (
 export const FAST = 18;
 const FAST_IN = 2800;
 const FAST_OUT = 800;
-export const fastAt = (tl: CourtTimeline, t: number): number => {
-	const i = lastFirst(tl.fast, t);
-	const f = i >= 0 ? tl.fast[i] : undefined;
+// Whether this device watches whole possessions (see pacing.ts): only the
+// dead ball run through fast, the ball brought up and the set got going
+// played at real speed. Set by the page; never where a game is staged, so
+// every device stages the same game.
+let whole = false;
+export const showWhole = (on: boolean) => {
+	whole = on;
+};
+// The stretches the picture runs through fast, as this device shows them.
+export const shownFast = (tl: CourtTimeline): [number, number][] =>
+	whole && tl.calm ? tl.calm : tl.fast;
+export const fastAt = (tl: CourtTimeline, t: number): number =>
+	fastAtIn(shownFast(tl), t);
+// The same, in a list of stretches of its own (where a game is staged: the
+// picture as it is shown by default).
+export const fastAtIn = (list: [number, number][], t: number): number => {
+	const i = lastFirst(list, t);
+	const f = i >= 0 ? list[i] : undefined;
 	if (!f || t >= f[1]) {
 		return 1;
 	}

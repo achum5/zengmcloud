@@ -107,6 +107,8 @@ import {
 import {
 	addReport,
 	makeFollow,
+	heardAs,
+	saidAs,
 	stagedAs,
 	type FollowReport,
 	type Shown,
@@ -133,7 +135,8 @@ import { physiqueOf } from "./ratings.ts";
 import { glReport } from "./sculptGl.ts";
 import { getCamera } from "./cameraSetting.ts";
 import { registerCaptureExtra } from "../../../util/syncDebugStore.ts";
-import { offenseAt } from "./evaluate.ts";
+import { offenseAt, showWhole } from "./evaluate.ts";
+import { usePacing } from "./pacing.ts";
 import { shotSpots } from "./shotSpots.ts";
 import type { ShotSpot } from "../gamecast/shots.ts";
 import {
@@ -431,6 +434,10 @@ const Court3D = ({
 		() => (timeline ? stagedAs(timeline) : undefined),
 		[timeline],
 	);
+	// Whole possessions, or on to the action (see pacing.ts): as this device
+	// has it - or, playing along with another court, as that one plays it.
+	const pacing = usePacing();
+	const whole = along ? heardAs(along.fp ?? "").whole : pacing.whole;
 	// Team fouls and the bonus through the game, for the score bug.
 	const fouls = useMemo(
 		() =>
@@ -1086,7 +1093,7 @@ const Court3D = ({
 	// by line instead, said once.
 	const lostSaid = useRef(false);
 	useEffect(() => {
-		if (along?.fp && fp && along.fp !== fp && !lostSaid.current) {
+		if (along?.fp && fp && heardAs(along.fp).fp !== fp && !lostSaid.current) {
 			lostSaid.current = true;
 			onLost?.();
 		}
@@ -1132,7 +1139,8 @@ const Court3D = ({
 		onJump,
 		onLost,
 		keyPlan,
-		fp,
+		fp: saidAs(fp, whole),
+		whole,
 		stopAt,
 		timeline,
 		pregame,
@@ -1170,7 +1178,8 @@ const Court3D = ({
 		onJump,
 		onLost,
 		keyPlan,
-		fp,
+		fp: saidAs(fp, whole),
+		whole,
 		stopAt,
 		timeline,
 		pregame,
@@ -1257,6 +1266,8 @@ const Court3D = ({
 
 		const tick = (now: number, draw: boolean, still: boolean) => {
 			const p = live.current;
+			// (Whole possessions, or on to the action - see pacing.ts.)
+			showWhole(p.whole);
 			// (Nothing till the players' body is here - see mesh.)
 			if (meshWait.current) {
 				return;

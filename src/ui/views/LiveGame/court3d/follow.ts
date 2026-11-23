@@ -95,6 +95,18 @@ export const stagedAs = (tl: CourtTimeline): string => {
 	return (h >>> 0).toString(36);
 };
 
+// WHOLE POSSESSIONS OR ON TO THE ACTION (see pacing.ts) - said along with
+// what the court staged, the same game either way: a court playing along
+// plays it as the other one does. (A build from before this says the
+// staging alone, and differs in it besides: stepped line by line.)
+const WHOLE = "~w";
+export const saidAs = (fp: string | undefined, whole: boolean) =>
+	fp !== undefined && whole ? fp + WHOLE : fp;
+export const heardAs = (said: string): { fp: string; whole: boolean } =>
+	said.endsWith(WHOLE)
+		? { fp: said.slice(0, -WHOLE.length), whole: true }
+		: { fp: said, whole: false };
+
 export type Follow = {
 	// The latest reports, oldest first.
 	reports: FollowReport[];

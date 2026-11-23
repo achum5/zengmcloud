@@ -76,7 +76,7 @@ import {
 	dribbleStart,
 	evalBall,
 	plainly,
-	fastAt,
+	fastAtIn,
 	floorSpotOf,
 	forgetTurns,
 	liveSeg,
@@ -629,6 +629,11 @@ export type CourtTimeline = {
 	// Stretches the picture runs through fast rather than cutting past: the
 	// ball taken out and brought up the floor, the walk to the line.
 	fast: [number, number][];
+	// The same with the ball dead only (the walk to the line, a substitution,
+	// the walk off to a timeout): what a device watching whole possessions
+	// runs through fast instead (see pacing.ts) - the ball brought up and the
+	// set got going played at real speed.
+	calm?: [number, number][];
 	// The men going to the scorer's table to check in, before each comes on.
 	checkIns?: CheckIn[];
 	// Each man subbed out, back at his chair: when he gets there, and the
@@ -2962,6 +2967,9 @@ class Director {
 	// Each with how short it may be and still be run through (ms; see
 	// hurried).
 	readonly fast: [number, number, number?][] = [];
+	// (Those with the ball live - brought up, a set got going, the clock held
+	// for the last shot: see hurryLive.)
+	readonly liveFast: [number, number][] = [];
 	// When each break got going: a break is played at real speed.
 	private readonly breaks: number[] = [];
 	// Each jump ball, from the players taking their places until it is
@@ -3586,6 +3594,15 @@ class Director {
 	private hurry(t0: number, t1: number, dead = false) {
 		if (t1 - t0 >= 900) {
 			this.fast.push(dead ? [t0, t1, DEAD_MIN] : [t0, t1]);
+		}
+	}
+
+	// The same with the ball live (brought up the floor, the clock held for
+	// the last shot): run through fast only where the device watching skips
+	// to the action (see pacing.ts) - played whole, it is the game.
+	private hurryLive(t0: number, t1: number) {
+		if (t1 - t0 >= 900) {
+			this.liveFast.push([t0, t1]);
 		}
 	}
 
@@ -8111,7 +8128,7 @@ class Director {
 			if (!heave && this.inBackcourt(team, handlerPos)) {
 				const up = t;
 				t = this.bringUp(team, t);
-				this.hurry(Math.max(from + 400, up - 200), t - 1000);
+				this.hurryLive(Math.max(from + 400, up - 200), t - 1000);
 			}
 		} else if (
 			into === "flow" ||
@@ -8127,7 +8144,7 @@ class Director {
 					? this.flowToPlay(run, t)
 					: this.bringUp(team, t);
 			// Up the floor, fast - until a beat before the set.
-			this.hurry(Math.max(from + 400, up - 200), t - 1000);
+			this.hurryLive(Math.max(from + 400, up - 200), t - 1000);
 			if (first && run) {
 				t = this.runSteps(first.run, t, 0, first.steps - 1);
 				t = this.flowToPlay(run, t, false);
@@ -21292,7 +21309,7 @@ class Director {
 			// it run through fast but for the last of it.)
 			const out = e.reason === "noShot" ? FINAL_LOOK : FINAL_DRIBBLE;
 			t += Math.max(out, gap * 1000 - (t - from));
-			this.hurry(from, t - out);
+			this.hurryLive(from, t - out);
 			if (e.reason === "runOutClock") {
 				this.concede(team, t - out, t);
 			}
@@ -30994,7 +31011,7 @@ class Director {
 				}
 				let seen = 0;
 				for (let t = a.t0; t < a.t1; t += 20) {
-					seen += 20 / fastAt(tl, t);
+					seen += 20 / fastAtIn(tl.fast, t);
 				}
 				if (seen < FLASH_MS) {
 					a.flash = true;
@@ -31372,6 +31389,10 @@ class Director {
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A
 		// break is played at real speed from the push up the floor on.
+		// (Nothing hurried with the ball live runs into those last seconds:
+		// the walk up the floor a beat before a set that is soon over is
+		// played at real speed with it.)
+		const shown: [number, number][] = [];
 		for (const b of this.beats) {
 			if (!LIVE_PLAY.test(b.type)) {
 				continue;
@@ -31381,8 +31402,25 @@ class Director {
 				(this.breaks.some((t) => t >= b.preStart && t < b.actionStart)
 					? BREAK_LIVE
 					: this.liveLead(b));
+			shown.push([to, b.actionStart]);
 			if (to - b.preStart >= FAST_MIN) {
-				this.fast.push([b.preStart, to]);
+				this.liveFast.push([b.preStart, to]);
+			}
+		}
+		const live = this.liveFast.splice(0);
+		for (const [a0, b0] of live) {
+			let a = a0;
+			for (const [s0, s1] of shown) {
+				if (s1 <= a || s0 >= b0) {
+					continue;
+				}
+				if (s0 > a) {
+					this.liveFast.push([a, s0]);
+				}
+				a = Math.max(a, s1);
+			}
+			if (b0 > a) {
+				this.liveFast.push([a, b0]);
 			}
 		}
 		// A substitution at a dead ball too: the man coming in jogs on, the
@@ -31405,7 +31443,12 @@ class Director {
 		if (this.step) {
 			this.groundNudges();
 		}
-		const fast = hurried(this.fast, this.beats);
+		const fast = hurried([...this.fast, ...this.liveFast], this.beats);
+		// (What is worked out a step at a time and kept apart: all but the dead
+		// ball. The lead-ins run through fast by default are staged as if
+		// played at real speed - a device that watches whole possessions (see
+		// pacing.ts) plays them so, switched over at any point in the game.)
+		const calm = hurried(this.fast, this.beats);
 		// Every man moved the way a man moves, a step at a time, following
 		// all that - then kept off each other, the ball's way kept clear and
 		// the rest, as he goes.
@@ -31419,17 +31462,17 @@ class Director {
 					beats: this.beats,
 					end: this.T,
 				},
-				fast,
+				calm,
 				this.possession ? this.ownMovers() : undefined,
 			);
 		}
-		this.keepApart(fast);
+		this.keepApart(calm);
 		stagingBeat();
-		this.passBy(fast);
+		this.passBy(calm);
 		stagingBeat();
-		this.aroundTheMan(fast);
+		this.aroundTheMan(calm);
 		stagingBeat();
-		this.keepOff(fast);
+		this.keepOff(calm);
 		stagingBeat();
 		this.backOutFacing();
 		stagingBeat();
@@ -31530,6 +31573,7 @@ class Director {
 			tension: this.tension,
 			seats: this.seats,
 			fast,
+			calm,
 			checkIns: this.checkIns,
 			sitDowns: this.sitDowns,
 			huddles: this.huddles,
@@ -31540,7 +31584,7 @@ class Director {
 		// (Worked out on a look at it of its own, and the turns that look
 		// worked out forgotten after: where men face is read afresh off
 		// where they end up.)
-		this.clearTheBall({ ...tl }, fast);
+		this.clearTheBall({ ...tl }, calm);
 		forgetTurns(this.tracks.values());
 		return tl;
 	}
@@ -31602,19 +31646,19 @@ const LANE_CATCH = 1500;
 const SEAL_OUT = 1.2;
 const SEAL_IN_PACE = 12;
 const SEAL_BACK_PACE = 10;
-const LIVE_LEAD = 2600;
-const LIVE_MIN = 2200;
-const LIVE_MAX = 3400;
+const LIVE_LEAD = 5000;
+const LIVE_MIN = 5000;
+const LIVE_MAX = 6000;
 // Off a screen, the soonest he goes up after it is set (ms).
 const SCREEN_USE = 450;
 // A catch: back at real speed for the start of his cut to it, or of the
 // drive that drew the help off him - as far back as this (ms).
-const LIVE_ACTION = 5000;
+const LIVE_ACTION = 6500;
 // A jumper off a screen: back at real speed this long (ms) before the
 // screen is set - when it is set no further back than LIVE_SCREEN - and the
 // screener no farther from him than SCREEN_NEAR feet as it is.
 const SCREEN_SEEN = 400;
-const LIVE_SCREEN = 6000;
+const LIVE_SCREEN = 7500;
 const SCREEN_NEAR = 9;
 const BREAK_LIVE = 5000;
 // The stretches the picture runs through fast, in order, run together where

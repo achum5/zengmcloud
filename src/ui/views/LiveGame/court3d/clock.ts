@@ -1,5 +1,6 @@
 import type { CourtTimeline, RawEvent } from "./director.ts";
 import { clockAt } from "./timeline.ts";
+import { shownFast } from "./evaluate.ts";
 
 // THE CLOCKS ON SCREEN.
 //
@@ -166,7 +167,7 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			// Where the picture holds more than the sim's time, the play itself -
 			// what leads straight into the line - still runs true, and the
 			// clock takes less of the time before it (waiting, if it must).
-			const fast = fastIn(tl.fast, from, at);
+			const fast = fastIn(shownFast(tl), from, at);
 			const cut = jump === undefined ? lastCutIn(tl.cuts, from, at) : undefined;
 			const shown = (at - from) / 1000;
 			// Ahead of the sim's: no less than it was (it never goes back up),

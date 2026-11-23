@@ -7,6 +7,7 @@ import {
 	type KeyPlaySettings,
 } from "./court3d/keyPlays.ts";
 import { CAMERA_ZOOM, getCamera, setCamera } from "./court3d/cameraSetting.ts";
+import { setPacing, usePacing } from "./court3d/pacing.ts";
 
 // WHAT THE KEY PLAYS SHOW, picked beside them: a close finish shown in full
 // (within so many points, so many minutes from the end), and what else
@@ -103,6 +104,9 @@ const KeyPlaysSettings = ({
 	// How far in the court's camera is (see cameraSetting.ts) - the court
 	// reads it as it draws, so it moves as the slider does.
 	const [zoom, setZoom] = useState(() => getCamera().zoom);
+	// Whole possessions, or on to the last seconds before the action (see
+	// pacing.ts) - read by the court as it draws.
+	const { whole } = usePacing();
 	return (
 		<>
 			<button
@@ -152,6 +156,23 @@ const KeyPlaysSettings = ({
 									setCamera({ zoom: z });
 								}}
 							/>
+						</div>
+					)}
+					{football ? null : (
+						<div className="form-check form-switch mb-3">
+							<input
+								id="c3d-skip"
+								type="checkbox"
+								role="switch"
+								className="form-check-input"
+								checked={!whole}
+								onChange={(e) => {
+									setPacing({ whole: !e.target.checked });
+								}}
+							/>
+							<label className="form-check-label" htmlFor="c3d-skip">
+								Fast-forward to the action
+							</label>
 						</div>
 					)}
 					<div className="fw-bold mb-1">Close game</div>
