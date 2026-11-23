@@ -517,14 +517,23 @@
 	max-width: 1100px;
 	// The whole game in one frame: the card, the lines, the recap.
 	> .lh-game {
-		padding: 0.6rem;
+		padding: 0.6rem 0.6rem 0.5rem;
 		background: var(--bs-body-bg);
 		border: 1px solid var(--bs-border-color);
 		border-radius: 0.75rem;
 	}
+	// (An open recap lies over the games below it.)
+	> .lh-game:has(.game-note.open) {
+		position: relative;
+		z-index: 6;
+	}
 	.game-note-header {
 		border: 0;
-		padding: 0.45rem 0.15rem 0;
+		padding: 0.4rem 0.15rem 0;
+		// (Markdown's paragraph margin would leave a blank strip under it.)
+		.markdown > :last-child {
+			margin-bottom: 0 !important;
+		}
 	}
 }
 .lh-gc {
@@ -535,6 +544,10 @@
 	grid-template-columns: minmax(0, 1fr);
 	gap: 1rem;
 	align-items: center;
+}
+// The card with its recap line under it.
+.lh-gc-main {
+	min-width: 0;
 }
 .lh-gc-card {
 	container-type: inline-size;

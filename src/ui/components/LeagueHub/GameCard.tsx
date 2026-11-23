@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import getWinner from "../../../common/getWinner.ts";
 import { processPlayerStats } from "../../../common/processPlayerStats.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
@@ -11,8 +11,8 @@ import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
 
 // A NIGHT'S GAME IN THE HUB, as NBA.com's scoreboard shows one: a card with
 // each team's colors at its end, its city, name and score, "Final" and the
-// series between them, linked to the box score; beside it, each team's best
-// line of the night.
+// series between them, linked to the box score, with the game's recap line
+// under it; beside both, each team's best line of the night.
 
 type Branding = { region: string; name: string; abbrev: string };
 
@@ -234,7 +234,14 @@ const TeamWords = ({
 	);
 };
 
-export const GameCard = ({ game }: { game: GameCardGame }) => {
+export const GameCard = ({
+	game,
+	children,
+}: {
+	game: GameCardGame;
+	// The recap line, under the card.
+	children?: ReactNode;
+}) => {
 	const { season: currentSeason } = useLocal(["season"]);
 	const season = game.season ?? currentSeason;
 	const colors = useAllTeamColors();
@@ -264,38 +271,41 @@ export const GameCard = ({ game }: { game: GameCardGame }) => {
 	return (
 		<div className="lh-gc">
 			<div className="lh-gc-row">
-				<a
-					className="lh-gc-card"
-					style={halves}
-					href={boxScore}
-					title="Box score"
-					aria-label={`${awayBrand.region} ${awayBrand.name} ${away.pts}, ${homeBrand.region} ${homeBrand.name} ${home.pts}, box score`}
-				>
-					<Side
-						t={away}
-						side="away"
-						colors={colors?.[away.tid]}
-						logo={awayBrand.logo}
-					/>
-					<TeamWords t={away} side="away" lost={winner === 0} />
-					<div className="lh-gc-mid">
-						<div className="lh-gc-final">Final{ot ? `/${ot}` : ""}</div>
-						{series ? (
-							<div className="lh-gc-series">
-								{series[0]}
-								<br />
-								{series[1]}
-							</div>
-						) : null}
-					</div>
-					<TeamWords t={home} side="home" lost={winner === 1} />
-					<Side
-						t={home}
-						side="home"
-						colors={colors?.[home.tid]}
-						logo={homeBrand.logo}
-					/>
-				</a>
+				<div className="lh-gc-main">
+					<a
+						className="lh-gc-card"
+						style={halves}
+						href={boxScore}
+						title="Box score"
+						aria-label={`${awayBrand.region} ${awayBrand.name} ${away.pts}, ${homeBrand.region} ${homeBrand.name} ${home.pts}, box score`}
+					>
+						<Side
+							t={away}
+							side="away"
+							colors={colors?.[away.tid]}
+							logo={awayBrand.logo}
+						/>
+						<TeamWords t={away} side="away" lost={winner === 0} />
+						<div className="lh-gc-mid">
+							<div className="lh-gc-final">Final{ot ? `/${ot}` : ""}</div>
+							{series ? (
+								<div className="lh-gc-series">
+									{series[0]}
+									<br />
+									{series[1]}
+								</div>
+							) : null}
+						</div>
+						<TeamWords t={home} side="home" lost={winner === 1} />
+						<Side
+							t={home}
+							side="home"
+							colors={colors?.[home.tid]}
+							logo={homeBrand.logo}
+						/>
+					</a>
+					{children}
+				</div>
 				<div className="lh-gc-leaders">
 					<Leader t={away} season={season} />
 					<Leader t={home} season={season} />

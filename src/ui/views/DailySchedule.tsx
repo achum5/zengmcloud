@@ -468,6 +468,16 @@ const DailySchedule = ({
 										hubOn &&
 										!liveHere &&
 										!isAllStarGame(game.teams[0].tid, game.teams[1].tid);
+									const note = game.note ? (
+										<GameNote
+											gid={game.gid}
+											note={game.note}
+											links={buildRecapLinksForGame(
+												game,
+												(tid) => teamInfoCache[tid],
+											)}
+										/>
+									) : null;
 									return (
 										<div
 											className={hubOn ? "lh-game" : "flex-grow-1"}
@@ -480,7 +490,7 @@ const DailySchedule = ({
 												}
 											>
 												{card ? (
-													<GameCard game={game} />
+													<GameCard game={game}>{note}</GameCard>
 												) : (
 													<ScoreBox
 														className={hubOn ? "lh-box" : undefined}
@@ -501,16 +511,7 @@ const DailySchedule = ({
 														</button>
 													</div>
 												) : null}
-												{game.note ? (
-													<GameNote
-														gid={game.gid}
-														note={game.note}
-														links={buildRecapLinksForGame(
-															game,
-															(tid) => teamInfoCache[tid],
-														)}
-													/>
-												) : null}
+												{card ? null : note}
 											</div>
 										</div>
 									);
