@@ -7,6 +7,7 @@ import {
 	strengthOf,
 } from "./nationalBroadcasts.ts";
 import { recordText } from "./scoreBug.ts";
+import { GENERIC_NATIONAL } from "./genericNational.ts";
 import type { NationalBroadcast, ScoreBugStyle } from "./types.ts";
 
 const bug = (text: string): ScoreBugStyle => ({
@@ -44,6 +45,10 @@ describe("parseNationalBroadcasts", () => {
 		];
 		assert.deepStrictEqual(parseNationalBroadcasts(list), list);
 		assert.deepStrictEqual(parseNationalBroadcasts([]), []);
+		// (Ours, as a file could have it.)
+		assert.deepStrictEqual(parseNationalBroadcasts([GENERIC_NATIONAL]), [
+			GENERIC_NATIONAL,
+		]);
 	});
 
 	test("says what's wrong", () => {
