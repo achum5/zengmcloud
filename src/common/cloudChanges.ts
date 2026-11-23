@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 490,
+		date: "2026-11-23",
+		text: 'Live games: the top of the page now shows the matchup instead of "Live Game Simulation": both teams with their records coming into the game (their seeds in the playoffs), the spread, the over/under from the sportsbook, and the season series or the playoff series. A game on national TV shows the network\'s logo. The Replay label is gone.',
+	},
+	{
 		n: 489,
 		date: "2026-11-23",
 		text: "Press conferences: when a team trades for or signs a player with 50+ potential, it now holds a 3D press conference for him. He stands in front of the team's backdrop in his own clothes holding up his new jersey (name and number on the back), with the GM and coach (sometimes the owner) beside him and photographers flashing, then they talk at a table or a podium. Each one is different and plays the same every time. Watch it with the play button on the trade page, in the news feed, and in player and team transactions.",
