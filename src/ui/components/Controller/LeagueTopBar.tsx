@@ -1,4 +1,11 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+	memo,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+} from "react";
 import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
@@ -7,6 +14,7 @@ import { addDays } from "../../../common/calendarDates.ts";
 import type { LocalStateUI } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { TopBarDay } from "./TopBarDay.tsx";
+import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
 
 // The strip of recent scores under the navbar. Shown or hidden from Global
 // Settings (Scores Bar) rather than by a chevron pinned to its own right edge -
@@ -146,6 +154,7 @@ export const LeagueTopBar = memo(() => {
 		mpLiveGames,
 		phase,
 		showLeagueTopBar,
+		userTid,
 	} = useLocal([
 		"calendarDate",
 		"games",
@@ -154,7 +163,15 @@ export const LeagueTopBar = memo(() => {
 		"mpLiveGames",
 		"phase",
 		"showLeagueTopBar",
+		"userTid",
 	]);
+
+	// On the calendar, home days in the team's color.
+	const allColors = useAllTeamColors(calendarDate !== undefined);
+	const home = bannerColors(allColors?.[userTid]);
+	const homeColors = allColors
+		? ({ "--tbd-home-bg": home.bg, "--tbd-home-fg": home.fg } as CSSProperties)
+		: undefined;
 
 	// (A league mate's game being played live: its score as it stands.)
 	const livePtsOf = (game: BarGame) =>
@@ -328,7 +345,10 @@ export const LeagueTopBar = memo(() => {
 	);
 
 	return (
-		<div className="league-top-bar-wrap position-relative flex-shrink-0 mt-2">
+		<div
+			className="league-top-bar-wrap position-relative flex-shrink-0 mt-2"
+			style={homeColors}
+		>
 			<div
 				className="league-top-bar d-flex overflow-auto small-scrollbar flex-row-reverse"
 				ref={setWrapperElement}

@@ -14,7 +14,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 483,
 		date: "2026-11-23",
-		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, a game still to come is centered in its box.",
+		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, home games are filled in your team's color instead of black, and a game still to come is centered in its box.",
 	},
 	{
 		n: 482,
