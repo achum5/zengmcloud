@@ -11,6 +11,7 @@ import {
 	orderTeams,
 } from "../util/orderTeams.ts";
 import { validateSeasonOnly } from "../util/processInputs.ts";
+import { getLiveGate, unplaySeries } from "../util/liveGameGate.ts";
 
 type TeamToEdit = {
 	tid: number;
@@ -56,7 +57,8 @@ export default defineView({
 			updateEvents.has("firstRun") ||
 			updateEvents.has("playoffs") ||
 			inputs.season !== prevInputs?.season ||
-			(inputs.season === g.get("season") && updateEvents.has("gameSim"))
+			(inputs.season === g.get("season") && updateEvents.has("gameSim")) ||
+			(inputs.season === g.get("season") && updateEvents.has("liveGames"))
 		) {
 			let finalMatchups = false;
 			let series: PlayoffSeries["series"];
@@ -66,6 +68,14 @@ export default defineView({
 
 			if (playoffSeries) {
 				series = playoffSeries.series;
+				// (A game still being played live hasn't happened yet here -
+				// see liveGameGate.ts.)
+				if (inputs.season === g.get("season")) {
+					const gate = await getLiveGate();
+					if (gate.games.size > 0) {
+						series = unplaySeries(series, gate.games.values());
+					}
+				}
 				playIns = playoffSeries.playIns;
 				finalMatchups = true;
 			} else {

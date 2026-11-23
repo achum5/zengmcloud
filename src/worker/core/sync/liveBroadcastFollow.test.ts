@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	chooseFocusGame,
 	createFollowerHold,
 	createWakeClock,
 	decideFollowAction,
@@ -7,6 +8,7 @@ import {
 	MAX_JOIN_ATTEMPTS,
 	mateLiveCall,
 	QUIET_WATCH_MS,
+	roomGameStillLive,
 	shouldServeFollowedPayload,
 	type FollowerHoldPatch,
 } from "./liveBroadcastFollow.ts";
@@ -429,6 +431,86 @@ describe("mateLiveCall", () => {
 		assert.strictEqual(
 			mateLiveCall("liveGame", 7, { ...on, expiresAt: now - 30_000 }, now),
 			"join",
+		);
+	});
+});
+
+describe("several live games at once", () => {
+	const now = 100_000;
+	const game = (startedAt: number, extra: object = {}) => ({
+		startedAt,
+		gameOver: false,
+		expiresAt: now + 10_000,
+		...extra,
+	});
+
+	test("the newest game not yet asked about is the one to ask about", () => {
+		const games = [game(1), game(3), game(2)];
+		assert.strictEqual(
+			chooseFocusGame(games, undefined, new Set(), now)?.startedAt,
+			3,
+		);
+		assert.strictEqual(
+			chooseFocusGame(games, undefined, new Set([3]), now)?.startedAt,
+			2,
+		);
+	});
+
+	test("one being watched, or asked about, stays the one", () => {
+		const games = [game(1), game(5)];
+		assert.strictEqual(
+			chooseFocusGame(games, { startedAt: 1 }, new Set([1]), now)?.startedAt,
+			1,
+		);
+		assert.strictEqual(
+			chooseFocusGame(games, { startedAt: 1, offered: true }, new Set([1]), now)
+				?.startedAt,
+			1,
+		);
+	});
+
+	test("walking out of one moves on to a new one, else stays with it", () => {
+		const left = { startedAt: 1, left: true };
+		assert.strictEqual(
+			chooseFocusGame([game(1), game(5)], left, new Set([1]), now)?.startedAt,
+			5,
+		);
+		assert.strictEqual(
+			chooseFocusGame([game(1)], left, new Set([1]), now)?.startedAt,
+			1,
+		);
+	});
+
+	test("over or gone quiet: not asked about", () => {
+		assert.isUndefined(
+			chooseFocusGame(
+				[game(1, { gameOver: true }), game(2, { expiresAt: now - 1 })],
+				undefined,
+				new Set(),
+				now,
+			),
+		);
+	});
+
+	test("a game is live for the room till its final, or a long silence", () => {
+		assert.isTrue(roomGameStillLive({ gameOver: false, expiresAt: now }, now));
+		assert.isFalse(roomGameStillLive({ gameOver: true, expiresAt: now }, now));
+		assert.isTrue(
+			roomGameStillLive(
+				{ gameOver: false, expiresAt: now },
+				now + QUIET_WATCH_MS - 1,
+			),
+		);
+		assert.isFalse(
+			roomGameStillLive({ gameOver: false, expiresAt: now }, now + QUIET_WATCH_MS),
+		);
+		// (Time this device spent asleep doesn't count as the game's silence.)
+		assert.isTrue(
+			roomGameStillLive(
+				{ gameOver: false, expiresAt: now },
+				now + QUIET_WATCH_MS,
+				now + 10,
+			),
 		);
 	});
 });

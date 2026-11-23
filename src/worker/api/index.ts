@@ -259,7 +259,10 @@ import {
 } from "../core/trade/lookingForPlayer.ts";
 import { getPlayer } from "../views/player.ts";
 import { nationalBroadcastOf } from "../views/nationalBroadcast.ts";
-import { parseNationalBroadcasts } from "../../common/nationalBroadcasts.ts";
+import {
+	nationalPictureIds,
+	parseNationalBroadcasts,
+} from "../../common/nationalBroadcasts.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
 	placeBetSlip as sportsbookPlaceBetSlipCore,
@@ -7166,8 +7169,8 @@ const updateNationalBroadcasts = async ({
 	if (typeof parsed === "string") {
 		throw new Error(parsed);
 	}
-	const before = (g.get("nationalBroadcasts") ?? []).flatMap((n) =>
-		scoreBugPictureIds(n.scoreBug),
+	const before = (g.get("nationalBroadcasts") ?? []).flatMap(
+		nationalPictureIds,
 	);
 	await league.setGameAttributes({ nationalBroadcasts: parsed });
 	await prunePictures([...before, ...(uploaded ?? [])]);

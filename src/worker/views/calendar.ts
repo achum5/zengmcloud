@@ -3,11 +3,11 @@ import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { season as seasonCore } from "../core/index.ts";
 import { idb } from "../db/index.ts";
-import { g, helpers } from "../util/index.ts";
+import { g } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import { validateSeason, validateTeam } from "../util/processInputs.ts";
-import { betterSeedHome } from "../../common/sportsbookOdds.ts";
-import { ifNecessary } from "../core/season/playoffCalendar.ts";
+import { getLiveGate } from "../util/liveGameGate.ts";
+import { getPlannedPlayoffGames } from "../util/plannedPlayoffGames.ts";
 
 // THE CALENDAR PAGE: a season's nights, month by month, for a team or the
 // whole league. The same month calendar sits on Daily Schedule, Schedule and
@@ -77,6 +77,10 @@ export const getCalendarData = async (
 		),
 	);
 
+	// A game still being played live hasn't happened yet, and nothing it gave
+	// rise to has (see liveGameGate.ts).
+	const gate = season === g.get("season") ? await getLiveGate() : undefined;
+
 	const played = await idb.merged.games.getAll({ season });
 	for (const game of played) {
 		if (game.date === undefined) {
@@ -104,19 +108,33 @@ export const getCalendarData = async (
 			awayTid: away.tid,
 			playoffs: !!game.playoffs,
 			...(playInGids.has(game.gid) ? { playIn: true } : {}),
-			homePts: home.pts,
-			awayPts: away.pts,
-			overtimes: game.overtimes,
+			...(gate?.hidden.has(game.gid)
+				? {}
+				: {
+						homePts: home.pts,
+						awayPts: away.pts,
+						overtimes: game.overtimes,
+					}),
 		});
 	}
 
 	let today: string | undefined;
 	if (season === g.get("season")) {
 		today = await seasonCore.getCalendarDate();
+		if (gate?.dayCutoff !== undefined) {
+			for (const game of gate.games.values()) {
+				if (game.day === gate.dayCutoff && game.date !== undefined) {
+					today = game.date;
+				}
+			}
+		}
 		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 		for (const game of await seasonCore.getSchedule()) {
 			if (game.date === undefined) {
 				undated = true;
+				continue;
+			}
+			if (gate?.dayCutoff !== undefined && game.day > gate.dayCutoff) {
 				continue;
 			}
 			if (isTradeDeadline(game.homeTid, game.awayTid)) {
@@ -148,73 +166,29 @@ export const getCalendarData = async (
 
 		// The rest of the round's games, on the nights they're planned for
 		// (see playoffCalendar.ts).
-		if (playoffs && playoffSeries) {
-			const scheduled = new Set(
+		if (playoffs) {
+			const listed = new Set(
 				games
 					.filter((game) => game.playoffs)
 					.map((game) => `${game.date}:${game.homeTid}:${game.awayTid}`),
 			);
 			let gid = -1;
-			const plan = (
-				homeTid: number,
-				awayTid: number,
-				date: string,
-				extra: Partial<CalendarGame>,
-			) => {
+			for (const game of await getPlannedPlayoffGames()) {
 				if (
-					!forTeam(homeTid, awayTid) ||
-					scheduled.has(`${date}:${homeTid}:${awayTid}`)
+					forTeam(game.homeTid, game.awayTid) &&
+					!listed.has(`${game.date}:${game.homeTid}:${game.awayTid}`)
 				) {
-					return;
-				}
-				games.push({
-					gid: gid--,
-					date,
-					day: undefined,
-					homeTid,
-					awayTid,
-					playoffs: true,
-					planned: true,
-					...extra,
-				});
-			};
-
-			const rnd = playoffSeries.currentRound;
-			if (rnd === -1) {
-				for (const playIn of playoffSeries.playIns ?? []) {
-					for (const matchup of playIn) {
-						const date = matchup.dates?.[0];
-						if (
-							date !== undefined &&
-							matchup.home.won + matchup.away.won === 0
-						) {
-							plan(matchup.home.tid, matchup.away.tid, date, { playIn: true });
-						}
-					}
-				}
-			} else {
-				const numGames = g.get("numGamesPlayoffSeries", season)[rnd];
-				const numGamesToWin = helpers.numGamesToWinRound(rnd);
-				for (const { home, away, dates } of playoffSeries.series[rnd] ?? []) {
-					if (
-						!away ||
-						!dates ||
-						numGames === undefined ||
-						Math.max(home.won, away.won) >= numGamesToWin
-					) {
-						continue;
-					}
-					for (let k = home.won + away.won; k < dates.length; k++) {
-						const homeFirst = betterSeedHome(numGames, k);
-						plan(
-							homeFirst ? home.tid : away.tid,
-							homeFirst ? away.tid : home.tid,
-							dates[k]!,
-							ifNecessary(k, home.won, away.won, numGamesToWin)
-								? { ifNecessary: true }
-								: {},
-						);
-					}
+					games.push({
+						gid: gid--,
+						date: game.date,
+						day: undefined,
+						homeTid: game.homeTid,
+						awayTid: game.awayTid,
+						playoffs: true,
+						planned: true,
+						...(game.playIn ? { playIn: true } : {}),
+						...(game.ifNecessary ? { ifNecessary: true } : {}),
+					});
 				}
 			}
 		}
@@ -243,6 +217,7 @@ export default defineView({
 			!updateEvents.has("gameAttributes") &&
 			!updateEvents.has("newPhase") &&
 			!(inputs.season === g.get("season") && updateEvents.has("gameSim")) &&
+			!(inputs.season === g.get("season") && updateEvents.has("liveGames")) &&
 			inputs.season === prevInputs?.season &&
 			inputs.tid === prevInputs.tid
 		) {

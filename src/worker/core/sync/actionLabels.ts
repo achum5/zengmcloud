@@ -108,6 +108,13 @@ export const isSimAuthorityLockedCall = (type: string, name: string): boolean =>
 	(type === "toolsMenu" && TOOLS_MENU_SIM_AUTHORITY_LOCKED.has(name)) ||
 	(type === "main" && MAIN_SIM_AUTHORITY_LOCKED.has(name));
 
+// Calls that move the playoffs on by a day or more, as opposed to playing one
+// game: what waits while a playoff game is being played live (worker/index.ts).
+export const isPlayoffDayAdvanceCall = (type: string, name: string): boolean =>
+	(type === "playMenu" && !PLAY_MENU_SIM_AUTHORITY_EXEMPT.has(name)) ||
+	(type === "actions" && name === "simToGame") ||
+	(type === "toolsMenu" && TOOLS_MENU_SIM_AUTHORITY_LOCKED.has(name));
+
 // A SINGLE game within a day, as opposed to a whole day. The two "actions"
 // labels are the dispatched calls; "playMenu.simGame" is what play.ts
 // publishes the result under when the sim finishes (a day sim publishes as

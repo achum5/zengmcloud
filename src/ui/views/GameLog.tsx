@@ -13,6 +13,7 @@ import { BoxScoreRow } from "../components/BoxScoreRow.tsx";
 import { useLocal } from "../util/local.ts";
 import { GameRecap } from "./LiveGame/gamecast/GameRecap.tsx";
 import { useHideTitleBar } from "../components/TeamBanner.tsx";
+import { LiveGameStatus, watchLiveGame } from "../components/LiveGames.tsx";
 
 const StatsRow = ({
 	p,
@@ -278,6 +279,19 @@ const GameLog = ({
 									tid={tid}
 									Row={StatsRow}
 								/>
+							) : "liveGid" in boxScore && boxScore.liveGid !== undefined ? (
+								<div className="d-flex align-items-center gap-3 mb-3">
+									<LiveGameStatus gid={boxScore.liveGid} />
+									<button
+										type="button"
+										className="btn btn-danger btn-sm"
+										onClick={() => {
+											watchLiveGame(boxScore.liveGid!);
+										}}
+									>
+										Watch live
+									</button>
+								</div>
 							) : (
 								<p>Select a game from the menu to view a box score.</p>
 							)}

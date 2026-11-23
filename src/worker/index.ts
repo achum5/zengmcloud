@@ -10,6 +10,7 @@ import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
 import {
 	ALLSTAR_SIM_AUTHORITY_LOCKED,
+	isPlayoffDayAdvanceCall,
 	isSimAuthorityLockedCall,
 } from "./core/sync/actionLabels.ts";
 import {
@@ -27,6 +28,7 @@ import {
 	beginOwnLiveSimRequest,
 	getSimSafety,
 	getSyncRequired,
+	liveGameHoldingDay,
 	mateLiveCallFor,
 	restoreSyncRequiredFromMeta,
 	startLiveBroadcast,
@@ -343,7 +345,9 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			if (mateLive) {
 				syncDebugLog("api:guard-refused", { type, name, step: "mate-live" });
 				if (mateLive.action === "join") {
-					await watchLiveBroadcast();
+					await watchLiveBroadcast(
+						typeof param === "number" ? param : undefined,
+					);
 				} else {
 					util.logEvent(
 						{
@@ -404,6 +408,26 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					conditions,
 				);
 				return undefined;
+			}
+
+			// The playoffs wait for every game being played live: the next day's
+			// games, a series ending, the title - all worked out at a day's last
+			// tip-off - are not to be seen till its final (util/liveGameGate.ts).
+			// A single game (own, CPU, live) is not a day, so still goes.
+			if (simAuthorityLocked && isPlayoffDayAdvanceCall(type, name)) {
+				const holding = liveGameHoldingDay();
+				if (holding !== undefined) {
+					syncDebugLog("api:guard-refused", { type, name, step: "live-game" });
+					util.logEvent(
+						{
+							type: "error",
+							text: `${holding} is still being played. The playoffs wait for its final.`,
+							persistent: true,
+						},
+						conditions,
+					);
+					return undefined;
+				}
 			}
 
 			// A step a league mate's device claimed and is running (a pick, a

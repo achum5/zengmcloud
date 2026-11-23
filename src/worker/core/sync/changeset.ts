@@ -20,7 +20,11 @@ import { checkApplyGuard } from "./applyGuard.ts";
 import { upgradeLegacyChanges } from "./normalizeRecords.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { getSyncEngine } from "./engineHolder.ts";
-import { isWatchingLiveBroadcast, noticeLiveResult } from "./liveWatchGate.ts";
+import {
+	holdsPhasePaint,
+	isWatchingLiveBroadcast,
+	noticeLiveResult,
+} from "./liveWatchGate.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
@@ -753,7 +757,12 @@ export const endCoalescedRefresh = () => {
 // flush+fill is far too expensive to spend on a no-op.
 const flushDeferredRefresh = () => {
 	const pending = deferredRefresh;
-	if (!pending || isInLivePlayback() || coalescingRefresh) {
+	if (
+		!pending ||
+		isInLivePlayback() ||
+		coalescingRefresh ||
+		(pending.touchedPhase && holdsPhasePaint())
+	) {
 		return;
 	}
 	deferredRefresh = undefined;
@@ -869,9 +878,14 @@ export const refreshAfterApply = async ({
 	// its phase change; a 150-version walk) down to a single flush - and the
 	// phase redirect is then computed from the phase actually landed on, rather
 	// than dragging the user through every intermediate one.
-	if (isInLivePlayback() || coalescingRefresh) {
+	// (And a phase change at the tip-off of a playoff game still being played
+	// live in the room, watched here or not: "2027 Draft Lottery" in the header
+	// is the title's final score.)
+	const phaseHeld =
+		(touchedPhase || !!deferredRefresh?.touchedPhase) && holdsPhasePaint();
+	if (isInLivePlayback() || coalescingRefresh || phaseHeld) {
 		syncDebugLog("apply:refresh-deferred", {
-			why: isInLivePlayback() ? "live" : "catchup",
+			why: isInLivePlayback() ? "live" : phaseHeld ? "live-room" : "catchup",
 			touchedPhase,
 			touchedGames,
 		});
