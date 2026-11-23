@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 483,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, a game still to come is centered in its box.",
+	},
+	{
 		n: 482,
 		date: "2026-11-23",
 		text: "Score bugs: a league with no national networks from a team looks file now gets our own National TV, with its logo on the national games' previews and its own score bug in the 3D game. Team score bugs in the 3D game now show all seven timeouts the way TV does. Loading a team looks file on one team's score bug or court page now tells you to import it in Manage Teams instead.",
