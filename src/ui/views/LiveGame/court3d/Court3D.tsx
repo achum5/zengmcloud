@@ -932,6 +932,7 @@ const Court3D = ({
 			}
 			if (alive) {
 				setCrewVersion((v) => v + 1);
+				authored?.onCast?.();
 			}
 		})();
 		return () => {

@@ -140,6 +140,10 @@ export type Pose = {
 	claspOut: number;
 	claspUp: number;
 	claspApart: number;
+	// The hands together gripping something held up in front of him (0 to
+	// 1): the fingers over and down the front of it, not up - his new
+	// jersey by its shoulders (see pressStage.ts).
+	claspGrip: number;
 	// His face: grinning (0 to 1), and shouting (0 to 1 - see yellOf in
 	// figure.ts).
 	grin: number;
@@ -212,6 +216,7 @@ const BASE: Pose = {
 	claspOut: 0.8,
 	claspUp: 0,
 	claspApart: 0,
+	claspGrip: 0,
 	grin: 0,
 	yell: 0,
 };
@@ -3151,6 +3156,33 @@ const SAT = pose({
 });
 const sat = (o: Partial<Pose>): Pose => ({ ...SAT, ...o });
 const stood = (o: Partial<Pose>): Pose => ({ ...P.easy, ...o });
+// His hands on the edges of a podium in front of him (see pressStage.ts).
+const ON_PODIUM: Partial<Pose> = {
+	claspOut: 0.62,
+	claspUp: -1.05,
+	claspApart: 1.3,
+	claspGrip: 0.6,
+};
+// His new jersey held out in front of him by its shoulders, at his
+// shoulders (see the press conference - its back to the cameras: see
+// pressVenue.ts), and hanging from his hands at his waist.
+// (His hands about a foot apart: at the jersey's shoulders.)
+const JERSEY_HELD = stood({
+	clasp: 1,
+	claspGrip: 1,
+	claspOut: 0.95,
+	claspUp: -0.25,
+	claspApart: 0.86,
+	grin: 1,
+});
+const JERSEY_LOW = stood({
+	clasp: 1,
+	claspGrip: 1,
+	claspOut: 0.55,
+	claspUp: -1.55,
+	claspApart: 0.84,
+	grin: 1,
+});
 // The same, grinning all the way through.
 const grinning = (keys: [number, Pose][]): [number, Pose][] =>
 	keys.map(([u, q]) => [u, { ...q, grin: Math.max(q.grin, 1) }]);
@@ -12577,6 +12609,151 @@ export const ANIMS = {
 			[1, stood({ grin: 1 })],
 		],
 	},
+	// ---- the press conference (see pressStage.ts) ----
+	// His new jersey: brought up from hanging at his waist to held out in
+	// front of him by its shoulders, its back to the cameras...
+	jerseyUp: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, JERSEY_LOW],
+			[0.55, { ...JERSEY_HELD, claspUp: JERSEY_HELD.claspUp + 0.12 }],
+			[1, JERSEY_HELD],
+		],
+	},
+	// ...held there for the photographers, smiling, his weight shifting...
+	holdJersey: {
+		kind: "loop",
+		n: 4,
+		fps: 0.45,
+		pose: (i) => ({
+			...JERSEY_HELD,
+			twist: [0, 3, 0, -3][i]!,
+			lean: [1, 1.5, 1, 0.5][i]!,
+			claspUp: JERSEY_HELD.claspUp + [0, 0.03, 0, -0.03][i]!,
+		}),
+	},
+	// ...or higher, proud of it...
+	holdJerseyHigh: {
+		kind: "loop",
+		n: 4,
+		fps: 0.45,
+		pose: (i) => ({
+			...JERSEY_HELD,
+			claspUp: 0.3 + [0, 0.04, 0, -0.04][i]!,
+			claspOut: 1.05,
+			lean: [-1, -0.5, -1, -1.5][i]!,
+			twist: [0, 2, 0, -2][i]!,
+		}),
+	},
+	// Before it: hanging from his hands in front of his waist.
+	jerseyLow: {
+		kind: "loop",
+		n: 4,
+		fps: 0.4,
+		pose: (i) => ({
+			...JERSEY_LOW,
+			grin: 0.7,
+			twist: [0, 2, 0, -2][i]!,
+			lean: [0, 0.5, 0, -0.5][i]!,
+		}),
+	},
+	// ...and lowered to his waist again, hanging from his hands.
+	jerseyDown: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, JERSEY_HELD],
+			[1, JERSEY_LOW],
+		],
+	},
+	// Stood beside him for the pictures: a ball in his hand, held out in front
+	// of his hip.
+	execBall: {
+		kind: "loop",
+		n: 4,
+		fps: 0.5,
+		pose: (i) => ({
+			...EASY_SWAY[i]!,
+			shN: 14,
+			elN: 78,
+			abN: 6,
+			wrN: -6,
+			grin: 1,
+		}),
+	},
+	// Stood smiling beside him, his hands folded in front of him.
+	execFolded: {
+		kind: "loop",
+		n: 4,
+		fps: 0.5,
+		pose: (i) => ({
+			...EASY_SWAY[i]!,
+			clasp: 1,
+			claspOut: 0.42,
+			claspUp: -1.6,
+			claspApart: 0.05,
+			grin: 1,
+		}),
+	},
+	// Stood at the podium: his hands on its edges, leaning on it a little,
+	// one coming off it now and then to make his point, nodding along.
+	podiumTalk: {
+		kind: "loop",
+		n: 6,
+		fps: 1.1,
+		pose: (i) =>
+			stood({
+				...ON_PODIUM,
+				clasp: [1, 1, 0, 1, 0.15, 1][i]!,
+				shN: [18, 18, 46, 18, 38, 18][i]!,
+				elN: [38, 38, 76, 38, 84, 38][i]!,
+				abN: [6, 6, 12, 6, 10, 6][i]!,
+				wrN: [0, 0, 12, 0, 8, 0][i]!,
+				shF: [26, 26, 30, 26, 40, 26][i]!,
+				elF: [40, 40, 46, 40, 72, 40][i]!,
+				lean: [5, 6, 4, 6, 3, 5][i]!,
+				nod: [2, -2, 3, 0, -3, 1][i]!,
+				grin: [0.4, 0.6, 0.3, 0.7, 0.5, 0.5][i]!,
+			}),
+	},
+	// At the table: answering a question into the microphone, his hands on
+	// the table and talking with them...
+	sitTalk: {
+		kind: "loop",
+		n: 6,
+		fps: 1.4,
+		pose: (i) =>
+			sat({
+				lean: [14, 16, 15, 13, 16, 14][i]!,
+				nod: [2, -2, 3, 0, -3, 1][i]!,
+				shN: [38, 50, 42, 56, 40, 46][i]!,
+				elN: [62, 78, 58, 86, 66, 72][i]!,
+				abN: [8, 14, 10, 18, 8, 12][i]!,
+				shF: 36,
+				elF: 60,
+				abF: 10,
+				wrN: [0, 16, 6, 20, 0, 10][i]!,
+				grin: [0.4, 0.7, 0.3, 0.8, 0.5, 0.6][i]!,
+			}),
+	},
+	// ...or listening to the man beside him, his hands folded on it, a nod
+	// now and then.
+	sitListen: {
+		kind: "loop",
+		n: 4,
+		fps: 0.6,
+		pose: (i) =>
+			sat({
+				lean: 12,
+				nod: [0, 7, 1, 4][i]!,
+				clasp: 1,
+				claspOut: 0.95,
+				claspUp: -0.68,
+				claspApart: 0.04,
+				grin: 0.6,
+			}),
+	},
 	// Face to face down the handshake line, waiting on the man before to
 	// finish with him - not stood stock still.
 	waitFive: {
@@ -14644,13 +14821,19 @@ const gestured = (
 		// (Up at his chin, pressed together, the fingers up; down at his
 		// middle, at the buttons of his jacket, across.)
 		const low = Math.min(1, Math.max(0, (-q.claspUp - 0.4) / 0.5));
+		// (Gripping something by its top: the fingers over it and down.)
+		const g = q.claspGrip;
 		out = mixArm(
 			out,
 			handAt(
 				b,
 				chest,
 				at,
-				v3(0.35, -side * (0.15 + 0.45 * low), 1 - 1.6 * low),
+				v3(
+					0.35 + 0.35 * g,
+					-side * (0.15 + 0.45 * low) * (1 - g) - side * 0.12 * g,
+					(1 - 1.6 * low) * (1 - g) - 0.85 * g,
+				),
 				15 + 15 * low,
 				side,
 			),

@@ -47,6 +47,19 @@ import {
 	watchLiveGame,
 } from "../components/LiveGames.tsx";
 
+// Each hub pane's place on a phone. (Whole class names: the build keeps only
+// styles whose names it finds written out in the code.)
+const PANE_ORDER = [
+	"",
+	"lh-o1",
+	"lh-o2",
+	"lh-o3",
+	"lh-o4",
+	"lh-o5",
+	"lh-o6",
+	"lh-o7",
+];
+
 const DailySchedule = ({
 	calendar,
 	cid,
@@ -553,7 +566,7 @@ const DailySchedule = ({
 	const [hubTab, setHubTab] = useHubTab(hubTabs);
 	const gridRef = useRef<HTMLDivElement>(null);
 	const pane = (id: HubTabId, order: number, extra?: string) =>
-		clsx(`lh-o${order} lh-pane`, extra, {
+		clsx(PANE_ORDER[order], "lh-pane", extra, {
 			"lh-pane-shown": id === hubTab,
 		});
 

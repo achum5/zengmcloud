@@ -12,6 +12,26 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 489,
+		date: "2026-11-23",
+		text: "Press conferences: when a team trades for or signs a player with 50+ potential, it now holds a 3D press conference for him. He stands in front of the team's backdrop in his own clothes holding up his new jersey (name and number on the back), with the GM and coach (sometimes the owner) beside him and photographers flashing, then they talk at a table or a podium. Each one is different and plays the same every time. Watch it with the play button on the trade page, in the news feed, and in player and team transactions.",
+	},
+	{
+		n: 488,
+		date: "2026-11-23",
+		text: "League hub fixes: on the live site the home team's side of each score card now mirrors the away side like it should, and the phone tabs keep their order. In the playoffs, the series (Game 7, DAL wins 4-3) hangs on a small tag at the top of the card, and Final with the line sits below it. The week strip's days no longer underline when tapped.",
+	},
+	{
+		n: 487,
+		date: "2026-11-23",
+		text: "Nightly Recap: the newest night's recap now leads the League Headlines on the new dashboard and starts playing on its own once you scroll to it. Tap it to watch it full size (turn your phone sideways for the biggest picture). Every recap now has a full size button too.",
+	},
+	{
+		n: 486,
+		date: "2026-11-23",
+		text: "Nightly Recap: after the games now come the Player of the Night (his best plays, with his name and line along the bottom; Full and Medium), the night's top plays counted down from 10 (5 on Medium, 3 on Short), each under its own game's score bug, and the standings through that night, each conference split into the playoff spots, the play-in and the rest.",
+	},
+	{
 		n: 485,
 		date: "2026-11-23",
 		text: "Live games, more safety checks: while the last game of the Finals is being played live, nobody can move on to the draft until its final. A live game left behind by a page that closed without saying so can no longer hold up the playoffs. While you're playing your own game live, the other live scores in the header can't be tapped, since leaving your game would end it for everyone. And the standings on Daily Schedule no longer count a game still being played.",

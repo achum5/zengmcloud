@@ -88,6 +88,11 @@
 	color: var(--bs-body-color);
 	text-decoration: none;
 	border-bottom: 3px solid transparent;
+	&:hover,
+	&:focus,
+	&:active {
+		text-decoration: none;
+	}
 	// (Not on a phone: a tap would leave it lit.)
 	@media (hover: hover) {
 		&:hover {
@@ -576,8 +581,8 @@
 	container-type: inline-size;
 	display: grid;
 	grid-template-columns:
-		clamp(2.4rem, 8cqw, 3.8rem) minmax(0, 1fr) auto minmax(0, 1fr)
-		clamp(2.4rem, 8cqw, 3.8rem);
+		clamp(2.4rem, 7cqw, 3.3rem) minmax(0, 1fr) auto minmax(0, 1fr)
+		clamp(2.4rem, 7cqw, 3.3rem);
 	min-height: 6.6rem;
 	position: relative;
 	overflow: hidden;
@@ -677,8 +682,9 @@
 // The score, and the record beside it on the inner side.
 .lh-gc-scoreline {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
-	gap: 0.4rem;
+	column-gap: 0.4rem;
 }
 .lh-gc-team-home .lh-gc-scoreline {
 	flex-direction: row-reverse;
@@ -744,12 +750,28 @@
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
-.lh-gc-series {
-	margin-top: 0.15rem;
-	font-size: 0.7rem;
-	line-height: 1.25;
-	color: rgb(255 255 255 / 0.82);
+// (Room under the series' tag for each side's city, and Final centered in
+// what's left below it.)
+.lh-gc-has-series .lh-gc-team {
+	padding-top: 1.15rem;
+}
+.lh-gc-has-series .lh-gc-mid {
+	margin-top: 1rem;
+}
+.lh-gc-card > .lh-gc-series {
+	position: absolute;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 0.12rem 0.55rem 0.15rem;
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: #fff;
 	white-space: nowrap;
+	background: rgb(16 18 22 / 0.72);
+	border-radius: 0 0 0.4rem 0.4rem;
 }
 .lh-gc-leaders {
 	display: none;
@@ -927,7 +949,7 @@
 		line-height: 1.05;
 	}
 	.lh-gc-scoreline {
-		gap: 0.3rem;
+		column-gap: 0.3rem;
 	}
 	.lh-gc-record {
 		font-size: 0.66rem;
@@ -939,8 +961,15 @@
 	.lh-gc-final {
 		font-size: 0.72rem;
 	}
-	.lh-gc-series {
-		font-size: 0.6rem;
+	.lh-gc-card > .lh-gc-series {
+		padding: 0.08rem 0.4rem 0.1rem;
+		font-size: 0.52rem;
+	}
+	.lh-gc-has-series .lh-gc-team {
+		padding-top: 0.85rem;
+	}
+	.lh-gc-has-series .lh-gc-mid {
+		margin-top: 0.8rem;
 	}
 	.lh-gc-line {
 		margin-top: 0.1rem;

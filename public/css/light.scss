@@ -1300,6 +1300,10 @@ tr.table-warning:hover > td {
 		margin-bottom: 0 !important;
 	}
 }
+// The Nightly Recap full size: the picture alone, nothing under it.
+.nightly-recap-big .mb-3 {
+	margin-bottom: 0 !important;
+}
 
 // Play / pause / speed, small, over the picture: bottom right on a wide
 // screen (beside the score bug), top right over the crowd on a phone.

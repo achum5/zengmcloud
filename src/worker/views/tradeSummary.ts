@@ -25,6 +25,7 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { last } from "../../common/utils.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
 import { planTradeRevert } from "../core/trade/revertTrade.ts";
+import { pressTidsOf } from "../util/pressConference.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 
 const processInputs = (params: RouteParams<"tradeSummary">) => {
@@ -620,6 +621,9 @@ export default defineView({
 					region: teamInfo.region,
 					name: teamInfo.name,
 					tid,
+					// (Whether it held a press conference for who it got - see
+					// pressConference.ts.)
+					press: (await pressTidsOf(event, { tid })) !== undefined,
 					assets,
 					statSum,
 					statSumTeam,
