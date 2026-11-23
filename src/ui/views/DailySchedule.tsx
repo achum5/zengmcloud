@@ -15,6 +15,7 @@ import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { SimHereButton } from "../components/SimHereButton.tsx";
 import { GameNote } from "../components/GameNote.tsx";
 import { DayRecap } from "../components/DayRecap.tsx";
+import NightlyRecap from "../components/NightlyRecap/index.tsx";
 import {
 	buildRecapLinksForGame,
 	buildSentenceGamesForDay,
@@ -256,6 +257,14 @@ const DailySchedule = ({
 		/>
 	) : null;
 
+	// (Nothing for a night with no recap plays.)
+	const recapVideo =
+		completed.length > 0 ? (
+			<div style={{ maxWidth: 960 }}>
+				<NightlyRecap season={season} day={day} />
+			</div>
+		) : null;
+
 	let noGamesMessage;
 	if (days.length === 0) {
 		noGamesMessage = (
@@ -283,12 +292,14 @@ const DailySchedule = ({
 					/>
 					<div className="flex-grow-1" style={{ minWidth: 0 }}>
 						{dateHeading}
+						{recapVideo}
 						{dayRecap}
 					</div>
 				</div>
 			) : (
 				<>
 					{dateHeading}
+					{recapVideo}
 					{dayRecap}
 				</>
 			)}

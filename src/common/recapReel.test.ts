@@ -1,5 +1,9 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import { simRealGame } from "../worker/core/GameSim.basketball/realGameForTests.ts";
+import {
+	buildClocks,
+	shotClockAt,
+} from "../ui/views/LiveGame/court3d/clock.ts";
 import { compileCourt } from "../ui/views/LiveGame/court3d/director.ts";
 import {
 	makeRecapReel,
@@ -101,7 +105,7 @@ const sameAsTheGame = (events: any[], reel: RecapReel) => {
 	let j = 0;
 	let shown = 0;
 	for (const a of cut.at) {
-		const { clipStart, clipFouls, ...e } = a.e;
+		const { clipStart, clipFouls, clipGap, ...e } = a.e;
 		const key = JSON.stringify(e);
 		while (j < whole.at.length && JSON.stringify(whole.at[j]!.e) !== key) {
 			j++;
@@ -152,6 +156,28 @@ describe("recap reel", () => {
 		}
 	});
 
+	test("each break between periods after the first clip is a cut", () => {
+		for (const { reel } of games) {
+			const ends = subReel(
+				reel,
+				(p) => p === reel.plays[0] || p === reel.plays.at(-1),
+			);
+			for (const r of [reel, ends]) {
+				const lines = r.events.filter(isLine);
+				const first = lines.findIndex(
+					(e) => e.type !== "period" && e.type !== "overtime",
+				);
+				const breaks = lines
+					.slice(first)
+					.filter((e) => e.type === "period" || e.type === "overtime");
+				assert.isAtLeast(breaks.length, 2);
+				for (const e of breaks) {
+					assert.isTrue(e.clipGap, JSON.stringify(e));
+				}
+			}
+		}
+	});
+
 	test("is a fraction of the game, and stages in 3D clip by clip", () => {
 		for (const { events, players, reel } of games) {
 			const size = JSON.stringify(reel).length;
@@ -161,6 +187,18 @@ describe("recap reel", () => {
 			const ms = performance.now() - t0;
 			const starts = reel.events.filter((e) => e.clipStart).length;
 			assert.strictEqual(tl.clips?.length ?? 0, starts);
+			// The shot clock at each cut: as the clip's possession has it, not
+			// the last one's run on to zero.
+			const clocks = buildClocks(tl, reel.events);
+			let read = 0;
+			for (const c of tl.clips ?? []) {
+				const shot = shotClockAt(clocks, c + 50);
+				if (shot !== undefined) {
+					read += 1;
+					assert.isAbove(shot, 0.5, `at ${c}`);
+				}
+			}
+			assert.isAbove(read, starts / 2);
 			console.log(
 				"reel",
 				size,
@@ -224,6 +262,24 @@ describe("the shots that decided it", () => {
 			[...w.values()].find((p) => p.pid === 1)!.winner,
 			undefined,
 		);
+	});
+
+	test("a shot at the horn is cut straight from to the next period", () => {
+		const events = game([
+			{ type: "fgaMidRange", t: 0, pid: 1, clock: 700 },
+			pts(0, 1, 2),
+			{ type: "fgMidRange", t: 0, pid: 1, clock: 700 },
+			{ type: "fgaTp", t: 1, pid: 12, clock: 0.4 },
+			pts(1, 12, 3),
+			{ type: "tp", t: 1, pid: 12, clock: 0.4 },
+			{ type: "period", period: 2, clock: 720 },
+			{ type: "fgaTp", t: 0, pid: 3, clock: 600 },
+			pts(0, 3, 3),
+			{ type: "tp", t: 0, pid: 3, clock: 600 },
+		]);
+		const reel = makeRecapReel(events, { numPeriods: 4, stars: [] });
+		const line = reel.events.find((e) => e.type === "period");
+		assert.isTrue(line.clipGap);
 	});
 
 	test("an early lead taken for good is no game-winner", () => {

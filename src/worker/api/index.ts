@@ -259,6 +259,7 @@ import {
 } from "../core/trade/lookingForPlayer.ts";
 import { getPlayer } from "../views/player.ts";
 import { nationalBroadcastOf } from "../views/nationalBroadcast.ts";
+import { nightlyRecap } from "../util/nightlyRecap.ts";
 import { parseNationalBroadcasts } from "../../common/nationalBroadcasts.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
@@ -8614,6 +8615,52 @@ const getReplayFeed = async (gid: number) => {
 	if (!Array.isArray(playByPlay) || playByPlay.length === 0) {
 		return undefined;
 	}
+	const out = await playbackOf(gid, playByPlay);
+	if (!out) {
+		return undefined;
+	}
+	let shots: number[] | undefined;
+	try {
+		const row =
+			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
+			(await (idb.league as any).get("liveGamePlayByPlay", gid));
+		// (As this device last watched it again, if it has - see
+		// saveReplayShots.)
+		shots = replayShotsHere.get(gid) ?? row?.shots;
+	} catch {
+		// No chart.
+	}
+	return { ...out, shots };
+};
+
+// A game's recap plays (see core/game/saveRecapReels.ts), to play back in 3D
+// the way a replay is.
+const getRecapFeed = async (gid: number) => {
+	const row = await idb.cache.recapReels.get(gid);
+	if (!row) {
+		return undefined;
+	}
+	const out = await playbackOf(gid, row.reel.events);
+	if (!out) {
+		return undefined;
+	}
+	return { ...out, plays: row.reel.plays };
+};
+
+// The night's games with recap plays, the biggest first, as their graphics
+// need them.
+const getNightlyRecap = async ({
+	season,
+	day,
+}: {
+	season: number;
+	day: number;
+}) => nightlyRecap({ season, day });
+
+// A game's play-by-play (all of it, or some) with the box score it plays
+// into in 3D: as everyone looked that night, in the building as it was, under
+// its broadcast's score bug.
+const playbackOf = async (gid: number, playByPlay: any[]) => {
 	const game = await idb.merged.games.get(gid);
 	if (!game) {
 		return undefined;
@@ -8632,17 +8679,6 @@ const getReplayFeed = async (gid: number) => {
 		confetti: false,
 		playByPlay,
 	});
-	let shots: number[] | undefined;
-	try {
-		const row =
-			(await idb.cache.liveGamePlayByPlay.get(gid)) ??
-			(await (idb.league as any).get("liveGamePlayByPlay", gid));
-		// (As this device last watched it again, if it has - see
-		// saveReplayShots.)
-		shots = replayShotsHere.get(gid) ?? row?.shots;
-	} catch {
-		// No chart.
-	}
 	// (Played again on its box score in 3D: as everyone looked that night,
 	// in the building as it was - see liveGame.)
 	const then = await looksThatNight(gid, boxScore);
@@ -8659,7 +8695,6 @@ const getReplayFeed = async (gid: number) => {
 	return {
 		events: out.events,
 		initialBoxScore: out.initialBoxScore,
-		shots,
 	};
 };
 
@@ -8918,6 +8953,8 @@ const api = {
 		getLiveGameChat,
 		getLiveGamePlayByPlay,
 		getReplayFeed,
+		getRecapFeed,
+		getNightlyRecap,
 		getTeamColorsUI,
 		getAllTeamColorsUI,
 		hasLiveGameReplay,

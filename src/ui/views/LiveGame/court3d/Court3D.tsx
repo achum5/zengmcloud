@@ -303,6 +303,8 @@ type Props = {
 	// A clip (a highlight played on its own - see HighlightClip): it plays
 	// no further than a moment past the line before this cursor.
 	until?: number;
+	// A reel's cut to its next clip (the kth), as the picture gets there.
+	onCut?: (k: number) => void;
 };
 
 const Court3D = ({
@@ -328,9 +330,14 @@ const Court3D = ({
 	onShots,
 	onStaged,
 	until,
+	onCut,
 }: Props) => {
 	const onShotsRef = useRef(onShots);
 	onShotsRef.current = onShots;
+	const onCutRef = useRef(onCut);
+	onCutRef.current = onCut;
+	// (The last cut the picture got to.)
+	const cutSeen = useRef(-1);
 	const onStagedRef = useRef(onStaged);
 	onStagedRef.current = onStaged;
 	const { lid, gender } = useLocal(["lid", "gender"]);
@@ -1315,6 +1322,15 @@ const Court3D = ({
 				now,
 				Date.now(),
 			);
+			if (!staging && tl.clips && onCutRef.current) {
+				const k = tl.clips.findLastIndex((c) => c <= s.t);
+				if (k !== cutSeen.current) {
+					cutSeen.current = k;
+					if (k >= 0) {
+						onCutRef.current(k);
+					}
+				}
+			}
 			// (And held on its last moment.)
 			if (p.authored && staging && s.t >= p.authored.ms) {
 				s.t = p.authored.ms;
