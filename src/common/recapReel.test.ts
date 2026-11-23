@@ -5,6 +5,7 @@ import {
 	shotClockAt,
 } from "../ui/views/LiveGame/court3d/clock.ts";
 import { compileCourt } from "../ui/views/LiveGame/court3d/director.ts";
+import { finishOf } from "./liveGameWording.basketball.ts";
 import {
 	makeRecapReel,
 	REEL_TOP,
@@ -76,7 +77,12 @@ const walk = (events: any[]) => {
 	return { at, qtrs };
 };
 
-const games: { events: any[]; players: any[]; reel: RecapReel }[] = [];
+const games: {
+	events: any[];
+	players: any[];
+	star: number;
+	reel: RecapReel;
+}[] = [];
 beforeAll(async () => {
 	for (const seed of [22, 5, 9]) {
 		const { events, players } = await simRealGame(seed);
@@ -90,6 +96,7 @@ beforeAll(async () => {
 		games.push({
 			events,
 			players,
+			star,
 			reel: makeRecapReel(events, { stars: [star] }),
 		});
 	}
@@ -130,9 +137,9 @@ const sameAsTheGame = (events: any[], reel: RecapReel) => {
 
 describe("recap reel", () => {
 	test("keeps the biggest plays and each star's, the game as it stood at each", () => {
-		for (const { events, reel } of games) {
+		for (const { events, reel, star } of games) {
 			assert.ok(reel.plays.length >= REEL_TOP);
-			const weighed = weighPlays(events);
+			const weighed = weighPlays(events, { stars: [star] });
 			const top = [...weighed.values()]
 				.map((w) => w.w)
 				.sort((a, b) => b - a)
@@ -313,5 +320,65 @@ describe("the shots that decided it", () => {
 			[...w.values()].find((p) => p.pid === 2)!.winner,
 			"tied",
 		);
+	});
+
+	test("the go-ahead shot at the end swung it, the first basket hardly", () => {
+		const events = game([
+			{ type: "fgaMidRange", t: 0, pid: 1, clock: 700 },
+			pts(0, 1, 2),
+			{ type: "fgMidRange", t: 0, pid: 1, clock: 700 },
+			...to4th,
+			{ type: "fgaTp", t: 1, pid: 12, clock: 5 },
+			pts(1, 12, 3),
+			{ type: "tp", t: 1, pid: 12, clock: 5 },
+		]);
+		const w = [...weighPlays(events).values()];
+		assert.isAbove(w.find((p) => p.pid === 12)!.lev!, 0.3);
+		assert.isBelow(w.find((p) => p.pid === 1)!.lev!, 0.05);
+	});
+
+	test("garbage time hardly counts", () => {
+		const threes = (n: number, clock: number) =>
+			Array.from({ length: n }, (_, k) => [
+				{ type: "fgaTp", t: 0, pid: 3, clock: clock - k * 20 },
+				pts(0, 3, 3),
+				{ type: "tp", t: 0, pid: 3, clock: clock - k * 20 },
+			]).flat();
+		const dunk = (clock: number) => [
+			{ type: "fgaAtRim", t: 0, pid: 4, clock },
+			pts(0, 4, 2),
+			{ type: "fgAtRim", t: 0, pid: 4, clock },
+		];
+		const events = game([
+			...dunk(710),
+			...threes(16, 690),
+			...to4th,
+			...dunk(300),
+		]);
+		const w = [...weighPlays(events).values()].filter((p) => p.pid === 4);
+		assert.strictEqual(w.length, 2);
+		const [early, late] = w;
+		assert.isUndefined(early!.garbage);
+		assert.isTrue(late!.garbage);
+		assert.isBelow(late!.w, early!.w / 2);
+	});
+});
+
+describe("how big a play is", () => {
+	test("a dunk is the dunk the 3D court will show", () => {
+		for (const { events } of games) {
+			const w = weighPlays(events, { gid: 7, gender: "male" });
+			let dunks = 0;
+			for (const [k, p] of w) {
+				const e = events[k];
+				if (/^fg(AtRim|PutBack|TipIn)/.test(e.type)) {
+					const finish = finishOf(e, 7, "male");
+					const dunk = finish === "dunk" || finish === "poster";
+					assert.strictEqual(p.kind, dunk ? "dunk" : "rim", e.type);
+					dunks += dunk ? 1 : 0;
+				}
+			}
+			assert.isAbove(dunks, 0);
+		}
 	});
 });

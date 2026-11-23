@@ -6,6 +6,7 @@ import {
 	picturesFor,
 	playerNamesFor,
 	suggestedAccounts,
+	userTeamAccount,
 	type FeedDay,
 } from "../util/socialFeed.ts";
 import { isVerified } from "../../common/socialMetrics.ts";
@@ -76,6 +77,10 @@ const updateSocialFeed = async ({
 		for (const a of suggestedRaw) {
 			onPage.add(a.id);
 		}
+		const meRaw = userTeamAccount(snapshot, g.get("userTid"));
+		if (meRaw) {
+			onPage.add(meRaw.id);
+		}
 		const pictures = await picturesFor(
 			snapshot,
 			snapshot.accounts.filter((a) => onPage.has(a.id)),
@@ -104,11 +109,23 @@ const updateSocialFeed = async ({
 
 		return {
 			feed,
+			me: meRaw
+				? {
+						accountId: meRaw.id,
+						handle: meRaw.handle,
+						name: meRaw.name,
+						kind: meRaw.kind,
+						tid: meRaw.tid,
+						avatarUrl: meRaw.avatarUrl,
+						verified: isVerified(meRaw),
+					}
+				: undefined,
 			playerNames: playerNamesFor(
 				snapshot,
 				feed.flatMap((day: any) => day.posts),
 			),
 			season,
+			currentSeason: g.get("season"),
 			days: inputs.days ?? DAYS_PER_PAGE,
 			hasMore: newestFirst.length > wanted.length,
 			accountCount: snapshot.accounts.length,

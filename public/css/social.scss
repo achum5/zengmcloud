@@ -1,24 +1,74 @@
-// THE LEAGUE FEED, drawn the way a timeline is drawn.
+// THE LEAGUE FEED, drawn the way the old Twitter web app was drawn.
 //
-// One centred column of posts separated by hairlines rather than cards, a
-// header that stays put while the column scrolls under it, an avatar column
-// with a thread line dropping from a post to its replies, an action row of
-// icons that light up on hover, and a sidebar of trends and suggestions on
-// wide screens. Every colour comes from Bootstrap's own custom properties, so
-// the light and dark builds get their own palette without a second copy of
-// any rule here.
+// Three columns: a nav of big icon links on the left, one centred column of
+// posts separated by hairlines rather than cards, and a search box on the
+// right. In the dark build the feed goes to pure black like "Lights out", in
+// the light build plain white, each with that app's own greys and hairlines -
+// not the game's, which is what made the old version read as a game page
+// with posts on it.
 
 $social-blue: #1d9bf0;
 $social-green: #00ba7c;
 $social-pink: #f91880;
 
+:root {
+	@if $white == #fff {
+		--social-bg: #fff;
+		--social-bg-rgb: 255, 255, 255;
+		--social-text: #0f1419;
+		--social-muted: #536471;
+		--social-line: #eff3f4;
+		--social-box-line: #cfd9de;
+		--social-hover: rgba(15, 20, 25, 0.1);
+		--social-row-hover: rgba(0, 0, 0, 0.03);
+		--social-field: #eff3f4;
+		--social-field-line: #eff3f4;
+		--social-card: #f7f9f9;
+	} @else {
+		--social-bg: #000;
+		--social-bg-rgb: 0, 0, 0;
+		--social-text: #e7e9ea;
+		--social-muted: #71767b;
+		--social-line: #2f3336;
+		--social-box-line: #2f3336;
+		--social-hover: rgba(231, 233, 234, 0.1);
+		--social-row-hover: rgba(255, 255, 255, 0.03);
+		--social-field: #000;
+		--social-field-line: #2f3336;
+		--social-card: #16181c;
+	}
+}
+
+// The feed's black runs to the edges of the page in the dark build, rather
+// than sitting as a black box on the game's grey.
+@if $white != #fff {
+	body.social-page {
+		background-color: var(--social-bg);
+	}
+}
+
+// ---------------------------------------------------------------- COLUMNS
+//
+// Folded by the width of the page area (a container query), not the window:
+// the game's sidebar may or may not be open beside it.
+
 .social-layout {
+	container: social / inline-size;
+	// The page container pads the sides and leaves a gap under the title bar;
+	// the timeline runs flush to both, the way an app does.
+	margin: -0.5rem -8px 0;
+	background: var(--social-bg);
+	color: var(--social-text);
+}
+
+.social-cols {
 	display: flex;
 	justify-content: center;
 	align-items: flex-start;
-	// The page container already pads the sides; pull the column up to sit
-	// flush under the title bar the way a timeline does.
-	margin-top: -0.5rem;
+}
+
+.social-nav {
+	display: none;
 }
 
 .social-main {
@@ -26,41 +76,215 @@ $social-pink: #f91880;
 	min-width: 0;
 	width: 100%;
 	max-width: 600px;
-	border-left: 1px solid var(--bs-border-color);
-	border-right: 1px solid var(--bs-border-color);
-	min-height: 80vh;
+	min-height: 100vh;
 }
 
 .social-side {
 	display: none;
-	flex: 0 0 350px;
-	width: 350px;
-	padding-left: 24px;
-	position: sticky;
-	top: 0.5rem;
+}
 
-	@media (min-width: 1200px) {
-		display: block;
+// ---------------------------------------------------------------- NAV
+
+.social-nav-logo {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	color: $social-blue;
+	margin-bottom: 2px;
+
+	&:hover {
+		background: rgba($social-blue, 0.1);
+		color: $social-blue;
 	}
+
+	.social-mark {
+		width: 30px;
+		height: 30px;
+	}
+}
+
+.social-nav-item {
+	display: flex;
+	align-items: center;
+	gap: 20px;
+	padding: 12px;
+	margin: 3px 0;
+	border-radius: 999px;
+	color: var(--social-text);
+	text-decoration: none;
+	font-size: 17px;
+	line-height: 24px;
+	transition: background-color 0.15s;
+
+	&:hover {
+		background: var(--social-hover);
+		color: var(--social-text);
+		text-decoration: none;
+	}
+
+	&.active {
+		font-weight: 700;
+	}
+}
+
+.social-nav-icon {
+	position: relative;
+	display: flex;
+	width: 26px;
+	height: 26px;
+
+	svg {
+		width: 26px;
+		height: 26px;
+	}
+}
+
+.social-nav-label {
+	display: none;
+	padding-right: 12px;
+	white-space: nowrap;
+}
+
+.social-badge {
+	position: absolute;
+	top: -6px;
+	right: -8px;
+	min-width: 19px;
+	height: 19px;
+	padding: 0 5px;
+	border-radius: 999px;
+	border: 1px solid var(--social-bg);
+	background: $social-blue;
+	color: #fff;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 17px;
+	text-align: center;
+}
+
+.social-me {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 20px;
+	padding: 12px;
+	border-radius: 999px;
+	color: var(--social-text);
+	text-decoration: none;
+	min-width: 0;
+
+	&:hover {
+		background: var(--social-hover);
+		color: var(--social-text);
+		text-decoration: none;
+	}
+}
+
+.social-me-text {
+	display: none;
+	flex-direction: column;
+	min-width: 0;
+	font-size: 15px;
+	line-height: 20px;
+}
+
+.social-me-name {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-weight: 700;
+	min-width: 0;
+}
+
+.social-me-handle {
+	color: var(--social-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 // ---------------------------------------------------------------- HEADER
 
 .social-header {
 	position: sticky;
-	top: 0;
+	top: var(--social-top, 0px);
 	z-index: 5;
-	background: rgba(var(--bs-body-bg-rgb), 0.85);
+	background: rgba(var(--social-bg-rgb), 0.85);
 	backdrop-filter: blur(12px);
 	-webkit-backdrop-filter: blur(12px);
-	border-bottom: 1px solid var(--bs-border-color);
+	border-bottom: 1px solid var(--social-line);
+}
+
+// The nav on a phone: you, the mark, Explore and Notifications.
+.social-topbar {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: center;
+	height: 53px;
+	padding: 0 16px;
+}
+
+.social-topbar-start {
+	display: flex;
+	align-items: center;
+
+	a {
+		display: block;
+	}
+}
+
+.social-topbar-logo {
+	display: flex;
+	color: $social-blue;
+
+	&:hover {
+		color: $social-blue;
+	}
+
+	.social-mark {
+		width: 28px;
+		height: 28px;
+	}
+}
+
+.social-topbar-end {
+	display: flex;
+	justify-content: flex-end;
+	gap: 4px;
+	margin-right: -8px;
+}
+
+.social-topbar-icon {
+	position: relative;
+	display: flex;
+	padding: 8px;
+	border-radius: 50%;
+	color: var(--social-text);
+
+	&:hover {
+		background: var(--social-hover);
+		color: var(--social-text);
+	}
+
+	svg {
+		width: 22px;
+		height: 22px;
+	}
+
+	.social-badge {
+		top: 2px;
+		right: 0;
+	}
 }
 
 .social-header-row {
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	padding: 10px 16px;
+	padding: 6px 16px;
 	min-height: 53px;
 }
 
@@ -75,8 +299,16 @@ $social-pink: #f91880;
 
 .social-header-sub {
 	font-size: 13px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 	line-height: 16px;
+}
+
+.social-header-search {
+	padding: 6px 16px;
+
+	.social-search {
+		margin-bottom: 0;
+	}
 }
 
 .social-back {
@@ -85,13 +317,14 @@ $social-pink: #f91880;
 	justify-content: center;
 	width: 34px;
 	height: 34px;
+	margin-right: 16px;
 	border-radius: 50%;
-	color: var(--bs-body-color);
+	color: var(--social-text);
 	flex-shrink: 0;
 
 	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.1);
-		color: var(--bs-body-color);
+		background: var(--social-hover);
+		color: var(--social-text);
 	}
 
 	svg {
@@ -101,69 +334,66 @@ $social-pink: #f91880;
 	}
 }
 
+// Tabs read as lists: each as wide as its name, the row scrolling sideways
+// when there are more than fit, the one you are on underlined.
 .social-tabs {
 	display: flex;
-	border-bottom: 1px solid var(--bs-border-color);
+	overflow-x: auto;
+	scrollbar-width: none;
+
+	&::-webkit-scrollbar {
+		display: none;
+	}
 }
 
 .social-tab {
-	flex: 1;
-	text-align: center;
-	padding: 15px 0 12px;
+	flex: 0 0 auto;
+	height: 53px;
+	padding: 0 16px;
 	font-size: 15px;
 	font-weight: 500;
-	color: var(--bs-secondary-color);
-	position: relative;
+	color: var(--social-muted);
 	cursor: pointer;
 	background: none;
 	border: 0;
 	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	transition: background-color 0.15s;
 
-	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.06);
+	> span {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		min-width: 56px;
+	}
+
+	@media (hover: hover) {
+		&:hover {
+			background: var(--social-hover);
+		}
 	}
 
 	&.active {
-		color: var(--bs-body-color);
+		color: var(--social-text);
 		font-weight: 700;
 
-		&::after {
+		> span::after {
 			content: "";
 			position: absolute;
 			bottom: 0;
-			left: 50%;
-			transform: translateX(-50%);
-			width: 56px;
+			left: 0;
+			right: 0;
 			height: 4px;
-			border-radius: 2px;
+			border-radius: 999px;
 			background: $social-blue;
 		}
 	}
 }
 
-// ---------------------------------------------------------------- DAYS
-
-.social-day {
-	position: sticky;
-	top: 53px;
-	z-index: 4;
-	text-align: center;
-	padding: 8px 0;
-	pointer-events: none;
-}
-
-.social-day-pill {
-	display: inline-block;
-	padding: 4px 14px;
-	border-radius: 999px;
-	background: var(--bs-tertiary-bg);
-	border: 1px solid var(--bs-border-color);
-	font-size: 13px;
-	font-weight: 700;
-	color: var(--bs-secondary-color);
-	pointer-events: auto;
+// The account page's tabs split the row evenly, as a profile's do.
+.social-tabs-even .social-tab {
+	flex: 1 1 0;
 }
 
 // ---------------------------------------------------------------- A POST
@@ -171,12 +401,13 @@ $social-pink: #f91880;
 .social-post {
 	display: flex;
 	gap: 12px;
-	padding: 12px 16px 6px;
-	border-bottom: 1px solid var(--bs-border-color);
+	padding: 12px 16px 4px;
+	border-bottom: 1px solid var(--social-line);
+	color: var(--social-text);
 	transition: background-color 0.15s;
 
 	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.03);
+		background: var(--social-row-hover);
 	}
 
 	// A reply directly under the post it answers shares its hairline: the
@@ -203,9 +434,8 @@ $social-pink: #f91880;
 	flex: 1;
 	width: 2px;
 	margin-top: 4px;
-	margin-bottom: -10px;
-	background: var(--bs-border-color);
-	border-radius: 1px;
+	margin-bottom: -6px;
+	background: var(--social-box-line);
 }
 
 .social-post-body {
@@ -226,7 +456,7 @@ $social-pink: #f91880;
 
 .social-name {
 	font-weight: 700;
-	color: var(--bs-body-color);
+	color: var(--social-text);
 	text-decoration: none;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -234,7 +464,7 @@ $social-pink: #f91880;
 
 	&:hover {
 		text-decoration: underline;
-		color: var(--bs-body-color);
+		color: var(--social-text);
 	}
 }
 
@@ -242,7 +472,7 @@ $social-pink: #f91880;
 .social-dot,
 .social-time,
 .social-meta {
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 	text-decoration: none;
 	flex-shrink: 10;
 	overflow: hidden;
@@ -254,16 +484,22 @@ $social-pink: #f91880;
 }
 
 a.social-handle:hover {
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 	text-decoration: none;
 }
 
 .social-replying {
 	font-size: 15px;
-	color: var(--bs-secondary-color);
+	line-height: 20px;
+	color: var(--social-muted);
 
 	a {
 		color: $social-blue;
+		text-decoration: none;
+
+		&:hover {
+			text-decoration: underline;
+		}
 	}
 }
 
@@ -294,9 +530,9 @@ a.social-handle:hover {
 // of what was said, so it waits in grey until it is wanted.
 .social-context-link {
 	display: inline-block;
-	margin-top: 0.25rem;
-	font-size: 0.75rem;
-	color: var(--bs-secondary-color);
+	margin-top: 4px;
+	font-size: 13px;
+	color: var(--social-muted);
 	text-decoration: none;
 
 	&::before {
@@ -315,7 +551,7 @@ a.social-handle:hover {
 	align-items: center;
 	gap: 4px;
 	font-size: 13px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 	margin-top: 2px;
 
 	svg {
@@ -325,19 +561,37 @@ a.social-handle:hover {
 	}
 }
 
+// A quote tweet: the old post in a rounded box under the new one.
+.social-quoted {
+	border: 1px solid var(--social-box-line);
+	border-radius: 16px;
+	padding: 10px 12px 12px;
+	margin: 10px 0 4px;
+	transition: background-color 0.15s;
+
+	&:hover {
+		background: var(--social-row-hover);
+	}
+}
+
 // ---------------------------------------------------------------- ACTIONS
+//
+// Reply, retweet and like spread across the post; bookmark and share sit
+// together at the end.
 
 .social-actions {
 	display: flex;
-	justify-content: space-between;
 	align-items: center;
-	max-width: 425px;
-	margin-top: 4px;
+	margin-top: 2px;
 	margin-left: -8px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 	font-size: 13px;
 	line-height: 16px;
 	user-select: none;
+
+	> .social-action {
+		flex: 1 1 0;
+	}
 }
 
 .social-action {
@@ -371,7 +625,7 @@ a.social-handle:hover {
 		color: $social-blue;
 
 		svg {
-			background: rgba($social-blue, 0.12);
+			background: rgba($social-blue, 0.1);
 		}
 	}
 
@@ -379,7 +633,7 @@ a.social-handle:hover {
 		color: $social-green;
 
 		svg {
-			background: rgba($social-green, 0.12);
+			background: rgba($social-green, 0.1);
 		}
 	}
 
@@ -387,14 +641,16 @@ a.social-handle:hover {
 		color: $social-pink;
 
 		svg {
-			background: rgba($social-pink, 0.12);
+			background: rgba($social-pink, 0.1);
 		}
 	}
 }
 
 .social-actions-end {
 	display: inline-flex;
-	gap: 0;
+	flex: 0 0 auto;
+	margin-left: auto;
+	margin-right: -8px;
 }
 
 .social-compact {
@@ -409,23 +665,24 @@ a.social-handle:hover {
 	}
 }
 
-// ---------------------------------------------------------------- SIDEBAR
+// ---------------------------------------------------------------- SEARCH, EXPLORE
 
 .social-search {
 	display: flex;
 	align-items: center;
 	gap: 12px;
 	padding: 0 16px;
-	height: 44px;
+	height: 42px;
 	border-radius: 999px;
-	background: var(--bs-tertiary-bg);
-	border: 1px solid transparent;
+	background: var(--social-field);
+	border: 1px solid var(--social-field-line);
 	margin-bottom: 16px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
+	cursor: text;
 
 	&:focus-within {
 		border-color: $social-blue;
-		background: var(--bs-body-bg);
+		background: var(--social-bg);
 		color: $social-blue;
 	}
 
@@ -441,14 +698,68 @@ a.social-handle:hover {
 		min-width: 0;
 		border: 0;
 		background: transparent;
-		color: var(--bs-body-color);
+		color: var(--social-text);
 		font-size: 15px;
 		outline: none;
+
+		&::placeholder {
+			color: var(--social-muted);
+		}
 	}
 }
 
+.social-section-title {
+	font-size: 20px;
+	font-weight: 800;
+	line-height: 24px;
+	padding: 12px 16px;
+}
+
+.social-trend {
+	display: block;
+	padding: 12px 16px;
+	color: var(--social-text);
+	text-decoration: none;
+	transition: background-color 0.15s;
+
+	&:hover {
+		background: var(--social-row-hover);
+		color: var(--social-text);
+		text-decoration: none;
+	}
+}
+
+.social-trend-kicker,
+.social-trend-count {
+	font-size: 13px;
+	line-height: 16px;
+	color: var(--social-muted);
+}
+
+.social-trend-title {
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 20px;
+	margin: 2px 0;
+}
+
+.social-foot {
+	display: block;
+	padding: 16px;
+	font-size: 13px;
+	color: var(--social-muted);
+	text-decoration: none;
+
+	&:hover {
+		color: var(--social-muted);
+		text-decoration: underline;
+	}
+}
+
+// ---------------------------------------------------------------- SIDE CARDS
+
 .social-card {
-	background: var(--bs-tertiary-bg);
+	background: var(--social-card);
 	border-radius: 16px;
 	margin-bottom: 16px;
 	overflow: hidden;
@@ -462,32 +773,6 @@ a.social-handle:hover {
 	}
 }
 
-.social-trend {
-	display: block;
-	padding: 12px 16px;
-	color: inherit;
-	text-decoration: none;
-
-	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.04);
-		color: inherit;
-		text-decoration: none;
-	}
-}
-
-.social-trend-kicker,
-.social-trend-count {
-	font-size: 13px;
-	line-height: 16px;
-	color: var(--bs-secondary-color);
-}
-
-.social-trend-title {
-	font-size: 15px;
-	font-weight: 700;
-	line-height: 20px;
-}
-
 .social-suggest {
 	display: flex;
 	align-items: center;
@@ -495,7 +780,7 @@ a.social-handle:hover {
 	padding: 12px 16px;
 
 	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.04);
+		background: var(--social-row-hover);
 	}
 }
 
@@ -512,30 +797,6 @@ a.social-handle:hover {
 	.social-handle {
 		display: block;
 		font-size: 15px;
-	}
-}
-
-.social-card-more {
-	display: block;
-	padding: 14px 16px;
-	color: $social-blue;
-	font-size: 15px;
-	text-decoration: none;
-
-	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.04);
-		text-decoration: none;
-		color: $social-blue;
-	}
-}
-
-.social-foot {
-	font-size: 13px;
-	color: var(--bs-secondary-color);
-	padding: 0 16px;
-
-	a {
-		color: inherit;
 	}
 }
 
@@ -558,18 +819,18 @@ a.social-handle:hover {
 }
 
 .btn-social-follow {
-	background: var(--bs-body-color);
-	color: var(--bs-body-bg);
+	background: var(--social-text);
+	color: var(--social-bg);
 
 	&:hover {
 		opacity: 0.9;
-		color: var(--bs-body-bg);
+		color: var(--social-bg);
 	}
 
 	&.following {
 		background: transparent;
-		color: var(--bs-body-color);
-		border-color: var(--bs-secondary-color);
+		color: var(--social-text);
+		border-color: var(--social-box-line);
 
 		&:hover {
 			border-color: rgba($social-pink, 0.6);
@@ -581,12 +842,12 @@ a.social-handle:hover {
 
 .btn-social-outline {
 	background: transparent;
-	color: var(--bs-body-color);
-	border-color: var(--bs-secondary-color);
+	color: var(--social-text);
+	border-color: var(--social-box-line);
 
 	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.08);
-		color: var(--bs-body-color);
+		background: var(--social-hover);
+		color: var(--social-text);
 	}
 }
 
@@ -598,23 +859,23 @@ a.social-handle:hover {
 	color: $social-blue;
 	background: none;
 	border: 0;
-	border-bottom: 1px solid var(--bs-border-color);
+	border-bottom: 1px solid var(--social-line);
 	font-size: 15px;
 
 	&:hover {
-		background: rgba(var(--bs-body-color-rgb), 0.03);
+		background: var(--social-row-hover);
 	}
 }
 
 .social-empty {
 	padding: 32px 16px;
 	text-align: center;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 
 	.social-empty-title {
 		font-size: 31px;
 		font-weight: 800;
-		color: var(--bs-body-color);
+		color: var(--social-text);
 		line-height: 36px;
 		margin-bottom: 8px;
 	}
@@ -626,6 +887,10 @@ a.social-handle:hover {
 	height: 200px;
 	background-size: cover;
 	background-position: center;
+
+	@container social (max-width: 520px) {
+		height: 130px;
+	}
 }
 
 .social-profile-top {
@@ -639,9 +904,9 @@ a.social-handle:hover {
 	width: 134px;
 	height: 134px;
 	margin-top: -67px;
-	border: 4px solid var(--bs-body-bg);
+	border: 4px solid var(--social-bg);
 	border-radius: 50%;
-	background: var(--bs-body-bg);
+	background: var(--social-bg);
 	overflow: hidden;
 	flex-shrink: 0;
 }
@@ -667,7 +932,7 @@ a.social-handle:hover {
 
 .social-profile-handle {
 	font-size: 15px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 }
 
 .social-bio {
@@ -683,7 +948,7 @@ a.social-handle:hover {
 	gap: 4px 12px;
 	margin-top: 12px;
 	font-size: 15px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 
 	span {
 		display: inline-flex;
@@ -712,10 +977,10 @@ a.social-handle:hover {
 	gap: 20px;
 	margin-top: 12px;
 	font-size: 14px;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 
 	b {
-		color: var(--bs-body-color);
+		color: var(--social-text);
 		font-weight: 700;
 	}
 }
@@ -726,20 +991,20 @@ a.social-handle:hover {
 	font-weight: 700;
 	letter-spacing: 0.02em;
 	text-transform: uppercase;
-	color: var(--bs-secondary-color);
+	color: var(--social-muted);
 	padding: 2px 8px;
 	border-radius: 999px;
-	background: rgba(var(--bs-body-color-rgb), 0.06);
+	background: var(--social-hover);
 	margin-top: 8px;
 }
 
 // ---------------------------------------------------------------- EMBEDS
 //
 // The feed on other pages: the same posts, in a bordered box the width of
-// wherever it sits.
+// wherever it sits, on that page's own background.
 
 .social-embed {
-	border: 1px solid var(--bs-border-color);
+	border: 1px solid var(--social-box-line);
 	border-radius: 16px;
 	overflow: hidden;
 
@@ -753,7 +1018,7 @@ a.social-handle:hover {
 	align-items: center;
 	justify-content: space-between;
 	padding: 10px 16px;
-	border-bottom: 1px solid var(--bs-border-color);
+	border-bottom: 1px solid var(--social-line);
 	font-weight: 800;
 	font-size: 17px;
 
@@ -766,5 +1031,66 @@ a.social-handle:hover {
 		&:hover {
 			text-decoration: underline;
 		}
+	}
+}
+
+// ---------------------------------------------------------------- FOLDING
+//
+// Last, so each wider step overrides the phone-first rules above it.
+
+@container social (min-width: 640px) {
+	.social-nav {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		flex: 0 0 76px;
+		width: 76px;
+		position: sticky;
+		top: var(--social-top, 0px);
+		max-height: calc(100vh - var(--social-top, 0px));
+		overflow-y: auto;
+		scrollbar-width: none;
+		padding: 2px 4px 16px;
+	}
+
+	.social-main {
+		border-left: 1px solid var(--social-line);
+		border-right: 1px solid var(--social-line);
+	}
+
+	.social-topbar {
+		display: none;
+	}
+}
+
+@container social (min-width: 1060px) {
+	.social-side {
+		display: block;
+		flex: 0 0 380px;
+		width: 380px;
+		padding: 6px 0 0 30px;
+		position: sticky;
+		top: var(--social-top, 0px);
+	}
+}
+
+@container social (min-width: 1240px) {
+	.social-nav {
+		flex-basis: 256px;
+		width: 256px;
+		align-items: flex-start;
+		padding-right: 16px;
+	}
+
+	.social-nav-label {
+		display: inline;
+	}
+
+	.social-me {
+		width: 100%;
+	}
+
+	.social-me-text {
+		display: flex;
 	}
 }

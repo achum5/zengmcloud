@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 483,
+		n: 484,
 		date: "2026-11-23",
 		text: "NBA calendar leagues: the date in the header is now a calendar page with the weekday on it (WED 12 NOV), next to the season and phase (2025-26, Regular season). Tap the calendar for the Daily Schedule, or the words for your roster (the bracket in the playoffs). In the scores bar, home games are filled in your team's color instead of black, and a game still to come is centered in its box.",
+	},
+	{
+		n: 483,
+		date: "2026-11-23",
+		text: "Nightly Recap: smarter picks of each game's plays, for games played from this update on. A close game's recap is built around the plays that swung it most at the end, and a blowout's around the best plays from while it was still a game, never garbage time. Dunks now count over layups, the offense comes first (a block now and then, a steal only when it turned the game), and no one player fills the whole recap. One play a game is the game-winner if there was one, else the shot that swung a tight finish most, else the MVP's best play.",
 	},
 	{
 		n: 482,

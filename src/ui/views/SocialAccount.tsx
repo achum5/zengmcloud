@@ -12,6 +12,7 @@ import {
 	VerifiedBadge,
 	type TeamLike,
 } from "./SocialPost.tsx";
+import { SocialShell } from "./SocialShell.tsx";
 
 // ONE ACCOUNT'S PAGE. Cover photo, profile picture, name, handle, bio, where
 // they are and who they follow, and everything they have said lately - posts
@@ -44,6 +45,7 @@ const ROLE_LABEL: Record<string, string> = {
 const SocialAccount = ({
 	account,
 	errorMessage,
+	me,
 	mentions,
 	pictures,
 	playerNames,
@@ -78,11 +80,59 @@ const SocialAccount = ({
 			};
 
 	const teamLike: TeamLike | undefined = team as TeamLike | undefined;
+	const isMe = me !== undefined && me.accountId === account.id;
 	const role = ROLE_LABEL[account.archetypeId] ?? "Media";
 
+	const side = (
+		<>
+			{suggested && suggested.length > 0 ? (
+				<div className="social-card">
+					<h3>You might like</h3>
+					{suggested
+						.filter((a: any) => a.accountId !== account.id)
+						.map((a: any) => (
+							<div key={a.accountId} className="social-suggest">
+								<a href={helpers.leagueUrl(["social", a.handle])}>
+									<Avatar
+										account={a}
+										picture={pictures?.[a.accountId]}
+										size={40}
+										team={
+											a.tid === undefined ? undefined : teamByTid.get(a.tid)
+										}
+									/>
+								</a>
+								<div className="social-suggest-body">
+									<a
+										className="social-name"
+										href={helpers.leagueUrl(["social", a.handle])}
+									>
+										{a.name} {a.verified ? <VerifiedBadge /> : null}
+									</a>
+									<span className="social-handle">@{a.handle}</span>
+								</div>
+								<a
+									className="btn-social-follow"
+									href={helpers.leagueUrl(["social", a.handle])}
+								>
+									Follow
+								</a>
+							</div>
+						))}
+				</div>
+			) : null}
+		</>
+	);
+
 	return (
-		<div className="social-layout" data-social-ready>
-			<div className="social-main">
+		<SocialShell
+			active={isMe ? "profile" : undefined}
+			me={me}
+			pictures={pictures}
+			side={side}
+			teamByTid={teamByTid}
+		>
+			<>
 				<div className="social-header">
 					<div className="social-header-row">
 						<a
@@ -117,15 +167,17 @@ const SocialAccount = ({
 							className="btn-social-outline"
 							href={helpers.leagueUrl(["social_accounts", account.handle])}
 						>
-							Edit
+							{isMe ? "Edit profile" : "Edit"}
 						</a>
-						<button
-							className={clsx("btn-social-follow", following && "following")}
-							onClick={() => setFollowing((f) => !f)}
-							type="button"
-						>
-							{following ? "Following" : "Follow"}
-						</button>
+						{isMe ? null : (
+							<button
+								className={clsx("btn-social-follow", following && "following")}
+								onClick={() => setFollowing((f) => !f)}
+								type="button"
+							>
+								{following ? "Following" : "Follow"}
+							</button>
+						)}
 					</div>
 				</div>
 
@@ -181,27 +233,27 @@ const SocialAccount = ({
 					</div>
 				</div>
 
-				<div className="social-tabs">
+				<div className="social-tabs social-tabs-even">
 					<button
 						className={clsx("social-tab", tab === "posts" && "active")}
 						onClick={() => setTab("posts")}
 						type="button"
 					>
-						Posts
+						<span>Posts</span>
 					</button>
 					<button
 						className={clsx("social-tab", tab === "replies" && "active")}
 						onClick={() => setTab("replies")}
 						type="button"
 					>
-						Replies
+						<span>Replies</span>
 					</button>
 					<button
 						className={clsx("social-tab", tab === "mentions" && "active")}
 						onClick={() => setTab("mentions")}
 						type="button"
 					>
-						Mentions
+						<span>Mentions</span>
 					</button>
 				</div>
 
@@ -216,10 +268,16 @@ const SocialAccount = ({
 						(mentions as any[]).map((post) => (
 							<SocialThread
 								key={post.id}
-								meta={feedDayLabel(post.day, post.date)}
 								pictures={pictures ?? {}}
 								playerNames={playerNames}
-								post={post}
+								post={{
+									...post,
+									time: feedDayLabel(post.day, post.date),
+									replies: post.replies.map((reply: any) => ({
+										...reply,
+										time: feedDayLabel(post.day, post.date),
+									})),
+								}}
 								season={season}
 								teamByTid={teamByTid}
 							/>
@@ -237,7 +295,6 @@ const SocialAccount = ({
 								key={post.id}
 								account={{ ...post, verified: account.verified }}
 								engagement={post.engagement}
-								meta={feedDayLabel(post.day, post.date)}
 								picture={pictures?.[account.id]}
 								playerNames={playerNames}
 								season={season}
@@ -245,7 +302,7 @@ const SocialAccount = ({
 								team={teamLike}
 								teams={teams}
 								text={post.text}
-								time={post.time}
+								time={feedDayLabel(post.day, post.date)}
 							/>
 						))
 					)
@@ -261,7 +318,6 @@ const SocialAccount = ({
 								account={reply.parent}
 								compact
 								engagement={reply.parent.engagement}
-								meta={feedDayLabel(reply.day, reply.date)}
 								picture={pictures?.[reply.parent.accountId]}
 								team={
 									reply.parent.tid === undefined
@@ -270,7 +326,7 @@ const SocialAccount = ({
 								}
 								text={reply.parent.text}
 								threadBelow
-								time={reply.parent.time}
+								time={feedDayLabel(reply.day, reply.date)}
 							/>
 							<SocialPost
 								account={{ ...reply, verified: account.verified }}
@@ -281,58 +337,13 @@ const SocialAccount = ({
 								team={teamLike}
 								text={reply.text}
 								threadAbove
-								time={reply.time}
+								time={feedDayLabel(reply.day, reply.date)}
 							/>
 						</div>
 					))
 				)}
-			</div>
-
-			<aside className="social-side">
-				{suggested && suggested.length > 0 ? (
-					<div className="social-card">
-						<h3>You might like</h3>
-						{suggested
-							.filter((a: any) => a.accountId !== account.id)
-							.map((a: any) => (
-								<div key={a.accountId} className="social-suggest">
-									<a href={helpers.leagueUrl(["social", a.handle])}>
-										<Avatar
-											account={a}
-											picture={pictures?.[a.accountId]}
-											size={40}
-											team={
-												a.tid === undefined ? undefined : teamByTid.get(a.tid)
-											}
-										/>
-									</a>
-									<div className="social-suggest-body">
-										<a
-											className="social-name"
-											href={helpers.leagueUrl(["social", a.handle])}
-										>
-											{a.name} {a.verified ? <VerifiedBadge /> : null}
-										</a>
-										<span className="social-handle">@{a.handle}</span>
-									</div>
-									<a
-										className="btn-social-follow"
-										href={helpers.leagueUrl(["social", a.handle])}
-									>
-										Follow
-									</a>
-								</div>
-							))}
-					</div>
-				) : null}
-				<div className="social-foot">
-					<a href={helpers.leagueUrl(["social"])}>Back to the feed</a> ·{" "}
-					<a href={helpers.leagueUrl(["social_accounts", account.handle])}>
-						Edit this account
-					</a>
-				</div>
-			</aside>
-		</div>
+			</>
+		</SocialShell>
 	);
 };
 

@@ -56,6 +56,8 @@ export const saveRecapReels = async (results: GameResults[]) => {
 			numPeriods: g.get("numPeriods"),
 			spread: result.pregameSpread,
 			stars: starsOf(result),
+			gid: result.gid,
+			gender: g.get("gender"),
 		});
 		await idb.cache.recapReels.put({
 			gid: result.gid,
