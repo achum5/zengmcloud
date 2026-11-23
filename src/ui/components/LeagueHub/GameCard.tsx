@@ -218,7 +218,12 @@ const Side = ({
 	const { accent } = bannerColors(colors);
 	return (
 		<div
-			className={clsx("lh-gc-side", `lh-gc-side-${side}`)}
+			className={clsx(
+				"lh-gc-side",
+				// (Whole class names: the build keeps only styles whose names it
+				// finds written out in the code.)
+				side === "home" ? "lh-gc-side-home" : "lh-gc-side-away",
+			)}
 			style={{ "--gc-accent": accent } as CSSProperties}
 			data-tid={t.tid}
 		>
@@ -244,7 +249,13 @@ const TeamWords = ({
 			? helpers.formatRecord({ ...t, won: t.won, lost: t.lost })
 			: undefined;
 	return (
-		<div className={clsx("lh-gc-team", `lh-gc-team-${side}`, { lost })}>
+		<div
+			className={clsx(
+				"lh-gc-team",
+				side === "home" ? "lh-gc-team-home" : "lh-gc-team-away",
+				{ lost },
+			)}
+		>
 			<div className="lh-gc-region">{brand.region}</div>
 			<div
 				className={clsx("lh-gc-name", {
@@ -302,7 +313,7 @@ export const GameCard = ({
 			<div className="lh-gc-row">
 				<div className="lh-gc-main">
 					<a
-						className="lh-gc-card"
+						className={clsx("lh-gc-card", series && "lh-gc-has-series")}
 						style={halves}
 						href={boxScore}
 						title="Box score"
@@ -315,18 +326,17 @@ export const GameCard = ({
 							logo={awayBrand.logo}
 						/>
 						<TeamWords t={away} side="away" lost={winner === 0} />
+						{/* The series, on a tag hung from the top over the seam. */}
+						{series ? (
+							<div className="lh-gc-series">
+								{series[0]} · {series[1]}
+							</div>
+						) : null}
 						<div className="lh-gc-mid">
 							<div className="lh-gc-final">Final{ot ? `/${ot}` : ""}</div>
 							{line ? (
 								<div className="lh-gc-line" title="Pregame spread">
 									{line}
-								</div>
-							) : null}
-							{series ? (
-								<div className="lh-gc-series">
-									{series[0]}
-									<br />
-									{series[1]}
 								</div>
 							) : null}
 						</div>
