@@ -76,7 +76,13 @@ import { logoPicture } from "./logoPicture.ts";
 import { COURT_H, COURT_W, rimX, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { Caption, Overlays } from "./Overlays.tsx";
-import { bugTeamOf, GameBug, PictureBox, PictureCanvas } from "./Picture.tsx";
+import {
+	bugTeamOf,
+	GameBug,
+	PictureBox,
+	PictureCanvas,
+	standingOf,
+} from "./Picture.tsx";
 import {
 	boxOf,
 	type Box,
@@ -1838,8 +1844,18 @@ const Court3D = ({
 				bugRef={bugRef}
 				own={boxScore?.scoreBug}
 				hidden={intro.on || preview || !!authored}
-				away={bugTeamOf(away, awayPts, boxScore?.teams?.[1])}
-				home={bugTeamOf(home, homePts, boxScore?.teams?.[0])}
+				away={bugTeamOf(
+					away,
+					awayPts,
+					boxScore?.teams?.[1],
+					standingOf(boxScore?.gamecast, boxScore?.teams?.[1]?.tid),
+				)}
+				home={bugTeamOf(
+					home,
+					homePts,
+					boxScore?.teams?.[0],
+					standingOf(boxScore?.gamecast, boxScore?.teams?.[0]?.tid),
+				)}
 				quarter={quarter}
 				series={
 					boxScore?.teams?.[0] && boxScore?.teams?.[1]

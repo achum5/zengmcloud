@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 459,
+		date: "2026-11-23",
+		text: "3D game: national broadcasts. A team looks file can now bring national networks' score bugs. Each night's biggest game (the two best teams going in) is on that night's network, and every playoff game is national, with the Finals on its own network. Custom score bugs can also show where a team stands (\"11-3 (2nd IN EAST)\"), swap the records for timeouts or fouls once a side is in the bonus, and show the playoff series.",
+	},
+	{
 		n: 458,
 		date: "2026-11-23",
 		text: "Draft night: everyone wears proper trousers down to their shoes, with socks to match, instead of shorts. Each prospect comes in his own suit, from dark classics to bold colors, with his own shirt and tie (or none), and it's the same one every time you watch him. His tie is no longer in the colors of the team that drafts him. The commissioner is now bald with thin glasses, in a navy pinstripe suit, pale blue shirt and navy tie. The shot of the commissioner at the podium no longer lags.",

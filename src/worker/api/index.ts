@@ -258,6 +258,8 @@ import {
 	type PlayerWanted,
 } from "../core/trade/lookingForPlayer.ts";
 import { getPlayer } from "../views/player.ts";
+import { nationalBroadcastOf } from "../views/nationalBroadcast.ts";
+import { parseNationalBroadcasts } from "../../common/nationalBroadcasts.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
 	placeBetSlip as sportsbookPlaceBetSlipCore,
@@ -7147,6 +7149,28 @@ const updateScoreBug = async ({
 	return { ok: true };
 };
 
+// The national networks' score bugs, saved whole (see NationalBroadcast).
+// Pictures they no longer use, and any uploaded for them this time that
+// they don't, are let go.
+const updateNationalBroadcasts = async ({
+	broadcasts,
+	uploaded,
+}: {
+	broadcasts: unknown;
+	uploaded?: string[];
+}) => {
+	const parsed = parseNationalBroadcasts(broadcasts);
+	if (typeof parsed === "string") {
+		throw new Error(parsed);
+	}
+	const before = (g.get("nationalBroadcasts") ?? []).flatMap((n) =>
+		scoreBugPictureIds(n.scoreBug),
+	);
+	await league.setGameAttributes({ nationalBroadcasts: parsed });
+	await prunePictures([...before, ...(uploaded ?? [])]);
+	return { ok: true };
+};
+
 // A font for a score bug, kept in the league as its pictures are: its id.
 const storeScoreBugFont = (url: string) => storePicture(url, FONT_TYPES);
 
@@ -8626,7 +8650,8 @@ const getReplayFeed = async (gid: number) => {
 		then?.looks.arena ??
 		(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
 	(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
-		await scoreBugOfGame(boxScore.teams),
+		(await nationalBroadcastOf(boxScore))?.scoreBug ??
+			(await scoreBugOfGame(boxScore.teams)),
 	);
 	return {
 		events: out.events,
@@ -9077,6 +9102,7 @@ const api = {
 		storeCourtPicture,
 		updateCourtDecals,
 		updateScoreBug,
+		updateNationalBroadcasts,
 		storeScoreBugFont,
 		updateTeamUniform,
 		setJerseySkin,

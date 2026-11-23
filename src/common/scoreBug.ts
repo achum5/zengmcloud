@@ -25,6 +25,7 @@ const SHOWS = new Set<ScoreBugShow>([
 	"awayBonus",
 	"homeBonus",
 	"homeLead",
+	"series",
 	"period",
 	"clock",
 	"shotClock",
@@ -46,6 +47,7 @@ const PIECE_NUMBERS = new Set([
 	"rotate",
 	"zoom",
 	"bonusShift",
+	"sub",
 ]);
 const PIECE_STRINGS = new Set([
 	"color",
@@ -65,6 +67,7 @@ const PIECE_STRINGS = new Set([
 const PIECE_BOOLEANS = new Set(["italic", "upper", "colon", "proportional"]);
 const FITS = new Set(["contain", "cover", "fill"]);
 const ORDINALS = new Set(["plain", "sup", "small"]);
+const WHENS = new Set(["noBonus", "bonus", "awayBonus", "homeBonus"]);
 const MAX_PIECES = 80;
 const MAX_FONTS = 6;
 const MAX_TEAM_COLORS = 100;
@@ -212,6 +215,10 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 			} else if (k === "ordinal") {
 				if (typeof v !== "string" || !ORDINALS.has(v)) {
 					return `${at}: "ordinal" should be "plain", "sup" or "small".`;
+				}
+			} else if (k === "when") {
+				if (typeof v !== "string" || !WHENS.has(v)) {
+					return `${at}: "when" should be one of ${[...WHENS].join(", ")}.`;
 				}
 			} else {
 				return `${at}: unknown field "${k}".`;
@@ -670,6 +677,39 @@ export const mapScoreBugURLs = async (
 		}
 	}
 	return out;
+};
+
+// 3 as "rd".
+export const ordinalSuffix = (n: number) =>
+	n % 100 >= 11 && n % 100 <= 13
+		? "th"
+		: (["th", "st", "nd", "rd"][n % 10] ?? "th");
+
+// A record as a bug writes it (see ScoreBugPiece's `text`): {rec}, and
+// {rank} and {conf} ({CONF} in capitals) - the record alone where the
+// standing isn't known, and nothing for a standing alone.
+export const recordText = (
+	text: string | undefined,
+	t: { record?: string; rank?: number; conf?: string } | undefined,
+) => {
+	const rec = t?.record ?? "";
+	if (text === undefined || rec === "") {
+		return rec;
+	}
+	if (
+		(text.includes("{rank}") && t?.rank === undefined) ||
+		(text.toLowerCase().includes("{conf}") && t?.conf === undefined)
+	) {
+		return text.includes("{rec}") ? rec : "";
+	}
+	return text
+		.replaceAll("{rec}", rec)
+		.replaceAll(
+			"{rank}",
+			t?.rank === undefined ? "" : `${t.rank}${ordinalSuffix(t.rank)}`,
+		)
+		.replaceAll("{conf}", t?.conf ?? "")
+		.replaceAll("{CONF}", (t?.conf ?? "").toUpperCase());
 };
 
 // WHICH BUG A GAME CARRIES: the broadcast you'd be watching - your own

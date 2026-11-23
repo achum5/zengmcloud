@@ -17,6 +17,7 @@ import {
 import { primeTimeFor } from "../core/game/primeTime.ts";
 import { takeArenaLooks } from "../core/game/replayLooks.ts";
 import { gamecastInfo } from "./liveGameInfo.ts";
+import { nationalBroadcastOf } from "./nationalBroadcast.ts";
 import type {
 	AllStars,
 	ArenaLooks,
@@ -538,9 +539,11 @@ export default defineView({
 			if (info) {
 				(out.initialBoxScore as any).gamecast = info;
 			}
-			// The broadcast's own score bug, if it has one (see scoreBugForGame).
+			// The broadcast's own score bug, if it has one: a national network's
+			// (see nationalBroadcastOf), or the teams' (see scoreBugForGame).
 			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
-				await scoreBugOfGame(boxScore.teams),
+				(await nationalBroadcastOf(boxScore))?.scoreBug ??
+					(await scoreBugOfGame(boxScore.teams)),
 			);
 
 			// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /

@@ -379,6 +379,9 @@ export const prunePictures = async (ids: Iterable<string>) => {
 	const used = new Set<string>([
 		...decalPictureIds(leagueDecals()),
 		...scoreBugPictureIds(g.get("scoreBug")),
+		...(g.get("nationalBroadcasts") ?? []).flatMap((n) =>
+			scoreBugPictureIds(n.scoreBug),
+		),
 	]);
 	for (const t of teams) {
 		for (const id of [t.jerseySkins?.home, t.jerseySkins?.away]) {

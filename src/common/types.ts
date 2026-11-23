@@ -975,6 +975,9 @@ export type GameAttributesLeague = {
 	courtDecals: CourtDecal[];
 	// The league's own score bug for the 3D game, or null for the default.
 	scoreBug: ScoreBugStyle | null;
+	// The national networks' score bugs: the night's biggest game is theirs
+	// (see NationalBroadcast).
+	nationalBroadcasts: NationalBroadcast[];
 	aiTradesFactor: number;
 	// CPU teams run by the new front office (docs/realistic-front-offices.md)
 	// instead of stock's. Basketball only.
@@ -3528,6 +3531,17 @@ export type ScoreBugStyle = {
 	teamColors?: Record<string, string[]>;
 	pieces: ScoreBugPiece[];
 };
+// A NATIONAL NETWORK: the biggest game on each of its nights carries its
+// score bug, over any team's - and in the playoffs, every game of the
+// series it has (every network with nights shares them out), and of the
+// Finals if it has those.
+export type NationalBroadcast = {
+	network: string;
+	// "Mon".."Sun". (With no calendar, opening night is a Tuesday.)
+	nights?: string[];
+	finals?: boolean;
+	scoreBug: ScoreBugStyle;
+};
 export type ScoreBugShow =
 	| "awayLogo"
 	| "homeLogo"
@@ -3552,6 +3566,9 @@ export type ScoreBugShow =
 	| "homeBonus"
 	// The home team's lead, signed (+4, -4, 0): `text` with {n}, or the number.
 	| "homeLead"
+	// In the playoffs, the series as it stands ("Game 3 · BOS leads 2-1",
+	// smaller if longer than its `text`); otherwise its `text`.
+	| "series"
 	| "period"
 	| "clock"
 	| "shotClock"
@@ -3593,16 +3610,27 @@ export type ScoreBugPiece = {
 	// within its box (a logo bigger than its row, cut off by it).
 	rotate?: number;
 	zoom?: number;
-	// For "text": what it says. For the fouls, what they say ("FOULS: {n}"),
-	// and `limit`, what they say once the other side is in the bonus ("FOUL
-	// LIMIT"). For the timeouts, what they say ("TO: {n}") in place of a
-	// mark for each; `off`, a mark's color once taken (the default dim).
+	// For "text": what it says. For a record, what it says, with {rec} the
+	// record, {rank} where the team stands in its conference ("2nd") and
+	// {conf} which ("East", {CONF} "EAST") - "{rec} ({rank} in {CONF})"; with
+	// no {rec}, nothing till the standing is known. For the fouls,
+	// what they say ("FOULS: {n}"), and `limit`, what they say once the
+	// other side is in the bonus ("FOUL LIMIT"). For the timeouts, what they
+	// say ("TO: {n}") in place of a mark for each; `off`, a mark's color once
+	// taken (the default dim).
 	text?: string;
+	// For a record: the size of what follows it - where the team stands -
+	// smaller than the record ("11-3 (2nd IN EAST)").
+	sub?: number;
 	limit?: string;
 	off?: string;
 	// For the fouls: how far they move over (in the bug's units, left if
 	// less than 0) while their side's BONUS mark shows, to make room for it.
 	bonusShift?: number;
+	// Shown only till either side is in the bonus ("noBonus" - the records,
+	// say), or only once one is ("bonus" - the timeouts in their place), or
+	// once that side is ("awayBonus", "homeBonus" - its fouls).
+	when?: "noBonus" | "bonus" | "awayBonus" | "homeBonus";
 	// For "image": a URL, or "pic:<id>" - and how it fills its box
 	// ("contain", the default; "cover"; "fill").
 	image?: string;
