@@ -302,6 +302,12 @@ const COMM_MEET = hugPartner(MARK, MEET_YAW);
 const COMM_PHOTO: Pt = { x: MARK.x - 2.1, y: MARK.y - 0.1 };
 // (Round behind him to there.)
 const COMM_VIA: Pt = { x: MARK.x - 1.6, y: MARK.y - 1.9 };
+// The pictures done, him off at the back of the stage - round behind the
+// podium's backdrop - and the commissioner back to the podium past the
+// front of it, for the next.
+const EXIT_VIA: Pt = { x: PODIUM.x + 7.6, y: STAGE.y0 + 1 };
+const EXIT: Pt = { x: PODIUM.x - 2.5, y: STAGE.y0 + 0.85 };
+const COMM_BACK: Pt = { x: PODIUM.x + 4, y: PODIUM_SPOT.y };
 // The photographers in front of the stage, either side of the steps and
 // clear of the smoke.
 const PIT: Pt[] = [
@@ -328,6 +334,8 @@ const path = (pts: Pt[], pace: number) => {
 };
 const CHAIR_UP_MS = 900;
 const POSE_MS = 1700;
+// (And off, at a walk.)
+const OFF_PACE = 3.4;
 // The hugs at the table: held, the first longer; and the turn between them.
 const EMBRACE_MS = 3000;
 const EMBRACE2_MS = 2400;
@@ -393,7 +401,12 @@ export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 	const meet = arrive + 320;
 	const photo = meet + HUG_MS;
 	const pose = photo + 600;
-	const ms = pose + POSE_MS + 1600;
+	// Off the back of the stage, the commissioner back to the podium - cut
+	// away from as he gets to the back of it.
+	const off = pose + POSE_MS + 300;
+	const offVia = off + legs(MARK, EXIT_VIA, OFF_PACE);
+	const commBack = off + 250;
+	const ms = offVia + 450;
 	// The commissioner sets off to be there just before him.
 	const commGo = arrive - 250 - legs(PODIUM_SPOT, COMM_MEET, OTHERS_PACE);
 	return {
@@ -426,6 +439,9 @@ export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 		meet,
 		photo,
 		pose,
+		off,
+		offVia,
+		commBack,
 		commGo,
 		ms,
 	};
@@ -688,6 +704,59 @@ export const OPENING: Record<-1 | 0 | 1, [Pt3, Pt3]> = {
 };
 export const OPENING_LOOK: Pt3 = { x: 47, y: 6, z: 4 };
 export const OPENING_WIDTH = 104;
+// Before a pick is read, and between picks: down on the floor among the
+// tables, looking up - at the board (the picks on it, the team on the clock
+// under them), at the wall over the stage, or at the team's tower - the rig
+// glaring over it all, the room's heads along the bottom.
+const BOARD_CAMS: Record<
+	-1 | 0 | 1,
+	{ at: [Pt3, Pt3]; look: [Pt3, Pt3]; width: number }
+> = {
+	// Up at the board.
+	[-1]: {
+		at: [
+			{ x: 36, y: 25.5, z: 4.2 },
+			{ x: 35, y: 24.5, z: 4.6 },
+		],
+		look: [
+			{ x: 20, y: -8, z: 19 },
+			{ x: 22, y: -8, z: 18.5 },
+		],
+		width: 52,
+	},
+	// Up the aisle at the wall.
+	0: {
+		at: [
+			{ x: AISLE_X - 1.5, y: 27.5, z: 3.8 },
+			{ x: AISLE_X - 0.5, y: 26, z: 4.2 },
+		],
+		look: [
+			{ x: AISLE_X - 2, y: STAGE.y0, z: 15 },
+			{ x: AISLE_X, y: STAGE.y0, z: 17 },
+		],
+		width: 56,
+	},
+	// From over to the side, across at the stage and the board beyond it.
+	1: {
+		at: [
+			{ x: 59.5, y: 25, z: 4.2 },
+			{ x: 58.5, y: 24, z: 4.6 },
+		],
+		look: [
+			{ x: 30, y: -8, z: 16 },
+			{ x: 32, y: -8, z: 18 },
+		],
+		width: 58,
+	},
+};
+export const boardCam = (side: -1 | 0 | 1, u: number, k: number): Cam => {
+	const c = BOARD_CAMS[side];
+	return {
+		at: mix3(c.at[0], c.at[1], u),
+		look: mix3(c.look[0], c.look[1], u),
+		width: (c.width - 3 * u) * k,
+	};
+};
 // The commissioner at the podium, square on from out in the room on a long
 // lens: chest up, the podium's top along the bottom of the picture, the
 // team's colors either side of him.
@@ -715,6 +784,10 @@ const footCamOf = (take: DraftTake): Pt3 => ({
 // across to the commissioner, and the two of them hugging - him over the
 // commissioner's shoulder.
 const BACK_CAM: Pt3 = { x: MARK.x + 2.2, y: STAGE.y0 + 0.6, z: 11.2 };
+// Low on the floor past the far end of the stage, looking back along it: the
+// two of them before the logo, the podium beyond - and him off the back of
+// it.
+const SIDE_CAM: Pt3 = { x: STAGE.x1 + 3.5, y: 7, z: 4.6 };
 
 export const draftCameraAt = (
 	t: number,
@@ -726,13 +799,7 @@ export const draftCameraAt = (
 ): Cam => {
 	const k = narrow ? 0.82 : 1;
 	if (t < N.podium) {
-		const u = smooth(t / N.podium);
-		const [from, to] = OPENING[take.open];
-		return {
-			at: mix3(from, to, u),
-			look: OPENING_LOOK,
-			width: OPENING_WIDTH * k,
-		};
+		return boardCam(take.open, smooth(t / N.podium), k);
 	}
 	if (t < N.call) {
 		return podiumCam(
@@ -782,9 +849,24 @@ export const draftCameraAt = (
 			width: Math.min(15, Math.max(10, d * 1.1)) * k,
 		};
 	}
+	const sideFrom = N.off - 300;
+	if (t >= sideFrom) {
+		// From the end of the stage, low: him off at the back of it past the
+		// podium, the commissioner back to it, the logo over them.
+		const u = smooth((t - sideFrom) / (N.ms - sideFrom));
+		return {
+			at: SIDE_CAM,
+			look: mix3(
+				{ x: MARK.x - 1, y: MARK.y - 0.2, z: STAGE.z + 4.8 },
+				{ x: st.x - 2, y: st.y, z: STAGE.z + 5 },
+				u,
+			),
+			width: (22 + 3 * u) * k,
+		};
+	}
 	// In front of the stage, looking up at it: the two of them for the
 	// pictures, the photographers' backs in front.
-	const u = smooth((t - N.photo) / (N.ms - N.photo));
+	const u = smooth((t - N.photo) / (sideFrom - N.photo));
 	return {
 		at: stageCamOf(take),
 		look: { x: MARK.x - 0.9, y: MARK.y - 0.4, z: 7.4 },
@@ -801,7 +883,7 @@ export const flashesOf =
 		const slot = Math.floor(t / FLASH_MS);
 		const out: Pt3[] = [];
 		const table = t >= N.call + 300 && t < N.leave + 800;
-		const stage = t >= N.meet && t < N.ms - 400;
+		const stage = t >= N.meet && t < N.off;
 		if (!table && !stage) {
 			return out;
 		}
@@ -824,7 +906,7 @@ export const flashesOf =
 	};
 
 // Nowhere the cameras look.
-export const NO_BALL = { x: -400, y: -400, z: 0.39 };
+export const NO_BALL = { x: 5000, y: 20, z: 0.39 };
 
 export const stageDraftNight = (
 	pid: number,
@@ -864,6 +946,8 @@ export const stageDraftNight = (
 		walk(N.leave, N.atFoot, g.hugged, CAP),
 		walk(N.atSteps, N.onStage, CAP, STEPS_TOP),
 		walk(N.onStage, N.arrive, STEPS_TOP, MARK),
+		walk(N.off, N.offVia, MARK, EXIT_VIA),
+		walk(N.offVia, N.offVia + legs(EXIT_VIA, EXIT, OFF_PACE), EXIT_VIA, EXIT),
 	];
 	const reactAnim = REACT_ANIM[take.react];
 	const hugLook = ahead(g.hugged, g.hugYaw);
@@ -921,12 +1005,7 @@ export const stageDraftNight = (
 			{ t0: N.meet, t1: N.photo, anim: "dapHug", look: ahead(MARK, MEET_YAW) },
 			{ t0: N.photo, t1: N.pose, anim: "easy", look: STAGE_LOOK },
 			{ t0: N.pose, t1: N.pose + POSE_MS, anim: take.pose, look: STAGE_LOOK },
-			{
-				t0: N.pose + POSE_MS,
-				t1: N.ms + 60_000,
-				anim: "easy",
-				look: STAGE_LOOK,
-			},
+			{ t0: N.pose + POSE_MS, t1: N.off, anim: "easy", look: STAGE_LOOK },
 		],
 		arms: [],
 		faces: [],
@@ -939,6 +1018,7 @@ export const stageDraftNight = (
 			[N.handed, STEPS_TOP],
 			[N.arrive, ahead(MARK, MEET_YAW)],
 			[N.photo, STAGE_LOOK],
+			[N.off, EXIT],
 		],
 		shown: [[0, true]],
 	};
@@ -1109,6 +1189,8 @@ export const stageDraftNight = (
 		},
 	];
 	const commAround = path([COMM_MEET, COMM_VIA, COMM_PHOTO], 3);
+	const commBackAt = N.commBack + legs(COMM_PHOTO, COMM_BACK, 3);
+	const commHome = commBackAt + legs(COMM_BACK, PODIUM_SPOT, 3);
 	const commBeats: Beat[] = [
 		{
 			t0: 0,
@@ -1171,9 +1253,33 @@ export const stageDraftNight = (
 		},
 		{
 			t0: N.photo + commAround,
-			t1: N.ms + 60_000,
+			t1: N.commBack,
 			at: COMM_PHOTO,
 			yaw: yawTo(COMM_PHOTO, STAGE_LOOK),
+			anim: "easy",
+		},
+		// And back to the podium.
+		{
+			t0: N.commBack,
+			t1: commBackAt,
+			at: COMM_PHOTO,
+			to: COMM_BACK,
+			yaw: 0,
+			anim: "walk",
+		},
+		{
+			t0: commBackAt,
+			t1: commHome,
+			at: COMM_BACK,
+			to: PODIUM_SPOT,
+			yaw: 0,
+			anim: "walk",
+		},
+		{
+			t0: commHome,
+			t1: N.ms + 60_000,
+			at: PODIUM_SPOT,
+			yaw: Math.PI / 2,
 			anim: "easy",
 		},
 	];

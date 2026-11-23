@@ -1,5 +1,5 @@
 import { makeCourtRng } from "../courtRng.ts";
-import { drawFan, type Fan } from "./arena.ts";
+import { drawFan, END_WALL, LED_WALL, RIBBON, type Fan } from "./arena.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import {
@@ -187,9 +187,11 @@ const ledRows = (g: CanvasRenderingContext2D, w: number, h: number) => {
 // The LED wall behind the stage (feet).
 const WALL = { x0: STAGE.x0 - 6, x1: STAGE.x1 + 6, z1: STAGE.z + 24 };
 const WALL_PX = 10;
-// The draft board, stage right of the room (the left as the cameras see it),
-// and the team's tower on the other side - stood on the floor.
-const BOARD = { x0: 10, x1: 23, y: -7, z0: 0, z1: 28 };
+// The draft board, stage right of the room (the left as the cameras see it):
+// stood on the floor and up over the stage, the picks on it in rows - the
+// one in, the next ones up - and under them the team on the clock in its
+// colors. The team's tower on the other side.
+export const BOARD = { x0: 6, x1: 26, y: -8, z0: 0, z1: 40 };
 const TOWER = { x0: 71, x1: 79, y: -7, z0: 0, z1: 30 };
 const TOWER_PX = 10;
 
@@ -435,43 +437,113 @@ const paintTower = (info: DraftVenueInfo, main: string, accent: string) => {
 	return c;
 };
 
-const paintBoard = (info: DraftVenueInfo, main: string) => {
+const paintBoard = (info: DraftVenueInfo, main: string, accent: string) => {
 	const w = Math.round((BOARD.x1 - BOARD.x0) * TOWER_PX);
 	const h = Math.round((BOARD.z1 - BOARD.z0) * TOWER_PX);
 	const c = canvas(w, h);
 	const g = c.getContext("2d")!;
-	g.fillStyle = "#0a1022";
+	g.fillStyle = "#060a18";
 	g.fillRect(0, 0, w, h);
+	// Along its top, the year's draft, a line of blue light under it.
 	g.fillStyle = "#ffffff";
 	g.textAlign = "center";
 	g.textBaseline = "middle";
-	fitText(g, String(info.season), w / 2, 22, w - 16, 26);
-	fitText(g, "DRAFT", w / 2, 46, w - 16, 20, 800);
-	g.fillStyle = "rgba(255,255,255,0.35)";
-	g.fillRect(8, 62, w - 16, 2);
-	const rows = info.board.slice(0, 9);
-	const rowH = Math.min(24, (h - 80) / Math.max(1, rows.length));
+	fitText(g, `${info.season} DRAFT`, w / 2, 20, w - 20, 26);
+	g.fillStyle = "#2f6dff";
+	g.fillRect(6, 36, w - 12, 3);
+	// The picks: each its number in a box, the team beside it - the one in
+	// lit in its colors.
+	const rows = info.board.slice(0, 7);
+	const top = 46;
+	const rowH = 31;
 	rows.forEach((r, i) => {
-		const y = 74 + i * rowH;
-		if (r.now) {
-			g.fillStyle = main;
-			g.fillRect(4, y, w - 8, rowH - 3);
-		}
-		g.fillStyle = r.now ? inkOn(main) : "#e8ebf4";
-		g.textAlign = "left";
+		const y = top + i * rowH;
+		const box = rowH - 6;
+		g.fillStyle = r.now ? main : "#16224a";
+		g.fillRect(8, y, box, box);
+		g.fillStyle = r.now ? shade(main, -0.35) : "#0d1532";
+		g.fillRect(8 + box + 4, y, w - 20 - box, box);
+		g.fillStyle = r.now ? inkOn(main) : "#ffffff";
+		g.textAlign = "center";
 		g.textBaseline = "middle";
-		g.font = `900 ${Math.round(rowH * 0.6)}px sans-serif`;
-		g.fillText(String(r.overall), 10, y + rowH / 2 - 1);
+		fitText(g, String(r.overall), 8 + box / 2, y + box / 2 + 1, box - 4, 17);
+		g.fillStyle = "#eef2ff";
+		g.textAlign = "left";
 		fitText(
 			g,
 			r.label.toUpperCase(),
-			38,
-			y + rowH / 2 - 1,
-			w - 46,
-			rowH * 0.55,
+			8 + box + 12,
+			y + box / 2 + 1,
+			w - 36 - box,
+			19,
 			800,
 		);
 	});
+	// Under them, the team on the clock: its name across its colors.
+	const band = top + 7 * rowH + 8;
+	const bandH = 64;
+	const grad = g.createLinearGradient(0, band, 0, band + bandH);
+	grad.addColorStop(0, shade(main, 0.12));
+	grad.addColorStop(1, shade(main, -0.35));
+	g.fillStyle = grad;
+	g.fillRect(0, band, w, bandH);
+	g.fillStyle = accent;
+	g.fillRect(0, band, w, 4);
+	g.fillRect(0, band + bandH - 4, w, 4);
+	g.fillStyle = inkOn(main);
+	g.textAlign = "center";
+	fitText(g, info.team.region.toUpperCase(), w / 2, band + 24, w - 24, 26);
+	g.globalAlpha = 0.85;
+	fitText(g, info.team.name.toUpperCase(), w / 2, band + 47, w - 24, 17, 800);
+	g.globalAlpha = 1;
+	// Down to the floor, dark, a strip of light along the bottom.
+	g.fillStyle = "#2f6dff";
+	g.fillRect(0, h - 4, w, 2);
+	ledRows(g, w, h);
+	return c;
+};
+
+// The LED boards round the building - along the front of the stands, the
+// ribbon between the decks, round the ends - given over to the draft: deep
+// blue, lines of light along their edges, the year's draft along them and
+// the team on the clock's color between.
+const paintBand = (
+	w: number,
+	h: number,
+	pxPerFt: number,
+	info: DraftVenueInfo,
+	main: string,
+) => {
+	const c = canvas(w, h);
+	const g = c.getContext("2d")!;
+	const grad = g.createLinearGradient(0, 0, 0, h);
+	grad.addColorStop(0, "#0a1a4a");
+	grad.addColorStop(0.5, "#050b22");
+	grad.addColorStop(1, "#0a1a4a");
+	g.fillStyle = grad;
+	g.fillRect(0, 0, w, h);
+	const edge = Math.max(1, Math.round(h * 0.1));
+	g.fillStyle = "#3d7bff";
+	g.fillRect(0, 0, w, edge);
+	g.fillRect(0, h - edge, w, edge);
+	const every = 34 * pxPerFt;
+	g.textAlign = "center";
+	g.textBaseline = "middle";
+	for (let x = every / 2, i = 0; x < w; x += every, i++) {
+		g.fillStyle = "#dfe8ff";
+		fitText(
+			g,
+			`${info.season} DRAFT`,
+			x,
+			h / 2 + 1,
+			every * 0.55,
+			h * 0.5,
+			900,
+		);
+		g.fillStyle = main;
+		const mx = x + every / 2;
+		g.fillRect(mx - 1.2 * pxPerFt, h / 2 - h * 0.09, 2.4 * pxPerFt, h * 0.18);
+	}
 	ledRows(g, w, h);
 	return c;
 };
@@ -529,6 +601,12 @@ export type DraftVenuePaint = {
 	fascia: HTMLCanvasElement;
 	tower: HTMLCanvasElement;
 	board: HTMLCanvasElement;
+	// The building's own boards (see Venue.boards).
+	bands: {
+		wall: HTMLCanvasElement;
+		ribbon: HTMLCanvasElement;
+		end: HTMLCanvasElement;
+	};
 	// Each of them sat, sat clapping, and up on their feet both ways they wave.
 	sat: HTMLCanvasElement;
 	clap: HTMLCanvasElement;
@@ -792,7 +870,13 @@ export const paintDraftVenue = (
 		dots: paintDots(boldColor(info.team.colors, main)),
 		fascia: paintFascia(info, main),
 		tower: paintTower(info, main, accent),
-		board: paintBoard(info, main),
+		board: paintBoard(info, main, accent),
+		// (All of them px a foot as the building's own are - see paintBoards.)
+		bands: {
+			wall: paintBand(LED_WALL.w, LED_WALL.h, 12, info, main),
+			ribbon: paintBand(RIBBON.w, RIBBON.h, 8, info, main),
+			end: paintBand(END_WALL[0].w, END_WALL[0].h, 12, info, main),
+		},
 		sat,
 		clap,
 		up,
@@ -1015,6 +1099,118 @@ const drawBeams = (ctx: Ctx, cam: Camera, t: number) => {
 	ctx.restore();
 };
 
+// The rig: lights hung over the front of the stage and higher over its
+// back, and over the board - turned out at the room. To a camera looking
+// into one, a glare, and a star of light off it, as a lens makes of a light
+// shone into it; from the side, a lamp.
+type RigLight = { at: Pt3; aim: Pt3 };
+const unit3 = (p: Pt3): Pt3 => {
+	const l = Math.hypot(p.x, p.y, p.z) || 1;
+	return { x: p.x / l, y: p.y / l, z: p.z / l };
+};
+// (Each turned a little this way or that from the next: looked into
+// square by one camera, a few of them; by another, others.)
+const rigRow = (
+	x0: number,
+	x1: number,
+	n: number,
+	y: number,
+	z: number,
+	aim: Pt3,
+) =>
+	Array.from({ length: n }, (_, i): RigLight => ({
+		at: { x: x0 + ((x1 - x0) * i) / (n - 1), y, z },
+		aim: unit3({ ...aim, x: aim.x + ((i % 3) - 1) * 0.32 }),
+	}));
+const RIG: RigLight[] = [
+	...rigRow(STAGE.x0 - 4, STAGE.x1 + 4, 11, STAGE.y1 + 2, 30, {
+		x: 0,
+		y: 0.6,
+		z: -0.8,
+	}),
+	...rigRow(STAGE.x0 - 8, STAGE.x1 + 8, 9, STAGE.y0 + 2, 34, {
+		x: 0,
+		y: 0.75,
+		z: -0.66,
+	}),
+	...rigRow(BOARD.x0 + 2, BOARD.x1 - 2, 4, BOARD.y + 1, BOARD.z1 + 2, {
+		x: 0.2,
+		y: 0.72,
+		z: -0.66,
+	}),
+];
+// How long a star's arms reach at most, of the picture's diagonal.
+const STAR_REACH = 0.15;
+const drawRig = (ctx: Ctx, cam: Camera) => {
+	const diag = Math.hypot(cam.viewW, cam.viewH);
+	const margin = diag * STAR_REACH;
+	ctx.save();
+	ctx.globalCompositeOperation = "lighter";
+	ctx.lineCap = "round";
+	for (const l of RIG) {
+		if (depthOf(cam, l.at) < 2) {
+			continue;
+		}
+		const p = project(cam, l.at);
+		if (
+			p.x < -margin ||
+			p.x > cam.viewW + margin ||
+			p.y < -margin ||
+			p.y > cam.viewH + margin
+		) {
+			continue;
+		}
+		const to = unit3({
+			x: cam.pos.x - l.at.x,
+			y: cam.pos.y - l.at.y,
+			z: cam.pos.z - l.at.z,
+		});
+		const face = Math.max(0, to.x * l.aim.x + to.y * l.aim.y + to.z * l.aim.z);
+		const r = Math.max(1.3, 0.5 * p.k);
+		const lit = 0.3 + 0.7 * face ** 3;
+		const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 4);
+		halo.addColorStop(0, `rgba(255, 248, 236, ${0.5 * lit})`);
+		halo.addColorStop(1, "rgba(255, 248, 236, 0)");
+		ctx.fillStyle = halo;
+		ctx.fillRect(p.x - r * 4, p.y - r * 4, r * 8, r * 8);
+		ctx.fillStyle = `rgba(255, 255, 255, ${0.35 + 0.6 * lit})`;
+		ctx.beginPath();
+		ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+		ctx.fill();
+		// Its star, looked square into.
+		const star = Math.max(0, (face - 0.9) / 0.1);
+		if (star <= 0) {
+			continue;
+		}
+		const reach = Math.min(margin, r * 30) * star;
+		for (const [a, k] of [
+			[0.66, 1],
+			[-0.66, 1],
+			[0, 0.45],
+			[Math.PI / 2, 0.3],
+		] as const) {
+			const dx = Math.cos(a) * reach * k;
+			const dy = Math.sin(a) * reach * k;
+			const arm = ctx.createLinearGradient(
+				p.x - dx,
+				p.y - dy,
+				p.x + dx,
+				p.y + dy,
+			);
+			arm.addColorStop(0, "rgba(255, 250, 240, 0)");
+			arm.addColorStop(0.5, `rgba(255, 250, 240, ${0.75 * star})`);
+			arm.addColorStop(1, "rgba(255, 250, 240, 0)");
+			ctx.strokeStyle = arm;
+			ctx.lineWidth = Math.max(1, r * 0.45);
+			ctx.beginPath();
+			ctx.moveTo(p.x - dx, p.y - dy);
+			ctx.lineTo(p.x + dx, p.y + dy);
+			ctx.stroke();
+		}
+	}
+	ctx.restore();
+};
+
 // Colored lights moving slowly over the floor of the room.
 const SWEEPS = 3;
 const sweepAt = (i: number, t: number): Pt => ({
@@ -1074,6 +1270,7 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 	);
 	return {
 		round: true,
+		boards: paint.bands,
 		ground: groundAt,
 		floor: (ctx, cam, t) => {
 			// The house lights down.
@@ -1293,6 +1490,7 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 		},
 		over: (ctx, cam, t) => {
 			drawBeams(ctx, cam, t);
+			drawRig(ctx, cam);
 			for (const j of JETS) {
 				drawJet(ctx, cam, j, t - room.jetFrom);
 			}

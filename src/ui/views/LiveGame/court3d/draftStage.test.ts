@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import { makeCamera, project } from "./camera.ts";
 import type { CrewRole } from "./crew.ts";
 import {
+	boardCam,
 	BROTHER,
 	COMMISSIONER,
 	DRAFT_CALL,
@@ -9,6 +10,7 @@ import {
 	MARK,
 	MOTHER,
 	PODIUM,
+	SEAT_R,
 	STAFFER,
 	POSES,
 	STAGE,
@@ -118,6 +120,8 @@ describe("a pick made on draft night", () => {
 				N.meet,
 				N.photo,
 				N.pose,
+				N.off,
+				N.offVia,
 				N.ms,
 			];
 			for (let i = 1; i < order.length; i++) {
@@ -141,6 +145,28 @@ describe("a pick made on draft night", () => {
 		}
 	});
 
+	test("before his name is read, the cameras are down among the tables, looking up at the board, the wall or across at the stage", () => {
+		for (const side of [-1, 0, 1] as const) {
+			for (const u of [0, 0.5, 1]) {
+				const c = boardCam(side, u, 1);
+				assert.isBelow(c.at.z, 5);
+				assert.isAbove(c.look.z, c.at.z + 10);
+				for (const tb of TABLES) {
+					assert.isAbove(
+						Math.hypot(c.at.x - tb.x, c.at.y - tb.y),
+						SEAT_R + 0.5,
+						`${side} ${u}`,
+					);
+				}
+			}
+		}
+		for (const { take, scene } of scenes) {
+			const m = scene.moment(1200, bodyFor);
+			const { rig } = scene.aim(1200, false, m);
+			assert.isBelow(rig.at!.z, 5, name(take));
+		}
+	});
+
 	test("he is sat at his family's table till his name is read, and ends up on the stage", () => {
 		for (const { take, scene } of scenes) {
 			const at = (t: number) => scene.moment(t, bodyFor).players[0]!;
@@ -152,9 +178,15 @@ describe("a pick made on draft night", () => {
 				TABLE_R + 1.5,
 			);
 			assert.strictEqual(sat.z, 0);
+			// The pictures taken at center stage, and him off at the back of
+			// it.
+			const posed = at(scene.night.pose + 500);
+			assert.closeTo(posed.x, MARK.x, 0.3);
+			assert.closeTo(posed.y, MARK.y, 0.3);
 			const end = at(scene.ms);
-			assert.closeTo(end.x, MARK.x, 0.3);
-			assert.closeTo(end.y, MARK.y, 0.3);
+			assert.isBelow(end.y, MARK.y - 3);
+			assert.isAbove(end.x, STAGE.x0);
+			assert.isBelow(end.x, STAGE.x1);
 			assert.strictEqual(end.z, STAGE.z);
 			// (Stood on it, not hanging in the air over it.)
 			assert.strictEqual(end.aloft, 0);
@@ -264,7 +296,7 @@ describe("a pick made on draft night", () => {
 		}
 	}, 60_000);
 
-	test("the commissioner is at the podium for the call, and meets him at center stage; family hug him at the table", () => {
+	test("the commissioner is at the podium for the call, meets him at center stage and goes back; family hug him at the table", () => {
 		for (const { take, scene } of scenes) {
 			const N = scene.night;
 			const who = (t: number, pid: number) =>
@@ -278,6 +310,10 @@ describe("a pick made on draft night", () => {
 			assert.strictEqual(meeting.anim, "dapHug");
 			assert.strictEqual(him.anim, "dapHug");
 			assert.isBelow(Math.hypot(meeting.x - him.x, meeting.y - him.y), 2);
+			// And back to the podium for the next, once he is off.
+			const back = who(N.ms + 3000, COMMISSIONER);
+			assert.closeTo(back.x, reading.x, 0.05);
+			assert.closeTo(back.y, reading.y, 0.05);
 			// One of his family hugs him at the table, and then whoever else
 			// is with them.
 			const family = (t: number) =>

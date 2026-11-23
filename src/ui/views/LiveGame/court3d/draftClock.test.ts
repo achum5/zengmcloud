@@ -43,7 +43,7 @@ describe("the room between picks", () => {
 		}
 	});
 
-	test("the cameras go round the room, and in on each of them - him in the picture, on a phone and a wide screen", () => {
+	test("the cameras go up at the board, round the room, and in on each of them - him in the picture, on a phone and a wide screen", () => {
 		const scene = stageOnTheClock([{ pid: 3 }, { pid: 4 }, { pid: 5 }]);
 		const n = scene.seated.length;
 		const kinds = new Set<string>();
@@ -70,7 +70,12 @@ describe("the room between picks", () => {
 				assert.isBelow(head.y, h * 0.74, where);
 			}
 		}
-		assert.deepStrictEqual([...kinds].sort(), ["prospect", "room", "wall"]);
+		assert.deepStrictEqual([...kinds].sort(), [
+			"board",
+			"prospect",
+			"room",
+			"wall",
+		]);
 		// Nobody left: the podium instead.
 		assert.strictEqual(clockShotAt(14_000, 0).shot.kind, "podium");
 	});

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 453,
+		date: "2026-11-23",
+		text: "Draft night looks more like the broadcast again. Before each pick is read, the camera is down among the tables looking up at the big board, with the picks coming up and the team on the clock under them, and the lights over the stage glaring into the lens. The arena's ribbon boards glow blue for the draft. After the pictures, the player walks off the back of the stage and the commissioner goes back to the podium, seen from the end of the stage. The live draft room on the Draft page also no longer drops out for a pick when it can't load right away: it keeps trying.",
+	},
+	{
 		n: 452,
 		date: "2026-11-23",
 		text: "3D game: more of each possession plays at real speed. The ball brought up the floor still runs by fast, but the picture now slows down about five seconds before each shot, turnover or foul (it was about three), so you see the play that leads to it. To watch every possession whole at real speed, turn off Fast-forward to the action in the live game's settings (the button next to Key plays).",

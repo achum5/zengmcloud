@@ -536,6 +536,13 @@ export type Venue = {
 	// Stands all the way round - the near side's too, for cameras on the
 	// floor looking back at it.
 	round?: true;
+	// Its own pictures on the building's LED boards, in place of the home
+	// team's: along the front of the stands, the ribbon, round the ends.
+	boards?: {
+		wall: HTMLCanvasElement;
+		ribbon: HTMLCanvasElement;
+		end?: HTMLCanvasElement;
+	};
 	// How high the floor under a spot is (a stage, its steps - feet).
 	ground?: (x: number, y: number) => number;
 };
@@ -1891,9 +1898,12 @@ export const drawFrame = (f: Frame) => {
 	// The ribbon round the upper deck and the banners over it, the boards
 	// along the front of the stands - showing what the moment calls for.
 	const screen = boardAt(tl, t);
-	drawTexturedPlane(ctx, cam, RIBBON, arena.boards.ribbon[screen], 24, 1);
+	const venueBoards = f.venue?.boards;
+	const ribbon = venueBoards?.ribbon ?? arena.boards.ribbon[screen];
+	const wall = venueBoards?.wall ?? arena.boards.wall[screen];
+	drawTexturedPlane(ctx, cam, RIBBON, ribbon, 24, 1);
 	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
-	drawTexturedPlane(ctx, cam, LED_WALL, arena.boards.wall[screen], 24, 1);
+	drawTexturedPlane(ctx, cam, LED_WALL, wall, 24, 1);
 	// (And round the near side, if the cameras look back at it.)
 	if (f.venue?.round) {
 		drawTexturedPlane(
@@ -1910,16 +1920,9 @@ export const drawFrame = (f: Frame) => {
 			24,
 			6,
 		);
-		drawTexturedPlane(
-			ctx,
-			cam,
-			NEAR_RIBBON,
-			arena.boards.ribbon[screen],
-			24,
-			1,
-		);
+		drawTexturedPlane(ctx, cam, NEAR_RIBBON, ribbon, 24, 1);
 		drawTexturedPlane(ctx, cam, NEAR_RAFTERS, arena.rafters, 24, 2);
-		drawTexturedPlane(ctx, cam, NEAR_WALL, arena.boards.wall[screen], 24, 1);
+		drawTexturedPlane(ctx, cam, NEAR_WALL, wall, 24, 1);
 	}
 	floorQuad(
 		ctx,
@@ -1955,7 +1958,7 @@ export const drawFrame = (f: Frame) => {
 				4,
 			);
 		}
-		const end = arena.boards.end?.[screen];
+		const end = venueBoards ? venueBoards.end : arena.boards.end?.[screen];
 		if (end) {
 			drawTexturedPlane(ctx, cam, END_WALL[side], end, 12, 1);
 		}
