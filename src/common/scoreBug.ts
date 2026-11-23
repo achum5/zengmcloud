@@ -48,6 +48,7 @@ const PIECE_NUMBERS = new Set([
 	"zoom",
 	"bonusShift",
 	"sub",
+	"lowAt",
 ]);
 const PIECE_STRINGS = new Set([
 	"color",
@@ -63,6 +64,7 @@ const PIECE_STRINGS = new Set([
 	"off",
 	"low",
 	"lowBackground",
+	"undated",
 ]);
 const PIECE_BOOLEANS = new Set(["italic", "upper", "colon", "proportional"]);
 const FITS = new Set(["contain", "cover", "fill"]);
@@ -75,11 +77,18 @@ const MAX_TEAM_COLORS = 100;
 const isNumber = (v: unknown): v is number =>
 	typeof v === "number" && Number.isFinite(v);
 
+// (Said when a team looks file is loaded where one team's bug or court is.)
+export const NOT_TEAM_LOOKS =
+	"That's a team looks file. Import it in Manage Teams (Import team looks).";
+
 export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
 		return "Expected a JSON object.";
 	}
 	const r = raw as Record<string, unknown>;
+	if ("teamLooks" in r) {
+		return NOT_TEAM_LOOKS;
+	}
 	for (const key of Object.keys(r)) {
 		if (
 			![
@@ -711,6 +720,36 @@ export const recordText = (
 		.replaceAll("{conf}", t?.conf ?? "")
 		.replaceAll("{CONF}", (t?.conf ?? "").toUpperCase());
 };
+
+// What a "text" or "series" piece says (see ScoreBugPiece's `text`): {DAY}
+// the game's weekday ("TUESDAY"), {Day} as written ("Tuesday") - or, with
+// no date to tell it (`day` undefined), its `undated` words, else the words
+// around it.
+const DAY_TOKEN = /{(?:DAY|Day)}/g;
+const HAS_DAY = /{(?:DAY|Day)}/;
+export const dayText = <T extends string | undefined>(
+	text: T,
+	undated: string | undefined,
+	day: string | undefined,
+): T | string => {
+	if (text === undefined || !HAS_DAY.test(text)) {
+		return text;
+	}
+	if (day === undefined) {
+		return (
+			undated ??
+			text
+				.replace(DAY_TOKEN, "")
+				.replaceAll(/\s{2,}/g, " ")
+				.trim()
+		);
+	}
+	return text.replaceAll("{DAY}", day.toUpperCase()).replaceAll("{Day}", day);
+};
+
+// (How long it says it, with a day in it.)
+export const dayTextLength = (text: string) =>
+	text.replace(DAY_TOKEN, "SATURDAY").length;
 
 // WHICH BUG A GAME CARRIES: the broadcast you'd be watching - your own
 // team's when it plays, the home team's otherwise - if that team has a bug

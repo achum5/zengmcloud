@@ -10,6 +10,7 @@ export const buildSw = async () => {
 		globPatterns: [
 			"**/*.{js,css,html}",
 			"fonts/*",
+			"fonts/saira-extra-condensed/*.woff2",
 			"gen/*.json",
 			"img/logos-primary/*.svg",
 			"img/logos-secondary/*.svg",

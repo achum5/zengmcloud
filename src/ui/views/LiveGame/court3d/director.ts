@@ -134,6 +134,13 @@ import {
 import { BREAK_SHARE } from "./nbaRates.ts";
 import { stepTimeline } from "./stepper.ts";
 import { bodyOf as ownBodyOf } from "./possession/body.ts";
+import {
+	type Defender,
+	defenderOf,
+	type Guard,
+	threatOf,
+} from "./possession/defense.ts";
+import type { Defending } from "./possession/loop.ts";
 import { type Follow, followWith } from "./possession/follow.ts";
 import { inchesOf, type OwnGait } from "./possession/gait.ts";
 import { signatureOf } from "./possession/signature.ts";
@@ -3087,6 +3094,12 @@ class Director {
 	// The runs that take a defender to where his man has him be, and whose man
 	// that is: in the end (see mark) he follows his man every step of the way.
 	private readonly marking = new Map<Move, number>();
+	// Who each defender guards, from when to when, as following his man has
+	// it (see mark) - for the new sim's defenders to guard him themselves.
+	private readonly guards = new Map<number, Guard[]>();
+	// ... and the runs of a defender's the play has him make himself, in the
+	// middle of guarding his man: stepping up to stop the ball.
+	private readonly planned = new Map<number, [number, number][]>();
 	// Men on the ball letting them dribble out the clock: where they stand
 	// off him, from when till when (see concede).
 	private readonly conceded: {
@@ -4824,6 +4837,26 @@ class Director {
 	// How much of a thing he has (0-1), from his ratings - or nothing to go by.
 	private level(pid: number, ...keys: RatingKey[]): number | undefined {
 		return levelOf(this.rated.get(pid), keys);
+	}
+
+	// The new sim's defense (possession/loop.ts): who each defender guards,
+	// and what he and his man are like at it.
+	private defending(): Defending {
+		const by = new Map<number, Defender>();
+		return {
+			guards: this.guards,
+			planned: this.planned,
+			defender: (pid) => {
+				let d = by.get(pid);
+				if (!d) {
+					const r = this.rated.get(pid);
+					d = defenderOf(pid, r, ownBodyOf(r));
+					by.set(pid, d);
+				}
+				return d;
+			},
+			threat: (pid) => threatOf(this.rated.get(pid)),
+		};
 	}
 
 	// Each man moved by his own body, from his ratings (see possession/).
@@ -24462,6 +24495,11 @@ class Director {
 			// How much slower than the quickest of them he is to read what his
 			// man and the ball do (ms): each man his own.
 			const quick = 120 * hash01(tr.pid, 9241);
+			// (Who he guards, from when to when: see possession/defense.ts.)
+			const guards: Guard[] = [];
+			if (this.possession) {
+				this.guards.set(tr.pid, guards);
+			}
 			// His teammates - read off in time order as he is worked out.
 			const mates = [...this.tracks.values()]
 				.filter((o) => o !== tr && o.team === tr.team)
@@ -24913,6 +24951,23 @@ class Director {
 					);
 					if (gave) {
 						aim = gave.at;
+					}
+					// (Who he guards, for the new sim's defenders to guard
+					// themselves: not while waiting on a man coming on, letting
+					// them run the clock out, or with his man backing him down.)
+					if (this.possession) {
+						const mine =
+							!waiting && !gave && !backingDown(who, t) && shownAt(who, t)
+								? who
+								: undefined;
+						const g = guards.at(-1);
+						if (mine === undefined) {
+							// (Nobody.)
+						} else if (g && g.man === mine && t - g.t1 <= DT + 1) {
+							g.t1 = t;
+						} else {
+							guards.push({ t0: t, t1: t, man: mine });
+						}
 					}
 					last = aim;
 					ticks.push({
@@ -30186,6 +30241,13 @@ class Director {
 				ramp: best.ramp,
 			});
 			best.tr.nudges.sort((a, b) => a.t0 - b.t0);
+			// (The play's, for the new sim's defenders too, till they help for
+			// themselves: see possession/loop.ts.)
+			if (this.possession) {
+				const list = this.planned.get(best.tr.pid) ?? [];
+				list.push([arrive - best.ramp, until + best.ramp]);
+				this.planned.set(best.tr.pid, list);
+			}
 		}
 	}
 
@@ -31478,6 +31540,7 @@ class Director {
 				},
 				calm,
 				this.possession ? this.ownMovers() : undefined,
+				this.possession ? this.defending() : undefined,
 			);
 		}
 		this.keepApart(calm);

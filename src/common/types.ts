@@ -3601,13 +3601,15 @@ export type NationalBroadcast = {
 	nights?: string[];
 	finals?: boolean;
 	// The network's logo on its games' previews: a link, or a picture written
-	// in. (Without one, its name.)
+	// in (without one, its name) - and `logoDark`, the one for a dark page
+	// (without one, the same).
 	logo?: string;
+	logoDark?: string;
 	scoreBug: ScoreBugStyle;
 };
 // A game's national network as its preview shows it: the name, and the
-// logo ready to show (if it has one).
-export type NationalTag = { network: string; logo?: string };
+// logos ready to show (if it has them).
+export type NationalTag = { network: string; logo?: string; logoDark?: string };
 export type ScoreBugShow =
 	| "awayLogo"
 	| "homeLogo"
@@ -3683,8 +3685,11 @@ export type ScoreBugPiece = {
 	// what they say ("FOULS: {n}"), and `limit`, what they say once the
 	// other side is in the bonus ("FOUL LIMIT"). For the timeouts, what they
 	// say ("TO: {n}") in place of a mark for each; `off`, a mark's color once
-	// taken (the default dim).
+	// taken (the default dim). For "text" and "series", {DAY} is the game's
+	// weekday ("TUESDAY"; {Day}, "Tuesday") - and `undated`, what it says
+	// instead when the game has no date (the NBA calendar off).
 	text?: string;
+	undated?: string;
 	// For a record: the size of what follows it - where the team stands -
 	// smaller than the record ("11-3 (2nd IN EAST)").
 	sub?: number;
@@ -3707,9 +3712,11 @@ export type ScoreBugPiece = {
 	// For "clock" and "shotClock": the way the broadcasts write them,
 	// ":09.2" and ":24".
 	colon?: boolean;
-	// For "shotClock": its color and background in its last seconds.
+	// For "shotClock": its color and background in its last seconds - under
+	// `lowAt` (5 unless said).
 	low?: string;
 	lowBackground?: string;
+	lowAt?: number;
 };
 
 export type CourtDecalPlaced = {

@@ -35,6 +35,7 @@ import {
 } from "../../src/ui/views/LiveGame/court3d/director.ts";
 import {
 	bodyPoint,
+	evalBall,
 	evalPlayer,
 	fastAt,
 	poseOf,
@@ -322,6 +323,120 @@ const film = (
 	return frames.length;
 };
 
+// THE WHOLE FLOOR (LAB_COURT=t0:t1[,t0:t1...]): all ten from up in the
+// stands on the near side, following the ball along the floor - to see how
+// they play together (the defense, the spacing), not one man's legs.
+const COURT_EYE = 24;
+const COURT_BACK = 30;
+const COURT_WIDTH = 50;
+const filmCourt = (
+	tl: CourtTimeline,
+	t0: number,
+	t1: number,
+	bodyFor: (pid: number) => Body,
+	lookFor: (pid: number) => Look,
+	out: string,
+) => {
+	const frames: Uint8ClampedArray[] = [];
+	let cx: number | undefined;
+	for (let t = t0; t <= t1; t += 1000 / FPS) {
+		const b = evalBall(tl, t, bodyFor);
+		// (Leaning toward the rim the ball is nearer, so the basket stays in.)
+		const rim = b.x < 47 ? 5.25 : 88.75;
+		const want = Math.min(80, Math.max(14, b.x + 0.4 * (rim - b.x)));
+		cx = cx === undefined ? want : cx + (want - cx) * 0.04;
+		const cam = cameraAt(
+			{ x: cx, y: -COURT_BACK, z: COURT_EYE },
+			{ x: cx, y: 25, width: COURT_WIDTH, z: 0 },
+			W,
+			H,
+			false,
+			{ narrow: 0.5, wide: 0.5 },
+		);
+		const d = background(cam, { x: Math.round(cx), y: 25 });
+		// (The floor's lines: the edges, the lanes, the arcs.)
+		const line = (pts: { x: number; y: number }[]) => {
+			for (let k = 0; k + 1 < pts.length; k++) {
+				const a = pts[k]!;
+				const c = pts[k + 1]!;
+				const n = Math.ceil(Math.hypot(c.x - a.x, c.y - a.y) / 0.1);
+				for (let j = 0; j <= n; j++) {
+					const q = project(cam, {
+						x: a.x + ((c.x - a.x) * j) / n,
+						y: a.y + ((c.y - a.y) * j) / n,
+						z: 0,
+					});
+					if (q.depth > 1) {
+						put(d, q.x, q.y, [250, 250, 250]);
+					}
+				}
+			}
+		};
+		line([
+			{ x: 0, y: 0 },
+			{ x: 94, y: 0 },
+			{ x: 94, y: 50 },
+			{ x: 0, y: 50 },
+			{ x: 0, y: 0 },
+		]);
+		line([
+			{ x: 47, y: 0 },
+			{ x: 47, y: 50 },
+		]);
+		for (const end of [0, 1]) {
+			const X = (x: number) => (end === 0 ? x : 94 - x);
+			line([
+				{ x: X(0), y: 17 },
+				{ x: X(19), y: 17 },
+				{ x: X(19), y: 33 },
+				{ x: X(0), y: 33 },
+			]);
+			const arc: { x: number; y: number }[] = [
+				{ x: X(0), y: 3 },
+				{ x: X(14), y: 3 },
+			];
+			for (let a = -68; a <= 68; a += 2) {
+				const r = (a * Math.PI) / 180;
+				arc.push({
+					x: X(5.25 + 23.75 * Math.cos(r)),
+					y: 25 + 23.75 * Math.sin(r),
+				});
+			}
+			arc.push({ x: X(14), y: 47 }, { x: X(0), y: 47 });
+			line(arc);
+		}
+		// (Far side first, so the near men are drawn over them.)
+		const men = [...tl.tracks.values()]
+			.filter((tr) => tr.pid >= 0)
+			.map((tr) => ({ tr, st: evalPlayer(tl, tr.pid, t) }))
+			.filter(({ st }) => st.shown)
+			.sort((a, c) => c.st.y - a.st.y);
+		for (const { tr, st } of men) {
+			const body = bodyFor(tr.pid);
+			const fig = sculpt(
+				cam,
+				withBody(st, body),
+				body,
+				lookFor(tr.pid),
+				1,
+				0,
+				0,
+				W,
+				H,
+			);
+			over(d, fig.img);
+			dot(d, fig.head.x, fig.head.y, Math.round(fig.head.r), [70, 48, 36]);
+		}
+		const q = project(cam, b);
+		dot(d, q.x, q.y, 3, [230, 120, 30]);
+		frames.push(d);
+	}
+	const all = new Uint8Array(frames.length * W * H * 4);
+	frames.forEach((f, i) => all.set(f, i * W * H * 4));
+	writeFileSync(out, all);
+	return frames.length;
+};
+
 // HOW HIS FEET GO, over the whole game: how many times a second a foot comes
 // down at each pace (feet a second, by 2 ft/s), what share of the time a
 // foot down is sliding along the floor, and each time he pulls up from a run
@@ -500,6 +615,37 @@ test.skipIf(!process.env.LAB_GAME)(
 				prev = st;
 			}
 			writeFileSync(`${dir}/probe.tsv`, rows.join("\n"));
+			return;
+		}
+		if (process.env.LAB_COURT) {
+			const all = players as { pid: number; team: 0 | 1; pos?: string }[];
+			const bodyFor = (pid: number) =>
+				bodyOf(HEIGHT[all.find((q) => q.pid === pid)?.pos ?? ""] ?? 78);
+			const lookFor = (pid: number): Look => ({
+				kit: kits[all.find((q) => q.pid === pid)?.team ?? 0]!,
+				skin: "#8d5524",
+				hair: "#1f1612",
+				jerseyNumber: String(pid % 100),
+				name: "",
+				lastName: "",
+				wordmark: "",
+			});
+			const done: { file: string; t0: number; t1: number; frames: number }[] =
+				[];
+			for (const [k, span] of process.env.LAB_COURT.split(",").entries()) {
+				const [t0, t1] = span.split(":").map(Number);
+				const file = `court_${k + 1}`;
+				const frames = filmCourt(
+					tl,
+					t0!,
+					t1!,
+					bodyFor,
+					lookFor,
+					`${dir}/${file}.rgba`,
+				);
+				done.push({ file, t0: t0!, t1: t1!, frames });
+			}
+			writeFileSync(`${dir}/court.json`, JSON.stringify(done, null, 1));
 			return;
 		}
 		if (process.env.LAB_MEASURE) {

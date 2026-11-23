@@ -22,7 +22,16 @@ export const parseNationalBroadcasts = (
 		const label =
 			typeof r.network === "string" ? r.network : `Network ${i + 1}`;
 		for (const key of Object.keys(r)) {
-			if (!["network", "nights", "finals", "logo", "scoreBug"].includes(key)) {
+			if (
+				![
+					"network",
+					"nights",
+					"finals",
+					"logo",
+					"logoDark",
+					"scoreBug",
+				].includes(key)
+			) {
 				return `${label}: unknown field "${key}".`;
 			}
 		}
@@ -39,8 +48,10 @@ export const parseNationalBroadcasts = (
 		if (r.finals !== undefined && typeof r.finals !== "boolean") {
 			return `${label}: "finals" should be true or false.`;
 		}
-		if (r.logo !== undefined && typeof r.logo !== "string") {
-			return `${label}: "logo" should be a picture's link.`;
+		for (const key of ["logo", "logoDark"] as const) {
+			if (r[key] !== undefined && typeof r[key] !== "string") {
+				return `${label}: "${key}" should be a picture's link.`;
+			}
 		}
 		const bug = parseScoreBug(r.scoreBug);
 		if (typeof bug === "string") {
@@ -51,16 +62,19 @@ export const parseNationalBroadcasts = (
 			...(r.nights !== undefined ? { nights: r.nights as string[] } : {}),
 			...(r.finals !== undefined ? { finals: r.finals } : {}),
 			...(r.logo !== undefined ? { logo: r.logo } : {}),
+			...(r.logoDark !== undefined ? { logoDark: r.logoDark } : {}),
 			scoreBug: bug,
 		});
 	}
 	return out;
 };
 
-// The pictures a network keeps in the league: its bug's, and its logo.
+// The pictures a network keeps in the league: its bug's, and its logos.
 export const nationalPictureIds = (n: NationalBroadcast) => [
 	...scoreBugPictureIds(n.scoreBug),
-	...(n.logo?.startsWith("pic:") ? [n.logo.slice(4)] : []),
+	...[n.logo, n.logoDark].flatMap((logo) =>
+		logo?.startsWith("pic:") ? [logo.slice(4)] : [],
+	),
 ];
 
 // The night of the week a game is on (0 Sunday): by its date, or with no

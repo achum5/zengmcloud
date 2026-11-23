@@ -12,6 +12,26 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 471,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders now guard their own man between plays. On the ball they sit about a step and a half off, tighter on a shooter and looser on a quick driver; off the ball they sag toward the rim and over to the ball's side the way NBA defenders do, more off a man who can't shoot. When a man drives, the nearest defender away from the ball steps up into his way.",
+	},
+	{
+		n: 470,
+		date: "2026-11-23",
+		text: "Nightly Recap: a new look. Its titles and cards are set in a tall broadcast typeface, the opening title stands on one line over a lit arena floor, and the Game Recap, Final and 2nd Half graphics are flatter and sharper.",
+	},
+	{
+		n: 469,
+		date: "2026-11-23",
+		text: "National games: the box on the Daily Schedule and the team schedule now shows the network's logo in its own colors next to the teams, instead of the black tab (the scores bar and the dashboard too). National score bugs show the game's real night with the NBA calendar on, and leave the night out with it off.",
+	},
+	{
+		n: 468,
+		date: "2026-11-23",
+		text: "Nightly Recap: it now opens with a Nightly Recap title, and a 2nd Half graphic (or Overtime) plays between the halves. The controls are on the video itself, like the 3D game's, and the plays can run at 2x (the graphics stay at normal speed). The Final card shows each player's head and shoulders instead of a cut-off face.",
+	},
+	{
 		n: 467,
 		date: "2026-11-23",
 		text: "Nightly Recap: the Daily Schedule now has a recap video of the night, for games played from this update on. Each game gets a Game Recap card, its biggest plays on the 3D court, and a Final card with the score and three players a side. Pick how long it runs (Full, Medium, Short or One play a game). The shortest still shows each game's biggest play: the game-winner if there was one, otherwise the best play of the game's top player. The last 7 nights can be watched.",

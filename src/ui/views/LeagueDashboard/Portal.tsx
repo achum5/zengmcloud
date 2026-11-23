@@ -516,7 +516,10 @@ const NextGame = ({
 									</>
 								)}
 								{next.national ? (
-									<NationalTag className="ms-2" tag={next.national} />
+									<NationalTag
+										className="ms-2 national-tag-inline"
+										tag={next.national}
+									/>
 								) : null}
 							</div>
 						</div>

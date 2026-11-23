@@ -77,6 +77,20 @@ describe("writeBug, for a league's own bug", () => {
 		assert.strictEqual(plain.style.color, SHOT_LOW_INK);
 	});
 
+	test("a bug's own last seconds: from 10 on its say", () => {
+		const shot = el({
+			lowBackground: "#a3291f",
+			background: "transparent",
+			lowAt: "10",
+		});
+		const refs = refsOf({ shot });
+		const shown = bugShown();
+		writeBug(refs, shown, now({ shot: "7", low: false }));
+		assert.strictEqual(shot.style.background, "#a3291f");
+		writeBug(refs, shown, now({ shot: "10", low: false }));
+		assert.strictEqual(shot.style.background, "transparent");
+	});
+
 	test("fouls its way - FOUL LIMIT once the other side is in the bonus - and the bonus marks", () => {
 		const fouls: [ReturnType<typeof el>, ReturnType<typeof el>] = [
 			el({ fmt: "FOULS: {n}", limit: "FOUL LIMIT" }),

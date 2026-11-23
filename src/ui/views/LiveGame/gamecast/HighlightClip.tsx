@@ -82,18 +82,24 @@ export const ClipCourt = ({
 	end,
 	initialBoxScore,
 	paused = false,
+	rate = 1,
 	onAgain,
 	onDone,
 	onFail,
+	onLine,
 }: {
 	events: any[];
 	start: number;
 	end: number;
 	initialBoxScore: any;
 	paused?: boolean;
+	// How fast the court plays it (1: real time).
+	rate?: number;
 	onAgain?: () => void;
 	onDone?: () => void;
 	onFail: () => void;
+	// Each line as the picture gets to it.
+	onLine?: (e: any) => void;
 }) => {
 	const total = events.length;
 	// (A reel's stretches cut out marked: see common/recapReel.ts's cutReel.)
@@ -134,6 +140,8 @@ export const ClipCourt = ({
 	const [done, setDone] = useState(false);
 	const onDoneRef = useRef(onDone);
 	onDoneRef.current = onDone;
+	const onLineRef = useRef(onLine);
+	onLineRef.current = onLine;
 	const onReady = useCallback(() => {
 		if (total - run.queue.length >= end || run.queue.length === 0) {
 			setDone(true);
@@ -141,8 +149,10 @@ export const ClipCourt = ({
 			return;
 		}
 		step(run);
-		setCursor(total - run.queue.length);
-	}, [run, total, end]);
+		const at = total - run.queue.length;
+		setCursor(at);
+		onLineRef.current?.(events[at - 1]);
+	}, [run, total, end, events]);
 	// Cut to the next clip: the score as it stands there, the stretch cut out
 	// before it on the board.
 	const [, setCuts] = useState(0);
@@ -169,7 +179,7 @@ export const ClipCourt = ({
 				boxScore={run.box}
 				caption={undefined}
 				paused={paused}
-				rate={1}
+				rate={rate}
 				follower={false}
 				until={end}
 				onReady={onReady}

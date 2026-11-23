@@ -58,6 +58,9 @@ export const daysBetween = (from: string, to: string) =>
 export const weekdayOf = (date: string) =>
 	new Date(dayNumber(date) * MS_PER_DAY).getUTCDay();
 
+// "Tuesday".
+export const weekdayName = (date: string): string => WEEKDAYS[weekdayOf(date)]!;
+
 // The nth (1-based) given weekday of a month, e.g. Thanksgiving is the 4th
 // Thursday (4) of November.
 export const nthWeekday = (
