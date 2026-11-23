@@ -568,6 +568,18 @@ const play = async (
 				}
 			}
 
+			// The smart CPU's market keeps its own clock - a moment every so many
+			// games, and one on each of the deadline's last nights
+			// (smartCpu/market.ts) - so it is asked every night, a calendar night
+			// that ends no round of games too.
+			if (
+				tick.leagueRuns === 0 &&
+				!g.get("college") &&
+				g.get("phase") === PHASE.REGULAR_SEASON
+			) {
+				await trade.betweenAiTeams({ smartOnly: true });
+			}
+
 			// One compact durable line for the whole league's countdown this day -
 			// the record that distinguishes "the tick ran twice" from "a remote row
 			// wiped the injury" next time a countdown loses days it should not.

@@ -2593,3 +2593,17 @@ to players averaging 29 or older expected a first two drafts out at pick
 none in the top five (6 picks); three out, 10.8 against 9.6. Old teams see
 their decline coming - a little more than it comes - and price their own
 far-off firsts accordingly.
+
+## The market on an NBA calendar (2026-11-23)
+
+On the NBA calendar (a league setting, off by default: `calendarTicks.ts`)
+each sim day is one night, about 165 a season, and the end-of-day rules -
+the AI's trades among them - run once per round of games, half the league's
+worth. A night that ends no round never asked the smart CPU's market, though
+it keeps its own clock: a moment every so many games, and one on each of the
+deadline's last five days. A random-players league on a calendar, played to
+its 2026 deadline (`calendarMomentsProbe`), met on three of those five nights
+(four, two and none to go); the other two had seven and six games. Now the
+market is asked every regular-season night (`betweenAiTeams({ smartOnly })`
+from `game/play.ts` on a night with no round). The same league met on all
+five, and at the same nine moments before them.

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 444,
+		date: "2026-11-23",
+		text: "CPU teams in leagues on the NBA Calendar now look for trades on every one of the last five nights before the trade deadline. Before, they skipped about half of those nights.",
+	},
+	{
 		n: 443,
 		date: "2026-11-23",
 		text: "Every team now has a place on the map, for NBA Calendar travel: about 750 cities worldwide, so most regions are found on their own. A team with a made-up region can be given a Home city in Manage Teams.",

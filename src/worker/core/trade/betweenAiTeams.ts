@@ -151,7 +151,11 @@ const attempt = async (valueChangeCalculator: ValueChangeCalculator) => {
 
 const DEFAULT_NUM_TEAMS = 30;
 
-const betweenAiTeams = async () => {
+// smartOnly: only the smart CPU's market, which keeps its own clock - asked
+// on a calendar night that ends no round of games (game/play.ts).
+const betweenAiTeams = async ({
+	smartOnly = false,
+}: { smartOnly?: boolean } = {}) => {
 	if (g.get("forceHistoricalRosters")) {
 		return false;
 	}
@@ -159,6 +163,9 @@ const betweenAiTeams = async () => {
 	// The smart CPU's market meets on its own schedule (smartCpu/market.ts).
 	if (smartBrainOn()) {
 		await smartTradeDay();
+		return false;
+	}
+	if (smartOnly) {
 		return false;
 	}
 
