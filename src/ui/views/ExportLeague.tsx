@@ -316,7 +316,8 @@ const storesByKey = {
 	],
 	newsFeedTransactions: ["events"],
 	newsFeedOther: ["events"],
-	games: ["games"],
+	// (With the recent nights' recap plays, which are small and pruned.)
+	games: ["games", "recapReels"],
 	// Split out from box scores: a saved replay is the full play-by-play of a
 	// game, they are written for every auto-replay team's games and never
 	// pruned, and they dwarf everything else in the file. A 45 MB handoff that

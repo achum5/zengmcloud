@@ -17,6 +17,7 @@ import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
 import type { ReactNode } from "react";
 import type { LiveGameChatMessage } from "./liveGameChat.ts";
+import type { RecapReel } from "./recapReel.ts";
 import type { TickerItem } from "./ticker.ts";
 import type * as views from "../worker/views/index.ts";
 
@@ -598,6 +599,16 @@ export type LiveGamePlayByPlay = {
 	// meant to be watched before it is read, on every device in the room (see
 	// noticeLiveResults). Missing on games that were not watched live.
 	liveAt?: number;
+};
+
+// A GAME'S RECAP PLAYS, for the Nightly Recap (see recapReel.ts): cut as it
+// is simmed, keyed by gid, kept for the last few nights (see
+// saveRecapReels.ts) and synced to the whole room.
+export type RecapReelRow = {
+	gid: number;
+	season: number;
+	day: number;
+	reel: RecapReel;
 };
 
 // HOW A GAME LOOKED THE NIGHT IT WAS PLAYED.

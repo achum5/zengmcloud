@@ -37,6 +37,7 @@ export const parseJSON = () => {
 		images: undefined,
 		jerseySkins: undefined,
 		liveGamePlayByPlay: undefined,
+		recapReels: undefined,
 		messages: undefined,
 		negotiations: undefined,
 		playerFeats: undefined,
