@@ -8,6 +8,7 @@ import {
 	picturesFor,
 	playerNamesFor,
 	suggestedAccounts,
+	userTeamAccount,
 	type DatedFeedPost,
 	type FeedPost,
 } from "../util/socialFeed.ts";
@@ -164,8 +165,10 @@ const updateSocialAccount = async ({
 				onPage.add(post.quoted.accountId);
 			}
 		}
+		const meRaw = userTeamAccount(snapshot, g.get("userTid"));
 		const pictures = await picturesFor(snapshot, [
 			account,
+			...(meRaw && meRaw.id !== account.id ? [meRaw] : []),
 			...suggestedRaw,
 			...snapshot.accounts.filter((a) => onPage.has(a.id)),
 		]);
@@ -210,6 +213,17 @@ const updateSocialAccount = async ({
 					);
 
 		return {
+			me: meRaw
+				? {
+						accountId: meRaw.id,
+						handle: meRaw.handle,
+						name: meRaw.name,
+						kind: meRaw.kind,
+						tid: meRaw.tid,
+						avatarUrl: meRaw.avatarUrl,
+						verified: isVerified(meRaw),
+					}
+				: undefined,
 			account: {
 				id: account.id,
 				handle: account.handle,
