@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 456,
+		date: "2026-11-23",
+		text: "Smart CPU GM: a team clearing cap room for a free agent now asks for a pick back when the team taking the salary gains plenty from it, and weighs every team with room instead of the first that would take it.",
+	},
+	{
 		n: 455,
 		date: "2026-11-23",
 		text: "Draft fixes for shared leagues. Once a stretch of picks was running because everyone had readied up, Ready for the next pick and Not ready didn't work until it stopped, so the draft could run on to your pick. Both now work at any time: the pick being made finishes and the draft waits. And Sim one pick makes one pick, even if your team had readied up further.",

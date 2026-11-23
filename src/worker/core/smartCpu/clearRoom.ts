@@ -64,7 +64,22 @@ export const clearRoomSettings = {
 	// taker's cheapest picks it may take back, one of them.
 	atPrice: true,
 	picksBack: 3,
+	// Picks worth more it asks the taker for, at most, once the taker would
+	// take the salary with a cheap one or none back.
+	asks: 4,
 };
+
+// A team's cheapest picks by what they fetch (pickFloorNow), as many as it
+// may send back for nothing more (clearRoomSettings.picksBack).
+const cheapest = (view: SmartView, picks: readonly DraftPick[]) =>
+	[...picks]
+		.sort(
+			(a, b) =>
+				view.pickFloorNow(a) - view.pickFloorNow(b) ||
+				b.round - a.round ||
+				a.dpid - b.dpid,
+		)
+		.slice(0, clearRoomSettings.picksBack);
 
 // Whether clearing room is worth it to the team: what the trade and the
 // signing gain it past its best signing without trading, by more than the
@@ -232,32 +247,23 @@ export const roomToSign = (
 					// The taker must have the room for all of it.
 					.filter((partner) => cap - view.payrollNow(partner) >= sent);
 				// Fewest sweeteners first. With none, the taker may send one of
-				// its cheapest picks back, if that is what makes it worth it.
-				dealing: for (let k = 0; k <= picks.length; k++) {
+				// its cheapest picks back, if that is what makes it worth it - and
+				// where what it takes is worth far more to it than the room, any
+				// pick it would still take the deal with.
+				for (let k = 0; k <= picks.length; k++) {
 					const give = { players, picks: picks.slice(0, k) };
 					let ownBar = false;
+					let made = false;
 					for (const partner of takers) {
-						const backs: Holdings[] = [none];
-						if (k === 0 && clearRoomSettings.atPrice) {
-							const theirs = [...view.heldNow(partner).picks]
-								.sort(
-									(a, b) =>
-										view.pickFloorNow(a) - view.pickFloorNow(b) ||
-										b.round - a.round ||
-										a.dpid - b.dpid,
-								)
-								.slice(0, clearRoomSettings.picksBack);
-							backs.push(...theirs.map((dp) => ({ players: [], picks: [dp] })));
-						}
-						for (const back of backs) {
-							const inn = { players: [signed], picks: back.picks };
-							// Whether it gains first, its prices read: the taker's whole
-							// worth only for what it would make (four times over for
-							// every partner, it tripled clearing room's time).
-							await view.price(give, [tid, partner]);
+						// Whether it gains first, its prices read: the taker's whole
+						// worth only for what it would make (four times over for
+						// every partner, it tripled clearing room's time).
+						await view.price(give, [tid, partner]);
+						const rowOf = async (back: Holdings) => {
 							if (back.picks.length > 0) {
 								await view.price(back, [tid, partner]);
 							}
+							const inn = { players: [signed], picks: back.picks };
 							const gain = clearRoomSettings.atPrice
 								? view.sureWorthNow(tid, partner, give, inn)
 								: view.value(
@@ -269,13 +275,14 @@ export const roomToSign = (
 							const margin = marketSettings.margins
 								? view.marginNow(tid, give, inn)
 								: 0;
-							if (
-								!clearerGains(gain, bestNet, margin) ||
-								(best && gain <= best.gain)
-							) {
-								continue;
-							}
-							ownBar = true;
+							return {
+								back,
+								gain,
+								clears: clearerGains(gain, bestNet, margin),
+							};
+						};
+						// What the taker would gain, and whether that is enough.
+						const asTaker = async (back: Holdings, gain: number) => {
 							const partnerGain = await view.dealWorth(
 								partner,
 								tid,
@@ -288,21 +295,106 @@ export const roomToSign = (
 							const partnerSure = marketSettings.margins
 								? view.sureWorthNow(partner, tid, back, give)
 								: partnerGain;
-							if (
-								takerGains(
+							return {
+								partnerGain,
+								// What it gains past its margin: the most it could pay.
+								spare:
+									partnerSure - Math.max(marketSettings.minGain, partnerMargin),
+								takes: takerGains(
 									partnerGain,
 									partnerSure,
 									partnerMargin,
 									gain - Math.max(bestNet, 0),
-								)
-							) {
-								best = { p, partner, give, back, gain, partnerGain };
-								break dealing;
+								),
+							};
+						};
+						const asks = k === 0 && clearRoomSettings.atPrice;
+						const cheap = asks
+							? cheapest(view, view.heldNow(partner).picks)
+							: [];
+						// The least it would take back first - nothing, or one of the
+						// taker's cheapest picks: whether the taker would do it at all,
+						// as with more back the taker only gains less.
+						const rows = [];
+						for (const back of [
+							none,
+							...cheap.map((dp) => ({ players: [], picks: [dp] })),
+						]) {
+							const row = await rowOf(back);
+							if (row.clears) {
+								rows.push(row);
+							}
+						}
+						const least = rows.sort((a, b) => a.gain - b.gain)[0];
+						if (!least) {
+							continue;
+						}
+						ownBar = true;
+						const base = await asTaker(least.back, least.gain);
+						if (!base.takes) {
+							continue;
+						}
+						made = true;
+						if (!best || least.gain > best.gain) {
+							best = {
+								p,
+								partner,
+								give,
+								back: least.back,
+								gain: least.gain,
+								partnerGain: base.partnerGain,
+							};
+						}
+						if (!asks || !(base.spare > marketSettings.minGain)) {
+							continue;
+						}
+						// Then as much back as the taker would still give, where what
+						// it takes is worth more to it than the room: a GM doesn't
+						// hand a player other teams want to a team with room for
+						// nothing (a random-players league, 2026-11-22: Pittsburgh its
+						// 29-year-old 70 to Los Angeles, for room for a 24-year-old
+						// 65). Its best for it first, among the taker's picks it could
+						// pay from what it gains past its margin.
+						for (const dp of view.heldNow(partner).picks) {
+							if (!cheap.includes(dp)) {
+								const row = await rowOf({ players: [], picks: [dp] });
+								if (row.clears) {
+									rows.push(row);
+								}
+							}
+						}
+						const more = rows
+							.filter(
+								(r) =>
+									r.gain > best!.gain &&
+									r.back.picks.every(
+										(dp) =>
+											view.piecePriceNow({ players: [], picks: [dp] }, [
+												tid,
+												partner,
+											]) < base.spare,
+									),
+							)
+							.sort((a, b) => b.gain - a.gain)
+							.slice(0, clearRoomSettings.asks);
+						for (const r of more) {
+							const asked = await asTaker(r.back, r.gain);
+							if (asked.takes) {
+								best = {
+									p,
+									partner,
+									give,
+									back: r.back,
+									gain: r.gain,
+									partnerGain: asked.partnerGain,
+								};
+								break;
 							}
 						}
 					}
-					if (!ownBar) {
-						// More sweeteners only cost it more.
+					if (made || !ownBar) {
+						// Found at the fewest sweeteners - or more sweeteners only
+						// cost it more.
 						break;
 					}
 				}
