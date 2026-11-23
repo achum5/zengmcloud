@@ -38,10 +38,11 @@ export const LeadStory = ({
 		setDayNoteExpanded(season, day, value);
 	};
 
-	const linked = linkifyRecap(note.trim(), links);
-	const lines = linked.split("\n");
-	const headIndex = lines.findIndex((line) => line.trim() !== "");
-	const headline = (lines[headIndex] ?? "").replaceAll("**", "");
+	// The headline plain, as a paper prints it; the links are in the story.
+	const plain = note.trim().split("\n");
+	const headIndex = plain.findIndex((line) => line.trim() !== "");
+	const headline = (plain[headIndex] ?? "").replaceAll("**", "");
+	const lines = linkifyRecap(note.trim(), links).split("\n");
 	const blocks = lines
 		.slice(headIndex + 1)
 		.join("\n")
