@@ -6,6 +6,8 @@ import json
 import os
 import sys
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from frames import from_sportvu, from_tape, pooled  # noqa: E402
 from measures import measures, player_tops  # noqa: E402
@@ -20,12 +22,14 @@ R = measures(F)
 R["games"] = [f"{F_['game']} ({os.path.basename(p)})" for F_, p in zip(Fs, files)]
 if kind == "nba":
     tops = player_tops(F)
+    quick = [r["start12"] for r in tops if r["start12"] is not None]
     R["player_tops"] = {
         "players": len(tops),
         "spread_ft_s": {
             p: round(float(sorted(r["top"] for r in tops)[int(len(tops) * p / 100)]), 1)
             for p in (5, 50, 95)
         },
+        "quick_start_s": {p: round(float(np.percentile(quick, p)), 2) for p in (10, 50, 90)},
         "slowest": tops[:5],
         "fastest": tops[-5:],
     }

@@ -74,25 +74,29 @@ follows is mostly making those look the way they are meant to.
 
 `nba/` measures the 3D game tape and real NBA player tracking (SportVU
 2015-16, 17 games, 775 live minutes) the same way; the real numbers are in
-`nba/targets.json` (see nba/README.md). Real games 11 and 22 as staged on
-2026-11-23, live play at real speed, against the real thing:
+`nba/targets.json` (see nba/README.md). Real games 11, 22 and 33 as staged on
+2026-11-23 (67 live minutes), live play at real speed, against the real thing:
 
-| Measure                                                | Real NBA  | 3D      |
-| ------------------------------------------------------ | --------- | ------- |
-| Speed, live play (mph)                                 | 4.21      | 2.76    |
-| Standing still (under 1.5 ft/s)                        | 13%       | 46%     |
-| ... offense off the ball                               | 19%       | 60%     |
-| Speeding up / slowing down, 90th pct (ft/s2)           | 8.9 / 8.3 | 23 / 19 |
-| Turning at 8-13 ft/s, median (deg/s)                   | 15        | 1.4     |
-| Keeps moving once going, median (s)                    | 1.6       | 0.7     |
-| Set off within 0.1 s of another man                    | 26%       | 70%     |
-| On-ball defender, median (ft)                          | 5.6       | 3.9     |
-| Help defender (man 35+ ft from ball) to ball side (ft) | 1.9       | 0.6     |
-| Passes a live minute                                   | 11.3      | 5.5     |
+| Measure                                                | Real NBA  | 3D        |
+| ------------------------------------------------------ | --------- | --------- |
+| Speed, live play (mph)                                 | 4.21      | 2.83      |
+| Standing still (under 1.5 ft/s)                        | 13%       | 46%       |
+| ... offense off the ball                               | 19%       | 59%       |
+| Speeding up / slowing down, 90th pct (ft/s2)           | 8.9 / 8.3 | 23 / 19   |
+| Turning at 8-13 ft/s, median (deg/s)                   | 15        | 1.4       |
+| From rest to 12 ft/s / from 12 ft/s to rest (s)        | 1.7 / 1.7 | 0.6 / 0.8 |
+| Slowest through a cut over 90 degrees (ft/s)           | 5.3       | 0.9       |
+| Keeps moving once going, median (s)                    | 1.6       | 0.7       |
+| Set off within 0.1 s of another man                    | 26%       | 71%       |
+| On-ball defender, median (ft)                          | 5.6       | 3.9       |
+| Help defender (man 35+ ft from ball) to ball side (ft) | 1.9       | 0.6       |
+| Passes a live minute                                   | 11.3      | 5.4       |
 
 Real runs bend (sideways acceleration up to about 17 ft/s2 at any speed);
 the 3D runs straight and turns its corners at low speed, and starts and
-stops about twice as hard as anybody does. Top speeds in games run from
+stops about twice as hard as anybody does: it gets to 12 ft/s quicker
+than the quickest guard (0.8 s; most men 1.0-1.3 s at their quickest) and
+stops dead in a cut a real man rounds at a jog. Top speeds in games run from
 about 17.8 ft/s (slow bigs) to 21.2 (quick guards), 5th to 95th percentile.
 
 ## Step 0: the scorecard

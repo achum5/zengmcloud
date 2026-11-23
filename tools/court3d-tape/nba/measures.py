@@ -85,9 +85,12 @@ def envelope(F):
 
 
 def player_tops(F, least_min=10):
-    """Each man's top speed in live play (99.5th percentile, ft/s) and his
-    average (mph), over at least least_min live minutes."""
+    """Each man's top speed in live play (99.5th percentile, ft/s), his
+    average (mph) and his quickest starts (seconds from rest to 12 ft/s, the
+    20th percentile of his, with 25 or more), over at least least_min live
+    minutes."""
     spd, *_ = _motion(F)
+    starts = starts_stops(F, spd, kinematics(F)[0])["by_pid"]
     by = {}
     for j in range(10):
         ok = F["live"] & np.isfinite(spd[:, j])
@@ -104,11 +107,55 @@ def player_tops(F, least_min=10):
             {
                 "top": round(float(np.percentile(x, 99.5)), 1),
                 "mph": round(float(x.mean() * 0.6818), 2),
+                "start12": (
+                    round(float(np.percentile(starts[pid], 20)), 2)
+                    if len(starts.get(pid, [])) >= 25
+                    else None
+                ),
                 "name": name[0],
                 "pos": name[1],
             }
         )
     return sorted(rows, key=lambda r: r["top"])
+
+
+def starts_stops(F, spd, v):
+    """Getting going (seconds from rest to 8, 12 and 16 ft/s), pulling up
+    (from 12 ft/s to rest) and cutting (the slowest a man goes turning more
+    than 90 degrees between running at 9 ft/s or more before and after)."""
+    live, seg = F["live"], F["seg"]
+    n = len(live)
+    res = {"to8": [], "to12": [], "to16": [], "stop_from12": [], "cut_slowest": [], "by_pid": {}}
+    for j in range(10):
+        sj = spd[:, j]
+        for i in range(5, n - 30):
+            if not live[i] or seg[i + 29] != seg[i]:
+                continue
+            w = sj[i : i + 30]
+            if sj[i] < 1.5 <= sj[i + 1]:
+                for thr in (8, 12, 16):
+                    hit = np.nonzero(w >= thr)[0]
+                    if len(hit) and np.all(np.isfinite(w[: hit[0] + 1])):
+                        res[f"to{thr}"].append(hit[0] * DT)
+                        if thr == 12:
+                            res["by_pid"].setdefault(int(F["pid"][i, j]), []).append(hit[0] * DT)
+            if sj[i] >= 12 > sj[i + 1]:
+                hit = np.nonzero(w < 1.5)[0]
+                if len(hit) and np.all(np.diff(w[: hit[0] + 1]) < 1.0):
+                    res["stop_from12"].append(hit[0] * DT)
+        vj = v[:, j]
+        i = 10
+        while i < n - 15:
+            if live[i] and sj[i - 5] > 9 and seg[i - 5] == seg[i + 14]:
+                for k in range(1, 15):
+                    if not np.isfinite(sj[i + k]):
+                        break
+                    if sj[i + k] > 9 and vj[i - 5] @ vj[i + k] < 0:
+                        res["cut_slowest"].append(float(np.nanmin(sj[i - 5 : i + k + 1])))
+                        i += k
+                        break
+            i += 1
+    return res
 
 
 def _bouts(on):
@@ -164,6 +211,9 @@ def measures(F):
         still += _bouts((spd[:, j] < 1.5) & live)
     R["moving_bout_s"] = pct(moving)
     R["still_bout_s"] = pct(still)
+    ss = starts_stops(F, spd, kinematics(F)[0])
+    for k in ("to8", "to12", "to16", "stop_from12", "cut_slowest"):
+        R[f"start_{k}" if k.startswith("to") else k] = pct(ss[k], (10, 25, 50, 75, 90))
     # Lockstep: set-offs (from under 1.5 ft/s to over 4 within half a second)
     # within 0.1 s of another man's.
     offs = []
