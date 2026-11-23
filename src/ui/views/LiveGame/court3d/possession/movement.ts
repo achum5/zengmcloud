@@ -36,6 +36,9 @@ export type Goal = {
 	arrive?: number;
 	// How hard he goes about it, from 0 (strolling) to 1 (all he has).
 	effort: number;
+	// The fastest he means to go (feet a second), however hard: a defender's
+	// slide, say.
+	most?: number;
 	// Which way he means to face (radians), if not the way he is going.
 	face?: number;
 };
@@ -80,7 +83,7 @@ const wrapAngle = (a: number) => {
 // first, as a man plants and cuts rather than swinging wide round it.
 const wanted = (m: Mover, g: Goal, b: Body, answer: number): Pt => {
 	const effort = clamp01(g.effort);
-	const cap = STROLL + (b.top - STROLL) * effort;
+	const cap = Math.min(g.most ?? Infinity, STROLL + (b.top - STROLL) * effort);
 	const tv = g.toV ?? { x: 0, y: 0 };
 	const dx = g.to.x - m.x;
 	const dy = g.to.y - m.y;

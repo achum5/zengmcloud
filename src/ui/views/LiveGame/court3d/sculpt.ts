@@ -2480,10 +2480,14 @@ export const build = (
 
 	const headC = P(sk.head);
 	// Up in front of his face: an arm raised past his shoulder and nearer the
-	// camera than his head, and the ball held up there.
-	const late = [sk.armR, sk.armL].map((l) => {
+	// camera than his head, and the ball held up there - and a hand up at
+	// his face, over his mouth or his eyes, or held together with the other
+	// under his chin.
+	const late = [sk.armR, sk.armL].map((l, i) => {
 		const mid = P(lerpV(l.mid, l.end, 0.5));
-		return l.end.u > l.root.u + H * 0.08 && mid.depth < headC.depth;
+		const atFace =
+			(i ? q.faceF : q.faceN) > 0.3 || (q.clasp > 0.3 && q.claspUp > 0.2);
+		return (l.end.u > l.root.u + H * 0.08 || atFace) && mid.depth < headC.depth;
 	});
 	if (held && st.holding) {
 		const c = P(held.ball);

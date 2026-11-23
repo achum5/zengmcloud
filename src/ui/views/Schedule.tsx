@@ -8,7 +8,7 @@ import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { Dropdown } from "react-bootstrap";
 import { ForceWin } from "../components/ForceWin.tsx";
-import { ScoreBox } from "../components/ScoreBox/index.tsx";
+import { NATIONAL_ROOM, ScoreBox } from "../components/ScoreBox/index.tsx";
 import { helpers } from "../util/helpers.ts";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { GameDate } from "../components/GameDate.tsx";
@@ -50,6 +50,8 @@ const Schedule = ({
 	const isLive = (game: (typeof upcoming)[number]) =>
 		!!game.live || liveGameByGid.has(game.gid);
 	const firstPlayable = upcoming.findIndex((game) => !isLive(game));
+	// (Room for a network's logo in every box, so they line up, if any's on one.)
+	const nationalRoom = upcoming.some((game) => game.national);
 
 	// Can't sim/watch games from here unless this device is in charge of simming.
 	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
@@ -110,7 +112,10 @@ const Schedule = ({
 				/>
 			) : null}
 			<div className="d-flex flex-wrap" style={{ gap: "2rem" }}>
-				<div style={{ maxWidth: 510 }} className="flex-grow-1">
+				<div
+					style={{ maxWidth: 510 + (nationalRoom ? NATIONAL_ROOM : 0) }}
+					className="flex-grow-1"
+				>
 					<h2>Upcoming Games</h2>
 					<ul className="list-group">
 						{upcoming.map((game, i) => {
@@ -202,6 +207,7 @@ const Schedule = ({
 										playersUpcomingAbbrev={topPlayers.type === "byTid"}
 										livePts={live ? liveGame?.score?.pts : undefined}
 										actions={actions}
+										nationalRoom={nationalRoom}
 									/>
 									{live ? (
 										<LiveGameStatus className="mt-1 mb-3" gid={game.gid} />

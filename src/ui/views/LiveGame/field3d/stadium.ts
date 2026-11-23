@@ -1048,7 +1048,7 @@ export type StadiumPaint = {
 	// The wall's, the club level's and the end walls' boards on another
 	// screen than the name (painted the first time each is up) - and the
 	// club level's ribbon on the name, with the score in among it (the 3D
-	// court's board over center court: see court3d/arena.ts jumboScored),
+	// court's board over center court: see court3d/jumbotron.ts),
 	// the visitors' and the home team's, repainted as it changes.
 	screen: (
 		set: BoardSet,

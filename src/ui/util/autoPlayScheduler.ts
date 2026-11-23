@@ -1,5 +1,6 @@
 import { createNanoEvents } from "nanoevents";
 import { PHASE } from "../../common/constants.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 import { local } from "./local.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
 import { toWorker } from "./toWorker.ts";
@@ -43,7 +44,8 @@ export type { AutoPlayAmount, ScheduleRule } from "./scheduleTime.ts";
 export type AutoPlayStopConditions = {
 	// Stop once the league has been simmed THROUGH this day (scoped to a season,
 	// since day numbers restart each year). Set from the Upcoming-sims preview.
-	stopAfter?: { season: number; day: number };
+	// date: its night, on the NBA calendar, for saying so.
+	stopAfter?: { season: number; day: number; date?: string };
 	// Stop after this many more sims. Counts down as they run.
 	stopAfterSims?: number;
 	// Stop at a wall-clock time.
@@ -867,7 +869,9 @@ class AutoPlayScheduler {
 			const nextDay = before.upcomingDays[0]!;
 			const stopLabel = nextDay.tradeDeadline
 				? "Trade deadline"
-				: `Day ${nextDay.day}`;
+				: nextDay.date !== undefined
+					? formatGameDate(nextDay.date, "monthDay")
+					: `Day ${nextDay.day}`;
 			if (state.mpSyncActive) {
 				// Shared league: the room crosses it by readying up, and auto play
 				// should be waiting to carry on the moment it does - so this PAUSES
@@ -1038,7 +1042,13 @@ class AutoPlayScheduler {
 		) {
 			this.settings.stopAfter = undefined;
 			this.persist();
-			this.stop(`Stopped after Day ${target.day}, as scheduled.`);
+			this.stop(
+				`Stopped after ${
+					target.date !== undefined
+						? formatGameDate(target.date, "monthDay")
+						: `Day ${target.day}`
+				}, as scheduled.`,
+			);
 			return;
 		}
 

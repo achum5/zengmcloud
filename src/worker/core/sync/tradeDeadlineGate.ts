@@ -65,7 +65,8 @@ export const getTradeDeadlineGame = async (): Promise<
 // counted as readying up for all of them.
 export type SimStopPoint =
 	| { kind: "deadline"; gid: number; day: number | undefined }
-	| { kind: "day"; day: number };
+	// date: its night, on the NBA calendar.
+	| { kind: "day"; day: number; date?: string };
 
 export const getPendingSimStop = async (): Promise<
 	SimStopPoint | undefined
@@ -87,7 +88,11 @@ export const getPendingSimStop = async (): Promise<
 			: undefined;
 	}
 	return stopsOnDay(stops, first.day)
-		? { kind: "day", day: first.day! }
+		? {
+				kind: "day",
+				day: first.day!,
+				...(first.date !== undefined ? { date: first.date } : {}),
+			}
 		: undefined;
 };
 

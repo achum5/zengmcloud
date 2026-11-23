@@ -178,18 +178,26 @@ export const nationalTag = async (
 	n: NationalBroadcast,
 	logos = new Map<string, string | undefined>(),
 ): Promise<NationalTag> => {
-	let logo = n.logo;
-	if (logo?.startsWith(PIC)) {
-		if (!logos.has(logo)) {
-			let url;
-			try {
-				url = (await pictureById(logo.slice(PIC.length)))?.url;
-			} catch {}
-			logos.set(logo, url);
+	const ready = async (logo: string | undefined) => {
+		if (logo?.startsWith(PIC)) {
+			if (!logos.has(logo)) {
+				let url;
+				try {
+					url = (await pictureById(logo.slice(PIC.length)))?.url;
+				} catch {}
+				logos.set(logo, url);
+			}
+			return logos.get(logo);
 		}
-		logo = logos.get(logo);
-	}
-	return { network: n.network, ...(logo !== undefined ? { logo } : {}) };
+		return logo;
+	};
+	const logo = await ready(n.logo);
+	const logoDark = await ready(n.logoDark);
+	return {
+		network: n.network,
+		...(logo !== undefined ? { logo } : {}),
+		...(logoDark !== undefined ? { logoDark } : {}),
+	};
 };
 
 // The tags of these games that are national, by gid.

@@ -13,26 +13,37 @@ import {
 	SEAT_R,
 	STAFFER,
 	POSES,
+	SITS,
 	STAGE,
 	STEPS,
 	TABLE_R,
 	TABLES,
+	UPS,
 	groundAt,
 	stageDraftNight,
 	takeOf,
 	type DraftKin,
-	type DraftReact,
+	type DraftMood,
 	type DraftTake,
 } from "./draftStage.ts";
 import { bodyPoint, poseOf } from "./evaluate.ts";
-import { bodyOf, skeleton } from "./poses.ts";
+import { bodyOf, poseAt, skeleton, type AnimName } from "./poses.ts";
 
 const body = bodyOf();
 const bodyFor = () => body;
 
-// Every table, every way of taking it, every family - the rest of a take
-// cycled through as they go.
-const REACTS: DraftReact[] = ["up", "beat", "hands", "sky", "pump"];
+// Every table, every family, and every way of taking it - in his chair and
+// up on his feet - the rest of a take cycled through as they go.
+const REACTIONS = (Object.keys(UPS) as DraftMood[]).flatMap((mood) => {
+	const sits = SITS[mood];
+	const ups = UPS[mood];
+	return Array.from({ length: Math.max(sits.length, ups.length) }, (_, i) => ({
+		mood,
+		sit: sits[i % sits.length]!,
+		up: ups[i % ups.length]!,
+	}));
+});
+const PER_TABLE = 5;
 const FAMILIES: ["mom" | "dad", DraftKin][] = [
 	["mom", "dad"],
 	["mom", "brother"],
@@ -43,13 +54,13 @@ const FAMILIES: ["mom" | "dad", DraftKin][] = [
 const TAKES: DraftTake[] = [];
 for (const side of [1, -1] as const) {
 	for (const row of [-1, 0, 1] as const) {
-		for (const react of REACTS) {
+		for (let k = 0; k < PER_TABLE; k++) {
 			for (const [hugger, other] of FAMILIES) {
 				const i = TAKES.length;
 				TAKES.push({
 					side,
 					row,
-					react,
+					...REACTIONS[i % REACTIONS.length]!,
 					hugger,
 					other,
 					pose: POSES[i % POSES.length]!,
@@ -76,13 +87,15 @@ const KIN: Record<DraftKin, number | undefined> = {
 	none: undefined,
 };
 const name = (take: DraftTake) =>
-	`${take.side}/${take.row}/${take.react}/${take.hugger}+${take.other}`;
+	`${take.side}/${take.row}/${take.sit}+${take.up}/${take.hugger}+${take.other}`;
 
 describe("a pick made on draft night", () => {
 	test("each player's pick is his own, the same every time, and they are not all alike", () => {
 		const seen = {
 			table: new Set<string>(),
-			react: new Set<string>(),
+			mood: new Set<string>(),
+			sit: new Set<string>(),
+			up: new Set<string>(),
 			family: new Set<string>(),
 			pose: new Set<string>(),
 		};
@@ -90,12 +103,18 @@ describe("a pick made on draft night", () => {
 			const take = takeOf(pid);
 			assert.deepStrictEqual(takeOf(pid), take);
 			seen.table.add(`${take.side}/${take.row}`);
-			seen.react.add(take.react);
+			seen.mood.add(take.mood);
+			seen.sit.add(take.sit);
+			seen.up.add(take.up);
+			assert.include(SITS[take.mood], take.sit);
+			assert.include(UPS[take.mood], take.up);
 			seen.family.add(`${take.hugger}+${take.other}`);
 			seen.pose.add(take.pose);
 		}
 		assert.strictEqual(seen.table.size, 6);
-		assert.strictEqual(seen.react.size, 5);
+		assert.strictEqual(seen.mood.size, Object.keys(UPS).length);
+		assert.strictEqual(seen.sit.size, new Set(Object.values(SITS).flat()).size);
+		assert.strictEqual(seen.up.size, new Set(Object.values(UPS).flat()).size);
 		assert.strictEqual(seen.family.size, 5);
 		assert.strictEqual(seen.pose.size, POSES.length);
 	});
@@ -133,7 +152,7 @@ describe("a pick made on draft night", () => {
 			// Long enough to be the moment the broadcast makes of it, short
 			// enough to watch every pick.
 			assert.isAbove(N.ms, 24_000, name(take));
-			assert.isBelow(N.ms, 38_000, name(take));
+			assert.isBelow(N.ms, 40_000, name(take));
 			// Each of his family's hugs held a while.
 			assert.isAtLeast(N.hugEnd - N.hug, 2500);
 			if (take.other !== "none") {
@@ -172,7 +191,7 @@ describe("a pick made on draft night", () => {
 			const at = (t: number) => scene.moment(t, bodyFor).players[0]!;
 			const sat = at(scene.night.call - 100);
 			const table = scene.places.table;
-			assert.strictEqual(sat.anim, "chairSit", name(take));
+			assert.strictEqual(sat.anim, "tableSit", name(take));
 			assert.isBelow(
 				Math.hypot(sat.x - table.x, sat.y - table.y),
 				TABLE_R + 1.5,
@@ -331,8 +350,9 @@ describe("a pick made on draft night", () => {
 				// (Bent over his mother; chest to chest with his father or his
 				// brother.)
 				const man = pid !== MOTHER;
+				// (Grinning, or not, as it hit him.)
 				assert.strictEqual(
-					himThen.anim,
+					himThen.anim.replace(/Grin$/, ""),
 					man ? "embraceMan" : "embrace",
 					name(take),
 				);
@@ -495,5 +515,86 @@ describe("a pick made on draft night", () => {
 			assert.strictEqual(count(N.leave + 900, N.meet), 0);
 			assert.isAbove(count(N.meet, N.ms - 400), 0);
 		}
+	});
+});
+
+describe("how he takes it", () => {
+	const dist = (
+		a: { f: number; s: number; u: number },
+		b: { f: number; s: number; u: number },
+	) => Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u);
+	const sits = [...new Set(Object.values(SITS).flat())];
+	const ups = [...new Set([...Object.values(UPS).flat(), ...POSES])];
+	const bodies = [bodyOf(72, 185), bodyOf(78, 215), bodyOf(86, 260)];
+	const each = (
+		anims: AnimName[],
+		check: (anim: AnimName, k: number, b: ReturnType<typeof bodyOf>) => void,
+	) => {
+		for (const b of bodies) {
+			for (const anim of anims) {
+				for (let k = 0; k <= 20; k++) {
+					check(anim, k, b);
+				}
+			}
+		}
+	};
+
+	test("in his chair he stays sat in it; up, he stands up straight in his suit - not down in a stance", () => {
+		each(sits, (anim, k, b) => {
+			const sk = skeleton(b, poseAt(anim, k / 20));
+			const seat = skeleton(b, poseAt("tableSit", 0)).pelvis.u;
+			assert.closeTo(sk.pelvis.u, seat, 0.12, `${anim} ${k}`);
+		});
+		each(ups, (anim, k, b) => {
+			const q = poseAt(anim, k / 20);
+			const sk = skeleton(b, q);
+			const tall = skeleton(b, poseAt("easy", 0)).pelvis.u;
+			assert.isAbove(sk.pelvis.u, tall - 0.25, `${anim} ${k}`);
+			assert.isAtMost(q.lean, 22, `${anim} ${k}`);
+		});
+	});
+
+	test("a hand at his face is at it, in front; one on his heart is on his chest; hands together meet", () => {
+		let face = 0;
+		let heart = 0;
+		let clasp = 0;
+		each([...sits, ...ups], (anim, k, b) => {
+			const q = poseAt(anim, k / 20);
+			const sk = skeleton(b, q);
+			for (const [arm, on, over] of [
+				[sk.armR, q.faceN, q.heartN],
+				[sk.armL, q.faceF, q.heartF],
+			] as const) {
+				if (on >= 0.99) {
+					face += 1;
+					assert.isBelow(dist(arm.end, sk.head), b.headR * 2.2, `${anim} ${k}`);
+					assert.isAbove(arm.tip!.f, sk.head.f, `${anim} ${k}`);
+				}
+				if (over >= 0.99) {
+					heart += 1;
+					assert.isBelow(
+						dist(arm.end, sk.chest),
+						b.torso * 0.65,
+						`${anim} ${k}`,
+					);
+					assert.isAbove(arm.end.f, sk.chest.f, `${anim} ${k}`);
+				}
+			}
+			if (q.clasp >= 0.99 && q.claspApart < 0.01) {
+				clasp += 1;
+				assert.isBelow(dist(sk.armR.end, sk.armL.end), 0.35, `${anim} ${k}`);
+			}
+			// (His head never down past his shoulders, nor off his neck.)
+			assert.isAbove(sk.head.u, sk.chest.u, `${anim} ${k}`);
+		});
+		assert.isAbove(face, 0);
+		assert.isAbove(heart, 0);
+		assert.isAbove(clasp, 0);
+	});
+
+	test("there are plenty of ways to take it, and every one of them is used", () => {
+		assert.isAtLeast(sits.length, 12);
+		assert.isAtLeast(new Set(Object.values(UPS).flat()).size, 15);
+		assert.isAtLeast(POSES.length, 8);
 	});
 });

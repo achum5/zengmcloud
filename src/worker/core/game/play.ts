@@ -109,6 +109,7 @@ import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { advStats } from "../../util/advStats.ts";
 import { isAllStarGame } from "../../../common/specialGames.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
 
 /**
  * Play one or more days of games.
@@ -1170,7 +1171,11 @@ const play = async (
 					{
 						type: "error",
 						text: staleDay
-							? `The league has already played past day ${games[0]!.day}, but this device still has it scheduled, so it can't sim here. Let someone whose schedule is current sim, and re-import a fresh export of the league on this device.`
+							? `The league has already played past ${
+									games[0]!.date !== undefined
+										? formatGameDate(games[0]!.date, "monthDay")
+										: `day ${games[0]!.day}`
+								}, but this device still has it scheduled, so it can't sim here. Let someone whose schedule is current sim, and re-import a fresh export of the league on this device.`
 							: gidOneGame === undefined
 								? `Another device already simmed this day, so this sim was skipped. Catching up to the cloud now.`
 								: `Someone else got to this game first, so it wasn't simmed here. Catching up to the cloud now — the result will appear in a moment.`,
@@ -1199,7 +1204,11 @@ const play = async (
 			if (stopHere) {
 				// Say why, or a press of Sim Day looks like it did nothing.
 				const what =
-					stop.kind === "deadline" ? "Trade Deadline" : `Day ${stop.day}`;
+					stop.kind === "deadline"
+						? "Trade Deadline"
+						: stop.date !== undefined
+							? formatGameDate(stop.date, "long")
+							: `Day ${stop.day}`;
 				if (isTradeDeadlineGateActive()) {
 					void notifySimStopArrived(what);
 					logEvent(

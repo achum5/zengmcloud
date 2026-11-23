@@ -174,17 +174,23 @@ const ImportTeamLooks = ({
 				for (const n of parsed) {
 					const kept = await keepScoreBugPictures(n.scoreBug);
 					uploaded.push(...kept.ids);
-					let logo = n.logo;
-					if (logo?.startsWith("data:image/")) {
-						try {
-							const id = await toWorker("main", "storeCourtPicture", logo);
-							uploaded.push(id);
-							logo = `${PIC}${id}`;
-						} catch {}
-					}
+					// (A logo written in, kept as a picture.)
+					const keep = async (logo: string | undefined) => {
+						if (logo?.startsWith("data:image/")) {
+							try {
+								const id = await toWorker("main", "storeCourtPicture", logo);
+								uploaded.push(id);
+								return `${PIC}${id}`;
+							} catch {}
+						}
+						return logo;
+					};
+					const logo = await keep(n.logo);
+					const logoDark = await keep(n.logoDark);
 					broadcasts.push({
 						...n,
 						...(logo !== undefined ? { logo } : {}),
+						...(logoDark !== undefined ? { logoDark } : {}),
 						scoreBug: kept.bug,
 					});
 				}

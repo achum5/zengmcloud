@@ -8,6 +8,7 @@ import {
 	picturesFor,
 	playerNamesFor,
 	suggestedAccounts,
+	type DatedFeedPost,
 	type FeedPost,
 } from "../util/socialFeed.ts";
 import {
@@ -91,7 +92,7 @@ const updateSocialAccount = async ({
 		// A profile is the account's own posts - what it said, whether or not
 		// the day's timeline had room for it - newest first. Replies live under
 		// the posts they answer, on the feed.
-		const posts: (FeedPost & { day: number })[] = [];
+		const posts: DatedFeedPost[] = [];
 		for (
 			let dayIndex = snapshot.days.length - 1;
 			dayIndex >= 0 && dayIndex >= snapshot.days.length - DAYS_SCANNED;
@@ -103,7 +104,7 @@ const updateSocialAccount = async ({
 				account,
 				dayIndex,
 			})) {
-				posts.push({ ...post, day });
+				posts.push({ ...post, day, date: snapshot.dateByDay.get(day) });
 			}
 		}
 
@@ -112,6 +113,7 @@ const updateSocialAccount = async ({
 		// of one-liners without their context.
 		const replies: (FeedPost["replies"][number] & {
 			day: number;
+			date?: string;
 			parent: Omit<FeedPost, "replies">;
 		})[] = [];
 		for (
@@ -124,7 +126,12 @@ const updateSocialAccount = async ({
 				for (const reply of post.replies) {
 					if (reply.accountId === account.id) {
 						const { replies: _drop, ...parent } = post;
-						replies.push({ ...reply, day: feedDay.day, parent });
+						replies.push({
+							...reply,
+							day: feedDay.day,
+							date: feedDay.date,
+							parent,
+						});
 					}
 				}
 			}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { helpers } from "../util/helpers.ts";
+import { feedDayLabel } from "../util/feedDayLabel.ts";
 import { SocialThread, type TeamLike } from "../views/SocialPost.tsx";
 import type { AccountPicture } from "../../common/socialMetrics.ts";
 
@@ -60,7 +61,7 @@ export const SocialEmbed = ({
 							...post,
 							time:
 								showDay && post.day !== undefined
-									? `${post.time} · ${post.day === 0 ? "Offseason" : `Day ${post.day}`}`
+									? `${post.time} · ${feedDayLabel(post.day, post.date)}`
 									: post.time,
 						}}
 						teamByTid={teamByTid}

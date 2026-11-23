@@ -330,7 +330,14 @@ const AutoPlaySchedule = () => {
 			: undefined;
 	const setStopAfter = (day: number) => {
 		if (preview) {
-			update({ stopAfter: { season: preview.season, day } });
+			const date = preview.upcomingDays.find((d) => d.day === day)?.date;
+			update({
+				stopAfter: {
+					season: preview.season,
+					day,
+					...(date !== undefined ? { date } : {}),
+				},
+			});
 		}
 	};
 	const clearStopAfter = () => update({ stopAfter: undefined });

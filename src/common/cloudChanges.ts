@@ -12,6 +12,66 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 480,
+		date: "2026-11-23",
+		text: "Daily Schedule is now a league hub, like ESPN's or NBA.com's. A week strip runs across the top. The night's recap leads with the league's biggest stories, under the Nightly Recap video. Each final is a card in both teams' colors, with the records, the pregame line, the recap and each team's two best players. Beside it are top performers, standings, injuries and the next night's games with records and lines. On a phone, it's in Recap, Scores and Standings tabs.",
+	},
+	{
+		n: 479,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the League Feed, profiles and quoted posts now show the date (Tue, Nov 11) instead of a day number, and so do the sim's pause stops: the ready-up says Play Jan 15 and auto play says it stopped after Jan 15.",
+	},
+	{
+		n: 478,
+		date: "2026-11-23",
+		text: "Smart CPU GMs: a CPU team now signs a new free agent only when it is clearly better off with him, the same rule it already uses for trades. Bad teams no longer hand big multi-year deals to low-rated players (like $19.7M a year to a 49) and keep their cap room open instead. Good free agents still sign.",
+	},
+	{
+		n: 477,
+		date: "2026-11-23",
+		text: "Live games in the header now look like a real scoreboard: each game shows both teams with their logos and scores, and the quarter and clock (Half, End Q3 or Paused on a break). Tap a game to watch it.",
+	},
+	{
+		n: 476,
+		date: "2026-11-23",
+		text: "3D game: the board over center court is now a real jumbotron. It has video screens on all four sides, a ring round the top with both teams, the score, the period and the clock, and a lower ring that runs with the ribbon boards. Each arena has its own shape: a cube with cut corners, a big halo over the screens, or a long curved board. Over breaks the screens show the score, the home team's logo, crowd prompts and the sponsors.",
+	},
+	{
+		n: 475,
+		date: "2026-11-23",
+		text: "Phone notifications now say which day they're about: the first line under the headline is the date (Wed, Nov 12), or Nov 14–20 for a week. Leagues without the NBA calendar show the day number (Day 34).",
+	},
+	{
+		n: 474,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the scores bar is now your team's calendar in one row. Every day has a box, off days too, with its weekday and date on top (SAT 11/15). A game day shows the opponent (@ on the road) and a green W or red L with the score, home days are filled black like on the team calendar, and today is outlined in red. Arrows page through it on a computer, and All scores at the end opens the Daily Schedule.",
+	},
+	{
+		n: 473,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): after a miss or a turnover, defenders now run back and pick up their man on the way, the way NBA defenses do, instead of all dropping into the paint. On a fast break the engine scored, the play still has them beaten.",
+	},
+	{
+		n: 472,
+		date: "2026-11-23",
+		text: "Draft night: players now take hearing their name like the real thing. Some smile, nod and button their jacket, some bury their face in their hands or wipe away tears, some throw their arms up, pump a fist and shout, point to the sky or put a hand on their heart, and some just sit there stunned. There are 13 ways to take it in the chair and 16 on their feet, each player always takes it the same way, and the happy ones grin through the hugs. On stage they wave, point, raise a fist, clap or bow with their hands together instead of dropping into a game stance.",
+	},
+	{
+		n: 471,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders now guard their own man between plays. On the ball they sit about a step and a half off, tighter on a shooter and looser on a quick driver; off the ball they sag toward the rim and over to the ball's side the way NBA defenders do, more off a man who can't shoot. When a man drives, the nearest defender away from the ball steps up into his way.",
+	},
+	{
+		n: 470,
+		date: "2026-11-23",
+		text: "Nightly Recap: a new look. Its titles and cards are set in a tall broadcast typeface, the opening title stands on one line over a lit arena floor, and the Game Recap, Final and 2nd Half graphics are flatter and sharper.",
+	},
+	{
+		n: 469,
+		date: "2026-11-23",
+		text: "National games: the box on the Daily Schedule and the team schedule now shows the network's logo in its own colors next to the teams, instead of the black tab (the scores bar and the dashboard too). National score bugs show the game's real night with the NBA calendar on, and leave the night out with it off.",
+	},
+	{
 		n: 468,
 		date: "2026-11-23",
 		text: "Nightly Recap: it now opens with a Nightly Recap title, and a 2nd Half graphic (or Overtime) plays between the halves. The controls are on the video itself, like the 3D game's, and the plays can run at 2x (the graphics stay at normal speed). The Final card shows each player's head and shoulders instead of a cut-off face.",

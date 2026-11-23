@@ -9,7 +9,7 @@ import { DAILY_SCHEDULE } from "../../common/constants.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { ForceWin } from "../components/ForceWin.tsx";
-import { ScoreBox } from "../components/ScoreBox/index.tsx";
+import { NATIONAL_ROOM, ScoreBox } from "../components/ScoreBox/index.tsx";
 import { SimHereButton } from "../components/SimHereButton.tsx";
 import { GameNote } from "../components/GameNote.tsx";
 import { DayRecap } from "../components/DayRecap.tsx";
@@ -179,6 +179,8 @@ const DailySchedule = ({
 	const isLive = (game: (typeof upcoming)[number]) =>
 		!!game.live || liveGameByGid.has(game.gid) || mateLive?.gid === game.gid;
 	const playable = upcoming.filter((game) => !isLive(game));
+	// (Room for a network's logo in every box, so they line up, if any's on one.)
+	const nationalRoom = upcoming.some((game) => game.national);
 
 	// Can't sim/watch games from here unless this device is in charge of simming.
 	const { locked: simAuthorityLocked, reason: simAuthorityReason } =
@@ -419,7 +421,14 @@ const DailySchedule = ({
 										<div
 											className={hubOn ? "lh-game" : "flex-grow-1"}
 											key={game.gid}
-											style={hubOn ? undefined : { maxWidth: 510 }}
+											style={
+												hubOn
+													? undefined
+													: {
+															maxWidth:
+																510 + (nationalRoom ? NATIONAL_ROOM : 0),
+														}
+											}
 										>
 											<ScoreBox
 												className={hubOn ? "lh-box" : undefined}
@@ -435,6 +444,7 @@ const DailySchedule = ({
 												livePts={live ? liveGame?.score?.pts : undefined}
 												playersUpcoming={playersUpcoming}
 												actions={actions}
+												nationalRoom={nationalRoom}
 											/>
 											{live ? (
 												<LiveGameStatus className="mt-1" gid={game.gid} />

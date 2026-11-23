@@ -1,7 +1,6 @@
 // The month calendar (components/MonthCalendar.tsx) on the Calendar,
 // Schedule and Daily Schedule pages and the dashboard, today's date in the
-// navbar (Controller/NavBar.tsx) and the scores bar's nights
-// (Controller/LeagueTopBar.tsx), for leagues on the NBA calendar.
+// navbar (Controller/NavBar.tsx), for leagues on the NBA calendar.
 
 // Home nights are black on either theme (the dark theme swaps $white for a
 // dark gray, so it's told apart that way).
@@ -566,76 +565,4 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	font-size: 1rem;
 	font-weight: 700;
 	color: var(--bs-body-color);
-}
-
-// A night in the scores bar: its date, and the team's game beside it.
-.ltb-night {
-	display: flex;
-	flex-shrink: 0;
-	align-items: flex-start;
-}
-
-// A playoff game that may not be needed.
-.ltb-maybe {
-	opacity: 0.55;
-}
-
-.ltb-stub {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	flex-shrink: 0;
-	width: 2.15rem;
-	height: 56px;
-	overflow: hidden;
-	line-height: 1;
-	text-align: center;
-	color: var(--bs-secondary-color);
-	background: var(--bs-body-bg);
-	border: 1px solid var(--bs-border-color);
-	border-radius: 0.3rem;
-}
-
-// Off nights fade back, so the games stand out.
-.ltb-stub:not(.ltb-stub-game):not(.ltb-stub-today) {
-	opacity: 0.65;
-}
-
-.ltb-stub-game {
-	border-right: 0;
-	border-top-right-radius: 0;
-	border-bottom-right-radius: 0;
-}
-
-.ltb-stub-weekday {
-	width: 100%;
-	padding: 3px 0 2px;
-	font-size: 0.55rem;
-	font-weight: 700;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	background: var(--bs-tertiary-bg);
-}
-
-.ltb-stub-day {
-	margin-top: 5px;
-	font-size: 1rem;
-	font-weight: 700;
-	color: var(--bs-body-color);
-}
-
-.ltb-stub-month {
-	margin-top: 3px;
-	font-size: 0.55rem;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-}
-
-.ltb-stub-today {
-	border-color: var(--bs-danger);
-
-	.ltb-stub-weekday {
-		color: #fff;
-		background: var(--bs-danger);
-	}
 }
