@@ -123,6 +123,27 @@ export type Pose = {
 	// for wherever his lean has it): bent over to it, as far as he must -
 	// a tall man further than a short one - never straightened up for it.
 	hugHead: number;
+	// His head bowed on his neck (degrees; back, looking up, under 0).
+	nod: number;
+	// Each hand up at his face (0 to 1): over his mouth (`faceHi` 0) or up
+	// over his eyes (1) - both, his face in his hands.
+	faceN: number;
+	faceF: number;
+	faceHi: number;
+	// Each hand flat on his chest, over his heart (0 to 1).
+	heartN: number;
+	heartF: number;
+	// His hands together in front of him (0 to 1): so far out in front of
+	// his chest and up from it (feet - at his chin, pressed together, he
+	// prays), and so far apart (clapping, they come together and apart).
+	clasp: number;
+	claspOut: number;
+	claspUp: number;
+	claspApart: number;
+	// His face: grinning (0 to 1), and shouting (0 to 1 - see yellOf in
+	// figure.ts).
+	grin: number;
+	yell: number;
 };
 
 const BASE: Pose = {
@@ -181,6 +202,18 @@ const BASE: Pose = {
 	hugUp: 0,
 	hugWide: 0,
 	hugHead: 0,
+	nod: 0,
+	faceN: 0,
+	faceF: 0,
+	faceHi: 0,
+	heartN: 0,
+	heartF: 0,
+	clasp: 0,
+	claspOut: 0.8,
+	claspUp: 0,
+	claspApart: 0,
+	grin: 0,
+	yell: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -203,6 +236,8 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["onKneeN", "onKneeF"],
 	["flexN", "flexF"],
 	["hugN", "hugF"],
+	["faceN", "faceF"],
+	["heartN", "heartF"],
 ];
 export const mirror = (q: Pose): Pose => {
 	const out = {
@@ -3063,6 +3098,168 @@ const REACH_OUT = pose({
 const REACH_ONTO = lerpPose(REACH_OUT, P.stance, 0.05 / 0.55);
 const REACH_WIDE = { shF: 26, elF: 22, abF: 72 };
 
+// Stood easy (see easy): his weight from one leg onto the other and back.
+const EASY_SWAY: Pose[] = [
+	P.easy,
+	{
+		...P.easy,
+		kneeN: 2,
+		hipF: 7,
+		kneeF: 17,
+		tilt: -2.5,
+		twist: 3,
+		shN: 3,
+		shF: 10,
+	},
+	{ ...P.easy, kneeN: 7, kneeF: 9, lean: 4 },
+	{
+		...P.easy,
+		hipN: 1,
+		kneeN: 16,
+		kneeF: 3,
+		tilt: 2.5,
+		twist: -3,
+		shN: 9,
+		shF: 4,
+	},
+];
+
+// ---- DRAFT NIGHT (see draftStage.ts) ----------------------------------------
+// HOW HE TAKES HIS NAME BEING READ - the ways the men in the green room take
+// it, as the broadcasts show them: a moment in his chair, then another up on
+// his feet before his family get to him. A man in a suit, up straight - not
+// down in a stance at a dead ball.
+//
+// Sat up at his family's table waiting on it: up straight in his chair, his
+// hands in his lap.
+const SAT = pose({
+	hipN: 86,
+	kneeN: 84,
+	hipF: 90,
+	kneeF: 92,
+	lean: 6,
+	shN: 22,
+	elN: 56,
+	abN: 12,
+	shF: 24,
+	elF: 58,
+	abF: 12,
+	wrN: -10,
+	wrF: -10,
+	wide: 0.42,
+	plant: 0,
+});
+const sat = (o: Partial<Pose>): Pose => ({ ...SAT, ...o });
+const stood = (o: Partial<Pose>): Pose => ({ ...P.easy, ...o });
+// The same, grinning all the way through.
+const grinning = (keys: [number, Pose][]): [number, Pose][] =>
+	keys.map(([u, q]) => [u, { ...q, grin: Math.max(q.grin, 1) }]);
+// Hands clapping (see clasp): together and apart, so many times, from
+// `from` to `to` of the way through - so far out in front of him, so high.
+const claps = (
+	base: Pose,
+	n: number,
+	from: number,
+	to: number,
+	out: number,
+	up: number,
+): [number, Pose][] => {
+	const keys: [number, Pose][] = [];
+	const step = (to - from) / (n * 2);
+	for (let i = 0; i < n * 2; i++) {
+		keys.push([
+			from + step * (i + 1),
+			{
+				...base,
+				clasp: 1,
+				claspOut: out,
+				claspUp: up,
+				claspApart: i % 2 === 0 ? 0.5 : 0,
+			},
+		]);
+	}
+	return keys;
+};
+// Up out of his chair at the table.
+const TABLE_UP: [number, Pose][] = [
+	[0, SAT],
+	[
+		0.3,
+		pose({
+			hipN: 60,
+			kneeN: 78,
+			hipF: 62,
+			kneeF: 82,
+			lean: 32,
+			shN: 26,
+			elN: 40,
+			shF: 28,
+			elF: 42,
+			abN: 12,
+			abF: 12,
+			wide: 0.4,
+			plant: 0.5,
+		}),
+	],
+	[
+		0.65,
+		pose({
+			hipN: 16,
+			kneeN: 22,
+			hipF: 20,
+			kneeF: 24,
+			lean: 12,
+			shN: 12,
+			elN: 24,
+			shF: 14,
+			elF: 26,
+			abN: 10,
+			abF: 10,
+			wide: 0.28,
+		}),
+	],
+	[1, P.easy],
+];
+// His arms up over his head, out wide, to the sky - looking up at it.
+const TO_SKY = stood({
+	shN: 150,
+	elN: 24,
+	abN: 34,
+	shF: 150,
+	elF: 24,
+	abF: 34,
+	nod: -30,
+	lean: -6,
+	yell: 0.5,
+});
+// His arms open wide.
+const ARMS_OPEN = stood({
+	shN: 50,
+	elN: 24,
+	abN: 64,
+	shF: 50,
+	elF: 24,
+	abF: 64,
+	wrN: 20,
+	wrF: 20,
+	lean: -4,
+	nod: -6,
+	grin: 1,
+});
+// A fist up over his head.
+const FIST_UP = stood({ shN: 168, elN: 10, abN: 12, nod: -8, yell: 0.7 });
+// Waving to the room, his hand up by his head.
+const WAVE = (out: number) =>
+	stood({ shN: 140, elN: 40, abN: out, wrN: 10, nod: -4, grin: 1 });
+const waving = (from: number, to: number): [number, Pose][] => {
+	const keys: [number, Pose][] = [];
+	const n = 5;
+	for (let i = 0; i < n; i++) {
+		keys.push([from + ((to - from) * i) / (n - 1), WAVE(i % 2 ? 46 : 26)]);
+	}
+	return keys;
+};
+
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
 	// shoulders swaying over his hips, his hands drifting - easy, but at a
@@ -3137,31 +3334,7 @@ export const ANIMS = {
 		kind: "loop",
 		n: 4,
 		fps: 0.5,
-		pose: (i) =>
-			[
-				P.easy,
-				{
-					...P.easy,
-					kneeN: 2,
-					hipF: 7,
-					kneeF: 17,
-					tilt: -2.5,
-					twist: 3,
-					shN: 3,
-					shF: 10,
-				},
-				{ ...P.easy, kneeN: 7, kneeF: 9, lean: 4 },
-				{
-					...P.easy,
-					hipN: 1,
-					kneeN: 16,
-					kneeF: 3,
-					tilt: 2.5,
-					twist: -3,
-					shN: 9,
-					shF: 4,
-				},
-			][i]!,
+		pose: (i) => EASY_SWAY[i]!,
 	},
 	// On the lane for the last free throw, from when the shooter has the
 	// ball till it leaves his hand: down onto his knees, and up off them
@@ -11722,6 +11895,688 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// ---- draft night (see draftStage.ts) ----
+	// Sat at the table waiting, breathing.
+	tableSit: {
+		kind: "loop",
+		n: 2,
+		fps: 0.4,
+		pose: (i) => (i ? sat({ lean: 7.5, nod: 3 }) : SAT),
+	},
+	// Up out of his chair - and the same, grinning.
+	tableUp: { kind: "act", n: 8, keys: TABLE_UP },
+	tableUpGrin: { kind: "act", n: 8, keys: grinning(TABLE_UP) },
+	// Stood waiting on them, and hugging them (see embrace), grinning.
+	easyGrin: {
+		kind: "loop",
+		n: 4,
+		fps: 0.5,
+		pose: (i) => ({ ...EASY_SWAY[i]!, grin: 1 }),
+	},
+	embraceGrin: {
+		kind: "act",
+		n: 12,
+		keys: grinning(embraceKeys(HOLD, HOLD_ROCK, HOLD_REACH, HOLD_BACK)),
+	},
+	embraceManGrin: {
+		kind: "act",
+		n: 12,
+		keys: grinning(
+			embraceKeys(
+				MAN_HOLD,
+				MAN_ROCK,
+				{ ...MAN_HOLD, lean: 8, tilt: -3, hugN: 0.55, hugF: 0.55 },
+				{
+					...MAN_HOLD,
+					lean: 6,
+					tilt: 0,
+					hugFwd: 1.2,
+					hugUp: 4.2,
+					hugWide: 1.6,
+				},
+				MAN_PAT,
+			),
+		),
+	},
+	// IN HIS CHAIR, AS HIS NAME IS READ. A smile, sat up, nodding.
+	sitSmile: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, SAT],
+			[0.15, sat({ lean: 1, nod: -8, grin: 0.7 })],
+			[0.35, sat({ lean: 3, nod: 9, grin: 1 })],
+			[0.55, sat({ lean: 2, nod: -4, grin: 1 })],
+			[0.75, sat({ lean: 4, nod: 8, grin: 1 })],
+			[1, sat({ lean: 5, nod: 2, grin: 1 })],
+		],
+	},
+	// Bent right over, his head down on his hands - and up out of it.
+	sitBow: {
+		kind: "act",
+		n: 16,
+		keys: [
+			[0, SAT],
+			[
+				0.12,
+				sat({ lean: 14, nod: 14, clasp: 0.7, claspOut: 0.65, claspUp: 0.3 }),
+			],
+			[0.28, sat({ lean: 22, nod: 26, clasp: 1, claspOut: 0.7, claspUp: 0.6 })],
+			[0.5, sat({ lean: 25, nod: 30, clasp: 1, claspOut: 0.7, claspUp: 0.55 })],
+			[0.68, sat({ lean: 23, nod: 28, clasp: 1, claspOut: 0.7, claspUp: 0.6 })],
+			[
+				0.85,
+				sat({
+					lean: 14,
+					nod: 4,
+					clasp: 0.4,
+					claspOut: 0.6,
+					claspUp: 0,
+					grin: 0.6,
+				}),
+			],
+			[1, sat({ grin: 0.8 })],
+		],
+	},
+	// His face in his hands, bent over them.
+	sitFaceHands: {
+		kind: "act",
+		n: 14,
+		keys: [
+			[0, SAT],
+			[0.15, sat({ lean: 18, nod: 16, faceN: 0.8, faceF: 0.8, faceHi: 0.6 })],
+			[0.3, sat({ lean: 24, nod: 22, faceN: 1, faceF: 1, faceHi: 0.7 })],
+			[0.55, sat({ lean: 26, nod: 24, faceN: 1, faceF: 1, faceHi: 0.75 })],
+			[0.72, sat({ lean: 22, nod: 19, faceN: 1, faceF: 1, faceHi: 0.9 })],
+			[
+				0.88,
+				sat({
+					lean: 12,
+					nod: 4,
+					faceN: 0.3,
+					faceF: 0.3,
+					faceHi: 1,
+					grin: 0.3,
+				}),
+			],
+			[1, sat({ grin: 0.4 })],
+		],
+	},
+	// A hand over his mouth, sat back: he can't believe it.
+	sitHandMouth: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, SAT],
+			[0.15, sat({ lean: -2, nod: -4, faceN: 1 })],
+			[0.6, sat({ lean: -4, nod: -2, faceN: 1, faceHi: 0.05 })],
+			[0.8, sat({ lean: 2, nod: 4, faceN: 0.4, faceHi: 0.1, grin: 0.4 })],
+			[1, sat({ grin: 0.7 })],
+		],
+	},
+	// A hand over his eyes, his head down, shaking it.
+	sitHandEyes: {
+		kind: "act",
+		n: 14,
+		keys: [
+			[0, SAT],
+			[0.15, sat({ lean: 12, nod: 10, faceF: 1, faceHi: 1 })],
+			[0.35, sat({ lean: 14, nod: 13, faceF: 1, faceHi: 1, twist: 4 })],
+			[0.55, sat({ lean: 14, nod: 12, faceF: 1, faceHi: 1, twist: -4 })],
+			[0.75, sat({ lean: 13, nod: 12, faceF: 1, faceHi: 1, twist: 2 })],
+			[0.9, sat({ lean: 6, nod: 2, faceF: 0.3, faceHi: 1, grin: 0.5 })],
+			[1, sat({ grin: 0.7 })],
+		],
+	},
+	// His hands together under his chin, his head bowed - then looking up.
+	sitPray: {
+		kind: "act",
+		n: 14,
+		keys: [
+			[0, SAT],
+			[
+				0.15,
+				sat({ lean: 8, nod: 10, clasp: 1, claspOut: 0.55, claspUp: 0.45 }),
+			],
+			[
+				0.45,
+				sat({ lean: 9, nod: 13, clasp: 1, claspOut: 0.55, claspUp: 0.45 }),
+			],
+			[0.62, sat({ lean: 0, nod: -24, clasp: 1, claspOut: 0.6, claspUp: 0.5 })],
+			[0.82, sat({ lean: 0, nod: -26, clasp: 1, claspOut: 0.6, claspUp: 0.5 })],
+			[1, sat({ lean: 4, grin: 0.6 })],
+		],
+	},
+	// Back in his chair, his hands on his head, his head back: at last.
+	sitLeanBack: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, SAT],
+			[0.2, sat({ lean: -12, nod: -18, onHeadN: 1, onHeadF: 1, yell: 0.25 })],
+			[0.6, sat({ lean: -14, nod: -22, onHeadN: 1, onHeadF: 1, yell: 0.15 })],
+			[0.85, sat({ lean: -2, onHeadN: 0.3, onHeadF: 0.3, grin: 0.8 })],
+			[1, sat({ grin: 1 })],
+		],
+	},
+	// Clapping, grinning.
+	sitClap: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, SAT],
+			...claps(sat({ lean: 4, grin: 1 }), 4, 0.04, 0.88, 0.75, -0.3),
+			[1, sat({ grin: 1 })],
+		],
+	},
+	// A fist pumped, twice, shouting.
+	sitFist: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, SAT],
+			[0.2, sat({ lean: 8, shN: 58, elN: 126, abN: 16, nod: -6, yell: 0.6 })],
+			[0.38, sat({ lean: 16, shN: 22, elN: 100, abN: 12, nod: 6, yell: 1 })],
+			[0.55, sat({ lean: 8, shN: 60, elN: 128, abN: 16, yell: 0.8 })],
+			[0.72, sat({ lean: 18, shN: 20, elN: 96, abN: 12, nod: 8, yell: 1 })],
+			[1, sat({ grin: 1 })],
+		],
+	},
+	// Sat back, still, taking it in - and a slow nod.
+	sitStunned: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, SAT],
+			[0.2, sat({ lean: -3, nod: -2, yell: 0.12 })],
+			[0.6, sat({ lean: -3, yell: 0.12 })],
+			[0.8, sat({ lean: 2, nod: 10 })],
+			[1, sat({ lean: 4, nod: 2, grin: 0.4 })],
+		],
+	},
+	// Laughing: his head back, and forward, a hand up at his face.
+	sitLaugh: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, SAT],
+			[0.12, sat({ lean: -6, nod: -16, grin: 1 })],
+			[0.25, sat({ lean: 8, nod: 10, grin: 1 })],
+			[0.36, sat({ lean: 4, nod: 2, grin: 1 })],
+			[0.47, sat({ lean: 10, nod: 12, grin: 1 })],
+			[0.6, sat({ lean: 2, nod: -6, grin: 1 })],
+			[0.8, sat({ lean: 12, nod: 10, grin: 1, faceN: 0.6, faceHi: 0.3 })],
+			[1, sat({ grin: 1 })],
+		],
+	},
+	// A hand over his heart, and looking up.
+	sitHeart: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, SAT],
+			[0.2, sat({ heartN: 1, nod: 10, lean: 4, grin: 0.5 })],
+			[0.5, sat({ heartN: 1, nod: -12, grin: 0.6 })],
+			[0.75, sat({ heartN: 1, nod: 8, lean: 4, grin: 0.8 })],
+			[1, sat({ grin: 0.8 })],
+		],
+	},
+	// Up straight in his chair with both arms thrown up - and up out of it.
+	sitJolt: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, SAT],
+			[
+				0.25,
+				sat({
+					lean: -8,
+					nod: -10,
+					shN: 150,
+					elN: 30,
+					abN: 30,
+					shF: 150,
+					elF: 30,
+					abF: 30,
+					yell: 1,
+				}),
+			],
+			[
+				0.7,
+				sat({
+					lean: -6,
+					nod: -8,
+					shN: 160,
+					elN: 20,
+					abN: 28,
+					shF: 160,
+					elF: 20,
+					abF: 28,
+					yell: 1,
+				}),
+			],
+			// Bringing them down bent, fists to his shoulders - not swept down
+			// straight out in front of him.
+			[
+				0.84,
+				sat({
+					lean: 4,
+					shN: 70,
+					elN: 128,
+					abN: 34,
+					shF: 70,
+					elF: 128,
+					abF: 34,
+					yell: 0.5,
+				}),
+			],
+			[1, sat({ lean: 14, grin: 1 })],
+		],
+	},
+	// UP ON HIS FEET. Doing up his jacket, his head down at it, and a tug at
+	// it.
+	upButton: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[
+				0.2,
+				stood({
+					clasp: 1,
+					claspOut: 0.42,
+					claspUp: -1.05,
+					claspApart: 0.2,
+					nod: 14,
+					lean: 4,
+				}),
+			],
+			[
+				0.45,
+				stood({
+					clasp: 1,
+					claspOut: 0.42,
+					claspUp: -1,
+					claspApart: 0.12,
+					nod: 16,
+					lean: 4,
+				}),
+			],
+			[
+				0.62,
+				stood({
+					clasp: 1,
+					claspOut: 0.4,
+					claspUp: -1.3,
+					claspApart: 0.45,
+					nod: 6,
+					lean: 3,
+				}),
+			],
+			[0.8, stood({ nod: -2, grin: 0.6 })],
+			[1, stood({ grin: 0.6 })],
+		],
+	},
+	// Both hands on his head.
+	upHandsHead: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[0.2, stood({ onHeadN: 1, onHeadF: 1, lean: -4, nod: -10, yell: 0.4 })],
+			[
+				0.7,
+				stood({
+					onHeadN: 1,
+					onHeadF: 1,
+					lean: -6,
+					nod: -14,
+					yell: 0.3,
+					twist: 3,
+				}),
+			],
+			[0.85, stood({ onHeadN: 0.4, onHeadF: 0.4, grin: 0.8 })],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// A hand over his mouth - and down his face.
+	upHandMouth: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[0.18, stood({ faceN: 1, faceHi: 0.05, lean: 8, nod: 8 })],
+			[0.6, stood({ faceN: 1, faceHi: 0.1, lean: 6, nod: 6 })],
+			[0.75, stood({ faceN: 0.9, faceHi: 0.9, lean: 6, nod: 10 })],
+			[1, stood({ grin: 0.6 })],
+		],
+	},
+	// Wiping his eyes, one and then the other.
+	upWipeEyes: {
+		kind: "act",
+		n: 14,
+		keys: [
+			[0, P.easy],
+			[0.15, stood({ faceN: 1, faceHi: 1.05, nod: 14, lean: 6 })],
+			[0.3, stood({ faceN: 1, faceHi: 0.85, nod: 14, lean: 6 })],
+			[0.42, stood({ faceN: 0.2, faceF: 0.6, faceHi: 1, nod: 12, lean: 6 })],
+			[0.55, stood({ faceF: 1, faceHi: 1.05, nod: 14, lean: 6 })],
+			[0.7, stood({ faceF: 1, faceHi: 0.85, nod: 12, lean: 6 })],
+			[0.85, stood({ nod: 4, lean: 4, grin: 0.3 })],
+			[1, P.easy],
+		],
+	},
+	// Both arms up to the sky, looking up at it.
+	upSky: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.easy],
+			[0.25, TO_SKY],
+			[0.75, { ...TO_SKY, shN: 156, elN: 18, shF: 156, elF: 18, nod: -32 }],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// His fingers to his lips, and up at the sky.
+	upPointUp: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[0.18, stood({ faceN: 1, nod: 4 })],
+			[0.3, stood({ faceN: 0.8, nod: -6 })],
+			[0.45, stood({ shN: 168, elN: 6, abN: 12, nod: -30, lean: -4 })],
+			[0.85, stood({ shN: 170, elN: 4, abN: 12, nod: -32, lean: -5 })],
+			[1, stood({ grin: 0.6 })],
+		],
+	},
+	// A fist pumped, twice, shouting.
+	upFistPump: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.easy],
+			[
+				0.18,
+				stood({
+					shN: 120,
+					elN: 120,
+					abN: 22,
+					lean: -4,
+					nod: -6,
+					kneeN: 14,
+					kneeF: 16,
+					yell: 0.8,
+				}),
+			],
+			[
+				0.34,
+				stood({
+					shN: 30,
+					elN: 100,
+					abN: 14,
+					lean: 8,
+					nod: 6,
+					kneeN: 22,
+					kneeF: 24,
+					yell: 1,
+				}),
+			],
+			[0.5, stood({ shN: 120, elN: 120, abN: 22, lean: -4, yell: 0.9 })],
+			[
+				0.66,
+				stood({
+					shN: 30,
+					elN: 100,
+					abN: 14,
+					lean: 10,
+					nod: 8,
+					kneeN: 22,
+					kneeF: 24,
+					yell: 1,
+				}),
+			],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// Both fists clenched up by his head, his elbows out, shouting.
+	upRoar: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.easy],
+			[
+				0.2,
+				stood({
+					flexN: 0.85,
+					flexF: 0.85,
+					lean: -5,
+					nod: -12,
+					kneeN: 16,
+					kneeF: 18,
+					wide: 0.36,
+					yell: 1,
+				}),
+			],
+			[
+				0.45,
+				stood({
+					flexN: 1,
+					flexF: 1,
+					lean: 2,
+					nod: 4,
+					kneeN: 22,
+					kneeF: 24,
+					wide: 0.38,
+					yell: 1,
+				}),
+			],
+			[
+				0.75,
+				stood({
+					flexN: 0.9,
+					flexF: 0.9,
+					lean: -6,
+					nod: -14,
+					kneeN: 16,
+					kneeF: 18,
+					wide: 0.36,
+					yell: 1,
+				}),
+			],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// His fist on his chest, twice, nodding.
+	upChestThump: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[0.2, stood({ heartN: 1, nod: 8, grin: 0.4 })],
+			[0.32, stood({ heartN: 0.55, nod: 4, grin: 0.4 })],
+			[0.44, stood({ heartN: 1, nod: 10, grin: 0.5 })],
+			[0.56, stood({ heartN: 0.55, nod: 4, grin: 0.5 })],
+			[0.68, stood({ heartN: 1, nod: 10, grin: 0.6 })],
+			[1, stood({ grin: 0.8 })],
+		],
+	},
+	// His hand over his heart, nodding to the room.
+	upHeart: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[0.25, stood({ heartN: 1, nod: 10, lean: 4, grin: 0.5 })],
+			[0.5, stood({ heartN: 1, nod: 2, lean: 2, grin: 0.6 })],
+			[0.75, stood({ heartN: 1, nod: 12, lean: 6, grin: 0.7 })],
+			[1, stood({ grin: 0.7 })],
+		],
+	},
+	// His arms open wide.
+	upArmsOut: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.easy],
+			[0.3, ARMS_OPEN],
+			[
+				0.75,
+				{
+					...ARMS_OPEN,
+					shN: 54,
+					elN: 20,
+					abN: 66,
+					shF: 54,
+					elF: 20,
+					abF: 66,
+					lean: -6,
+					nod: -8,
+					yell: 0.4,
+				},
+			],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// Clapping, grinning.
+	upClap: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			...claps(stood({ grin: 1 }), 4, 0.04, 0.88, 0.85, -0.4),
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// His hands together under his chin, looking up - and a nod.
+	upPray: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[0.2, stood({ clasp: 1, claspOut: 0.55, claspUp: 0.3, nod: 14 })],
+			[
+				0.45,
+				stood({ clasp: 1, claspOut: 0.6, claspUp: 0.25, nod: -26, lean: -3 }),
+			],
+			[
+				0.75,
+				stood({ clasp: 1, claspOut: 0.6, claspUp: 0.25, nod: -28, lean: -4 }),
+			],
+			[
+				0.88,
+				stood({ clasp: 0.5, claspOut: 0.6, claspUp: 0.3, nod: 8, grin: 0.5 }),
+			],
+			[1, stood({ grin: 0.6 })],
+		],
+	},
+	// His hands on his hips, his head back, a long breath out.
+	upExhale: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.easy],
+			[0.25, stood({ onHipN: 1, onHipF: 1, nod: -22, lean: -4, yell: 0.25 })],
+			[0.6, stood({ onHipN: 1, onHipF: 1, nod: -18, lean: -3, yell: 0.15 })],
+			[0.8, stood({ onHipN: 0.6, onHipF: 0.6, nod: 6, lean: 3, grin: 0.8 })],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// Waving to the room.
+	upWave: {
+		kind: "act",
+		n: 12,
+		keys: [[0, P.easy], ...waving(0.2, 0.85), [1, stood({ grin: 1 })]],
+	},
+	// His face in his hands, bent over.
+	upFaceHands: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[0, P.easy],
+			[
+				0.15,
+				stood({
+					faceN: 1,
+					faceF: 1,
+					faceHi: 0.7,
+					nod: 22,
+					lean: 16,
+					kneeN: 12,
+					kneeF: 14,
+				}),
+			],
+			[
+				0.6,
+				stood({
+					faceN: 1,
+					faceF: 1,
+					faceHi: 0.75,
+					nod: 26,
+					lean: 20,
+					kneeN: 14,
+					kneeF: 16,
+				}),
+			],
+			[0.8, stood({ faceN: 0.6, faceF: 0.6, faceHi: 1, nod: 10, lean: 8 })],
+			[1, stood({ grin: 0.3 })],
+		],
+	},
+	// ON THE STAGE, FOR THE CAMERAS: pointing out at the room...
+	stagePoint: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, stood({ grin: 1 })],
+			// (With the arm away from the commissioner beside him, out and up a
+			// little - not across at him.)
+			[0.25, stood({ shF: 112, elF: 6, abF: 34, nod: -2, grin: 1 })],
+			[0.8, stood({ shF: 116, elF: 4, abF: 30, nod: -2, grin: 1 })],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// ...a fist up...
+	stageFist: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, stood({ grin: 1 })],
+			[0.25, FIST_UP],
+			[0.8, { ...FIST_UP, shN: 170, yell: 0.5 }],
+			[1, stood({ grin: 1 })],
+		],
+	},
+	// ...or his hands together, and a little bow to them.
+	stageThanks: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, stood({ grin: 1 })],
+			[
+				0.25,
+				stood({
+					clasp: 1,
+					claspOut: 0.6,
+					claspUp: 0.35,
+					nod: 14,
+					lean: 10,
+					grin: 0.8,
+				}),
+			],
+			[
+				0.75,
+				stood({
+					clasp: 1,
+					claspOut: 0.6,
+					claspUp: 0.35,
+					nod: 4,
+					lean: 3,
+					grin: 1,
+				}),
+			],
+			[1, stood({ grin: 1 })],
+		],
+	},
 	// Face to face down the handshake line, waiting on the man before to
 	// finish with him - not stood stock still.
 	waitFive: {
@@ -13170,15 +14025,16 @@ export const skeleton = (b: Body, q0: Pose): Skeleton => {
 			(q.lean - NECK_DOWN_LEAN[0]) / (NECK_DOWN_LEAN[1] - NECK_DOWN_LEAN[0]),
 		);
 	const N =
-		L > 0
+		(L > 0
 			? L - Math.min(L * NECK_BACK, NECK_BACK_MOST * rad) * upright + down
-			: L;
+			: L) +
+		q.nod * rad;
 	const head = v3(
 		chest.f + Math.sin(N) * up + b.headR * 0.12,
 		0,
 		chest.u + Math.cos(N) * up,
 	);
-	const armR = shapedArm(
+	let armR = shapedArm(
 		b,
 		chest,
 		pelvis,
@@ -13194,7 +14050,7 @@ export const skeleton = (b: Body, q0: Pose): Skeleton => {
 		q.hugN,
 		q,
 	);
-	const armL = shapedArm(
+	let armL = shapedArm(
 		b,
 		chest,
 		pelvis,
@@ -13210,6 +14066,10 @@ export const skeleton = (b: Body, q0: Pose): Skeleton => {
 		q.hugF,
 		q,
 	);
+	if (q.faceN || q.faceF || q.heartN || q.heartF || q.clasp || q.nod) {
+		armR = gestured(b, q, chest, head, armR, -1);
+		armL = gestured(b, q, chest, head, armL, 1);
+	}
 	if (q.twist === 0 && q.tilt === 0) {
 		return overFeet(b, q, { pelvis, chest, head, legR, legL, armR, armL });
 	}
@@ -13707,6 +14567,124 @@ const shapedArm = (
 			wrap.hugUp - (side > 0 ? HUG_WRAP.under : 0),
 		);
 		out = mixArm(out, wrapped(b, chest, to, side), hug);
+	}
+	return out;
+};
+// HIS HANDS AT HIMSELF: at his face, over his heart, together in front of
+// him - each worked out from where the hand goes
+// (see armTo), its elbow let out a little, and the hand itself laid the
+// way it lies there (fingers up his face, across his chest).
+const handAt = (
+	b: Body,
+	chest: V3,
+	wrist: V3,
+	fingers: V3,
+	flare: number,
+	side: 1 | -1,
+): Limb => {
+	const arm = flared(armTo(b, chest, wrist, 0, side), flare, side);
+	const l = Math.hypot(fingers.f, fingers.s, fingers.u) || 1;
+	const reach = b.handR * 2.2;
+	return {
+		...arm,
+		tip: v3(
+			arm.end.f + (fingers.f / l) * reach,
+			arm.end.s + (fingers.s / l) * reach,
+			arm.end.u + (fingers.u / l) * reach,
+		),
+	};
+};
+// (At his face: the wrist under his chin, out in front of it - the palm
+// over his mouth - or up under his eyes, the fingers over them; head radii
+// from its middle. Over his heart: the wrist in at the middle of his chest,
+// the fingers across onto his left side - feet, below his shoulders and out
+// in front of his chest's middle. Together: the wrists a hand's width
+// apart, at least.)
+const AT_FACE = { f: 0.7, s: 0.08, lo: 1.35, hi: 0.55, across: 0.3 };
+const AT_HEART = { f: 0.42, s: 0.04, u: 0.48, lower: 0.18 };
+const CLASP_S = 0.07;
+const gestured = (
+	b: Body,
+	q: Pose,
+	chest: V3,
+	head: V3,
+	arm: Limb,
+	side: 1 | -1,
+): Limb => {
+	let out = arm;
+	const face = side < 0 ? q.faceN : q.faceF;
+	const heart = side < 0 ? q.heartN : q.heartF;
+	const top = side < 0 ? q.onHeadN : q.onHeadF;
+	if (top > 0 && q.nod !== 0) {
+		// A hand on his head (see shapedArm) where his head is, bowed or
+		// tipped back.
+		const r = b.headR;
+		const tip = Math.atan2(head.f - chest.f, head.u - chest.u);
+		const f0 = r * (ON_HEAD.f - 0.12);
+		const u0 = r * (ON_HEAD.u - 1);
+		const at = v3(
+			head.f + f0 * Math.cos(tip) + u0 * Math.sin(tip),
+			side * r * ON_HEAD.s,
+			head.u - f0 * Math.sin(tip) + u0 * Math.cos(tip),
+		);
+		// (Coming in as his head goes, so nothing jumps as it comes up level.)
+		const going = Math.min(1, Math.abs(q.nod) / 8);
+		out = mixArm(
+			out,
+			flared(armTo(b, chest, at, 60, side), 105, side),
+			top * going,
+		);
+	}
+	if (q.clasp > 0) {
+		const at = v3(
+			chest.f + q.claspOut,
+			side * (CLASP_S + q.claspApart / 2),
+			chest.u - b.shoulderDrop + q.claspUp,
+		);
+		// (Up at his chin, pressed together, the fingers up; down at his
+		// middle, at the buttons of his jacket, across.)
+		const low = Math.min(1, Math.max(0, (-q.claspUp - 0.4) / 0.5));
+		out = mixArm(
+			out,
+			handAt(
+				b,
+				chest,
+				at,
+				v3(0.35, -side * (0.15 + 0.45 * low), 1 - 1.6 * low),
+				15 + 15 * low,
+				side,
+			),
+			q.clasp,
+		);
+	}
+	if (heart > 0) {
+		// His right hand across onto his left side, his left on it - a
+		// little under it.
+		const own = side > 0;
+		const at = v3(
+			chest.f + AT_HEART.f,
+			own ? 0.22 : AT_HEART.s,
+			chest.u - AT_HEART.u - (own && q.heartN > 0 ? AT_HEART.lower : 0),
+		);
+		out = mixArm(
+			out,
+			handAt(b, chest, at, v3(0.1, own ? 0.15 : 1, 0.45), own ? 25 : 10, side),
+			heart,
+		);
+	}
+	if (face > 0) {
+		const hi = q.faceHi;
+		const r = b.headR;
+		const at = v3(
+			head.f + r * AT_FACE.f,
+			head.s + side * r * (AT_FACE.s + AT_FACE.across * hi),
+			head.u - r * (AT_FACE.lo + (AT_FACE.hi - AT_FACE.lo) * hi),
+		);
+		out = mixArm(
+			out,
+			handAt(b, chest, at, v3(0.15, -side * (0.1 + 0.25 * hi), 1), 18, side),
+			face,
+		);
 	}
 	return out;
 };

@@ -1414,30 +1414,41 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 					});
 				}
 			}
-			// The podium.
+			// The podium (not behind the camera, down among the tables: drawn
+			// from behind it, it comes out turned inside out across the
+			// picture).
 			const pod = {
 				x0: PODIUM.x - PODIUM.w / 2,
 				x1: PODIUM.x + PODIUM.w / 2,
 				y0: PODIUM.y - PODIUM.d / 2,
 				y1: PODIUM.y + PODIUM.d / 2,
 			};
-			items.push({
-				depth: depthOf(cam, { x: PODIUM.x, y: pod.y1, z: 3 }),
-				draw: () => {
-					drawBox(
-						ctx,
-						cam,
-						pod.x0,
-						pod.x1,
-						pod.y0,
-						pod.y1,
-						STAGE.z,
-						STAGE.z + PODIUM.h,
-						{ front: "#211d1c", top: "#2e2927", side: "#120f0e" },
-						{ img: paint.podium, cols: 2, rows: 2 },
-					);
-				},
-			});
+			const podBehind = [pod.x0, pod.x1].some((x) =>
+				[pod.y0, pod.y1].some((y) =>
+					[STAGE.z, STAGE.z + PODIUM.h].some(
+						(z) => depthOf(cam, { x, y, z }) < 0.5,
+					),
+				),
+			);
+			if (!podBehind) {
+				items.push({
+					depth: depthOf(cam, { x: PODIUM.x, y: pod.y1, z: 3 }),
+					draw: () => {
+						drawBox(
+							ctx,
+							cam,
+							pod.x0,
+							pod.x1,
+							pod.y0,
+							pod.y1,
+							STAGE.z,
+							STAGE.z + PODIUM.h,
+							{ front: "#211d1c", top: "#2e2927", side: "#120f0e" },
+							{ img: paint.podium, cols: 2, rows: 2 },
+						);
+					},
+				});
+			}
 			// The people round the tables: sat, clapping, his family up.
 			const smoothing = ctx.imageSmoothingEnabled;
 			const upNow = room.upAt(t);
