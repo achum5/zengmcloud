@@ -4,7 +4,19 @@ import { helpers } from "../../../util/helpers.ts";
 import processLiveGameEventsBasketball from "../../../util/processLiveGameEvents.basketball.tsx";
 import type { ShotSpot } from "./shots.ts";
 
-const Court3D = lazy(() => import("../court3d/Court3D.tsx"));
+// The court's code, fetched the first time a court is wanted - or ahead of
+// it (warmClipCourt). Once it is in, a court is drawn with it straight away,
+// not suspended a moment first as a lazy one always is, the building painted
+// in a render that could be thrown away and done over.
+let courtCode: typeof import("../court3d/Court3D.tsx") | undefined;
+const loadCourt = async () =>
+	(courtCode ??= await import("../court3d/Court3D.tsx"));
+const LazyCourt3D = lazy(loadCourt);
+// (And what its first court of the visit sets up for itself done before one
+// is on the screen: see Court3D's warmCourt.)
+export const warmClipCourt = async (all: () => boolean) => {
+	(await loadCourt()).warmCourt(all());
+};
 
 // The game a highlight is cut from: its play-by-play and the box score it
 // starts from - and, a game still being played, how far the page has got
@@ -101,6 +113,7 @@ export const ClipCourt = ({
 	// Each line as the picture gets to it.
 	onLine?: (e: any) => void;
 }) => {
+	const [Court3D] = useState(() => courtCode?.default ?? LazyCourt3D);
 	const total = events.length;
 	// (A reel's stretches cut out marked: see common/recapReel.ts's cutReel.)
 	const marked = useMemo(() => events.some((e) => e?.gap === true), [events]);

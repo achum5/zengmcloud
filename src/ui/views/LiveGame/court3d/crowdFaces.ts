@@ -130,6 +130,7 @@ const faceOf = async (n: number): Promise<CrowdFace | undefined> => {
 // Made once for the page, a face at a time - out of the way of anything else
 // going on.
 let pool: Promise<CrowdFace[]> | undefined;
+let made: CrowdFace[] | undefined;
 export const crowdFaces = (): Promise<CrowdFace[]> =>
 	(pool ??= (async () => {
 		const out: CrowdFace[] = [];
@@ -140,5 +141,10 @@ export const crowdFaces = (): Promise<CrowdFace[]> =>
 			}
 			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
+		made = out;
 		return out;
 	})());
+// The faces, if they are made already: a court set up after that paints its
+// stands with them the first time, not once without and again with them.
+export const crowdFacesMade = (): CrowdFace[] | undefined =>
+	made && made.length > 0 ? made : undefined;

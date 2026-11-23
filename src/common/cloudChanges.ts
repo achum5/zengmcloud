@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 498,
+		date: "2026-11-23",
+		text: "Nightly Recap: smoother into each game. The GAME RECAP card no longer stutters as it comes up; the 3D court is set up behind it once it's still, and the arena is painted once instead of twice.",
+	},
+	{
 		n: 497,
 		date: "2026-11-23",
 		text: "NBA calendar month view: home games are a plain fill in your team's color (no stripe on top), and the small calendar on the dashboard now shows each game's score.",
