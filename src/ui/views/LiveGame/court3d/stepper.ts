@@ -19,6 +19,11 @@ import { COURT_H, COURT_W, inPlay, rimX, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
 import { alongShape, pushFrom, runShape } from "./motion.ts";
 import { stagingBeat, stagingTick } from "./stagingTick.ts";
+import {
+	type Defending,
+	defendTogether,
+	type Wanted,
+} from "./possession/loop.ts";
 
 export const STEP_MS = 50;
 
@@ -2090,6 +2095,9 @@ export const stepTimeline = <T extends Stepped>(
 	// How each man is moved after where he is wanted, at real speed: today's
 	// way (follow), or another's (see possession/follow.ts).
 	followFor?: (pid: number) => typeof follow | undefined,
+	// The new sim's defense (see possession/defense.ts): each defender
+	// guarding his man himself.
+	defending?: Defending,
 ): T => {
 	const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
 	// (Those of them long enough, each cut short of where it plays at its
@@ -2135,19 +2143,19 @@ export const stepTimeline = <T extends Stepped>(
 		}
 		laid.set(tr.pid, pathOf(from, spots));
 	}
+	// (The moment he goes off the floor: there for it, as for one of his
+	// acts, where whatever takes him from there has him.)
+	const offFloor = (tr: (typeof men)[number]): [number, number][] =>
+		tr.shown.flatMap(([at, on], k) =>
+			!on && k > 0 && tr.shown[k - 1]![1]
+				? [[at - STEP_MS, at] as [number, number]]
+				: [],
+		);
 	for (const tr of men) {
-		// (His acts - and the moment he goes off the floor: there for it, as
-		// for one, where whatever takes him from there has him.)
+		// (His acts - and the moment he goes off the floor.)
 		helds.set(
 			tr.pid,
-			spansAt([
-				...tr.acts.map((x) => [x.t0, x.t1] as const),
-				...tr.shown.flatMap(([at, on], k) =>
-					!on && k > 0 && tr.shown[k - 1]![1]
-						? [[at - STEP_MS, at] as const]
-						: [],
-				),
-			]),
+			spansAt([...tr.acts.map((x) => [x.t0, x.t1] as const), ...offFloor(tr)]),
 		);
 	}
 	// Who has the ball, from when.
@@ -2173,14 +2181,20 @@ export const stepTimeline = <T extends Stepped>(
 			: [],
 	);
 	const sharp = spansAt(shots);
-	// Each man stepped after what he wants, over his stretches on the floor.
-	const step = (
+	// Each man stepped after what he wants, over his stretches on the floor
+	// - those of them from `lo` till `hi` (ms), on into `samples`.
+	const stepInto = (
 		tr: (typeof men)[number],
 		want: (t: number) => Pt | undefined,
-		seeAt?: (t: number) => number,
+		seeAt: ((t: number) => number) | undefined,
+		samples: Sample[],
+		lo = -Infinity,
+		hi = Infinity,
+		// (What of his pins him to the play, if not all his acts.)
+		heldBy?: Spans,
 	) => {
 		const L = laid.get(tr.pid)!;
-		const held = helds.get(tr.pid)!;
+		const held = heldBy ?? helds.get(tr.pid)!;
 		// (Nor in the post: backing in on his man, he goes when he goes -
 		// and his man, on his back, gives ground as he comes.)
 		const post = tr.moves.flatMap((m) =>
@@ -2189,12 +2203,16 @@ export const stepTimeline = <T extends Stepped>(
 				: [],
 		);
 		const his = post.length > 0 ? spansAt([...shots, ...post]) : sharp;
-		const samples: Sample[] = [];
 		const begin = L.from;
 		const end = tr.moves.at(-1)!.t1 + 1000;
 		tr.shown.forEach(([at, on], k) => {
-			const from = Math.max(begin, at);
-			const until = Math.min(end, tr.shown[k + 1]?.[0] ?? end);
+			const whole = Math.max(begin, at);
+			// (From `lo` on, on the stretch's own beat.)
+			const from =
+				lo > whole
+					? whole + Math.ceil((lo - whole) / STEP_MS) * STEP_MS
+					: whole;
+			const until = Math.min(end, tr.shown[k + 1]?.[0] ?? end, hi);
 			if (!on || !(until > from)) {
 				return;
 			}
@@ -2287,8 +2305,9 @@ export const stepTimeline = <T extends Stepped>(
 					stagingTick();
 				}
 			};
-			// (His steps on the stretch's own beat, from its start.)
-			const last = until - 1;
+			// (His steps on the stretch's own beat, from its start - up to
+			// `hi`, not on it: that one is the next stretch's.)
+			const last = until === hi ? until - 1e-6 : until - 1;
 			let t = from;
 			while (t <= last) {
 				const w = skipAt(t);
@@ -2324,6 +2343,11 @@ export const stepTimeline = <T extends Stepped>(
 		});
 		return samples;
 	};
+	const step = (
+		tr: (typeof men)[number],
+		want: (t: number) => Pt | undefined,
+		seeAt?: (t: number) => number,
+	) => stepInto(tr, want, seeAt, []);
 	// When the ball is in play: in a man's hands on the floor (not taking
 	// it in from out of bounds), not at a free throw.
 	const ft = spansAt(
@@ -2439,6 +2463,56 @@ export const stepTimeline = <T extends Stepped>(
 		const seg = tl.ball[lo - 1];
 		return seg?.kind === "hold" ? seg.pid : undefined;
 	};
+	// Each man's stepped way as runs the court reads (in place of the play's).
+	const finish = (
+		tr: (typeof men)[number],
+		samples: Sample[],
+		own?: (t: number) => Pick<Move, "anim" | "face"> | undefined,
+	) => {
+		// (On the floor of the place, out by the benches, wherever: see
+		// LINE_PULL for the lines themselves.)
+		for (const q of samples) {
+			q.x = Math.min(COURT_W + 3.9, Math.max(-3.9, q.x));
+			q.y = Math.min(COURT_H + 3.9, Math.max(-8.4, q.y));
+		}
+		const old = tr.moves;
+		const animAt = (t: number) => {
+			// (What he was doing, as he decided it himself: see defendTogether.)
+			const mine = own?.(t);
+			if (mine) {
+				return mine;
+			}
+			let lo = 0;
+			let hi = old.length;
+			while (lo < hi) {
+				const mid = (lo + hi) >> 1;
+				if (old[mid]!.t0 <= t) {
+					lo = mid + 1;
+				} else {
+					hi = mid;
+				}
+			}
+			const m = old[lo - 1];
+			if (m && t <= m.t1 + STEP_MS) {
+				return m;
+			}
+			// (Stood where the play has him, stepping to a spot of his own,
+			// eyes on the ball: drifting - side-stepping or dropping back as
+			// it goes, see stepsOf in evaluate.ts - not walking off forward
+			// whichever way he faces.)
+			return spotting.get(tr.pid)?.hit(t, t + 1)
+				? { anim: "drift" as const }
+				: undefined;
+		};
+		// (Off the floor, where it had him: the runs it laid there stay.)
+		const off = old.filter((m) => !floorSpotOf(tr, (m.t0 + m.t1) / 2));
+		tr.moves = [...toMoves(samples, animAt, helds.get(tr.pid)!), ...off].sort(
+			(a, b) => a.t0 - b.t0,
+		);
+	};
+	// (With the new sim's defense: what each man wants, all stepped together
+	// after.)
+	const wanted = new Map<number, Wanted>();
 	// And on defense, each with his man as his man really goes, a beat
 	// behind him.
 	for (const tr of men) {
@@ -2565,44 +2639,37 @@ export const stepTimeline = <T extends Stepped>(
 			L.from,
 			L.spots.map((_, k) => wantNow(L.from + k * STEP_MS)),
 		).at;
-		const samples: Sample[] = step(tr, want, (t) =>
-			behind(t) > 0 ? 0 : LOOK_MOST,
-		);
-		// (On the floor of the place, out by the benches, wherever: see
-		// LINE_PULL for the lines themselves.)
-		for (const q of samples) {
-			q.x = Math.min(COURT_W + 3.9, Math.max(-3.9, q.x));
-			q.y = Math.min(COURT_H + 3.9, Math.max(-8.4, q.y));
+		const seeAt = (t: number) => (behind(t) > 0 ? 0 : LOOK_MOST);
+		if (defending) {
+			// (Stepped with the rest, a possession at a time: below.)
+			wanted.set(tr.pid, { want, seeAt });
+			continue;
 		}
-		const old = tr.moves;
-		const animAt = (t: number) => {
-			let lo = 0;
-			let hi = old.length;
-			while (lo < hi) {
-				const mid = (lo + hi) >> 1;
-				if (old[mid]!.t0 <= t) {
-					lo = mid + 1;
-				} else {
-					hi = mid;
-				}
-			}
-			const m = old[lo - 1];
-			if (m && t <= m.t1 + STEP_MS) {
-				return m;
-			}
-			// (Stood where the play has him, stepping to a spot of his own,
-			// eyes on the ball: drifting - side-stepping or dropping back as
-			// it goes, see stepsOf in evaluate.ts - not walking off forward
-			// whichever way he faces.)
-			return spotting.get(tr.pid)?.hit(t, t + 1)
-				? { anim: "drift" as const }
-				: undefined;
-		};
-		// (Off the floor, where it had him: the runs it laid there stay.)
-		const off = old.filter((m) => !floorSpotOf(tr, (m.t0 + m.t1) / 2));
-		tr.moves = [...toMoves(samples, animAt, helds.get(tr.pid)!), ...off].sort(
-			(a, b) => a.t0 - b.t0,
-		);
+		finish(tr, step(tr, want, seeAt));
+	}
+	if (defending) {
+		const { samples, anims } = defendTogether({
+			men,
+			wanted,
+			defending,
+			stepInto,
+			laid,
+			helds,
+			offenseAt,
+			holderAt,
+			ball: tl.ball,
+			poss: tl.poss,
+			cut,
+			sharp,
+			ft,
+			live,
+			skipAt,
+			spans: spansAt,
+			offFloor,
+		});
+		for (const tr of men) {
+			finish(tr, samples.get(tr.pid) ?? [], anims.get(tr.pid));
+		}
 	}
 	for (const tr of men) {
 		delete tr.nudges;

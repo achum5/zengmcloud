@@ -93,6 +93,66 @@ looks better.
 10. The rest of the packages (shots, finishes, dribble moves, passes).
 11. Switch on, when Alex says so on film. The old possession code goes.
 
+## Step 5: the defense deciding
+
+What pins a defender down (the facts, as the play is staged from the
+engine's lines): his acts (the contest, the block, the steal, the foul, the
+charge, the box-out, the rebound, a bump or a fight for position), where
+and when the play has each; the picture cutting; the ball changing hands
+between the sides; a shot in the air until it is rebounded. He is on the
+spot as each starts, getting there by his own body, and between them he
+goes where his own head takes him.
+
+The planner, for now, is today's director: it says who guards whom (its
+switches included) and the runs that lead to the engine's result (the help
+that stops a drive, a closeout late enough to leave the shot as open as it
+was drawn, the run back). A defender follows those runs as laid, and guards
+his man himself in between - helping on a drive and recovering himself too.
+Transition comes into his own head next.
+
+Each step (`defense.ts`), each of the five:
+
+- sees the five on offense and the ball where they were a moment ago (his
+  own reaction time, quicker the better his defensive IQ), carried on by how
+  they were going;
+- picks his spot: on the ball, between his man and the rim at a cushion
+  (real: about 5.6 ft), tighter on a shooter and a quick defender, looser
+  on a man who can't shoot or a long way out; off the ball, a share of the
+  way from his man to the rim and over toward the ball's side, both more
+  the farther his man is from the ball (real: a quarter of the way and half
+  a foot over within 15 ft of it, almost half the way and two feet over past
+  35), more off a poor shooter and less off a great one;
+- the five read a drive together (a beat late): the man nearest the ball's
+  way in, off a man away from the ball, steps up in front of it, and those
+  near it show; nobody steps up if somebody is in front already;
+- goes there with his own body (`movement.ts`), facing the ball: sliding,
+  turning to run when he has to, closing out at a set man with it; never
+  through anybody - round a man in his way, out of the way of one coming
+  through;
+- as one of his facts comes due, makes for its spot when his own legs say
+  he must (stepped on ahead to see how long getting there and set takes,
+  going the other way included), there by the time the play has him back.
+
+Time runs forward a possession at a time (`stepper.ts` stepTimeline): the
+offense first (it does not answer the defense until step 6), then the five
+on defense together, each carrying on from where the last stretch left him.
+
+Handing over, both ways, without a jump: the play takes him back from
+where he is, its way shifted over by how far off it he is and the shift let
+go before his next fact. A contest, a reach or a bump he does wherever he
+is, feet set - unless something that pins him follows close behind (a
+contest, then the box-out): then the play has him through both. Nor does he
+take over just before one of those: the play has him till it is done.
+
+Today's passes that move defenders around after the plan (following his man
+a beat behind, the help share, stopping the ball, biting on fakes, giving
+ground to a jab, holding his ground on a jumper) no longer move a defender
+guarding his man under the switch: what they add as acts stays, as facts.
+
+Built as: 5a the facts, the loop, guarding his man on and off the ball;
+5b help and recover, closeouts; 5c transition; 5d the old defense off where
+the five own it.
+
 ## How we know
 
 - Rules that always hold, in the tests here: nobody faster, pushing harder
