@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 438,
+		date: "2026-11-23",
+		text: "3D game: games get ready to watch about 10% faster on phones - the stretches the replay fast-forwards through (free throws, substitutions, timeouts, the walk up the floor) are no longer worked out a step at a time.",
+	},
+	{
 		n: 437,
 		date: "2026-11-23",
 		text: "New league setting, NBA Calendar (off unless you turn it on): every game gets a real date, from late October to the Finals in June, with back-to-backs, road trips and Christmas games. NBA-shaped leagues play a real NBA schedule, other leagues get one built like it. Each sim day becomes one night (about 165 in a season), and injuries count games, not days. Turn it on in Settings, under Schedule; it starts with the next regular season.",

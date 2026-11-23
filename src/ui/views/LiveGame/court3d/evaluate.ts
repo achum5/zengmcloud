@@ -9176,8 +9176,10 @@ const ballOn = (
 		const b = resolve(seg.to, seg.t1);
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
 		// (By a man in the way, not through him - see passedBy.)
+		// (At either end of it, by nobody: not worked out there at all - the
+		// wide berth only bows it between.)
 		const by =
-			tl.ball[i + 1]?.kind === "path"
+			tl.ball[i + 1]?.kind === "path" || u <= 0 || u >= 1
 				? undefined
 				: passedBy(tl, seg, a, b, bodyFor, tl.ball[i - 1]?.kind === "path");
 		const bow = by ? 4 * u * (1 - u) : 0;

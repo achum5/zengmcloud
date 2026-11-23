@@ -31390,14 +31390,17 @@ class Director {
 		// all that - then kept off each other, the ball's way kept clear and
 		// the rest, as he goes.
 		if (this.step) {
-			stepTimeline({
-				tracks: this.tracks,
-				ball: this.ball,
-				poss: this.poss,
-				cuts: this.cuts,
-				beats: this.beats,
-				end: this.T,
-			});
+			stepTimeline(
+				{
+					tracks: this.tracks,
+					ball: this.ball,
+					poss: this.poss,
+					cuts: this.cuts,
+					beats: this.beats,
+					end: this.T,
+				},
+				fast,
+			);
 		}
 		this.keepApart(fast);
 		stagingBeat();

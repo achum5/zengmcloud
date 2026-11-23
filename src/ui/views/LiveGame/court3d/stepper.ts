@@ -67,6 +67,25 @@ const REACT_ROOM = 1500;
 // How long a man takes to react, setting off (ms): from one end to the
 // other, his own each time.
 const REACT_MS: [number, number] = [60, 320];
+// Through the stretches the picture hurries past (see `skip`) - free
+// throws, substitutions, timeouts, the ball dead, the walk up the floor -
+// he is not stepped: he simply goes after wherever he wants to be (the
+// play's spot, and his own way of getting there - round the line, getting
+// open, working his man), no harder than a man gets going and no faster
+// than he runs - the rest of what stepping weighs left out. From this
+// long (ms) into it, once the picture is well up to speed (see fastAt), to
+// this long before it plays at its pace again, so by then he is going as
+// stepped men go. (Only a stretch left this long, ms, once those are taken
+// off it: stepping the rest is no saving.) More than half a game is
+// hurried: stepping it was a good part of the time a game takes to get
+// ready, on a phone several seconds.
+const SKIP_ENTER_MS = 1000;
+const SKIP_RESUME_MS = 4000;
+const SKIP_LEAST_MS = 1500;
+// (Catching up on where he wants to be over about this long, s - getting
+// going or pulling up no harder than this, feet a second a second.)
+const SKIP_SETTLE = 0.3;
+const SKIP_ACCEL = 30;
 const REACT_PACE = 8;
 // (Seeing it this far (ms) ahead.)
 const REACT_SEE = 150;
@@ -244,15 +263,18 @@ export const follow = (
 	// When there is no beat to it: everybody going for the shot as the play
 	// has them going (see stepTimeline).
 	sharp: Spans = spansAt([]),
+	// Where he was the step before, and how he was going - carried on from
+	// there (not put where the play has him to start with).
+	before?: Sample,
 ): Sample[] => {
 	const out: Sample[] = [];
-	let p: Pt | undefined;
-	let vx = 0;
-	let vy = 0;
+	let p: Pt | undefined = before && { x: before.x, y: before.y };
+	let vx = before?.vx ?? 0;
+	let vy = before?.vy ?? 0;
 	// (When the play set him off from standing, and how long he takes.)
 	let off: { t: number; lag: number } | undefined;
 	// (Where the play had him the step before.)
-	let was: Pt | undefined;
+	let was: Pt | undefined = before && want(t0 - STEP_MS);
 	const dt = STEP_MS / 1000;
 	// (Where he is wanted next step, kept for the step after.)
 	let ahead: Pt | undefined = want(t0);
@@ -2055,8 +2077,39 @@ const REACT_RAMP = 600;
 
 // The whole game stepped: every man's tracks re-laid as he would really
 // move them. (In place.)
-export const stepTimeline = <T extends Stepped>(tl: T): T => {
+export const stepTimeline = <T extends Stepped>(
+	tl: T,
+	// The stretches the picture hurries past (see SKIP_RESUME_MS).
+	skip: readonly (readonly [number, number])[] = [],
+): T => {
 	const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
+	// (Those of them long enough, each cut short of where it plays at its
+	// pace again - in order, none overlapping.)
+	const skips: [number, number][] = [];
+	for (const [a0, b0] of [...skip].sort((x, y) => x[0] - y[0])) {
+		const a = a0 + SKIP_ENTER_MS;
+		const b = b0 - SKIP_RESUME_MS;
+		const prev = skips.at(-1);
+		if (prev && a <= prev[1]) {
+			prev[1] = Math.max(prev[1], b);
+		} else if (b - a >= SKIP_LEAST_MS) {
+			skips.push([a, b]);
+		}
+	}
+	const skipAt = (t: number): readonly [number, number] | undefined => {
+		let lo = 0;
+		let hi = skips.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (skips[mid]![0] <= t) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		const w = skips[lo - 1];
+		return w && t < w[1] ? w : undefined;
+	};
 	const men = [...tl.tracks.values()].filter(
 		(tr) => tr.pid >= 0 && tr.moves.length > 0,
 	);
@@ -2136,21 +2189,127 @@ export const stepTimeline = <T extends Stepped>(tl: T): T => {
 			if (!on || !(until > from)) {
 				return;
 			}
-			for (const q of follow(
-				want,
-				from,
-				until - 1,
-				held,
-				cut,
-				(t) =>
-					REACT_MS[0] +
-					(REACT_MS[1] - REACT_MS[0]) *
-						hash01(tr.pid * 17 + 3, Math.round(t / 100)),
-				seeAt,
-				his,
-			)) {
-				samples.push(q);
-				stagingTick();
+			const stepped = (a: number, b: number) => {
+				// (Coming out of a stretch hurried past: on from where that
+				// left him.)
+				const before = samples.at(-1);
+				for (const q of follow(
+					want,
+					a,
+					b,
+					held,
+					cut,
+					(t) =>
+						REACT_MS[0] +
+						(REACT_MS[1] - REACT_MS[0]) *
+							hash01(tr.pid * 17 + 3, Math.round(t / 100)),
+					seeAt,
+					his,
+					before && a - before.t <= STEP_MS ? before : undefined,
+				)) {
+					samples.push(q);
+					stagingTick();
+				}
+			};
+			// (Hurried past: after where he wants to be, no harder than a man
+			// gets going, pulls up or turns, no faster than he goes - on from
+			// where he was stepped to, going as he was going.)
+			const putOn = (a: number, b: number) => {
+				// (Something of his about to start: there for it, stood, a beat
+				// before - as stepping has him, not arriving as it starts. And
+				// just over: still there a beat after, not off as it ends.)
+				const target = (t: number) => {
+					const due = held.next(t);
+					const was = held.last(t);
+					return (
+						(due > t && due - t <= 2 * STEP_MS
+							? want(due)
+							: was < t && t - was <= 2 * STEP_MS
+								? want(was)
+								: undefined) ?? want(t)
+					);
+				};
+				const dt = STEP_MS / 1000;
+				const last = samples.at(-1);
+				const going = last && a - last.t <= STEP_MS;
+				let p: Pt | undefined = going ? { x: last.x, y: last.y } : undefined;
+				let vx = going ? last.vx : 0;
+				let vy = going ? last.vy : 0;
+				let T = target(a);
+				for (let t = a; t <= b; t += STEP_MS) {
+					const W = T;
+					T = target(t + STEP_MS);
+					if (!W) {
+						p = undefined;
+						continue;
+					}
+					// (How fast where he wants to be goes.)
+					const wx = T ? (T.x - W.x) / dt : 0;
+					const wy = T ? (T.y - W.y) / dt : 0;
+					if (!p || held.hit(t - STEP_MS, t) || cut.hit(t - STEP_MS, t)) {
+						// (Doing something, or the picture cutting: there, as
+						// stepping puts him.)
+						p = { x: W.x, y: W.y };
+						vx = wx;
+						vy = wy;
+					} else {
+						// (Something of his coming: there for it by then, however
+						// hard that takes - not put there as it starts.)
+						const due = held.next(t) - t;
+						const settle =
+							due < ONTO_MS ? Math.max(dt, due / 1000 - dt) : SKIP_SETTLE;
+						let gx = wx + (W.x - p.x) / settle;
+						let gy = wy + (W.y - p.y) / settle;
+						const g = Math.hypot(gx, gy);
+						if (g > TOP) {
+							gx *= TOP / g;
+							gy *= TOP / g;
+						}
+						const ax = gx - vx;
+						const ay = gy - vy;
+						const A = Math.hypot(ax, ay);
+						const k =
+							due >= ONTO_MS && A > SKIP_ACCEL * dt ? (SKIP_ACCEL * dt) / A : 1;
+						vx += ax * k;
+						vy += ay * k;
+						p = { x: p.x + vx * dt, y: p.y + vy * dt };
+					}
+					samples.push({ t, x: p.x, y: p.y, vx, vy });
+					stagingTick();
+				}
+			};
+			// (His steps on the stretch's own beat, from its start.)
+			const last = until - 1;
+			let t = from;
+			while (t <= last) {
+				const w = skipAt(t);
+				if (w) {
+					const b = Math.min(
+						last,
+						from + Math.ceil((w[1] - from) / STEP_MS) * STEP_MS - STEP_MS,
+					);
+					putOn(t, b);
+					t = b + STEP_MS;
+					continue;
+				}
+				// (Up to the next stretch hurried past, on the beat.)
+				let lo = 0;
+				let hi = skips.length;
+				while (lo < hi) {
+					const mid = (lo + hi) >> 1;
+					if (skips[mid]![0] <= t) {
+						lo = mid + 1;
+					} else {
+						hi = mid;
+					}
+				}
+				const next = skips[lo];
+				const b =
+					next && next[0] <= last
+						? from + Math.ceil((next[0] - from) / STEP_MS) * STEP_MS - STEP_MS
+						: last;
+				stepped(t, Math.max(t, b));
+				t = Math.max(t, b) + STEP_MS;
 			}
 			stagingBeat();
 		});
