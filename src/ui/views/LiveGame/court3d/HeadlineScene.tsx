@@ -12,6 +12,11 @@ import type { HeadlineSceneSpec } from "../../../../common/headlineScene.ts";
 // been on the screen, after the page has painted - never on the way in.
 
 const Stage = lazy(() => import("./HeadlineStage.tsx"));
+const Clock = lazy(() => import("./ClockStage.tsx"));
+
+// Or, on the Draft page between picks, the room with a team on the clock
+// (see ClockStage.tsx) - this pick of the draft.
+export type DraftClockSpec = { type: "draftClock"; pick: number };
 
 const BOX = {
 	position: "relative",
@@ -27,7 +32,7 @@ export const HeadlineScene = ({
 	onEnd,
 	onNone,
 }: {
-	scene: HeadlineSceneSpec;
+	scene: HeadlineSceneSpec | DraftClockSpec;
 	playing: boolean;
 	onEnd?: () => void;
 	onNone?: () => void;
@@ -46,7 +51,10 @@ export const HeadlineScene = ({
 	// Which scene (by what it says, not which object says it: the page may
 	// hand over a new one each time it draws), and whether there is nothing
 	// to make of it (see the worker's headlineScene).
-	const which = `${scene.type}:${scene.pid}`;
+	const which =
+		scene.type === "draftClock"
+			? `draftClock:${scene.pick}`
+			: `${scene.type}:${scene.pid}`;
 	const [noneOf, setNoneOf] = useState<string>();
 	const none = noneOf === which;
 
@@ -104,17 +112,28 @@ export const HeadlineScene = ({
 		<div ref={ref} style={{ ...BOX, aspectRatio: narrow ? "4 / 3" : "16 / 9" }}>
 			{wanted ? (
 				<Suspense fallback={null}>
-					<Stage
-						// (Another scene: all of it from nothing.)
-						key={which}
-						scene={scene}
-						playing={playing && seen && shown}
-						onEnd={onEnd}
-						onNone={() => {
-							setNoneOf(which);
-							onNone?.();
-						}}
-					/>
+					{scene.type === "draftClock" ? (
+						<Clock
+							key={which}
+							playing={playing && seen && shown}
+							onNone={() => {
+								setNoneOf(which);
+								onNone?.();
+							}}
+						/>
+					) : (
+						<Stage
+							// (Another scene: all of it from nothing.)
+							key={which}
+							scene={scene}
+							playing={playing && seen && shown}
+							onEnd={onEnd}
+							onNone={() => {
+								setNoneOf(which);
+								onNone?.();
+							}}
+						/>
+					)}
 				</Suspense>
 			) : null}
 		</div>

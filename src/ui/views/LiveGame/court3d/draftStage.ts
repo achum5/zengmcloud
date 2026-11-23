@@ -362,16 +362,28 @@ export const commissioner = (): CrewMember => ({
 		tie: "#24365c",
 	}),
 });
-const kinOf = (
+// Dressed for the night as they would be whoever took him - they came not
+// knowing (see the room between picks, draftClock.ts).
+const DRESSES = [
+	"#7a2d8c",
+	"#1f4f8f",
+	"#a3243b",
+	"#1d6b5a",
+	"#c9a227",
+	"#e8e4dc",
+];
+const TIES = ["#6b1f2a", "#24365c", "#3c4a2a", "#5a3a6e", "#8a6d1f"];
+export const kinOf = (
 	who: Exclude<DraftKin, "none">,
 	pid: number,
-	colors: string[] | undefined,
 	race: Race | undefined,
+	as: number = KIN_PID[who],
 ): CrewMember => {
-	const main = colors?.[0] && colors[0] !== "#000000" ? colors[0] : "#7a2d8c";
+	const main = DRESSES[Math.floor(unit(pid * 31 + 5) * DRESSES.length)]!;
+	const tie = TIES[Math.floor(unit(pid * 17 + 9) * TIES.length)]!;
 	if (who === "mom") {
 		return {
-			pid: MOTHER,
+			pid: as,
 			role: "staff",
 			team: 1,
 			hgt: 65,
@@ -382,7 +394,7 @@ const kinOf = (
 	}
 	if (who === "dad") {
 		return {
-			pid: FATHER,
+			pid: as,
 			role: "staff",
 			team: 1,
 			hgt: 74,
@@ -391,12 +403,12 @@ const kinOf = (
 			dress: dress("#2b2f38", "#2b2f38", {
 				sleeves: "long",
 				shirt: "#cfdcef",
-				tie: colors?.[1] ?? "#6b1f2a",
+				tie,
 			}),
 		};
 	}
 	return {
-		pid: BROTHER,
+		pid: as,
 		role: "staff",
 		team: 1,
 		hgt: 75,
@@ -655,7 +667,6 @@ export const NO_BALL = { x: -400, y: -400, z: 0.39 };
 
 export const stageDraftNight = (
 	pid: number,
-	colors?: string[],
 	race?: Race,
 	take: DraftTake = takeOf(pid),
 ): Pick<
@@ -945,8 +956,8 @@ export const stageDraftNight = (
 		flashes: flashesOf(g, N),
 		cast: [
 			commissioner(),
-			kinOf(take.hugger, pid, colors, race),
-			...(take.other === "none" ? [] : [kinOf(take.other, pid, colors, race)]),
+			kinOf(take.hugger, pid, race),
+			...(take.other === "none" ? [] : [kinOf(take.other, pid, race)]),
 		],
 		castAt: (t) => [
 			castState(COMMISSIONER, commBeats, t, groundAt),

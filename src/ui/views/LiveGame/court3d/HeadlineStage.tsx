@@ -14,7 +14,8 @@ import {
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { stageDraftNight } from "./draftStage.ts";
 import { draftVenue, paintDraftVenue } from "./draftVenue.ts";
-import { streetClothes, type Look } from "./figure.ts";
+import { draftLook } from "./draftDress.ts";
+import type { Look } from "./figure.ts";
 import { logoPicture } from "./logoPicture.ts";
 
 // THE SCENE ITSELF (see HeadlineScene.tsx, which fetches this only once it
@@ -25,34 +26,6 @@ import { logoPicture } from "./logoPicture.ts";
 type Made = NonNullable<Awaited<ReturnType<typeof headlineScene>>>;
 
 const noop = () => {};
-
-// A draft pick's suit: dark, a white shirt, a tie in his new team's color.
-const SUITS = ["#1d2333", "#24262c", "#151517", "#2c3140"];
-const draftSuit = (
-	pid: number,
-	tie: string,
-): Pick<Look, "kit" | "gear" | "outfit"> => {
-	const worn = streetClothes(pid);
-	const suit = SUITS[Math.abs(pid) % SUITS.length]!;
-	const shoe = "#141416";
-	const sole = "#2a2a2c";
-	return {
-		kit: {
-			...worn.kit,
-			jersey: suit,
-			trim: suit,
-			number: suit,
-			numberEdge: suit,
-			shorts: suit,
-			stripe: suit,
-			sock: suit,
-			shoe,
-			sole,
-		},
-		gear: { tights: { legs: "RL", color: suit }, shoe, sole, sock: suit },
-		outfit: { sleeves: "long", shirt: "#f2f2ee", tie },
-	};
-};
 
 const HeadlineStage = ({
 	scene,
@@ -179,8 +152,8 @@ const HeadlineStage = ({
 	const colors = made?.team.colors;
 	const race = made?.player.race;
 	const staged = useMemo(
-		() => (pid === undefined ? undefined : stageDraftNight(pid, colors, race)),
-		[pid, colors, race],
+		() => (pid === undefined ? undefined : stageDraftNight(pid, race)),
+		[pid, race],
 	);
 	// The room, painted again once the logo and the faces are in.
 	const room = staged?.room;
@@ -209,29 +182,7 @@ const HeadlineStage = ({
 	const dressing = useMemo(() => {
 		const cap = capOf(colors);
 		return {
-			dress: (who: number, look: Look): Look => {
-				const out: Look = {
-					...look,
-					...draftSuit(who, cap.crown),
-					jerseyNumber: "",
-					lastName: "",
-					wordmark: "",
-					street: true,
-					cap,
-					// (His hair under it: close to his head, unless it hangs down
-					// past it.)
-					cut:
-						look.cut === "long"
-							? "long"
-							: look.cut === "bald"
-								? "bald"
-								: "short",
-				};
-				delete out.kitArt;
-				delete out.crest;
-				delete out.style;
-				return out;
-			},
+			dress: (who: number, look: Look): Look => draftLook(who, look, cap),
 			head: async (_pid: number, face: Parameters<typeof cappedHead>[0]) => {
 				const head = await cappedHead(face, cap, await crest);
 				// (Drawn: he can be seen now - a moment on, the court having

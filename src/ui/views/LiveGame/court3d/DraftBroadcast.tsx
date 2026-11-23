@@ -2,7 +2,11 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { getHeightString } from "../../../components/Height.tsx";
 import { useLocal } from "../../../util/local.ts";
-import { announcement, draftFacts } from "../../../../common/draftNight.ts";
+import {
+	announcement,
+	draftFacts,
+	ordinal,
+} from "../../../../common/draftNight.ts";
 import { DRAFT_CALL } from "./draftStage.ts";
 import { lightness } from "./figure.ts";
 
@@ -605,5 +609,273 @@ export const DraftBroadcast = ({
 			) : null}
 			<Podium key={`podium${run}`} info={info} shown={cover === "1"} />
 		</>
+	);
+};
+
+// ---- between picks ----------------------------------------------------------
+
+export type DraftClockInfo = {
+	season: number;
+	round: number;
+	pick: number;
+	overall: number;
+	team: TeamInfo;
+	next: (TeamInfo & { overall: number })[];
+	best: { rank: number; name: string; pos?: string; college?: string }[];
+	// Those the cameras go to, in the order they go to them.
+	prospects: {
+		name: string;
+		pos?: string;
+		college?: string;
+		rank?: number;
+	}[];
+};
+
+// ON THE CLOCK: the bar along the bottom while a team is up - the pick and
+// the team, a line under it (who the cameras are on, when they are on one of
+// the best left), and the picks after it and the best still on the board
+// in turn.
+export const DraftClockBroadcast = ({
+	info,
+	feed,
+	prospectAt,
+}: {
+	info: DraftClockInfo;
+	feed: DraftFeed;
+	// Which of the prospects the cameras are on at t, if any.
+	prospectAt: (t: number) => number | undefined;
+}) => {
+	const shown = useSyncExternalStore(feed.subscribe, () => {
+		const { t } = feed.get();
+		const p = prospectAt(t);
+		let ticker: "next" | "best" =
+			Math.floor(t / TICKER_EVERY) % 2 === 0 ? "next" : "best";
+		if (ticker === "next" && info.next.length === 0) {
+			ticker = "best";
+		} else if (ticker === "best" && info.best.length === 0) {
+			ticker = "next";
+		}
+		return `${p ?? -1}|${ticker}`;
+	});
+	const [pText, ticker] = shown.split("|") as [string, "next" | "best"];
+	const p = info.prospects[Number(pText)];
+	const [main, accent] = info.team.colors;
+	const ink = inkOn(main);
+	const line = p
+		? [
+				p.name.toUpperCase(),
+				[p.pos, p.college].filter(Boolean).join(" · "),
+				p.rank !== undefined ? `No. ${p.rank} on the big board` : undefined,
+			]
+				.filter(Boolean)
+				.join("  ·  ")
+		: `The ${info.team.region} ${info.team.name} are on the clock with the ${ordinal(info.overall)} pick`;
+	const barRef = useEnter("bar", "translateY(100%)");
+	const lineRef = useEnter(pText, "translateY(40%)");
+	const tickerRef = useEnter(ticker, "translateX(-0.8em)");
+	return (
+		<div
+			ref={barRef}
+			style={{
+				position: "absolute",
+				left: 0,
+				right: 0,
+				bottom: 0,
+				zIndex: 2,
+				fontFamily: FONT,
+				fontSize: "clamp(12px, 1.9cqw, 18px)",
+				lineHeight: 1.1,
+				whiteSpace: "nowrap",
+				pointerEvents: "none",
+				boxShadow: "0 -4px 14px rgba(0,0,0,.45)",
+			}}
+		>
+			<div style={{ display: "flex", alignItems: "stretch" }}>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						justifyContent: "center",
+						padding: "0.3em 0.6em",
+						background: "#0b0b10",
+						color: "#fff",
+						borderRight: `0.2em solid ${accent}`,
+					}}
+				>
+					<span
+						style={{
+							fontSize: "0.68em",
+							fontWeight: 800,
+							letterSpacing: "0.08em",
+							color: GOLD,
+						}}
+					>
+						R{info.round} · P{info.pick}
+					</span>
+					<span
+						style={{
+							fontSize: "0.78em",
+							fontWeight: 900,
+							letterSpacing: "0.06em",
+						}}
+					>
+						ON THE CLOCK
+					</span>
+				</div>
+				<div
+					style={{
+						flex: 1,
+						minWidth: 0,
+						display: "flex",
+						alignItems: "center",
+						gap: "0.55em",
+						padding: "0.3em 0.7em",
+						background: main,
+						color: ink,
+						overflow: "hidden",
+					}}
+				>
+					<span
+						style={{
+							flexShrink: 0,
+							fontWeight: 700,
+							fontSize: "0.8em",
+							letterSpacing: "0.08em",
+							textTransform: "uppercase",
+							opacity: 0.85,
+						}}
+					>
+						{info.team.region}
+					</span>
+					<span
+						style={{
+							minWidth: 0,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							fontSize: "1.45em",
+							fontWeight: 900,
+							fontStyle: "italic",
+							textTransform: "uppercase",
+						}}
+					>
+						{info.team.name}
+					</span>
+					<TeamLogoInline
+						alt={info.team.abbrev}
+						imgURL={info.team.imgURL}
+						imgURLSmall={info.team.imgURLSmall}
+						style={{
+							marginLeft: "auto",
+							flexShrink: 0,
+							height: "1.8em",
+							width: "1.8em",
+						}}
+					/>
+				</div>
+			</div>
+			<div
+				style={{
+					padding: "0.28em 0.8em",
+					background: "rgba(10, 10, 14, 0.94)",
+					color: "#fff",
+					fontSize: "0.82em",
+					fontWeight: 600,
+					letterSpacing: "0.03em",
+					minHeight: "1.65em",
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+				}}
+			>
+				<div ref={lineRef}>
+					{p ? (
+						<span
+							style={{
+								marginRight: "0.6em",
+								padding: "0.05em 0.45em",
+								background: GOLD,
+								color: "#111",
+								fontWeight: 900,
+								fontSize: "0.85em",
+								letterSpacing: "0.08em",
+								borderRadius: 2,
+							}}
+						>
+							GREEN ROOM
+						</span>
+					) : null}
+					{line}
+				</div>
+			</div>
+			{info.next.length > 0 || info.best.length > 0 ? (
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: "0.6em",
+						padding: "0.22em 0.5em",
+						background: "#f3f3f5",
+						color: "#111",
+						fontSize: "0.72em",
+						fontWeight: 700,
+						overflow: "hidden",
+					}}
+				>
+					<span
+						style={{
+							flexShrink: 0,
+							padding: "0.18em 0.5em",
+							background: "#111",
+							color: "#fff",
+							fontWeight: 900,
+							letterSpacing: "0.08em",
+							borderRadius: 2,
+						}}
+					>
+						{ticker === "next" ? "UP NEXT" : "BEST AVAILABLE"}
+					</span>
+					<div
+						ref={tickerRef}
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: "1em",
+							minWidth: 0,
+							overflow: "hidden",
+						}}
+					>
+						{ticker === "next"
+							? info.next.map((n) => (
+									<span
+										key={n.overall}
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: "0.3em",
+											flexShrink: 0,
+										}}
+									>
+										<span>{n.overall}.</span>
+										<TeamLogoInline
+											alt=""
+											imgURL={n.imgURL}
+											imgURLSmall={n.imgURLSmall}
+											style={{ height: "1.3em", width: "1.3em" }}
+										/>
+										<span>{n.abbrev}</span>
+									</span>
+								))
+							: info.best.map((b) => (
+									<span key={b.rank} style={{ flexShrink: 0 }}>
+										{b.rank}. {b.name.toUpperCase()}
+										<span style={{ fontWeight: 500, color: "#555" }}>
+											{" "}
+											{[b.pos, b.college].filter(Boolean).join(" · ")}
+										</span>
+									</span>
+								))}
+					</div>
+				</div>
+			) : null}
+		</div>
 	);
 };

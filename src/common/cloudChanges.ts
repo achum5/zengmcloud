@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 441,
+		date: "2026-11-23",
+		text: "The Draft page now has the draft room in 3D at the top. Between picks it shows the team on the clock, with the cameras going round the room and cutting to the best players left, sat at their tables with their families. When a pick is made, it plays: the commissioner reads it, the player hugs his family and walks up to the stage. If a sim makes several picks at once, it shows yours, then a league mate's, then the last one. The X hides it.",
+	},
+	{
 		n: 440,
 		date: "2026-11-23",
 		text: "Draft night: no two picks play out the same now. Where his family's table is, who's there with him, how he reacts when his name is read, what he does on the stage and where the cameras are all change from player to player. Each player always gets his own, so a replay is what you saw live.",

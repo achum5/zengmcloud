@@ -61,7 +61,7 @@ const PID = 41;
 const scenes = TAKES.map((take, i) => ({
 	i,
 	take,
-	scene: stageDraftNight(PID + i, undefined, undefined, take),
+	scene: stageDraftNight(PID + i, undefined, take),
 }));
 const name = (take: DraftTake) =>
 	`${take.side}/${take.row}/${take.react}/${take.hugger}+${take.other}`;

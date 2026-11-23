@@ -18,6 +18,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { groupByUnique } from "../../../common/utils.ts";
 import { StickyDraftInfo } from "./StickyDraftInfo.tsx";
 import { DraftWalkButton } from "../../components/DraftWalkButton.tsx";
+import { DraftRoom } from "./DraftRoom.tsx";
 import { wrappedDraftAbbrev } from "../../components/DraftAbbrev.tsx";
 import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { confirm } from "../../util/confirm.tsx";
@@ -552,6 +553,13 @@ const Draft = ({
 				userTids={myTids}
 				mpBlocked={mpBlocked}
 			/>
+			{!fantasyDraft && !expansionDraft ? (
+				<DraftRoom
+					drafted={draftedSorted}
+					myTids={myTids}
+					userTids={userTids}
+				/>
+			) : null}
 			<div className="d-sm-flex gap-3">
 				{messages.length > 0 ? (
 					<div>
