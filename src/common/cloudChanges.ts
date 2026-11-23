@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 477,
+		date: "2026-11-23",
+		text: "Live games in the header now look like a real scoreboard: each game shows both teams with their logos and scores, and the quarter and clock (Half, End Q3 or Paused on a break). Tap a game to watch it.",
+	},
+	{
 		n: 476,
 		date: "2026-11-23",
 		text: "3D game: the board over center court is now a real jumbotron. It has video screens on all four sides, a ring round the top with both teams, the score, the period and the clock, and a lower ring that runs with the ribbon boards. Each arena has its own shape: a cube with cut corners, a big halo over the screens, or a long curved board. Over breaks the screens show the score, the home team's logo, crowd prompts and the sponsors.",

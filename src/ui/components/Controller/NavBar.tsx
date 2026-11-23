@@ -197,7 +197,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 			sticky="top"
 			className={clsx(
 				"navbar-border",
-				liveScores ? "flex-wrap pb-1 pb-xl-2" : "flex-nowrap",
+				liveScores ? "flex-wrap pb-0 pb-xl-2" : "flex-nowrap",
 			)}
 		>
 			<div className="container-fluid flex-nowrap">
@@ -226,7 +226,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				{inLeague ? <SyncCatchUpIndicator /> : null}
 				{inLeague ? <SyncPausedIndicator /> : null}
 				{liveScores ? (
-					<LiveScoresStrip className="live-scores-inline d-none d-xl-flex ms-2" />
+					<LiveScoresStrip className="live-scores-inline d-none d-xl-flex ms-3" />
 				) : null}
 				<div className="flex-grow-1" />
 				{inLeague ? <PhaseReadyControl /> : null}
@@ -254,7 +254,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				) : null}
 			</div>
 			{liveScores ? (
-				<LiveScoresStrip className="w-100 d-flex d-xl-none px-2 pt-2" />
+				<LiveScoresStrip className="live-scores-row d-flex d-xl-none" />
 			) : null}
 		</Navbar>
 	);

@@ -4,6 +4,7 @@ import { helpers } from "../util/helpers.ts";
 import { local, useLocal } from "../util/local.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { toWorker } from "../util/toWorker.ts";
+import { TeamLogoInline } from "./TeamLogoInline.tsx";
 
 // Games being played live in a shared league, as every page shows them: LIVE,
 // the score and the clock as they stand on the screen playing it, and a way in.
@@ -73,10 +74,32 @@ export const watchLiveAction = (gid: number, byName?: string) => ({
 	},
 });
 
-// In the header: every league mate's game being played live, its score and
-// clock, tap to watch. There only while something is live: in the top bar on
-// a wide screen, a thin row under it on anything narrower (where the bar has
-// no room, and the sidebar isn't docked below it).
+// Where a game being played live stands, the way a scoreboard puts it: the
+// period over the clock, Half or End Q3 on a break, Final at the buzzer.
+const statusLines = (game: MpLiveGame): string[] => {
+	if (game.gameOver) {
+		return ["Final"];
+	}
+	const score = game.score;
+	if (!score || !score.q) {
+		return ["Live"];
+	}
+	const clock = score.clock.trim();
+	if (/^[.0:]+$/.test(clock)) {
+		return [score.q === "Q2" ? "Half" : `End ${score.q}`];
+	}
+	if (game.paused) {
+		return [`${score.q} ${clock}`.trim(), "Paused"];
+	}
+	return clock ? [score.q, clock] : [score.q];
+};
+
+// In the header: every league mate's game being played live, as a scoreboard
+// row like the networks' (each game a cell: both teams with logo and score,
+// what period and how long left), tap one to watch. There only while
+// something is live: in the top bar on a wide screen, its own row under it on
+// anything narrower (where the bar has no room, and the sidebar isn't docked
+// below it).
 export const LiveScoresStrip = ({ className }: { className?: string }) => {
 	const { mpLiveGames, teamInfoCache } = useLocal([
 		"mpLiveGames",
@@ -88,42 +111,69 @@ export const LiveScoresStrip = ({ className }: { className?: string }) => {
 	}
 
 	return (
-		<div
-			className={clsx("live-scores-strip gap-2 overflow-auto", className)}
-		>
+		<div className={clsx("live-scores-strip", className)}>
 			{mpLiveGames.map((game) => {
 				const tids = game.tids;
-				const abbrev = (i: 0 | 1) =>
-					tids ? (teamInfoCache[tids[i]]?.abbrev ?? "") : "";
-				const pts = game.score?.pts;
-				const clock = clockText(game);
-				const watchTitle = `${game.byName} is simming ${
+				const pts = game.score?.pts ?? [0, 0];
+				const status = statusLines(game);
+				const title = `${game.byName} is simming ${
 					game.label || "this game"
-				} live`;
+				} live${game.paused ? " (paused)" : ""}`;
 				return (
 					<button
 						key={game.gid}
 						type="button"
 						className={clsx(
-							"live-score-chip btn btn-sm text-nowrap d-flex align-items-center gap-2",
-							game.watching ? "btn-danger" : "btn-outline-danger",
+							"live-score",
+							game.watching && "live-score-watching",
 						)}
-						title={watchTitle}
+						title={title}
 						onClick={() => {
 							watchLiveGame(game.gid);
 						}}
 					>
-						<span className="live-score-dot" aria-hidden />
 						{tids ? (
-							<span>
-								{abbrev(1)} <b>{pts?.[1] ?? 0}</b>
-								<span className="mx-1">@</span>
-								{abbrev(0)} <b>{pts?.[0] ?? 0}</b>
+							<span className="live-score-teams">
+								{([1, 0] as const).map((i) => {
+									const t = teamInfoCache[tids[i]];
+									return (
+										<span
+											key={i}
+											className={clsx(
+												"live-score-team",
+												pts[i] < pts[i === 1 ? 0 : 1] && "live-score-trailing",
+											)}
+										>
+											<TeamLogoInline
+												imgURL={t?.imgURL}
+												imgURLSmall={t?.imgURLSmall}
+												includePlaceholderIfNoLogo
+												size={16}
+											/>
+											<span className="live-score-abbrev">
+												{t?.abbrev ?? ""}
+											</span>
+											<span className="live-score-pts">{pts[i]}</span>
+										</span>
+									);
+								})}
 							</span>
 						) : (
-							<span>{game.label || "Live game"}</span>
+							<span className="live-score-label">
+								{game.label || "Live game"}
+							</span>
 						)}
-						{clock ? <span className="live-score-clock">{clock}</span> : null}
+						<span
+							className={clsx(
+								"live-score-status",
+								game.paused && "live-score-status-paused",
+								game.gameOver && "live-score-status-final",
+							)}
+						>
+							{status.map((line) => (
+								<span key={line}>{line}</span>
+							))}
+						</span>
 					</button>
 				);
 			})}

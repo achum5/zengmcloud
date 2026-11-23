@@ -2080,9 +2080,12 @@ tr.table-warning:hover > td {
 	border-bottom: 1px solid $gray-200;
 }
 
-// Games being played live in a shared league, under the top bar (see
-// components/LiveGames.tsx). One row; more than fit scroll sideways.
+// Games being played live in a shared league, as a scoreboard row in the
+// header (see components/LiveGames.tsx): a cell per game, split by thin
+// rules. More than fit scroll sideways.
 .live-scores-strip {
+	display: flex;
+	overflow-x: auto;
 	scrollbar-width: none;
 	&::-webkit-scrollbar {
 		display: none;
@@ -2093,39 +2096,85 @@ tr.table-warning:hover > td {
 .live-scores-inline {
 	min-width: 0;
 	flex: 1000 1 0;
+	align-self: stretch;
+	margin: -0.5rem 0;
 }
-.live-score-chip {
+// (Under the bar on anything narrower: its own row, edge to edge.)
+.live-scores-row {
+	width: 100%;
+	margin-top: 0.5rem;
+	border-top: 1px solid var(--bs-border-color);
+}
+.live-score {
 	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.375rem 0.75rem;
+	border: 0;
+	border-right: 1px solid var(--bs-border-color);
+	background: none;
+	color: var(--bs-body-color);
 	font-size: 0.8125rem;
-	line-height: 1.2;
-	padding: 0.2rem 0.6rem;
-	border-radius: 999px;
+	line-height: 1;
+	text-align: left;
+	white-space: nowrap;
+	&:hover {
+		background-color: var(--bs-tertiary-bg);
+	}
+	&:focus-visible {
+		outline: 2px solid var(--bs-primary);
+		outline-offset: -2px;
+	}
 }
-.live-score-dot {
-	display: inline-block;
-	width: 0.45rem;
-	height: 0.45rem;
-	border-radius: 50%;
-	background-color: currentColor;
-	animation: live-score-pulse 1.6s ease-in-out infinite;
+.live-scores-inline .live-score:first-child {
+	border-left: 1px solid var(--bs-border-color);
 }
-.live-score-clock {
-	opacity: 0.8;
+.live-score-watching {
+	box-shadow: inset 0 -3px 0 var(--bs-danger);
+}
+.live-score-teams {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3125rem;
+}
+.live-score-team {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+.live-score-abbrev {
+	min-width: 2.25em;
+	font-weight: 600;
+}
+.live-score-pts {
+	min-width: 1.75em;
+	margin-left: auto;
+	text-align: right;
+	font-weight: 700;
 	font-variant-numeric: tabular-nums;
 }
-@keyframes live-score-pulse {
-	0%,
-	100% {
-		opacity: 1;
-	}
-	50% {
-		opacity: 0.3;
-	}
+.live-score-trailing {
+	color: var(--bs-secondary-color);
 }
-@media (prefers-reduced-motion: reduce) {
-	.live-score-dot {
-		animation: none;
-	}
+.live-score-status {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 0.3125rem;
+	min-width: 2.5rem;
+	color: var(--bs-danger);
+	font-size: 0.6875rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	font-variant-numeric: tabular-nums;
+}
+.live-score-status-paused,
+.live-score-status-final {
+	color: var(--bs-secondary-color);
+}
+.live-score-label {
+	font-weight: 600;
 }
 
 // The top header only (.navbar-border is shared with the title bar). It is
