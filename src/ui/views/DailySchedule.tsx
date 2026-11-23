@@ -26,7 +26,15 @@ import {
 import { useEffect, useState } from "react";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
-import { MonthCalendar } from "../components/MonthCalendar.tsx";
+import { WeekStrip } from "../components/LeagueHub/WeekStrip.tsx";
+import { LeadStory } from "../components/LeagueHub/LeadStory.tsx";
+import {
+	ComingUp,
+	Headlines,
+	HubStandings,
+	InjuryReport,
+	TopPerformers,
+} from "../components/LeagueHub/HubRail.tsx";
 
 const DailySchedule = ({
 	calendar,
@@ -38,6 +46,9 @@ const DailySchedule = ({
 	dayNote,
 	days,
 	elam,
+	hub,
+	nights,
+	todayDay,
 	elamASG,
 	isToday,
 	ownGameSimCutoffSeconds,
@@ -241,20 +252,13 @@ const DailySchedule = ({
 			<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
 		) : null;
 
-	const dayRecap = dayNote ? (
-		<DayRecap
-			season={season}
-			day={day}
-			note={dayNote}
-			links={completed.flatMap((game) =>
-				buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
-			)}
-			sentenceGames={buildSentenceGamesForDay(
-				completed,
-				(tid) => teamInfoCache[tid],
-			)}
-		/>
-	) : null;
+	const recapLinks = completed.flatMap((game) =>
+		buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
+	);
+	const sentenceGames = buildSentenceGamesForDay(
+		completed,
+		(tid) => teamInfoCache[tid],
+	);
 
 	let noGamesMessage;
 	if (days.length === 0) {
@@ -263,36 +267,25 @@ const DailySchedule = ({
 		);
 	}
 
-	return (
+	// THE LEAGUE HUB (basketball, where the night's recaps are written): the
+	// nights across the top, the night's top story leading, its scores under
+	// it, and down the side its top performers, headlines, the standings, who
+	// got hurt and what's next. One column on a phone, in that order of need.
+	const hubOn = __SPORT === "basketball" && days.length > 0;
+
+	// The players to watch in a game still to play: each team's best, as its
+	// card has them.
+	const playersToWatch = (game: (typeof upcoming)[number]) => {
+		if (topPlayers.type === "byGid") {
+			return topPlayers.playersByGid[game.gid] as [any, any] | undefined;
+		}
+		const x0 = topPlayers.playersByTid[game.teams[0].tid];
+		const x1 = topPlayers.playersByTid[game.teams[1].tid];
+		return x0 && x1 ? ([x0[0], x1[0]] as [any, any]) : undefined;
+	};
+
+	const scores = (
 		<>
-			<div className="d-flex flex-wrap align-items-center gap-3">
-				<MoreLinks type="schedule" page="daily_schedule" />
-			</div>
-
-			{calendar ? (
-				<div className="d-md-flex align-items-start gap-4">
-					<MonthCalendar
-						className="lc-side mb-3"
-						compact
-						games={calendar.games}
-						keyDates={calendar.keyDates}
-						season={season}
-						selected={date}
-						tid="all"
-						today={calendar.today}
-					/>
-					<div className="flex-grow-1" style={{ minWidth: 0 }}>
-						{dateHeading}
-						{dayRecap}
-					</div>
-				</div>
-			) : (
-				<>
-					{dateHeading}
-					{dayRecap}
-				</>
-			)}
-
 			{noGamesMessage ? (
 				noGamesMessage
 			) : (
@@ -407,9 +400,9 @@ const DailySchedule = ({
 
 									return (
 										<div
-											className="flex-grow-1"
+											className={hubOn ? "lh-game" : "flex-grow-1"}
 											key={game.gid}
-											style={{ maxWidth: 510 }}
+											style={hubOn ? undefined : { maxWidth: 510 }}
 										>
 											<ScoreBox
 												game={{
@@ -441,9 +434,9 @@ const DailySchedule = ({
 								{completed.map((game) => {
 									return (
 										<div
-											className="flex-grow-1"
+											className={hubOn ? "lh-game" : "flex-grow-1"}
 											key={game.gid}
-											style={{ maxWidth: 510 }}
+											style={hubOn ? undefined : { maxWidth: 510 }}
 										>
 											<div
 												className={
@@ -487,6 +480,146 @@ const DailySchedule = ({
 							</div>
 						</>
 					) : null}
+				</>
+			)}
+		</>
+	);
+
+	// The top story: the game the night's recap leads with - or, before the
+	// night is played, its best matchup.
+	const leadCompleted =
+		completed.find((game) => game.gid === hub.leadGid) ?? completed[0];
+	const leadUpcoming =
+		leadCompleted === undefined
+			? upcoming
+					.filter((game) => game.teams[0].tid >= 0 && game.teams[1].tid >= 0)
+					.map((game) => {
+						const pct = (t: { won?: number; lost?: number }) => {
+							const gp = (t.won ?? 0) + (t.lost ?? 0);
+							return gp > 0 ? (t.won ?? 0) / gp : 0.5;
+						};
+						const ovr = (t: { ovr?: number }) => t.ovr ?? 0;
+						return {
+							game,
+							score:
+								pct(game.teams[0]) +
+								pct(game.teams[1]) +
+								(ovr(game.teams[0]) + ovr(game.teams[1])) / 200,
+						};
+					})
+					.sort((a, b) => b.score - a.score)[0]?.game
+			: undefined;
+
+	const playedTids = new Set<number>();
+	const wonTids = new Set<number>();
+	for (const game of completed) {
+		for (const t of game.teams) {
+			playedTids.add(t.tid);
+		}
+		const [t0, t1] = game.teams;
+		if (t0.pts > t1.pts) {
+			wonTids.add(t0.tid);
+		} else if (t1.pts > t0.pts) {
+			wonTids.add(t1.tid);
+		}
+	}
+
+	return (
+		<>
+			<div className="d-flex flex-wrap align-items-center gap-3">
+				<MoreLinks type="schedule" page="daily_schedule" />
+			</div>
+
+			{hubOn ? (
+				<>
+					<WeekStrip
+						calendar={calendar}
+						date={date}
+						day={day}
+						nights={nights}
+						season={season}
+						todayDay={todayDay}
+					/>
+					<div className="lh-grid">
+						<div className="lh-main">
+							{leadCompleted || leadUpcoming ? (
+								<div className="lh-o1">
+									<LeadStory
+										date={date}
+										day={day}
+										dayNote={dayNote}
+										game={leadCompleted ?? leadUpcoming}
+										links={recapLinks}
+										season={season}
+										sentenceGames={sentenceGames}
+										upcoming={leadCompleted === undefined}
+										playersToWatch={
+											leadUpcoming ? playersToWatch(leadUpcoming) : undefined
+										}
+									/>
+								</div>
+							) : null}
+							<div className="lh-o3 lh-scores">
+								<h2 className="lh-section-title">
+									{completed.length > 0 && upcoming.length === 0
+										? "Scores"
+										: "Games"}
+								</h2>
+								{scores}
+							</div>
+						</div>
+						<div className="lh-rail">
+							{hub.performers.length > 0 ? (
+								<div className="lh-o2">
+									<TopPerformers performers={hub.performers} season={season} />
+								</div>
+							) : null}
+							{completed.length > 0 ? (
+								<div className="lh-o4 d-none d-lg-block">
+									<Headlines games={completed} season={season} />
+								</div>
+							) : null}
+							{hub.standings ? (
+								<div className="lh-o5">
+									<HubStandings
+										playedTids={playedTids}
+										season={season}
+										standings={hub.standings}
+										userTid={userTid}
+										wonTids={wonTids}
+									/>
+								</div>
+							) : null}
+							{hub.injuries.length > 0 ? (
+								<div className="lh-o6">
+									<InjuryReport injuries={hub.injuries} season={season} />
+								</div>
+							) : null}
+							{hub.next ? (
+								<div className="lh-o7">
+									<ComingUp
+										next={hub.next}
+										season={season}
+										todayDay={todayDay}
+									/>
+								</div>
+							) : null}
+						</div>
+					</div>
+				</>
+			) : (
+				<>
+					{dateHeading}
+					{dayNote ? (
+						<DayRecap
+							season={season}
+							day={day}
+							note={dayNote}
+							links={recapLinks}
+							sentenceGames={sentenceGames}
+						/>
+					) : null}
+					{scores}
 				</>
 			)}
 

@@ -1933,7 +1933,7 @@ const createAutoRecapContext = async (season: number) => {
 
 // The full standings, split by conference, AS OF a given day - the league context
 // a day recap needs. Mirrors the standings block in getDayGamesForRecap.
-const computeStandingsAsOf = async (
+export const computeStandingsAsOf = async (
 	season: number,
 	day: number,
 	allGames: Game[],
@@ -2023,17 +2023,25 @@ export const getAutoRecapsForDay = async ({
 }: {
 	season: number;
 	day: number;
-}): Promise<{ notes: Record<number, string>; dayRecap: string }> => {
+}): Promise<{
+	notes: Record<number, string>;
+	dayRecap: string;
+	// What the recaps were written from, for the Daily Schedule's league hub
+	// (the night's top performers, injuries and standings): the same numbers
+	// the prose uses, so the two never disagree.
+	games: RecapGame[];
+	standings?: RecapDayStandings;
+}> => {
 	// The engine reads a basketball box score - points, rebounds, assists,
 	// the shooting splits, a score log kept by the basketball sim. In any
 	// other sport every one of those is zero, and the recap it produced said
 	// so with complete confidence. No recap beats a wrong one.
 	if (__SPORT !== "basketball") {
-		return { notes: {}, dayRecap: "" };
+		return { notes: {}, dayRecap: "", games: [] };
 	}
 	const games = await recapGamesForDay({ season, day });
 	if (games.length === 0) {
-		return { notes: {}, dayRecap: "" };
+		return { notes: {}, dayRecap: "", games };
 	}
 
 	// One night, one pool of phrasing. Each game seeds its own rng, so without
@@ -2059,7 +2067,7 @@ export const getAutoRecapsForDay = async ({
 			);
 	const dayRecap = getAutoDayRecap({ season, day, playoffs, games, standings });
 
-	return { notes, dayRecap };
+	return { notes, dayRecap, games, standings };
 };
 
 // The auto recap for a single completed game, for the box score page.

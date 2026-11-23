@@ -1,0 +1,554 @@
+// THE LEAGUE HUB on the Daily Schedule (components/LeagueHub/*): the week of
+// nights across the top as NBA.com and ESPN have it, the night's top story
+// and scores in the main column, small cards down the side. One column on a
+// phone, the cards between the story and the scores in order of need.
+
+// The nights across the top.
+.lh-week {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	margin: 0.25rem 0 1rem;
+	padding: 0.4rem 0.75rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+}
+.lh-month-wrap {
+	position: relative;
+	flex: 0 0 auto;
+}
+.lh-month-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	padding: 0.3rem 0.2rem;
+	border: 0;
+	background: none;
+	color: var(--bs-body-color);
+	font-weight: 700;
+	font-size: 1rem;
+	white-space: nowrap;
+}
+.lh-month-static {
+	cursor: default;
+}
+.lh-month-icon {
+	opacity: 0.8;
+}
+.lh-caret {
+	display: inline-block;
+	border-top: 0.3em solid;
+	border-right: 0.3em solid transparent;
+	border-left: 0.3em solid transparent;
+}
+.lh-month-pop {
+	position: absolute;
+	top: calc(100% + 0.35rem);
+	left: 0;
+	z-index: 1040;
+	width: 22rem;
+	max-width: calc(100vw - 2rem);
+	padding: 0.6rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.25);
+	.lc-side {
+		width: 100%;
+	}
+}
+.lh-week-days {
+	display: flex;
+	align-items: stretch;
+	flex: 1 1 auto;
+	max-width: 36rem;
+	margin: 0 auto;
+}
+.lh-week-arrow {
+	flex: 0 0 auto;
+	width: 2rem;
+	border: 0;
+	background: none;
+	color: var(--bs-body-color);
+	font-size: 1.6rem;
+	line-height: 1;
+	padding: 0 0 0.2rem;
+	&:disabled {
+		opacity: 0.25;
+	}
+}
+.lh-week-day {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 0.25rem 0 0.35rem;
+	color: var(--bs-body-color);
+	text-decoration: none;
+	border-bottom: 3px solid transparent;
+	&:hover {
+		color: var(--bs-body-color);
+		background: var(--bs-tertiary-bg);
+	}
+	&.selected {
+		border-bottom-color: var(--bs-primary);
+		.lh-week-num {
+			font-weight: 800;
+		}
+	}
+	&.today .lh-week-top {
+		color: var(--bs-danger);
+		font-weight: 700;
+	}
+}
+.lh-week-off {
+	opacity: 0.35;
+	&:hover {
+		background: none;
+	}
+}
+.lh-week-pad {
+	visibility: hidden;
+}
+.lh-week-top {
+	font-size: 0.78rem;
+	line-height: 1.2;
+	color: var(--bs-secondary-color);
+}
+.lh-week-num {
+	font-size: 1.35rem;
+	font-weight: 600;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+// The page: a column of everything on a phone, its order set on each piece.
+.lh-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+}
+.lh-main,
+.lh-rail {
+	display: contents;
+}
+@for $i from 1 through 7 {
+	.lh-o#{$i} {
+		order: $i;
+		min-width: 0;
+	}
+}
+@include media-breakpoint-up(lg) {
+	.lh-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 340px;
+		gap: 1.5rem;
+		align-items: start;
+	}
+	.lh-main,
+	.lh-rail {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		min-width: 0;
+	}
+}
+@include media-breakpoint-up(xxl) {
+	.lh-grid {
+		grid-template-columns: minmax(0, 1fr) 380px;
+	}
+}
+
+.lh-section-title {
+	font-size: 1.15rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	margin: 0 0 0.6rem;
+}
+
+// The top story.
+.lh-kicker {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	margin-bottom: 0.5rem;
+	font-size: 0.8rem;
+}
+.lh-kicker-tag {
+	padding: 0.1rem 0.45rem;
+	border-radius: 0.2rem;
+	background: var(--bs-danger);
+	color: #fff;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.lh-kicker-date {
+	color: var(--bs-secondary-color);
+	font-weight: 600;
+}
+.lh-lead {
+	// (Its leaders under the banner at every width: the banner is a column's
+	// width here, not the page's.)
+	.mb-half .mb-leaders {
+		display: none;
+	}
+	.mb-leaders-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 0 0.75rem;
+		margin: 0.4rem 0.25rem 0;
+		.mb-leaders {
+			margin: 0;
+			font-size: 0.8rem;
+		}
+		.mb-leaders:last-child {
+			text-align: right;
+		}
+	}
+}
+.lh-banner.mb-banner {
+	margin-bottom: 0;
+	min-height: 9.5rem;
+	// (FINAL over the split at the top, clear of the two scores either side
+	// of it - the banner is a column wide here, the scores close.)
+	.mb-middle {
+		top: 0.55rem;
+		transform: translateX(-50%);
+	}
+	.mb-half {
+		padding-top: 2rem;
+	}
+	.mb-name {
+		font-size: 2rem;
+	}
+	.mb-big {
+		font-size: 3.4rem;
+	}
+	.mb-logo .d-flex {
+		width: 72px !important;
+		height: 72px !important;
+	}
+}
+@include media-breakpoint-down(sm) {
+	.lh-banner.mb-banner {
+		min-height: 0;
+		.mb-name {
+			font-size: 1.35rem;
+		}
+		.mb-big {
+			font-size: 2.6rem;
+		}
+		.mb-logo .d-flex {
+			width: 40px !important;
+			height: 40px !important;
+		}
+	}
+}
+.lh-article {
+	margin-top: 1rem;
+}
+.lh-watch-title {
+	margin: 0.6rem 0.25rem 0;
+	font-size: 0.75rem;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+.lh-watch-stats {
+	white-space: nowrap;
+	color: var(--bs-secondary-color);
+	b {
+		color: var(--bs-body-color);
+		font-variant-numeric: tabular-nums;
+	}
+}
+.lh-watch-pos {
+	font-size: 0.85em;
+	color: var(--bs-secondary-color);
+}
+.lh-headline {
+	font-size: 1.9rem;
+	font-weight: 800;
+	line-height: 1.15;
+	letter-spacing: -0.01em;
+	margin: 0 0 0.5rem;
+	p {
+		margin: 0;
+	}
+}
+.lh-deck {
+	font-size: 1.05rem;
+	color: var(--bs-secondary-color);
+	margin-bottom: 0.75rem;
+	p {
+		margin: 0;
+	}
+}
+.lh-body {
+	font-size: 1rem;
+	line-height: 1.55;
+	p {
+		margin: 0 0 0.75rem;
+	}
+}
+.lh-more {
+	font-weight: 700;
+	text-decoration: none;
+}
+@include media-breakpoint-down(sm) {
+	.lh-headline {
+		font-size: 1.45rem;
+	}
+	.lh-deck {
+		font-size: 0.95rem;
+	}
+	.lh-body {
+		font-size: 0.95rem;
+	}
+}
+
+// The cards down the side.
+.lh-card {
+	padding: 0.75rem 0.9rem 0.6rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+}
+.lh-card-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.4rem;
+}
+.lh-card-title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+.lh-card-more {
+	font-size: 0.8rem;
+	white-space: nowrap;
+}
+.lh-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	> li + li {
+		border-top: 1px solid var(--bs-border-color);
+	}
+}
+.lh-logo {
+	flex: 0 0 auto;
+	vertical-align: -0.2em;
+}
+
+.lh-perf {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.45rem 0;
+}
+.lh-perf-rank {
+	flex: 0 0 1rem;
+	text-align: center;
+	font-weight: 800;
+	color: var(--bs-secondary-color);
+}
+.lh-face {
+	flex: 0 0 auto;
+	width: 2.6rem;
+	height: 3.9rem;
+	> * {
+		width: 100%;
+		height: 100%;
+	}
+}
+.lh-perf-main {
+	min-width: 0;
+	flex: 1 1 auto;
+}
+.lh-perf-name {
+	font-weight: 700;
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-perf-team {
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	a {
+		color: inherit;
+	}
+}
+.lh-perf-stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 0.6rem;
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+	b {
+		font-size: 1.05rem;
+		color: var(--bs-body-color);
+		font-variant-numeric: tabular-nums;
+	}
+}
+
+.lh-headline-item {
+	padding: 0.45rem 0;
+	line-height: 1.3;
+	a {
+		color: var(--bs-body-color);
+		text-decoration: none;
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+}
+
+.lh-tabs {
+	display: flex;
+	gap: 0.25rem;
+	margin-bottom: 0.4rem;
+}
+.lh-tab {
+	flex: 1 1 0;
+	padding: 0.2rem 0.4rem;
+	font-size: 0.8rem;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
+	background: none;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	&.active {
+		color: var(--bs-body-color);
+		border-bottom-color: var(--bs-primary);
+	}
+}
+.lh-standings {
+	width: 100%;
+	font-size: 0.85rem;
+	font-variant-numeric: tabular-nums;
+	th {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: var(--bs-secondary-color);
+		text-align: right;
+		padding: 0 0.3rem 0.2rem;
+	}
+	td {
+		padding: 0.2rem 0.3rem;
+		text-align: right;
+		border-top: 1px solid var(--bs-border-color);
+	}
+	.lh-rank {
+		width: 1.6rem;
+		text-align: right;
+		color: var(--bs-secondary-color);
+	}
+	.lh-team {
+		text-align: left;
+		white-space: nowrap;
+		max-width: 9rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		.lh-logo {
+			margin-right: 0.35rem;
+		}
+	}
+	.lh-user td {
+		background: rgba(var(--bs-info-rgb), 0.14);
+	}
+	.lh-cut td {
+		border-bottom: 2px solid var(--bs-secondary-color);
+	}
+}
+.lh-result {
+	display: inline-block;
+	min-width: 1.2rem;
+	padding: 0 0.2rem;
+	border-radius: 0.2rem;
+	font-size: 0.7rem;
+	font-weight: 800;
+	text-align: center;
+	color: #fff;
+	&.won {
+		background: var(--bs-success);
+	}
+	&.lost {
+		background: var(--bs-danger);
+	}
+}
+
+.lh-injury {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	padding: 0.4rem 0;
+	line-height: 1.25;
+	.lh-logo {
+		margin-top: 0.15rem;
+	}
+}
+.lh-injury-what {
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+}
+
+.lh-coming {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.35rem 0;
+	font-weight: 600;
+}
+.lh-coming-team {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	min-width: 4.2rem;
+}
+.lh-coming-more {
+	font-size: 0.8rem;
+	padding-top: 0.25rem;
+}
+
+// The scores under the story: a column's width each, two across where
+// there's room.
+.lh-game {
+	flex: 1 1 510px;
+	min-width: 0;
+}
+
+@include media-breakpoint-down(md) {
+	.lh-week {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.1rem;
+		padding: 0.35rem 0.25rem;
+	}
+	.lh-month-wrap {
+		padding-left: 0.4rem;
+	}
+	.lh-week-days {
+		max-width: none;
+		width: 100%;
+	}
+	.lh-week-arrow {
+		width: 1.6rem;
+	}
+	.lh-week-num {
+		font-size: 1.2rem;
+	}
+}

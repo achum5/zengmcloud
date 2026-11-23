@@ -5,7 +5,13 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, keepType } from "../util/defineView.ts";
 import { getTopPlayers, getUpcoming } from "./schedule.ts";
-import { getAutoRecapsForDay } from "../util/getDayGamesForRecap.ts";
+import {
+	computeStandingsAsOf,
+	getAutoRecapsForDay,
+	type RecapDayStandings,
+	type RecapGame,
+} from "../util/getDayGamesForRecap.ts";
+import { buildHub } from "./dailyScheduleHub.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
@@ -191,6 +197,8 @@ export default defineView({
 							gid: game.gid,
 							dayNote: game.dayNote,
 							playoffs: game.playoffs,
+							// For the hub's "Coming up": who plays the next night.
+							tids: [game.teams[0].tid, game.teams[1].tid] as const,
 							completedGame:
 								game.day === day && (!cidFilter || cidFilter(game.teams))
 									? game
@@ -200,12 +208,34 @@ export default defineView({
 				);
 
 				const daysAndPlayoffs = new Map<number, boolean>();
+				// How many games each night has, for the week strip, and who
+				// plays in them, for the hub's "Coming up".
+				const gamesByDay = new Map<
+					number,
+					{ gid: number; homeTid: number; awayTid: number }[]
+				>();
+				const addToDay = (
+					day: number,
+					game: { gid: number; homeTid: number; awayTid: number },
+				) => {
+					const list = gamesByDay.get(day);
+					if (list) {
+						list.push(game);
+					} else {
+						gamesByDay.set(day, [game]);
+					}
+				};
 				// On a calendar, the night of each day. A trade deadline day shares
 				// its night with that night's games, so it's named instead.
 				const dateByDay = new Map<number, string>();
 				const deadlineDays = new Set<number>();
 				for (const game of games) {
 					if (game.day !== undefined) {
+						addToDay(game.day, {
+							gid: game.gid,
+							homeTid: game.tids[0],
+							awayTid: game.tids[1],
+						});
 						daysAndPlayoffs.set(game.day, !!game.playoffs);
 						if (game.date !== undefined) {
 							dateByDay.set(game.day, game.date);
@@ -218,6 +248,13 @@ export default defineView({
 
 					for (const game of schedule) {
 						if (game.day !== undefined) {
+							if (!isTradeDeadline(game.homeTid, game.awayTid)) {
+								addToDay(game.day, {
+									gid: game.gid,
+									homeTid: game.homeTid,
+									awayTid: game.awayTid,
+								});
+							}
 							daysAndPlayoffs.set(game.day, isPlayoffs);
 							if (game.date !== undefined) {
 								dateByDay.set(game.day, game.date);
@@ -327,12 +364,17 @@ export default defineView({
 				// reads the database note/dayNote, which these never touch, so it stays
 				// available as the on-demand upgrade.
 				let autoDayRecap = "";
+				let recapGames: RecapGame[] = [];
+				let standings: RecapDayStandings | undefined;
 				if (completed.length > 0) {
-					const { notes, dayRecap } = await getAutoRecapsForDay({
+					const recaps = await getAutoRecapsForDay({
 						season: inputs.season,
 						day,
 					});
+					const { notes, dayRecap } = recaps;
 					autoDayRecap = dayRecap;
+					recapGames = recaps.games;
+					standings = recaps.standings;
 					for (const [i, game] of completed.entries()) {
 						if (!game.note && notes[game.gid]) {
 							completed[i] = { ...game, note: notes[game.gid] };
@@ -354,10 +396,56 @@ export default defineView({
 				// auto day recap (never persisted).
 				const dayNote = anchorGame?.dayNote ?? (autoDayRecap || undefined);
 
+				// A night still to be played: the standings going into it (the
+				// regular season's only - the playoffs have their bracket).
+				const dayIsPlayoffs = daysAndPlayoffs.get(day) ?? false;
+				if (
+					__SPORT === "basketball" &&
+					!standings &&
+					!dayIsPlayoffs &&
+					upcoming.length > 0
+				) {
+					standings = await computeStandingsAsOf(
+						inputs.season,
+						day - 1,
+						await idb.merged.games.getAll({ season: inputs.season }),
+					);
+				}
+
+				// Every night of the season, for the week strip.
+				const nights = Array.from(daysAndPlayoffs.entries())
+					.map(([nightDay, playoffs]) => ({
+						day: nightDay,
+						date: dateByDay.get(nightDay),
+						numGames: gamesByDay.get(nightDay)?.length ?? 0,
+						playoffs,
+						deadline: deadlineDays.has(nightDay),
+					}))
+					.sort((a, b) => a.day - b.day);
+
+				// The next night with games, for "Coming up".
+				const nextNight = nights.find(
+					(night) => night.day > day && night.numGames > 0,
+				);
+
 				return {
 					cid,
 					cids,
 					completed,
+					hub: {
+						...buildHub({ games: recapGames, standings }),
+						next: nextNight
+							? {
+									day: nextNight.day,
+									date: nextNight.date,
+									games: gamesByDay.get(nextNight.day) ?? [],
+								}
+							: undefined,
+					},
+					nights,
+					// The night the league is on, for the strip's "today".
+					todayDay:
+						inputs.season === currentSeason ? schedule?.[0]?.day : undefined,
 					date: dateByDay.get(day),
 					day,
 					dayNote,
