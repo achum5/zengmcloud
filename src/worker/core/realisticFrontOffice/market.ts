@@ -11,7 +11,7 @@ import type {
 } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local } from "../../util/index.ts";
-import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
+import classicDaysLeft from "../game/classicDaysLeft.ts";
 import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
@@ -1991,15 +1991,15 @@ export const tradeDay = async () => {
 	}
 };
 
-// The last days before the trade deadline (marketSettings.deadlineWindow).
+// The last days before the trade deadline (marketSettings.deadlineWindow), in
+// classic days on a calendar too (game/classicDaysLeft.ts).
 const inDeadlineWindow = async () => {
 	if (marketSettings.deadlineWindow <= 0) {
 		return false;
 	}
 	try {
 		return (
-			(await getDaysLeftSchedule("tradeDeadline")) <
-			marketSettings.deadlineWindow
+			(await classicDaysLeft("tradeDeadline")) < marketSettings.deadlineWindow
 		);
 	} catch {
 		// No deadline left this season.

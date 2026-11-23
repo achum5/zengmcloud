@@ -22,7 +22,15 @@ import { useLocal } from "../util/local.ts";
 
 type TeamInfo = LocalStateUI["teamInfoCache"][number];
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAYS = [
+	"Sunday",
+	"Monday",
+	"Tuesday",
+	"Wednesday",
+	"Thursday",
+	"Friday",
+	"Saturday",
+];
 
 const monthOf = (date: string) => date.slice(0, 7);
 
@@ -187,20 +195,22 @@ const TeamNight = ({
 					)}
 				</span>
 				{final ? (
-					<span
-						className={clsx("lc-result", won ? "text-success" : "text-danger")}
-					>
-						{won ? "W" : "L"}
+					<span className="lc-result">
+						<span className={clsx("lc-wl", won ? "lc-w" : "lc-l")}>
+							{won ? "W" : "L"}
+						</span>
 						{compact ? null : (
-							<span className="d-none d-md-inline">
-								{" "}
-								{pts}-{oppPts}
+							<span className="lc-score d-none d-md-inline">
+								{pts} - {oppPts}
 								{game.overtimes !== undefined && game.overtimes > 0
 									? ` ${game.overtimes > 1 ? game.overtimes : ""}OT`
 									: null}
 							</span>
 						)}
 					</span>
+				) : null}
+				{final && !compact ? (
+					<span className="lc-pill d-none d-md-inline-block">Box score</span>
 				) : null}
 			</a>
 		</>
@@ -383,7 +393,14 @@ export const MonthCalendar = ({
 	const todayMonth = today !== undefined ? monthOf(today) : undefined;
 
 	return (
-		<div className={clsx("lc", compact && "lc-compact", className)}>
+		<div
+			className={clsx(
+				"lc",
+				compact && "lc-compact",
+				tid === "all" && "lc-league",
+				className,
+			)}
+		>
 			<div className="lc-head">
 				<button
 					type="button"
@@ -411,11 +428,29 @@ export const MonthCalendar = ({
 				months.includes(todayMonth) ? (
 					<button
 						type="button"
-						className="btn btn-outline-secondary btn-sm ms-auto"
+						className="btn btn-outline-secondary btn-sm"
 						onClick={() => setChosenMonth(todayMonth)}
 					>
 						Today
 					</button>
+				) : null}
+				{typeof tid === "number" && !compact ? (
+					<div className="lc-legend">
+						<span>
+							<span className="lc-swatch lc-swatch-home" />
+							Home
+						</span>
+						<span>
+							<span className="lc-swatch" />
+							Away
+						</span>
+						{todayMonth !== undefined ? (
+							<span>
+								<span className="lc-swatch lc-swatch-today" />
+								Today
+							</span>
+						) : null}
+					</div>
 				) : null}
 			</div>
 
@@ -447,9 +482,13 @@ export const MonthCalendar = ({
 					<tr>
 						{WEEKDAYS.map((name) => (
 							<th key={name}>
-								{name[0]}
-								{compact ? null : (
-									<span className="d-none d-sm-inline">{name.slice(1)}</span>
+								{compact ? (
+									name[0]
+								) : (
+									<>
+										<span className="d-md-none">{name.slice(0, 3)}</span>
+										<span className="d-none d-md-inline">{name}</span>
+									</>
 								)}
 							</th>
 						))}
@@ -477,7 +516,9 @@ export const MonthCalendar = ({
 										)}
 										title={formatGameDate(date, "full")}
 									>
-										<span className="lc-num">{Number(date.slice(8))}</span>
+										<span className="lc-num">
+											{compact ? Number(date.slice(8)) : date.slice(8)}
+										</span>
 										{game && typeof tid === "number" ? (
 											<TeamNight
 												b2b={teamByDate.has(addDays(date, -1))}
