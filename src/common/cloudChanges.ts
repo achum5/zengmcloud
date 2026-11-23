@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 496,
+		date: "2026-11-23",
+		text: "Daily Schedule's row of days (NBA calendar): swipe it to move a week at a time, or use the arrows on a computer. The night you're looking at is filled in, and tonight has a red dot.",
+	},
+	{
+		n: 495,
+		date: "2026-11-23",
+		text: "NBA calendar month view, redesigned (Schedule, Calendar, dashboard): every night is a tile, home games filled in your team's colors, road games a plain card, each with the opponent's logo, the result and the score. National TV games still to come show the network, and the months are tabs with your record in each.",
+	},
+	{
 		n: 494,
 		date: "2026-11-23",
 		text: "NBA calendar scores bar: it now works like the regular one. It opens on its right end with your next game, runs through that game instead of the days after it, and has the same yesterday and today buttons on the right, which stay put while you scroll back.",

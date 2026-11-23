@@ -2,219 +2,248 @@
 // Schedule and Daily Schedule pages and the dashboard, today's date in the
 // navbar (Controller/NavBar.tsx), for leagues on the NBA calendar.
 
-// Home nights are black on either theme (the dark theme swaps $white for a
-// dark gray, so it's told apart that way).
+// (The scores bar's home nights, top-bar.scss: black on either theme, the
+// dark theme swapping $white for a dark gray.)
 $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 
+// Each night a tile: a team's home nights in its colors, its road nights a
+// plain card, the nights off faint. (On the light theme the card is white
+// over the gray; on the dark one, lighter than it.)
+$lc-dark: lightness($white) < 50%;
 .lc {
+	--lc-gap: 2px;
+	--lc-radius: 6px;
+	--lc-off-bg: rgba(
+		var(--bs-emphasis-color-rgb),
+		#{if($lc-dark, 0.035, 0.045)}
+	);
+	--lc-card-bg: #{if($lc-dark, rgba(255, 255, 255, 0.1), #fff)};
+	--lc-card-border: rgba(
+		var(--bs-emphasis-color-rgb),
+		#{if($lc-dark, 0.16, 0.2)}
+	);
+	--lc-ring: rgba(var(--bs-emphasis-color-rgb), 0.45);
 	max-width: 1100px;
 }
 
 .lc-head {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: center;
-	gap: 0.5rem;
+	gap: 0.4rem;
 	margin-bottom: 0.5rem;
 }
 
 .lc-title {
-	margin: 0;
-	min-width: 9.5em;
-	text-align: center;
-	font-size: 1.4rem;
-	font-weight: 700;
+	margin: 0 auto 0 0;
+	font-size: 1.35rem;
+	font-weight: 800;
+	letter-spacing: -0.01em;
 	line-height: 1.2;
+	color: var(--bs-emphasis-color);
+}
+
+.lc-nav {
+	display: flex;
+	gap: 0.25rem;
+}
+
+.lc-arrow,
+.lc-today-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 2rem;
+	color: var(--bs-emphasis-color);
+	background: transparent;
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.5rem;
+
+	&:hover:not(:disabled) {
+		background: var(--lc-off-bg);
+	}
+
+	&:disabled {
+		opacity: 0.35;
+	}
 }
 
 .lc-arrow {
-	font-size: 1.25rem;
-	line-height: 1;
-	padding: 0.1rem 0.65rem 0.3rem;
+	width: 2rem;
+	padding: 0;
 }
 
-// Home, away, today - what the cells' looks mean.
-.lc-legend {
-	display: flex;
-	gap: 0.75rem;
-	margin-left: auto;
-	font-size: 0.7rem;
+.lc-today-button {
+	padding: 0 0.7rem;
+	font-size: 0.8rem;
 	font-weight: 600;
-	letter-spacing: 0.03em;
-	text-transform: uppercase;
-	color: var(--bs-secondary-color);
-
-	> span {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-	}
 }
 
-.lc-swatch {
-	display: inline-block;
-	width: 0.8rem;
-	height: 0.8rem;
-	border: 1px solid var(--bs-border-color);
-	background: var(--bs-body-bg);
-}
-
-.lc-swatch-home {
-	border-color: $lc-home-bg;
-	background: $lc-home-bg;
-}
-
-.lc-swatch-today {
-	border: 2px solid var(--bs-danger);
-}
-
+// The months, as tabs, with a team's record in each.
 .lc-months {
 	display: flex;
-	gap: 2px;
 	margin-bottom: 0.5rem;
+	overflow-x: auto;
+	scrollbar-width: none;
+	border-bottom: 1px solid var(--bs-border-color);
 }
 
 .lc-month {
-	flex: 1 1 0;
-	min-width: 0;
+	flex: 1 0 auto;
+	min-width: 2.6rem;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	padding: 0.2rem 0;
-	font-size: 0.8rem;
+	padding: 0.25rem 0.2rem 0.35rem;
 	line-height: 1.15;
-	color: var(--bs-body-color);
-	background: var(--bs-body-bg);
-	border: 1px solid var(--bs-border-color);
-	border-radius: var(--bs-border-radius-sm);
+	color: var(--bs-secondary-color);
+	background: none;
+	border: 0;
+	box-shadow: inset 0 -3px 0 transparent;
+
+	&:hover {
+		color: var(--bs-emphasis-color);
+	}
 
 	&.active {
-		color: #fff;
-		background: var(--bs-primary);
-		border-color: var(--bs-primary);
+		color: var(--bs-emphasis-color);
+		box-shadow: inset 0 -3px 0 var(--bs-emphasis-color);
 	}
 }
 
+.lc-month-name {
+	font-size: 0.8rem;
+	font-weight: 700;
+}
+
 .lc-month-record {
-	font-size: 0.7rem;
-	opacity: 0.8;
+	font-size: 0.68rem;
+	font-variant-numeric: tabular-nums;
 }
 
 .lc-grid {
-	width: 100%;
+	width: calc(100% + 2 * var(--lc-gap));
+	margin: calc(-1 * var(--lc-gap));
 	table-layout: fixed;
-	border-collapse: collapse;
+	border-collapse: separate;
+	border-spacing: var(--lc-gap);
 
 	th {
-		padding: 0.35rem 0;
-		font-size: 0.7rem;
+		padding: 0.1rem 0 0.2rem;
+		font-size: 0.65rem;
 		font-weight: 700;
-		letter-spacing: 0.03em;
+		letter-spacing: 0.06em;
 		text-align: center;
 		text-transform: uppercase;
-		color: var(--bs-emphasis-color);
-		background: var(--bs-tertiary-bg);
-		border: 1px solid var(--bs-border-color);
+		color: var(--bs-secondary-color);
 	}
 
 	td {
 		position: relative;
-		height: 4.6rem;
-		padding: 0.2rem 0.15rem;
+		height: 4.75rem;
+		padding: 0.2rem 0.15rem 0.25rem;
 		font-size: 0.75rem;
 		text-align: center;
 		vertical-align: top;
-		border: 1px solid var(--bs-border-color);
+		background: var(--lc-off-bg);
+		border-radius: var(--lc-radius);
 	}
 
 	td.lc-out {
-		background: var(--bs-tertiary-bg);
+		background: transparent;
 	}
 
-	// A team's home nights, filled in, the way team sites show them.
-	td.lc-home {
-		color: #fff;
-		background: $lc-home-bg;
-
-		.lc-num,
-		.lc-at,
-		.lc-tag {
-			color: #fff;
-			opacity: 0.85;
-		}
+	// A road night, or a night of the league's games.
+	td.lc-away,
+	td.lc-night {
+		background: var(--lc-card-bg);
+		box-shadow: inset 0 0 0 1px var(--lc-card-border);
 	}
 
-	// The league's nights: the user's road games in his team's color.
+	// A team's home night, filled in, its other color along the top - and
+	// the league's, the user's road nights the same.
+	td.lc-home,
 	td.lc-road {
-		color: var(--lc-road-fg);
-		background: var(--lc-road-bg);
+		color: var(--lc-team-fg);
+		background: var(--lc-team-bg);
+		box-shadow: none;
+
+		&::before {
+			content: "";
+			position: absolute;
+			top: 0;
+			left: 0;
+			right: 0;
+			height: 3px;
+			background: var(--lc-team-accent);
+			border-radius: var(--lc-radius) var(--lc-radius) 0 0;
+		}
 
 		.lc-num,
 		.lc-tag,
-		.lc-key {
-			color: var(--lc-road-fg);
-			opacity: 0.85;
+		.lc-at,
+		.lc-key,
+		.lc-note {
+			color: inherit;
 		}
-	}
-
-	td.lc-today {
-		box-shadow: inset 0 0 0 2px var(--bs-danger);
 	}
 
 	// The whole night is the link.
-	td:not(.lc-today):has(> .lc-game[href]):hover {
-		box-shadow: inset 0 0 0 2px var(--bs-primary);
+	td:has(> .lc-game[href]):hover {
+		box-shadow: inset 0 0 0 2px var(--lc-ring);
 	}
 
 	td.lc-selected {
-		background: rgba(var(--bs-primary-rgb), 0.3);
-
-		.lc-num {
-			color: var(--bs-emphasis-color);
-			font-weight: 700;
-		}
-	}
-
-	// (A road night picked keeps its color, outlined.)
-	td.lc-selected.lc-road {
-		background: var(--lc-road-bg);
 		box-shadow: inset 0 0 0 2px var(--bs-emphasis-color);
+	}
+
+	td.lc-selected:not(.lc-road) {
+		background: rgba(var(--bs-primary-rgb), 0.28);
+	}
+
+	td.lc-today,
+	td.lc-today:hover {
+		box-shadow: inset 0 0 0 2px var(--bs-danger);
 
 		.lc-num {
-			color: var(--lc-road-fg);
+			padding: 0 0.3em;
+			color: #fff;
+			background: var(--bs-danger);
+			border-radius: 999px;
+			opacity: 1;
 		}
 	}
+}
+
+// The date on the left, a tag on the right.
+.lc-day-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.15rem;
+	min-height: 0.85rem;
 }
 
 .lc-num {
-	display: block;
-	font-size: 0.75rem;
+	font-size: 0.68rem;
 	font-weight: 700;
-	line-height: 1;
+	line-height: 1.25;
 	color: var(--bs-emphasis-color);
+	opacity: 0.8;
+	font-variant-numeric: tabular-nums;
 }
 
-// In a corner: the bottom one on a phone, out of the centered date's way.
 .lc-tag {
-	position: absolute;
-	bottom: 0.15rem;
-	right: 0.15rem;
-	font-size: 0.55rem;
-	font-weight: 700;
+	overflow: hidden;
+	font-size: 0.52rem;
+	font-weight: 800;
+	letter-spacing: 0.02em;
 	line-height: 1;
-	color: var(--bs-secondary-color);
-}
-
-// The league's nights: the date small in the corner, the count of games the
-// big number.
-.lc-league .lc-num {
-	text-align: left;
-	font-weight: 400;
+	white-space: nowrap;
 	color: var(--bs-secondary-color);
 }
 
 .lc-tag-playoffs {
-	color: var(--bs-warning-text-emphasis);
+	color: if($lc-dark, #ffc94d, #a35d00);
 }
 
 // A playoff game that may not be needed.
@@ -222,18 +251,12 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	opacity: 0.6;
 }
 
-.lc-maybe-note {
-	font-size: 0.6rem;
-	font-style: italic;
-	line-height: 1;
-}
-
 .lc-game {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	gap: 0.15rem;
-	margin-top: 0.25rem;
+	margin-top: 0.1rem;
 	color: inherit;
 	text-decoration: none;
 
@@ -241,288 +264,469 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 		content: "";
 		position: absolute;
 		inset: 0;
+		z-index: 1;
 	}
 
-	&[href]:hover {
+	&:hover {
 		color: inherit;
 		text-decoration: none;
-
-		.lc-count {
-			text-decoration: underline;
-		}
 	}
 }
 
-.lc-opp {
+.lc-matchup {
 	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.1rem;
+	min-width: 0;
+	max-width: 100%;
+}
+
+// The opponent's logo on a white disc, so it shows on any night.
+.lc-crest {
+	position: relative;
+	display: inline-flex;
+	flex-shrink: 0;
 	align-items: center;
 	justify-content: center;
-	min-height: 22px;
+	width: 28px;
+	height: 28px;
+	background: #fff;
+	border-radius: 50%;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+
+	img {
+		width: 78%;
+		height: 78%;
+		object-fit: contain;
+	}
 }
 
-.lc-at {
-	margin-right: 1px;
-	font-size: 0.7rem;
-	font-weight: 600;
-	color: var(--bs-secondary-color);
-}
-
-.lc-logo {
-	width: 22px;
-	height: 22px;
-	object-fit: contain;
-}
-
-.lc-abbrev {
-	font-size: 0.7rem;
-	font-weight: 700;
+.lc-crest-abbrev {
+	font-size: 0.5rem;
+	font-weight: 800;
+	color: #16181b;
 }
 
 .lc-opp-abbrev {
-	margin-left: 0.4rem;
-	font-size: 1.05rem;
+	max-width: 100%;
+	overflow: hidden;
+	font-size: 0.6rem;
 	font-weight: 800;
 	letter-spacing: 0.01em;
-}
-
-.lc-result {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.3rem;
-	font-size: 0.8rem;
-	font-weight: 700;
-	line-height: 1;
+	line-height: 1.1;
 	white-space: nowrap;
 }
 
-// The result as a little coin, green or red.
+.lc-at {
+	margin-right: 0.2em;
+	font-size: 0.85em;
+	font-weight: 600;
+	color: var(--bs-secondary-color);
+	opacity: 0.85;
+}
+
+// The result: on a phone, a coin on the crest; with room, a coin beside the
+// score.
 .lc-wl {
 	display: inline-flex;
+	flex-shrink: 0;
 	align-items: center;
 	justify-content: center;
-	width: 15px;
-	height: 15px;
+	width: 16px;
+	height: 16px;
 	font-size: 0.55rem;
 	font-weight: 800;
+	line-height: 1;
 	color: #fff;
 	border-radius: 50%;
 }
 
 .lc-w {
-	background: #2fa84f;
+	background: #22a447;
 }
 
 .lc-l {
 	background: #dc3545;
 }
 
-.lc-count {
-	font-size: 0.85rem;
-	font-weight: 600;
+.lc-badge {
+	position: absolute;
+	right: -4px;
+	bottom: -3px;
+	width: 12px;
+	height: 12px;
+	font-size: 0.45rem;
+	box-shadow: 0 0 0 1.5px #fff;
+}
+
+.lc-result {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
 	white-space: nowrap;
 }
 
-.lc-opp-small {
-	min-height: 18px;
+.lc-coin {
+	display: none;
+}
 
-	.lc-logo {
-		width: 16px;
-		height: 16px;
+.lc-score {
+	font-size: 0.6rem;
+	font-weight: 700;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+.lc-ot {
+	display: none;
+	margin-left: 0.25em;
+	font-size: 0.85em;
+	font-weight: 600;
+	opacity: 0.8;
+}
+
+.lc-note {
+	display: none;
+	font-size: 0.68rem;
+	font-style: italic;
+	line-height: 1.1;
+	color: var(--bs-secondary-color);
+}
+
+// A national game's network, on a white chip so it shows on any night.
+.lc .lc-national {
+	max-width: 100%;
+	padding: 1px 4px;
+	color: #16181b;
+	background: #fff;
+	border-radius: 4px;
+	box-shadow: 0 0 0 1px var(--lc-card-border);
+
+	img {
+		width: auto;
+		height: 11px;
+		max-width: 100%;
+		max-height: none;
 	}
+
+	// (The one for a light page, whatever the theme.)
+	.national-logo-light {
+		display: block;
+	}
+
+	.national-logo-dark {
+		display: none;
+	}
+}
+
+// The league's nights: how many games, and the user's opponent.
+.lc-count {
+	font-size: 0.85rem;
+	font-weight: 700;
+	line-height: 1.1;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.lc-league .lc-crest {
+	width: 18px;
+	height: 18px;
 }
 
 .lc-key {
+	position: relative;
+	z-index: 2;
 	margin-top: 0.1rem;
-	font-size: 0.65rem;
+	overflow: hidden;
+	font-size: 0.55rem;
+	font-weight: 600;
 	line-height: 1.1;
 	text-align: center;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	color: var(--bs-secondary-color);
 
 	a {
-		position: relative;
-		z-index: 1;
+		color: inherit;
+		text-decoration: underline;
 	}
 }
 
-// Smaller, for Daily Schedule and the dashboard.
+// Home, away, today - what the tiles' looks mean.
+.lc-legend {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.9rem;
+	margin-top: 0.5rem;
+	font-size: 0.65rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+
+	> span {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+}
+
+.lc-swatch {
+	display: inline-block;
+	width: 0.85rem;
+	height: 0.85rem;
+	border-radius: 3px;
+}
+
+.lc-swatch-home {
+	background: var(--lc-team-bg);
+	box-shadow: inset 0 2px 0 var(--lc-team-accent);
+}
+
+.lc-swatch-away {
+	background: var(--lc-card-bg);
+	box-shadow: inset 0 0 0 1px var(--lc-card-border);
+}
+
+.lc-swatch-today {
+	box-shadow: inset 0 0 0 2px var(--bs-danger);
+}
+
+// Smaller, for Daily Schedule and the dashboard: the crest and the coin.
 .lc-compact {
 	.lc-head {
-		margin-bottom: 0.25rem;
+		margin-bottom: 0.3rem;
 	}
 
 	.lc-title {
-		min-width: 8.5em;
 		font-size: 1.05rem;
 	}
 
+	.lc-arrow,
+	.lc-today-button {
+		height: 1.75rem;
+	}
+
 	.lc-arrow {
-		font-size: 1.05rem;
-		padding: 0 0.55rem 0.15rem;
+		width: 1.75rem;
 	}
 
 	.lc-grid {
 		th {
-			padding: 0.15rem 0;
-			font-size: 0.65rem;
+			font-size: 0.6rem;
 		}
 
 		td {
-			height: 3rem;
-			padding: 0.1rem 0.15rem;
+			height: 3.1rem;
+			padding: 0.1rem 0.1rem 0.15rem;
 		}
 	}
 
+	.lc-day-head {
+		min-height: 0.75rem;
+	}
+
 	.lc-num {
-		font-size: 0.65rem;
+		font-size: 0.6rem;
 	}
 
 	.lc-tag {
-		font-size: 0.5rem;
+		font-size: 0.48rem;
 	}
 
 	.lc-game {
-		gap: 0.1rem;
-		margin-top: 0.1rem;
+		margin-top: 0;
+		gap: 0.05rem;
 	}
 
-	.lc-opp {
-		min-height: 18px;
+	.lc-crest {
+		width: 22px;
+		height: 22px;
 	}
 
-	.lc-logo {
-		width: 18px;
-		height: 18px;
-	}
-
-	.lc-wl {
-		width: 12px;
-		height: 12px;
-		font-size: 0.5rem;
+	.lc-badge {
+		right: -3px;
+		bottom: -2px;
+		width: 10px;
+		height: 10px;
+		font-size: 0.4rem;
 	}
 
 	.lc-count {
 		font-size: 0.75rem;
-		line-height: 1.2;
 	}
 
-	.lc-opp-small {
-		min-height: 14px;
-
-		.lc-logo {
-			width: 14px;
-			height: 14px;
-		}
+	&.lc-league .lc-crest {
+		width: 14px;
+		height: 14px;
 	}
 
 	.lc-key {
-		font-size: 0.6rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		font-size: 0.5rem;
 	}
 }
 
 @include media-breakpoint-up(md) {
+	.lc {
+		--lc-gap: 4px;
+		--lc-radius: 8px;
+	}
+
+	.lc-title {
+		font-size: 1.6rem;
+	}
+
+	.lc-month {
+		padding: 0.35rem 0.3rem 0.45rem;
+	}
+
+	.lc-month-name {
+		font-size: 0.9rem;
+	}
+
+	.lc-month-record {
+		font-size: 0.75rem;
+	}
+
 	.lc-grid {
 		th {
-			font-size: 0.75rem;
+			font-size: 0.72rem;
 		}
 
 		td {
-			height: 7rem;
-			padding: 0.35rem 0.3rem;
+			height: 6.6rem;
+			padding: 0.4rem 0.45rem;
 			font-size: 0.85rem;
 		}
 	}
 
 	.lc-num {
-		font-size: 0.9rem;
+		font-size: 0.85rem;
 	}
 
 	.lc-tag {
-		top: 0.35rem;
-		bottom: auto;
-		right: 0.4rem;
 		font-size: 0.65rem;
 	}
 
 	.lc-game {
-		gap: 0.25rem;
-		margin-top: 0.35rem;
+		gap: 0.35rem;
+		margin-top: 0.3rem;
 	}
 
-	.lc-logo {
-		width: 34px;
-		height: 34px;
+	.lc-matchup {
+		flex-direction: row;
+		gap: 0.5rem;
 	}
 
-	.lc-opp {
-		min-height: 34px;
+	.lc-crest {
+		width: 40px;
+		height: 40px;
 	}
 
-	.lc-opp-small {
-		min-height: 20px;
+	.lc-opp-abbrev {
+		font-size: 1.05rem;
+	}
 
-		.lc-logo {
-			width: 20px;
-			height: 20px;
+	.lc-badge {
+		display: none;
+	}
+
+	.lc-coin {
+		display: inline-flex;
+	}
+
+	.lc-score {
+		font-size: 0.85rem;
+	}
+
+	.lc-ot {
+		display: inline;
+	}
+
+	.lc-note {
+		display: inline-flex;
+	}
+
+	.lc .lc-national {
+		padding: 2px 6px;
+
+		img {
+			height: 16px;
 		}
 	}
 
-	.lc-month {
-		padding: 0.3rem 0;
-		font-size: 0.9rem;
+	.lc-count {
+		font-size: 1.05rem;
+	}
+
+	.lc-league .lc-crest {
+		width: 24px;
+		height: 24px;
 	}
 
 	.lc-key {
-		font-size: 0.75rem;
+		font-size: 0.72rem;
 	}
 
+	.lc-legend {
+		font-size: 0.7rem;
+	}
+
+	// (Compact is phone-sized everywhere: it sits beside other things.)
 	.lc-compact {
-		.lc-grid td {
-			height: 3.5rem;
-			padding: 0.15rem 0.2rem;
-			font-size: 0.8rem;
+		--lc-gap: 3px;
+		--lc-radius: 6px;
+
+		.lc-title {
+			font-size: 1.1rem;
+		}
+
+		.lc-grid {
+			th {
+				font-size: 0.62rem;
+			}
+
+			td {
+				height: 3.4rem;
+				padding: 0.15rem 0.15rem 0.2rem;
+				font-size: 0.8rem;
+			}
 		}
 
 		.lc-num {
-			font-size: 0.7rem;
+			font-size: 0.65rem;
 		}
 
 		.lc-tag {
-			top: 0.15rem;
-			right: 0.2rem;
-			font-size: 0.55rem;
+			font-size: 0.5rem;
 		}
 
 		.lc-game {
-			margin-top: 0.1rem;
+			gap: 0.05rem;
+			margin-top: 0.05rem;
 		}
 
-		.lc-opp {
-			min-height: 22px;
+		.lc-crest {
+			width: 24px;
+			height: 24px;
 		}
 
-		.lc-logo {
-			width: 22px;
-			height: 22px;
+		.lc-badge {
+			display: inline-flex;
 		}
 
 		.lc-count {
 			font-size: 0.85rem;
 		}
 
-		.lc-opp-small {
-			min-height: 16px;
-
-			.lc-logo {
-				width: 16px;
-				height: 16px;
-			}
+		&.lc-league .lc-crest {
+			width: 16px;
+			height: 16px;
 		}
 
 		.lc-key {
-			font-size: 0.65rem;
+			font-size: 0.55rem;
 		}
 	}
 }

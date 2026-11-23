@@ -1,5 +1,11 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+	type ReactNode,
+} from "react";
 import {
 	addDays,
 	formatGameDate,
@@ -15,6 +21,7 @@ import type {
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { bannerColors, useAllTeamColors } from "./TeamBanner.tsx";
+import { NationalTag } from "./NationalTag.tsx";
 
 // A MONTH OF THE NBA CALENDAR, Sunday to Saturday. For a team, its games -
 // home nights shaded, results, back-to-backs, playoff games; for the league,
@@ -90,14 +97,34 @@ const weeksOf = (month: string) => {
 	return weeks;
 };
 
-const Logo = ({ t }: { t: TeamInfo | undefined }) => {
+// The opponent's logo on a white disc, so a dark logo shows on a dark night
+// and any logo on the team's color.
+const Crest = ({
+	children,
+	t,
+}: {
+	children?: ReactNode;
+	t: TeamInfo | undefined;
+}) => {
 	const url = t?.imgURLSmall ?? t?.imgURL;
-	return url ? (
-		<img className="lc-logo" src={url} alt="" />
-	) : (
-		<span className="lc-abbrev">{t?.abbrev}</span>
+	return (
+		<span className="lc-crest">
+			{url ? (
+				<img src={url} alt="" />
+			) : (
+				<span className="lc-crest-abbrev">{t?.abbrev}</span>
+			)}
+			{children}
+		</span>
 	);
 };
+
+// A win or a loss, as a little coin, green or red.
+const Coin = ({ className, won }: { className: string; won: boolean }) => (
+	<span className={clsx("lc-wl", className, won ? "lc-w" : "lc-l")}>
+		{won ? "W" : "L"}
+	</span>
+);
 
 const KeyDateLabel = ({
 	compact,
@@ -135,19 +162,46 @@ const KeyDateLabel = ({
 	);
 };
 
-const TeamNight = ({
+// What's in a team's night's corner: Play-In, the playoff game's number, or
+// a back-to-back.
+const teamTag = ({
 	b2b,
 	compact,
 	game,
 	playoffGame,
-	season,
-	teams,
-	tid,
 }: {
 	b2b: boolean;
 	compact: boolean;
 	game: CalendarGame;
 	playoffGame: number | undefined;
+}) =>
+	game.playIn ? (
+		<span className="lc-tag lc-tag-playoffs" title="Play-In">
+			{compact ? "PI" : "Play-In"}
+		</span>
+	) : playoffGame !== undefined ? (
+		<span
+			className="lc-tag lc-tag-playoffs"
+			title={game.ifNecessary ? "If necessary" : undefined}
+		>
+			G{playoffGame}
+			{game.ifNecessary ? "*" : null}
+		</span>
+	) : b2b && !compact ? (
+		<span className="lc-tag" title="Back-to-back">
+			B2B
+		</span>
+	) : null;
+
+const TeamNight = ({
+	compact,
+	game,
+	season,
+	teams,
+	tid,
+}: {
+	compact: boolean;
+	game: CalendarGame;
 	season: number;
 	teams: TeamInfo[];
 	tid: number;
@@ -171,62 +225,47 @@ const TeamNight = ({
 				? helpers.leagueUrl(["playoffs", season])
 				: undefined;
 	const t = teams[opp];
+	const ot =
+		game.overtimes !== undefined && game.overtimes > 0
+			? `${game.overtimes > 1 ? game.overtimes : ""}OT`
+			: undefined;
 
 	return (
-		<>
-			{game.playIn ? (
-				<span className="lc-tag lc-tag-playoffs" title="Play-In">
-					{compact ? "PI" : "Play-In"}
-				</span>
-			) : playoffGame !== undefined ? (
-				<span
-					className="lc-tag lc-tag-playoffs"
-					title={game.ifNecessary ? "If necessary" : undefined}
-				>
-					G{playoffGame}
-					{game.ifNecessary ? "*" : null}
-				</span>
-			) : b2b ? (
-				<span className="lc-tag" title="Back-to-back">
-					B2B
-				</span>
-			) : null}
-			<a
-				className="lc-game"
-				href={href}
-				title={`${home ? "vs" : "@"} ${t?.region ?? ""} ${t?.name ?? ""}${
-					final ? `, ${won ? "W" : "L"} ${pts}-${oppPts}` : ""
-				}${game.ifNecessary ? " (if necessary)" : ""}`}
-			>
-				<span className="lc-opp">
-					<span className="lc-at">{home ? "" : "@"}</span>
-					<Logo t={t} />
-					{compact ? null : (
-						<span className="lc-opp-abbrev d-none d-md-inline">
-							{t?.abbrev}
-						</span>
-					)}
-				</span>
-				{game.ifNecessary && !compact ? (
-					<span className="lc-maybe-note d-none d-md-inline">If necessary</span>
-				) : null}
-				{final ? (
-					<span className="lc-result">
-						<span className={clsx("lc-wl", won ? "lc-w" : "lc-l")}>
-							{won ? "W" : "L"}
-						</span>
-						{compact ? null : (
-							<span className="lc-score d-none d-md-inline">
-								{pts} - {oppPts}
-								{game.overtimes !== undefined && game.overtimes > 0
-									? ` ${game.overtimes > 1 ? game.overtimes : ""}OT`
-									: null}
-							</span>
-						)}
+		<a
+			className="lc-game"
+			href={href}
+			title={`${home ? "vs" : "@"} ${t?.region ?? ""} ${t?.name ?? ""}${
+				final
+					? `, ${won ? "W" : "L"} ${pts}-${oppPts}${ot ? ` ${ot}` : ""}`
+					: ""
+			}${game.ifNecessary ? " (if necessary)" : ""}`}
+		>
+			<span className="lc-matchup">
+				{/* (On the crest where there's no room for more: phones and compact.) */}
+				<Crest t={t}>
+					{final ? <Coin className="lc-badge" won={won} /> : null}
+				</Crest>
+				{compact ? null : (
+					<span className="lc-opp-abbrev">
+						<span className="lc-at">{home ? "vs" : "@"}</span>
+						{t?.abbrev}
 					</span>
-				) : null}
-			</a>
-		</>
+				)}
+			</span>
+			{compact ? null : final ? (
+				<span className="lc-result">
+					<Coin className="lc-coin" won={won} />
+					<span className="lc-score">
+						{pts}-{oppPts}
+						{ot ? <span className="lc-ot">{ot}</span> : null}
+					</span>
+				</span>
+			) : game.ifNecessary ? (
+				<span className="lc-note">If necessary</span>
+			) : game.national ? (
+				<NationalTag className="lc-national" tag={game.national} />
+			) : null}
+		</a>
 	);
 };
 
@@ -281,11 +320,7 @@ const LeagueNight = ({
 				)}
 				{maybe > 0 ? "*" : null}
 			</span>
-			{opp !== undefined ? (
-				<span className="lc-opp lc-opp-small">
-					<Logo t={teams[opp]} />
-				</span>
-			) : null}
+			{opp !== undefined ? <Crest t={teams[opp]} /> : null}
 		</a>
 	);
 };
@@ -349,10 +384,11 @@ export const MonthCalendar = ({
 		prev.current = { season, anchor };
 	}, [anchor, season, selected, startMonth]);
 
-	// The league's nights: the user's road nights in his team's color (so
-	// no "@" is needed), his home nights plain.
-	const allColors = useAllTeamColors(tid === "all");
-	const road = bannerColors(allColors?.[userTid]);
+	// A team's home nights in its colors, the way team sites fill them in;
+	// the league's, the user's road nights in his team's color (so no "@" is
+	// needed), his home nights plain.
+	const allColors = useAllTeamColors();
+	const colors = bannerColors(allColors?.[tid === "all" ? userTid : tid]);
 
 	const month =
 		chosenMonth !== undefined && months.includes(chosenMonth)
@@ -432,75 +468,77 @@ export const MonthCalendar = ({
 
 	const monthIndex = months.indexOf(month);
 	const todayMonth = today !== undefined ? monthOf(today) : undefined;
+	const isTeam = typeof tid === "number";
 
 	return (
 		<div
 			className={clsx(
 				"lc",
 				compact && "lc-compact",
-				tid === "all" && "lc-league",
+				isTeam ? "lc-team" : "lc-league",
 				className,
 			)}
 			style={
-				tid === "all"
-					? ({
-							"--lc-road-bg": road.bg,
-							"--lc-road-fg": road.fg,
-						} as CSSProperties)
-					: undefined
+				{
+					"--lc-team-bg": colors.bg,
+					"--lc-team-fg": colors.fg,
+					"--lc-team-accent": colors.accent,
+				} as CSSProperties
 			}
 		>
 			<div className="lc-head">
-				<button
-					type="button"
-					className="btn btn-light btn-sm lc-arrow"
-					disabled={monthIndex <= 0}
-					onClick={() => setChosenMonth(months[monthIndex - 1])}
-					aria-label="Previous month"
-				>
-					‹
-				</button>
 				<div className="lc-title" role="heading" aria-level={compact ? 3 : 2}>
 					{formatMonth(firstOfMonth(month))}
 				</div>
-				<button
-					type="button"
-					className="btn btn-light btn-sm lc-arrow"
-					disabled={monthIndex >= months.length - 1}
-					onClick={() => setChosenMonth(months[monthIndex + 1])}
-					aria-label="Next month"
-				>
-					›
-				</button>
 				{todayMonth !== undefined &&
 				todayMonth !== month &&
 				months.includes(todayMonth) ? (
 					<button
 						type="button"
-						className="btn btn-outline-secondary btn-sm"
+						className="lc-today-button"
 						onClick={() => setChosenMonth(todayMonth)}
 					>
 						Today
 					</button>
 				) : null}
-				{typeof tid === "number" && !compact ? (
-					<div className="lc-legend">
-						<span>
-							<span className="lc-swatch lc-swatch-home" />
-							Home
-						</span>
-						<span>
-							<span className="lc-swatch" />
-							Away
-						</span>
-						{todayMonth !== undefined ? (
-							<span>
-								<span className="lc-swatch lc-swatch-today" />
-								Today
-							</span>
-						) : null}
-					</div>
-				) : null}
+				<div className="lc-nav">
+					<button
+						type="button"
+						className="lc-arrow"
+						disabled={monthIndex <= 0}
+						onClick={() => setChosenMonth(months[monthIndex - 1])}
+						aria-label="Previous month"
+					>
+						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+							<path
+								d="M10 3 5 8l5 5"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+					</button>
+					<button
+						type="button"
+						className="lc-arrow"
+						disabled={monthIndex >= months.length - 1}
+						onClick={() => setChosenMonth(months[monthIndex + 1])}
+						aria-label="Next month"
+					>
+						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+							<path
+								d="m6 3 5 5-5 5"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			{monthChips ? (
@@ -514,12 +552,12 @@ export const MonthCalendar = ({
 								className={clsx("lc-month", m === month && "active")}
 								onClick={() => setChosenMonth(m)}
 							>
-								{formatMonth(firstOfMonth(m), true)}
-								{record ? (
-									<span className="lc-month-record">
-										{record.won}-{record.lost}
-									</span>
-								) : null}
+								<span className="lc-month-name">
+									{formatMonth(firstOfMonth(m), true)}
+								</span>
+								<span className="lc-month-record">
+									{record ? `${record.won}-${record.lost}` : "\u00a0"}
+								</span>
 							</button>
 						);
 					})}
@@ -550,33 +588,37 @@ export const MonthCalendar = ({
 								if (monthOf(date) !== month) {
 									return <td key={date} className="lc-out" />;
 								}
-								const game = teamByDate.get(date);
+								const game = isTeam ? teamByDate.get(date) : undefined;
 								const night = nights.get(date);
 								const keyDate = keyByDate.get(date);
-								const home = game !== undefined && game.homeTid === tid;
 								return (
 									<td
 										key={date}
 										className={clsx(
-											home && "lc-home",
-											game?.ifNecessary &&
-												typeof tid === "number" &&
-												"lc-maybe",
+											game && (game.homeTid === tid ? "lc-home" : "lc-away"),
+											game?.ifNecessary && "lc-maybe",
+											night && "lc-night",
 											night?.mine?.awayTid === userTid && "lc-road",
 											date === today && "lc-today",
 											date === selected && "lc-selected",
 										)}
 										title={formatGameDate(date, "full")}
 									>
-										<span className="lc-num">
-											{compact ? Number(date.slice(8)) : date.slice(8)}
-										</span>
-										{game && typeof tid === "number" ? (
+										<div className="lc-day-head">
+											<span className="lc-num">{Number(date.slice(8))}</span>
+											{game && isTeam
+												? teamTag({
+														b2b: teamByDate.has(addDays(date, -1)),
+														compact,
+														game,
+														playoffGame: playoffGameNumbers.get(game.gid),
+													})
+												: null}
+										</div>
+										{game && isTeam ? (
 											<TeamNight
-												b2b={teamByDate.has(addDays(date, -1))}
 												compact={compact}
 												game={game}
-												playoffGame={playoffGameNumbers.get(game.gid)}
 												season={season}
 												teams={teamInfoCache}
 												tid={tid}
@@ -609,6 +651,25 @@ export const MonthCalendar = ({
 					))}
 				</tbody>
 			</table>
+
+			{isTeam && !compact ? (
+				<div className="lc-legend">
+					<span>
+						<span className="lc-swatch lc-swatch-home" />
+						Home
+					</span>
+					<span>
+						<span className="lc-swatch lc-swatch-away" />
+						Away
+					</span>
+					{todayMonth !== undefined ? (
+						<span>
+							<span className="lc-swatch lc-swatch-today" />
+							Today
+						</span>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 };
