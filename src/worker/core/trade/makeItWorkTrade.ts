@@ -9,7 +9,7 @@ import {
 	smartCpuOn,
 	smartVanillaOn,
 } from "../realisticFrontOffice/isOn.ts";
-import { smartGuardOffer } from "../smartCpu/humanTrades.ts";
+import { ownReadValuer, smartGuardOffer } from "../smartCpu/humanTrades.ts";
 import { smartMakeItWork } from "../smartCpu/screens.ts";
 import { counterTeams } from "../realisticFrontOffice/proposals.ts";
 
@@ -28,7 +28,13 @@ const makeItWorkTrade = async () => {
 	// (realisticFrontOffice/proposals.ts).
 	const frontOffice =
 		realisticTradesOn() && !g.get("userTids").includes(teams0[1].tid);
-	const valueChangeCalculator = await tradeValueCalculator();
+	const vanilla = await tradeValueCalculator();
+	// The smart CPU on vanilla's rules: what the team would take by its own
+	// read too, so the search asks for more (smartCpu/humanTrades.ts).
+	const valueChangeCalculator =
+		smartVanillaOn() && !g.get("userTids").includes(teams0[1].tid)
+			? await ownReadValuer(vanilla)
+			: vanilla;
 	// The smart CPU: what it would take, by its own worth
 	// (smartCpu/screens.ts).
 	const teams = frontOffice

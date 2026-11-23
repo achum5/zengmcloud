@@ -14,7 +14,10 @@ import {
 	smartCpuOn,
 	smartVanillaOn,
 } from "../core/realisticFrontOffice/isOn.ts";
-import { smartGuardOffer } from "../core/smartCpu/humanTrades.ts";
+import {
+	ownReadValuer,
+	smartGuardOffer,
+} from "../core/smartCpu/humanTrades.ts";
 import { smartOfferStands, smartProposals } from "../core/smartCpu/screens.ts";
 import {
 	proposalStands,
@@ -53,9 +56,7 @@ const getOffers = async (seed: number) => {
 
 	// With the smart CPU on vanilla's rules, CPU teams only: not a league
 	// mate's team, as if it were a CPU's.
-	const notCpu = new Set(
-		smartVanillaOn() ? g.get("userTids") : [userTid],
-	);
+	const notCpu = new Set(smartVanillaOn() ? g.get("userTids") : [userTid]);
 	const teams = (await idb.cache.teams.getAll()).filter(
 		(t) => !t.disabled && !notCpu.has(t.tid),
 	);
@@ -117,7 +118,11 @@ const getOffers = async (seed: number) => {
 
 	const offers: TradeTeams[] = [];
 
-	const valueChangeCalculator = await tradeValueCalculator();
+	// The smart CPU on vanilla's rules: only what the team would take by its
+	// own read too (smartCpu/humanTrades.ts).
+	const valueChangeCalculator = smartVanillaOn()
+		? await ownReadValuer(await tradeValueCalculator())
+		: await tradeValueCalculator();
 
 	for (const t of teams) {
 		for (let i = 0; i < tries; i++) {
