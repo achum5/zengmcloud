@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 488,
+		date: "2026-11-23",
+		text: "League hub fixes: on the live site the home team's side of each score card now mirrors the away side like it should, and the phone tabs keep their order. In the playoffs, the series (Game 7, DAL wins 4-3) hangs on a small tag at the top of the card, and Final with the line sits below it. The week strip's days no longer underline when tapped.",
+	},
+	{
 		n: 487,
 		date: "2026-11-23",
 		text: "Nightly Recap: the newest night's recap now leads the League Headlines on the new dashboard and starts playing on its own once you scroll to it. Tap it to watch it full size (turn your phone sideways for the biggest picture). Every recap now has a full size button too.",
