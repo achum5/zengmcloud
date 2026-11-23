@@ -106,9 +106,18 @@ goes where his own head takes him.
 The planner, for now, is today's director: it says who guards whom (its
 switches included) and the runs that lead to the engine's result (the help
 that stops a drive, a closeout late enough to leave the shot as open as it
-was drawn, the run back). A defender follows those runs as laid, and guards
-his man himself in between - helping on a drive and recovering himself too.
-Transition comes into his own head next.
+was drawn, a break the engine has beat them). A defender follows those runs
+as laid, and guards his man himself in between - helping on a drive and
+recovering himself too.
+
+Getting back is his own too: from a beat after the ball changes hands (not
+on a break - there the play has them beaten, as the engine says), he heads
+back and onto the man the planner gives him as the ball comes up the floor,
+by the same rules as in the half court (his man far from the ball, so well
+off him toward the rim). Real games, a few seconds after the ball changes
+hands, have each defender about 11 ft from the nearest attacker and 30 ft
+nearer his rim than the ball; the play alone had them 16 ft off and 40-47 ft
+back, all in the paint.
 
 Each step (`defense.ts`), each of the five:
 
@@ -167,5 +176,9 @@ the five own it.
   python3 tools/court3d-tape/nba/measure.py tape <out.json> <dir>/tape_*.json
   python3 tools/court3d-tape/nba/compare.py tools/court3d-tape/nba/targets.json <out.json>
   ```
+
+- Getting back, the same way on both (`nba/transition.py nba|tape <files>`):
+  where the five on defense are 1-8 s after the ball changes hands with it
+  in their front court.
 
 - Film beside film, for Alex's eye.

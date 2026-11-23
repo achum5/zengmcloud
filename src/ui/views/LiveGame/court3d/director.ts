@@ -1078,6 +1078,11 @@ const BACK_FACING = 0.6;
 // stopped at half court where the ball comes up: as far as this from it -
 // to no nearer than this.
 const BACK_REACT = 250;
+// The new sim's defense (see defending): back and onto his man himself from
+// this long after the ball changes hands (ms) - if he has picked him up
+// within this long of it (ms).
+const TURN_READ = BACK_REACT;
+const TURN_PICK_UP = 12000;
 // Off an assist, how long he points back at the man who found him on his
 // way down the floor (ms).
 const THANKS_MS = 1200;
@@ -3100,6 +3105,10 @@ class Director {
 	// ... and the runs of a defender's the play has him make himself, in the
 	// middle of guarding his man: stepping up to stop the ball.
 	private readonly planned = new Map<number, [number, number][]>();
+	// When the ball changed hands, the side now on defense, and whether the
+	// trip was a break (see defending: back and onto his man himself, unless
+	// the play has the break beat them).
+	private readonly turns: { t: number; def: Side; brk: boolean }[] = [];
 	// Men on the ball letting them dribble out the clock: where they stand
 	// off him, from when till when (see concede).
 	private readonly conceded: {
@@ -4843,6 +4852,28 @@ class Director {
 	// and what he and his man are like at it.
 	private defending(): Defending {
 		const by = new Map<number, Defender>();
+		// Getting back after the ball changes hands - not on a break, which
+		// the play has beat them - each onto the man he picks up as it comes
+		// up the floor, from as soon as he sees it go.
+		for (const [pid, gs] of this.guards) {
+			const side = this.tracks.get(pid)?.team;
+			for (const turn of this.turns) {
+				if (turn.brk || turn.def !== side) {
+					continue;
+				}
+				const from = turn.t + TURN_READ;
+				const k = gs.findIndex((g) => g.t0 >= turn.t);
+				const g = gs[k];
+				if (
+					g &&
+					g.t0 > from &&
+					g.t0 - turn.t <= TURN_PICK_UP &&
+					(k === 0 || gs[k - 1]!.t1 < turn.t)
+				) {
+					g.t0 = from;
+				}
+			}
+		}
 		return {
 			guards: this.guards,
 			planned: this.planned,
@@ -8156,6 +8187,9 @@ class Director {
 		// is over before any set: it happens where the ball is.
 		const rushed =
 			heave || (!shot && !transition && gap !== undefined && gap < RUSH_GAP);
+		if (this.possession) {
+			this.turns.push({ t: from, def: other(team), brk: transition });
+		}
 		if (transition) {
 			this.breaks.push(t);
 			run = call?.("break");

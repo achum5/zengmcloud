@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 473,
+		date: "2026-11-23",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): after a miss or a turnover, defenders now run back and pick up their man on the way, the way NBA defenses do, instead of all dropping into the paint. On a fast break the engine scored, the play still has them beaten.",
+	},
+	{
 		n: 471,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders now guard their own man between plays. On the ball they sit about a step and a half off, tighter on a shooter and looser on a quick driver; off the ball they sag toward the rim and over to the ball's side the way NBA defenders do, more off a man who can't shoot. When a man drives, the nearest defender away from the ball steps up into his way.",
