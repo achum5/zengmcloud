@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 476,
+		date: "2026-11-23",
+		text: "3D game: the board over center court is now a real jumbotron. It has video screens on all four sides, a ring round the top with both teams, the score, the period and the clock, and a lower ring that runs with the ribbon boards. Each arena has its own shape: a cube with cut corners, a big halo over the screens, or a long curved board. Over breaks the screens show the score, the home team's logo, crowd prompts and the sponsors.",
+	},
+	{
 		n: 475,
 		date: "2026-11-23",
 		text: "Phone notifications now say which day they're about: the first line under the headline is the date (Wed, Nov 12), or Nov 14–20 for a week. Leagues without the NBA calendar show the day number (Day 34).",

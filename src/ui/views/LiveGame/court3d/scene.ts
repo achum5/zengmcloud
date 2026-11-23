@@ -4,10 +4,8 @@ import {
 	drawBall,
 	drawGlints,
 	drawHoop,
-	drawJumbo,
 	drawShadow,
 	FLOOR,
-	jumboScored,
 	LED_WALL,
 	NEAR_RAFTERS,
 	NEAR_RIBBON,
@@ -27,6 +25,7 @@ import {
 	type Courtside,
 	type HoopFx,
 } from "./arena.ts";
+import { drawJumbotron, type Jumbotron } from "./jumbotron.ts";
 import {
 	BASELINE_RIG,
 	depthOf,
@@ -623,9 +622,9 @@ export type ArenaPaint = {
 	stanchionAds?: HTMLCanvasElement[];
 	// Every screen the LED boards can show (see boardAt).
 	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> &
-		Partial<
-			Record<"end" | "table" | "jumbo", Record<BoardScreen, HTMLCanvasElement>>
-		>;
+		Partial<Record<"end" | "table", Record<BoardScreen, HTMLCanvasElement>>>;
+	// The board over center court (see jumbotron.ts).
+	jumbotron?: Jumbotron;
 	rafters: HTMLCanvasElement;
 	tableTop: HTMLCanvasElement;
 	tableFront: HTMLCanvasElement;
@@ -661,8 +660,10 @@ export type Frame = {
 	warmups: [string, string];
 	shotClock: string;
 	// The score [road, home], for the board over center court - as the
-	// score bug has it.
+	// score bug has it - and its clock (or HALF, FINAL) and period.
 	score?: [number, number];
+	clock?: string;
+	period?: string;
 	arena: ArenaPaint;
 	// The crowd on its feet (0..1), and which way its arms are this instant -
 	// and, if either end behind a basket is doing something of its own (see
@@ -2500,12 +2501,16 @@ export const drawFrame = (f: Frame) => {
 		f.teamColors ?? DEFAULT_TEAM_COLORS,
 	);
 	// The board over center court, when the picture takes it in.
-	const jumbo = venue ? undefined : arena.boards.jumbo?.[screen];
-	if (jumbo) {
-		const face = f.score ? jumboScored(jumbo, f.score) : jumbo;
-		drawJumbo(ctx, cam, face, (plane, img) => {
-			drawTexturedPlane(ctx, cam, plane, img, 24, 1);
-		});
+	if (arena.jumbotron && !venue) {
+		drawJumbotron(
+			ctx,
+			cam,
+			arena.jumbotron,
+			screen,
+			arena.boards.ribbon[screen],
+			{ score: f.score, clock: f.clock ?? "", period: f.period ?? "" },
+			t,
+		);
 	}
 	// A photographer's flash - not one behind the camera, or right at it (a
 	// camera in among the photographers).
@@ -3054,7 +3059,7 @@ export const arenaAim = (
 		return {
 			shot: {
 				x: 40 + 14 * u,
-				width: narrow ? 132 : 158,
+				width: narrow ? 142 : 158,
 				y: narrow ? -38 : -27,
 			},
 			rig: MAIN_RIG,

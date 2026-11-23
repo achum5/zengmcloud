@@ -1,6 +1,7 @@
 import { makeCourtRng } from "../courtRng.ts";
 import type { ArenaTeam } from "./arena.ts";
 import { shade } from "./figure.ts";
+import { JUMBO_STYLES, type JumboStyle } from "./jumbotron.ts";
 
 // THE BUILDING ROUND THE FLOOR, AS DATA. What one arena does differently
 // from another - its seats and who is in them, their colors, its boards - is
@@ -53,6 +54,10 @@ export type ArenaSpec = {
 		dancers: number;
 		danceShare: number;
 	};
+	// The board over center court: its shape (see jumbotron.ts).
+	jumbotron: {
+		style: JumboStyle;
+	};
 };
 
 const DEFAULT_MAIN = "#8c1d40";
@@ -88,6 +93,9 @@ export const arenaSpecFor = (home: ArenaTeam | undefined): ArenaSpec => {
 		entertainment: {
 			dancers: 7,
 			danceShare: 0.6,
+		},
+		jumbotron: {
+			style: JUMBO_STYLES[Math.floor(r() * JUMBO_STYLES.length)]!,
 		},
 	};
 };

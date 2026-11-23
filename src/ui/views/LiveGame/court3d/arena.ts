@@ -159,23 +159,6 @@ export const END_WALL: [Plane, Plane] = [0, 1].map((side) =>
 	),
 ) as [Plane, Plane];
 
-// THE BOARD OVER CENTER COURT, hung high: a screen on the side toward the
-// camera showing what the other boards show, the two teams under it.
-const JUMBO_W = 26;
-const JUMBO_H = 13;
-const JUMBO_Z = 34;
-const JUMBO_D = 22;
-const JUMBO_Y = COURT_H / 2 + JUMBO_D / 2;
-export const JUMBO_FRONT = plane(
-	"jumbo",
-	{ x: COURT_W / 2 - JUMBO_W / 2, y: JUMBO_Y, z: JUMBO_Z + JUMBO_H },
-	{ x: 1, y: 0, z: 0 },
-	{ x: 0, y: 0, z: -1 },
-	JUMBO_W,
-	JUMBO_H,
-	10,
-);
-
 export const TABLE_X0 = 37;
 export const TABLE_X1 = 57;
 const TABLE_Y = -5;
@@ -1582,13 +1565,13 @@ const paintScreen = (
 
 // Every screen, for the boards along the front of the stands and the ribbon
 // round the upper deck - painted once a game, switched between as it goes.
-export type BoardSet = "wall" | "ribbon" | "end" | "table" | "jumbo";
+export type BoardSet = "wall" | "ribbon" | "end" | "table";
 export const paintBoards = (
 	home: ArenaTeam | undefined,
 	away?: ArenaTeam,
 	ads?: ArenaAd[],
 ): Record<BoardSet, Record<BoardScreen, HTMLCanvasElement>> => {
-	const out = { wall: {}, ribbon: {}, end: {}, table: {}, jumbo: {} } as Record<
+	const out = { wall: {}, ribbon: {}, end: {}, table: {} } as Record<
 		BoardSet,
 		Record<BoardScreen, HTMLCanvasElement>
 	>;
@@ -1621,7 +1604,6 @@ export const paintBoards = (
 		tctx.fillStyle = trim;
 		tctx.fillRect(0, edge * 0.6, table.width, edge);
 		out.table[screen] = table;
-		out.jumbo[screen] = paintJumbo(screen, home, away, adOf(screen, ads));
 		out.wall[screen] = paintScreen(
 			LED_WALL.w,
 			LED_WALL.h,
@@ -1640,251 +1622,6 @@ export const paintBoards = (
 		);
 	}
 	return out;
-};
-
-// The board over center court: the screen above, and the two teams in
-// their colors along the bottom (their scores beside them - see
-// jumboScored).
-const paintJumbo = (
-	screen: BoardScreen,
-	home: ArenaTeam | undefined,
-	away: ArenaTeam | undefined,
-	ad?: ArenaAd,
-): HTMLCanvasElement => {
-	const { w, h } = JUMBO_FRONT;
-	const px = w / JUMBO_W;
-	const canvas = document.createElement("canvas");
-	canvas.width = w;
-	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
-	ctx.fillStyle = "#0b0c10";
-	ctx.fillRect(0, 0, w, h);
-	const strip = Math.round(3 * px);
-	const edge = Math.max(1, Math.round(0.4 * px));
-	// The screen: words to fill it, a line or two, on the team's color.
-	const c0 = teamColor(home, 0, "#8c1d40");
-	const c1 = teamColor(home, 1, "#f2c14e");
-	const accent = luminance(c1) < 0.16 ? "#f4f4f4" : c1;
-	const name = (home?.name || home?.abbrev || "").toUpperCase();
-	const region = (home?.region || "").toUpperCase();
-	const lines: Record<BoardScreen, string[]> = {
-		name: region ? [region, name] : [name],
-		letsGo: ["LET'S GO", name],
-		noise: ["MAKE SOME", "NOISE!"],
-		defense: ["DEFENSE"],
-		defense2: ["DEFENSE"],
-		three: ["THREE!"],
-		dunk: ["SLAM", "DUNK!"],
-		andOne: ["AND ONE!"],
-		block: ["REJECTED!"],
-		ad0: [name],
-		ad1: [name],
-		ad2: [name],
-		ad3: [name],
-	};
-	const inverted = screen === "defense2";
-	const sx = edge;
-	const sy = edge;
-	const sw = w - 2 * edge;
-	const sh = h - strip - 2 * edge;
-	const g = ctx.createLinearGradient(0, sy, 0, sy + sh);
-	g.addColorStop(0, inverted ? "#0b0c10" : shade(c0, 0.12));
-	g.addColorStop(1, inverted ? "#16171c" : shade(c0, -0.3));
-	ctx.fillStyle = g;
-	ctx.fillRect(sx, sy, sw, sh);
-	if (ad) {
-		paintAd(ctx, sx, sy, sw, sh, ad);
-	}
-	const words = ad ? [] : lines[screen];
-	const lh = sh / (words.length + 0.4);
-	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	words.forEach((word, i) => {
-		let size = lh * (words.length > 1 && i === 0 ? 0.62 : 0.86);
-		ctx.font = `800 ${Math.round(size)}px Arial, sans-serif`;
-		const tw = ctx.measureText(word).width;
-		if (tw > sw * 0.9) {
-			size *= (sw * 0.9) / tw;
-			ctx.font = `800 ${Math.round(size)}px Arial, sans-serif`;
-		}
-		ctx.fillStyle = inverted ? c0 : i === words.length - 1 ? accent : inkOn(c0);
-		ctx.fillText(word, sx + sw / 2, sy + lh * (i + 0.7));
-	});
-	paintJumboStrip(ctx, home, away);
-	ctx.fillStyle = teamColor(home, 1, "#f2c14e");
-	ctx.fillRect(0, 0, w, edge);
-	jumboTeams.set(canvas, { home, away });
-	return canvas;
-};
-
-// The strip along its foot: each side in its colors, road team first -
-// and, once there is one, its score beside it in white on black, the way
-// the board in a building carries it.
-export const paintJumboStrip = (
-	ctx: CanvasRenderingContext2D,
-	home: ArenaTeam | undefined,
-	away: ArenaTeam | undefined,
-	score?: [number, number],
-) => {
-	const { w, h } = JUMBO_FRONT;
-	const px = w / JUMBO_W;
-	const strip = Math.round(3 * px);
-	const edge = Math.max(1, Math.round(0.4 * px));
-	const half = (w - 3 * edge) / 2;
-	const y = h - strip;
-	const sh = strip - edge;
-	ctx.textBaseline = "middle";
-	([away, home] as const).forEach((team, i) => {
-		const x = edge + i * (half + edge);
-		const name = (team?.abbrev ?? (i ? "HOME" : "AWAY")).toUpperCase();
-		const bg = teamColor(team, 0, i ? "#8c1d40" : "#1d3461");
-		// (The score's box: about two fifths of the side.)
-		const box = score ? Math.round(half * 0.42) : 0;
-		const nw = half - box;
-		ctx.fillStyle = bg;
-		ctx.fillRect(x, y, nw, sh);
-		ctx.fillStyle = luminance(bg) > 0.6 ? "#111" : "#fff";
-		let size = strip * 0.62;
-		ctx.font = `800 ${Math.round(size)}px Arial, sans-serif`;
-		const tw = ctx.measureText(name).width;
-		if (tw > nw * 0.86) {
-			size *= (nw * 0.86) / tw;
-			ctx.font = `800 ${Math.round(size)}px Arial, sans-serif`;
-		}
-		ctx.textAlign = "center";
-		ctx.fillText(name, x + nw / 2, y + sh / 2);
-		if (score) {
-			ctx.fillStyle = "#050507";
-			ctx.fillRect(x + nw, y, box, sh);
-			ctx.fillStyle = "#ffffff";
-			const digits = String(score[i]);
-			let ds = strip * 0.74;
-			ctx.font = `800 ${Math.round(ds)}px Arial, sans-serif`;
-			const dw = ctx.measureText(digits).width;
-			if (dw > box * 0.86) {
-				ds *= (box * 0.86) / dw;
-				ctx.font = `800 ${Math.round(ds)}px Arial, sans-serif`;
-			}
-			ctx.fillText(digits, x + nw + box / 2, y + sh / 2);
-		}
-	});
-};
-
-// THE SCORE ON THE BOARD over center court, as the game goes: the board's
-// picture for a screen with the score in its strip - made again only when
-// the score changes, and only while the board is in the picture (a look
-// round the building).
-const jumboTeams = new WeakMap<
-	HTMLCanvasElement,
-	{ home: ArenaTeam | undefined; away: ArenaTeam | undefined }
->();
-const jumboScores = new WeakMap<
-	HTMLCanvasElement,
-	{ key: string; canvas: HTMLCanvasElement }
->();
-export const jumboScored = (
-	face: HTMLCanvasElement,
-	score: [number, number],
-): HTMLCanvasElement => {
-	const teams = jumboTeams.get(face);
-	if (!teams) {
-		return face;
-	}
-	const key = `${score[0]}-${score[1]}`;
-	const was = jumboScores.get(face);
-	if (was?.key === key) {
-		return was.canvas;
-	}
-	const canvas = document.createElement("canvas");
-	canvas.width = face.width;
-	canvas.height = face.height;
-	const ctx = canvas.getContext("2d")!;
-	ctx.drawImage(face, 0, 0);
-	paintJumboStrip(ctx, teams.home, teams.away, score);
-	jumboScores.set(face, { key, canvas });
-	return canvas;
-};
-
-// Hung from the roof: its top, a side if the camera is off to one, and the
-// cables up into the dark. (Drawn only when most of it is in the picture -
-// over a break, looking round the building - not as a strip along the top
-// edge of the game.)
-export const drawJumbo = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	face: HTMLCanvasElement,
-	draw: (plane: Plane, img: HTMLCanvasElement) => void,
-) => {
-	const x0 = COURT_W / 2 - JUMBO_W / 2;
-	const x1 = COURT_W / 2 + JUMBO_W / 2;
-	const y1 = JUMBO_Y;
-	const y0 = y1 - JUMBO_D;
-	const z0 = JUMBO_Z;
-	const z1 = JUMBO_Z + JUMBO_H;
-	const bottom = project(cam, { x: COURT_W / 2, y: y1, z: z0 });
-	if (bottom.y < cam.viewH * 0.3) {
-		return;
-	}
-	ctx.strokeStyle = "#2a2c33";
-	ctx.lineWidth = Math.max(1, 0.12 * bottom.k);
-	for (const x of [x0 + 3, x1 - 3]) {
-		for (const y of [y0 + 3, y1 - 3]) {
-			const a = project(cam, { x, y, z: z1 });
-			const b = project(cam, { x, y, z: z1 + 60 });
-			ctx.beginPath();
-			ctx.moveTo(a.x, a.y);
-			ctx.lineTo(b.x, b.y);
-			ctx.stroke();
-		}
-	}
-	const quad = (pts: Pt3[], fill: string) => {
-		ctx.fillStyle = fill;
-		poly(ctx, cam, pts);
-		ctx.fill();
-	};
-	if (cam.pos.x < x0) {
-		quad(
-			[
-				{ x: x0, y: y0, z: z0 },
-				{ x: x0, y: y1, z: z0 },
-				{ x: x0, y: y1, z: z1 },
-				{ x: x0, y: y0, z: z1 },
-			],
-			"#14151a",
-		);
-	} else if (cam.pos.x > x1) {
-		quad(
-			[
-				{ x: x1, y: y0, z: z0 },
-				{ x: x1, y: y1, z: z0 },
-				{ x: x1, y: y1, z: z1 },
-				{ x: x1, y: y0, z: z1 },
-			],
-			"#14151a",
-		);
-	}
-	if (cam.pos.z > z1) {
-		quad(
-			[
-				{ x: x0, y: y0, z: z1 },
-				{ x: x1, y: y0, z: z1 },
-				{ x: x1, y: y1, z: z1 },
-				{ x: x0, y: y1, z: z1 },
-			],
-			"#1b1c21",
-		);
-	} else if (cam.pos.z < z0) {
-		quad(
-			[
-				{ x: x0, y: y0, z: z0 },
-				{ x: x1, y: y0, z: z0 },
-				{ x: x1, y: y1, z: z0 },
-				{ x: x0, y: y1, z: z0 },
-			],
-			"#101115",
-		);
-	}
-	draw(JUMBO_FRONT, face);
 };
 
 // ---- the rafters -------------------------------------------------------------

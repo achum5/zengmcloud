@@ -69,6 +69,7 @@ const MESH_HEAD = MESH_KINDS.includes("head");
 // (see resolution.ts adjust): his points, skinned and set on the screen.
 const MESH_FIXED = 0.6;
 import { arenaSpecFor } from "./arenaSpec.ts";
+import { makeJumbotron } from "./jumbotron.ts";
 import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
 import { courtRosterOf, courtTeamsOf, introKindOf } from "./courtInput.ts";
@@ -639,9 +640,43 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid, bannerLogos],
 	);
+	// The board over center court, its screens painted as they come up -
+	// again once the logos are in.
+	const jumbotron = useMemo(
+		() => {
+			const h = {
+				abbrev: home?.abbrev,
+				name: home?.name,
+				region: home?.region,
+				colors: home?.colors,
+			};
+			const a = {
+				abbrev: away?.abbrev,
+				name: away?.name,
+				region: away?.region,
+				colors: away?.colors,
+			};
+			return makeJumbotron(arenaSpecFor(h).jumbotron.style, {
+				home: h,
+				away: a,
+				logos: crests,
+				ads: adsFor(
+					home?.abbrev ?? home?.name ?? "",
+					home?.colors,
+					ownAds,
+					(url) => adPictures.get(url),
+				),
+			});
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid, crests, adPictures],
+	);
 	// (The finals trophy is on the floor, at center court, on every court -
 	// see LiveCourt.)
-	const painted = useMemo(() => ({ ...paint, rafters }), [paint, rafters]);
+	const painted = useMemo(
+		() => ({ ...paint, rafters, jumbotron }),
+		[paint, rafters, jumbotron],
+	);
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
@@ -1620,6 +1655,8 @@ const Court3D = ({
 				warmups: p.warmups,
 				shotClock: shotText,
 				score: staging ? undefined : p.score,
+				clock: clockText,
+				period: p.period,
 				arena: {
 					court: courtPicture.current,
 					stands: pt.stands,
@@ -1633,6 +1670,7 @@ const Court3D = ({
 					stanchion: pt.stanchion,
 					stanchionAds: pt.stanchionAds,
 					boards: pt.boards,
+					jumbotron: pt.jumbotron,
 					rafters: pt.rafters,
 					tableTop: pt.tableTop,
 					tableFront: pt.tableFront,
