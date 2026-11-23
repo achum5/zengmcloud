@@ -49,11 +49,11 @@ import {
 	chooseFocusGame,
 	createFollowerHold,
 	createLiveResultWait,
+	createRoomLiveCheck,
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
 	mateLiveCall,
-	roomGameStillLive,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
 import { isLiveSimNotificationHoldActive } from "./liveSimNotificationHold.ts";
@@ -690,7 +690,7 @@ setLiveSpoilerProvider(() => {
 	const now = Date.now();
 	const wokeAt = wakeClock.wokeAt();
 	for (const game of roomLiveGames.values()) {
-		if (roomGameStillLive(game, now, wokeAt)) {
+		if (roomGameLive(game, now, wokeAt)) {
 			room.add(game.gid);
 		}
 	}
@@ -746,7 +746,7 @@ setPhasePaintHold(() => {
 	const now = Date.now();
 	const wokeAt = wakeClock.wokeAt();
 	for (const game of roomLiveGames.values()) {
-		if (game.playoffs && roomGameStillLive(game, now, wokeAt)) {
+		if (game.playoffs && roomGameLive(game, now, wokeAt)) {
 			return true;
 		}
 	}
@@ -860,6 +860,19 @@ const noteAnswered = (startedAt: number) => {
 };
 // Games whose broadcast came and went while this device was connected.
 const endedLiveGids = new Set<number>();
+
+// A room game quiet past a watch's wait is over here for good (see
+// createRoomLiveCheck).
+const HEARING_ROOM_MS = 30_000;
+const roomLiveCheck = createRoomLiveCheck(
+	(now) =>
+		currentTransport !== undefined &&
+		now - currentTransport.getLastContactAt() < HEARING_ROOM_MS,
+	(game) => {
+		syncDebugLog("live:room-game-given-up", { gid: game.gid });
+	},
+);
+const roomGameLive = roomLiveCheck.isLive;
 
 // Show/clear the header pill. Its whole job is "a game is being simmed live,
 // click to watch" - so it is only up for a broadcast this device is NOT inside:
@@ -1533,7 +1546,11 @@ const handleLiveGames = async (
 	lastLiveGameMetas = metas;
 	const next = new Map<number, LiveBroadcastMeta>();
 	for (const meta of metas) {
-		if (meta.holderId !== clientId) {
+		// (Not one given up on here that came back: over is over.)
+		if (
+			meta.holderId !== clientId &&
+			!roomLiveCheck.givenUp(meta.startedAt)
+		) {
 			next.set(meta.gid, meta);
 		}
 	}
@@ -1577,7 +1594,7 @@ const pushLiveGames = () => {
 	const wokeAt = wakeClock.wokeAt();
 	const f = followedBroadcast;
 	const games: MpLiveGame[] = [...roomLiveGames.values()]
-		.filter((game) => roomGameStillLive(game, now, wokeAt))
+		.filter((game) => roomGameLive(game, now, wokeAt))
 		.sort((a, b) => b.startedAt - a.startedAt)
 		.map((game) => ({
 			gid: game.gid,
@@ -1588,6 +1605,7 @@ const pushLiveGames = () => {
 			score: game.score,
 			paused: game.paused,
 			gameOver: game.gameOver,
+			stalled: game.expiresAt < now,
 			watching:
 				f !== undefined &&
 				f.startedAt === game.startedAt &&
@@ -1617,7 +1635,7 @@ export const liveGameHoldingDay = (): string | undefined => {
 	const now = Date.now();
 	const wokeAt = wakeClock.wokeAt();
 	for (const game of roomLiveGames.values()) {
-		if (roomGameStillLive(game, now, wokeAt)) {
+		if (roomGameLive(game, now, wokeAt)) {
 			return game.label ? `${game.label} (live)` : "A live game";
 		}
 	}

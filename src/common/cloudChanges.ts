@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 480,
+		n: 481,
 		date: "2026-11-23",
 		text: "Daily Schedule is now a league hub, like ESPN's or NBA.com's. A week strip runs across the top. The night's recap leads with the league's biggest stories, under the Nightly Recap video. Each final is a card in both teams' colors, with the records, the pregame line, the recap and each team's two best players. Beside it are top performers, standings, injuries and the next night's games with records and lines. On a phone, it's in Recap, Scores and Standings tabs.",
+	},
+	{
+		n: 480,
+		date: "2026-11-23",
+		text: "Live games: the League Hub's scores, your team's results and news, the Nightly Recap video and player game logs now also wait for a live game's final. If the screen playing a game goes quiet (phone locked, app closed), the header says Delayed, and after 3 minutes the game is final for everyone and stays final even if they pick it back up.",
 	},
 	{
 		n: 479,
