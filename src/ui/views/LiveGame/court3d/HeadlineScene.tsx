@@ -1,5 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import type { HeadlineSceneSpec } from "../../../../common/headlineScene.ts";
+import {
+	sceneKeyOf,
+	type HeadlineSceneSpec,
+} from "../../../../common/headlineScene.ts";
 
 // A HEADLINE'S OWN LITTLE SCENE, PLAYING (see common/headlineScene.ts): a
 // block as wide as what it is put in, the 3D building in it, no controls.
@@ -13,6 +16,7 @@ import type { HeadlineSceneSpec } from "../../../../common/headlineScene.ts";
 
 const Stage = lazy(() => import("./HeadlineStage.tsx"));
 const Clock = lazy(() => import("./ClockStage.tsx"));
+const Press = lazy(() => import("./PressStage.tsx"));
 
 // Or, on the Draft page between picks, the room with a team on the clock
 // (see ClockStage.tsx) - this pick of the draft.
@@ -59,7 +63,7 @@ export const HeadlineScene = ({
 	const which =
 		scene.type === "draftClock"
 			? `draftClock:${scene.pick}:${scene.again ?? 0}`
-			: `${scene.type}:${scene.pid}`;
+			: sceneKeyOf(scene);
 	const [noneOf, setNoneOf] = useState<string>();
 	const none = noneOf === which;
 
@@ -121,6 +125,17 @@ export const HeadlineScene = ({
 						<Clock
 							key={which}
 							playing={playing && seen && shown}
+							onNone={() => {
+								setNoneOf(which);
+								onNone?.();
+							}}
+						/>
+					) : scene.type === "pressConference" ? (
+						<Press
+							key={which}
+							scene={scene}
+							playing={playing && seen && shown}
+							onEnd={onEnd}
 							onNone={() => {
 								setNoneOf(which);
 								onNone?.();

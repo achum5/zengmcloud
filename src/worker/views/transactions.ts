@@ -10,6 +10,7 @@ import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { planTradeRevert } from "../core/trade/revertTrade.ts";
 import { planTransactionRevert } from "../core/player/revertTransaction.ts";
+import { pressTidsOf } from "../util/pressConference.ts";
 
 // Whether God Mode can take this move back right now - the same test the
 // revert itself runs, so the button and the action can never disagree.
@@ -100,6 +101,11 @@ export default defineView({
 					season: event.season,
 					score: event.score,
 					revertable: godMode && (await isRevertable(event)),
+					// (Its press conferences - this team's, on a team's page.)
+					pressTids: await pressTidsOf(
+						event,
+						typeof inputs.team === "number" ? { tid: inputs.team } : undefined,
+					),
 				});
 			}
 

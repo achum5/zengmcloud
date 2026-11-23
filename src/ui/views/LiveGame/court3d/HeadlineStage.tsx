@@ -35,7 +35,7 @@ const HeadlineStage = ({
 	onEnd,
 	onNone,
 }: {
-	scene: HeadlineSceneSpec;
+	scene: Extract<HeadlineSceneSpec, { type: "draftPick" }>;
 	playing: boolean;
 	onEnd?: () => void;
 	onNone: () => void;

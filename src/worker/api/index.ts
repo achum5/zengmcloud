@@ -21,6 +21,7 @@ import {
 	draftClock as getDraftClock,
 	headlineScene as getHeadlineScene,
 } from "../util/headlineScene.ts";
+import { getPressConference } from "../util/pressConference.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
@@ -8963,6 +8964,7 @@ const api = {
 		hasLiveGameReplay,
 		getDraftClock,
 		getHeadlineScene,
+		getPressConference,
 		saveReplayShots,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,

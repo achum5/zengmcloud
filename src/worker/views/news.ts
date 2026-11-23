@@ -10,6 +10,7 @@ import { validateTeam } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { team } from "../core/index.ts";
 import { eventGivesAwayLiveGame, getLiveGate } from "../util/liveGameGate.ts";
+import { pressTidsOf } from "../util/pressConference.ts";
 
 const processInputs = (params: RouteParams<"news">) => {
 	const season = validateSeason(params.season);
@@ -140,6 +141,9 @@ export const processEvents = async (
 			tids: event.tids,
 			season: event.season,
 			score: event.score,
+			// (The teams that held a press conference for it - see
+			// pressConference.ts.)
+			pressTids: await pressTidsOf(event),
 		});
 	}
 
@@ -190,8 +194,7 @@ export default defineView({
 		) {
 			// (Nothing that gives away a game still being played live - see
 			// liveGameGate.ts.)
-			const gate =
-				season === g.get("season") ? await getLiveGate() : undefined;
+			const gate = season === g.get("season") ? await getLiveGate() : undefined;
 			const eventsAll = (await idb.merged.events.getAll({ season })).filter(
 				(event) => !gate || !eventGivesAwayLiveGame(event, gate),
 			);
