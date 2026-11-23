@@ -264,7 +264,9 @@ export const ScoreBox = memo(
 				<div
 					className={clsx(
 						"border-light",
-						actions.length > 0 ? "border-end-0" : undefined,
+						actions.length > 0 || (small && national)
+							? "border-end-0"
+							: undefined,
 						nationalBig && "position-relative",
 					)}
 				>

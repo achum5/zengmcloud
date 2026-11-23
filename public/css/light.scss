@@ -2578,17 +2578,18 @@ $score-box-national-width: 56px;
 	padding-right: $score-box-national-width + 8px !important;
 }
 
-// Beside a national game's small score box, both teams high.
+// At the end of a national game's small score box, inside it, both teams
+// high.
 .score-box-national-small {
 	align-self: stretch;
-	width: 50px;
-	padding: 4px;
+	width: 42px;
+	padding: 4px 6px 4px 2px;
 	border: 1px solid $gray-300;
 	border-left: 0;
-	font-size: 0.55rem;
+	font-size: 0.5rem;
 
 	img {
-		max-height: 24px;
+		max-height: 20px;
 	}
 }
 
