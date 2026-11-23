@@ -1,3 +1,9 @@
+import { currentDayClock } from "../core/game/classicDays.ts";
+import {
+	applyCalendarDays,
+	refreshCalendarDaysForNewSeason,
+} from "../core/game/refreshCalendarDays.ts";
+import { nbaCalendarLeague } from "../core/game/calendarTicks.ts";
 import { parseCourtDecals } from "../../common/courtDecals.ts";
 import {
 	boxScoreToLiveSim,
@@ -21,6 +27,7 @@ import {
 	draftClock as getDraftClock,
 	headlineScene as getHeadlineScene,
 } from "../util/headlineScene.ts";
+import { getPressConference } from "../util/pressConference.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
@@ -365,7 +372,10 @@ import {
 } from "../core/realisticFrontOffice/isOn.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { smartTradingBlock } from "../core/smartCpu/screens.ts";
-import { smartGuardOffer } from "../core/smartCpu/humanTrades.ts";
+import {
+	ownReadValuer,
+	smartGuardOffer,
+} from "../core/smartCpu/humanTrades.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
@@ -788,6 +798,12 @@ const clearInjuries = async (pids: number[] | "all") => {
 		const lastInjuriesEntry = p.injuries.at(-1);
 		if (lastInjuriesEntry?.type === p.injury.type) {
 			lastInjuriesEntry.games -= p.injury.gamesRemaining;
+			if (lastInjuriesEntry.days !== undefined) {
+				lastInjuriesEntry.days = Math.max(
+					0,
+					lastInjuriesEntry.days - (p.injury.daysRemaining ?? 0),
+				);
+			}
 			if (lastInjuriesEntry.games <= 0) {
 				// Injury was cleared before any days were simmed
 				p.injuries.pop();
@@ -3691,7 +3707,11 @@ const getOffers = async (
 	if (smartCpuOn()) {
 		return smartTradingBlock(g.get("userTid"), userPids, userDpids, lookingFor);
 	}
-	const valueChangeCalculator = await tradeValueCalculator();
+	// The smart CPU on vanilla's rules: only what the team would take by its
+	// own read too (smartCpu/humanTrades.ts).
+	const valueChangeCalculator = smartVanillaOn()
+		? await ownReadValuer(await tradeValueCalculator())
+		: await tradeValueCalculator();
 	// Vanilla+ and the smart CPU on vanilla's rules: CPU teams only - not a
 	// league-mate's team, priced as if CPU.
 	const skip =
@@ -6187,6 +6207,15 @@ const updateGameAttributesGodMode = async (
 
 	await league.setGameAttributes(gameAttributes);
 
+	// The NBA calendar turned on or off in the offseason: injuries and trade
+	// waits read in days of next season, or in games again.
+	if (
+		gameAttributes.nbaCalendar !== undefined &&
+		(g.get("phase") <= PHASE.PRESEASON || g.get("phase") > PHASE.PLAYOFFS)
+	) {
+		await refreshCalendarDaysForNewSeason(nbaCalendarLeague());
+	}
+
 	if (repeatSeason !== currentRepeatSeasonType) {
 		await league.setRepeatSeason(repeatSeason);
 	}
@@ -7581,6 +7610,10 @@ const upsertCustomizedPlayer = async (
 		}
 	}
 
+	// On the NBA calendar, the days the injury and trade wait come to.
+	const dayClock = await currentDayClock();
+	applyCalendarDays(p, dayClock?.clock, dayClock?.tonight ?? "");
+
 	// Contracts can't be edited directly in the UI, so use the current ones, which might have changed since the UI got them (like payments from games played)
 	const prevPlayer =
 		p.pid !== undefined ? await idb.merged.players.get(p.pid) : undefined;
@@ -7768,6 +7801,12 @@ const upsertCustomizedPlayer = async (
 				// Adjust prevInjuriesEntry, since that old injury no longer applies and it healed prematurely
 				if (lastInjuriesEntry) {
 					lastInjuriesEntry.games -= prevPlayer.injury.gamesRemaining;
+					if (lastInjuriesEntry.days !== undefined) {
+						lastInjuriesEntry.days = Math.max(
+							0,
+							lastInjuriesEntry.days - (prevPlayer.injury.daysRemaining ?? 0),
+						);
+					}
 					if (lastInjuriesEntry.games <= 0) {
 						// Injury was edited before any days were simmed
 						p.injuries.pop();
@@ -7778,6 +7817,9 @@ const upsertCustomizedPlayer = async (
 					p.injuries.push({
 						season: g.get("season"),
 						games: p.injury.gamesRemaining,
+						...(p.injury.daysRemaining !== undefined
+							? { days: p.injury.daysRemaining }
+							: {}),
 						type: p.injury.type,
 					});
 				}
@@ -7787,6 +7829,14 @@ const upsertCustomizedPlayer = async (
 					const extraGames =
 						p.injury.gamesRemaining - prevPlayer.injury.gamesRemaining;
 					lastInjuriesEntry.games += extraGames;
+					if (lastInjuriesEntry.days !== undefined) {
+						lastInjuriesEntry.days = Math.max(
+							0,
+							lastInjuriesEntry.days +
+								(p.injury.daysRemaining ?? 0) -
+								(prevPlayer.injury.daysRemaining ?? 0),
+						);
+					}
 					if (lastInjuriesEntry.games <= 0) {
 						// Injury was edited before any days were simmed
 						p.injuries.pop();
@@ -8963,6 +9013,7 @@ const api = {
 		hasLiveGameReplay,
 		getDraftClock,
 		getHeadlineScene,
+		getPressConference,
 		saveReplayShots,
 		liveSimBlocksDaySim,
 		getGoatBreakdown,

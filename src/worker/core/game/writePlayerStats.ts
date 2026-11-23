@@ -1,4 +1,5 @@
 import { PHASE } from "../../../common/constants.ts";
+import { daysOutForNewInjury } from "./classicDays.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import { finances, player } from "../index.ts";
 import { idb } from "../../db/index.ts";
@@ -33,6 +34,8 @@ const doInjury = async (
 	pidsInjuredOneGameOrLess: Set<number>,
 	injuryTexts: string[],
 	conditions: Conditions,
+	// The night it happened, on the NBA calendar.
+	date: string | undefined,
 ) => {
 	const healthLevel = await finances.getLevelLastThree("health", {
 		tid: p2.tid,
@@ -61,10 +64,17 @@ const doInjury = async (
 			gamesRemaining: p.injury.gamesRemaining,
 		};
 	}
+	// On the NBA calendar, the days it costs, which is what the game shows.
+	const daysOut = await daysOutForNewInjury(p2.injury.gamesRemaining, date);
+	if (daysOut !== undefined) {
+		p2.injury.daysRemaining = daysOut;
+	}
+
 	p.injury = {
 		type: p2.injury.type,
 		gamesRemaining: p2.injury.gamesRemaining,
 		newThisGame: true,
+		...(daysOut !== undefined ? { daysRemaining: daysOut } : {}),
 	};
 
 	void recordInjuryForensics({
@@ -83,6 +93,7 @@ const doInjury = async (
 	p2.injuries.push({
 		season: g.get("season"),
 		games: p2.injury.gamesRemaining,
+		...(daysOut !== undefined ? { days: daysOut } : {}),
 		type: p2.injury.type,
 	});
 	let stopPlay = false;
@@ -90,8 +101,12 @@ const doInjury = async (
 		"player",
 		p2.pid,
 	])}">${p2.firstName} ${p2.lastName}</a> - ${p2.injury.type}, ${
-		p2.injury.gamesRemaining - 1
-	} ${p2.injury.gamesRemaining - 1 === 1 ? gameOrWeek : `${gameOrWeek}s`}`;
+		daysOut !== undefined
+			? `${daysOut} ${daysOut === 1 ? "day" : "days"}`
+			: `${p2.injury.gamesRemaining - 1} ${
+					p2.injury.gamesRemaining - 1 === 1 ? gameOrWeek : `${gameOrWeek}s`
+				}`
+	}`;
 
 	if (g.get("userTid") === p2.tid) {
 		if (p2.injury.gamesRemaining > 1) {
@@ -169,8 +184,12 @@ const doInjury = async (
 				reaggravateExtraDays === undefined
 					? "was injured"
 					: `reaggravated ${helpers.pronoun(g.get("gender"), "his")} injury`
-			}! (${p2.injury.type}, out for ${p2.injury.gamesRemaining} ${
-				p2.injury.gamesRemaining === 1 ? gameOrWeek : `${gameOrWeek}s`
+			}! (${p2.injury.type}, out for ${
+				daysOut !== undefined
+					? `${daysOut} ${daysOut === 1 ? "day" : "days"}`
+					: `${p2.injury.gamesRemaining} ${
+							p2.injury.gamesRemaining === 1 ? gameOrWeek : `${gameOrWeek}s`
+						}`
 			})`,
 			showNotification: false,
 			pids: [p2.pid],
@@ -525,6 +544,7 @@ const writePlayerStats = async (
 						pidsInjuredOneGameOrLess,
 						injuryTexts,
 						conditions,
+						result.date,
 					);
 					ratingsLoss = output.ratingsLoss;
 

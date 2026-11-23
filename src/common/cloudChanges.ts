@@ -12,9 +12,29 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 489,
+		n: 493,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players' feet now plant on the floor and stay put instead of sliding. Pulling up takes braking steps out in front, a hard cut plants the outside foot, and defenders slide with their feet apart instead of skating.",
+	},
+	{
+		n: 492,
+		date: "2026-11-23",
+		text: 'NBA calendar: injuries count in days. Players show "Out 19 days" (roster, Injuries page, box scores, news, injury history), going down by one every day, off days included, and they still miss as many games as they would without the calendar. Play Through Injuries and the wait before a newly signed player can be traded are in days too.',
+	},
+	{
+		n: 491,
+		date: "2026-11-23",
+		text: 'Live games: the top of the page now shows the matchup instead of "Live Game Simulation": both teams with their records coming into the game (their seeds in the playoffs), the spread, the over/under from the sportsbook, and the season series or the playoff series. A game on national TV shows the network\'s logo. The Replay label is gone.',
+	},
+	{
+		n: 490,
+		date: "2026-11-23",
+		text: "Smart CPU GMs, trading with people: on top of the trade difficulty, a CPU team now also turns down any trade it would lose by its own read, wherever it sits in the standings. Before, only contenders and rebuilding teams said no, so a team in the middle could still give a good player away for less. What would make this work, the trading block and trade proposals now come back with deals the team would actually take. On an easy trade difficulty nothing changes.",
+	},
+	{
+		n: 489,
+		date: "2026-11-23",
+		text: "Press conferences: when a team trades for or signs a player with 50+ potential, it now holds a 3D press conference for him. He stands in front of the team's backdrop in his own clothes holding up his new jersey (name and number on the back), with the GM and coach (sometimes the owner) beside him and photographers flashing, then they talk at a table or a podium. Each one is different and plays the same every time. Watch it with the play button on the trade page, in the news feed, and in player and team transactions.",
 	},
 	{
 		n: 488,

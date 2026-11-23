@@ -1,6 +1,8 @@
 import { PHASE, WEBSITE_ROOT } from "../../../common/constants.ts";
 import { recordPhaseForensics } from "./phaseForensics.ts";
 import finalize from "./finalize.ts";
+import { refreshCalendarDaysForNewSeason } from "../game/refreshCalendarDays.ts";
+import { nbaCalendarLeague } from "../game/calendarTicks.ts";
 import newPhasePreseason from "./newPhasePreseason.ts";
 import newPhaseRegularSeason from "./newPhaseRegularSeason.ts";
 import newPhaseAfterTradeDeadline from "./newPhaseAfterTradeDeadline.ts";
@@ -98,6 +100,12 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 
 			if (doPhaseChange[phase]) {
 				const result = await doPhaseChange[phase](conditions, extra);
+
+				// On the NBA calendar, injuries and trade waits carried through the
+				// offseason read as days of the coming season.
+				if (phase <= PHASE.PRESEASON || phase > PHASE.PLAYOFFS) {
+					await refreshCalendarDaysForNewSeason(nbaCalendarLeague());
+				}
 
 				await finalize(phase, conditions, result);
 			} else {

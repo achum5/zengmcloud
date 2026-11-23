@@ -28,7 +28,7 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
-import { getInjuryPace } from "../core/game/classicDays.ts";
+import { getInjuryClock } from "../core/game/classicDays.ts";
 import { getCalendarIfDated } from "./calendar.ts";
 import { nationalTags } from "./nationalBroadcast.ts";
 import {
@@ -61,8 +61,8 @@ export const getUpcoming = async ({
 	}
 
 	// Injury healing from today until each game: days, or on a calendar the
-	// team's own games.
-	const gamesInFuture = injuryTicksUntil(schedule, await getInjuryPace());
+	// calendar's days at the classic rate.
+	const gamesInFuture = injuryTicksUntil(schedule, await getInjuryClock());
 
 	let cidFilter:
 		| ((game: { awayTid: number; homeTid: number }) => boolean)

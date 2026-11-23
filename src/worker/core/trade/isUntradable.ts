@@ -34,9 +34,14 @@ const isUntradable = (
 			// Can't trade players who recently were signed or traded
 			return {
 				untradable: true,
-				untradableMsg: `Cannot trade recently-acquired player for ${
-					p.gamesUntilTradable
-				} more ${timeBetweenGames(p.gamesUntilTradable)}`,
+				untradableMsg:
+					p.daysUntilTradable !== undefined
+						? `Cannot trade recently-acquired player for ${
+								p.daysUntilTradable
+							} more ${p.daysUntilTradable === 1 ? "day" : "days"}`
+						: `Cannot trade recently-acquired player for ${
+								p.gamesUntilTradable
+							} more ${timeBetweenGames(p.gamesUntilTradable)}`,
 			};
 		}
 	}

@@ -294,9 +294,9 @@ const PlayerGameLog = ({
 				},
 				helpers.formatRecord(game),
 				{
-					value: <InjuryIcon className="ms-0" injury={game.injury} />,
-					sortValue: game.injury.gamesRemaining,
-					searchValue: game.injury.gamesRemaining,
+					value: <InjuryIcon asOfGame className="ms-0" injury={game.injury} />,
+					sortValue: game.injury.daysRemaining ?? game.injury.gamesRemaining,
+					searchValue: game.injury.daysRemaining ?? game.injury.gamesRemaining,
 					classNames: "text-center",
 				},
 				...(__SPORT === "baseball" && showDecisionColumn

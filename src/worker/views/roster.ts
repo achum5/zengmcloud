@@ -3,6 +3,7 @@ import { confByCid } from "../../common/confs.ts";
 import { PHASE, POSITIONS } from "../../common/constants.ts";
 import { finances, player, season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
+import { playThroughDays } from "../core/game/classicDays.ts";
 import { g, helpers } from "../util/index.ts";
 import type { Player, TeamSeasonAttr } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
@@ -400,6 +401,7 @@ export default defineView({
 					playoffs: playoffsOvr,
 				}),
 				ovrDelayed: delayedOvrs.get(inputs.tid),
+				playThroughDays: await playThroughDays(),
 				roundsWonText: helpers.roundsWonText({
 					playoffRoundsWon: t.seasonAttrs.playoffRoundsWon,
 					numPlayoffRounds: g.get("numGamesPlayoffSeries", inputs.season)

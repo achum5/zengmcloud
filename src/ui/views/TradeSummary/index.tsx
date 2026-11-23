@@ -2,6 +2,7 @@ import useTitleBar from "../../hooks/useTitleBar.tsx";
 import type { View } from "../../../common/types.ts";
 import { helpers } from "../../util/helpers.ts";
 import { PlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
+import { PressButton } from "../../components/PressButton.tsx";
 import { PHASE, PHASE_TEXT } from "../../../common/constants.ts";
 import Charts from "./Charts.tsx";
 import FrontOfficeBreakdown from "./FrontOfficeBreakdown.tsx";
@@ -165,6 +166,13 @@ const TradeSummary = ({
 									{t.region} {t.name}
 								</a>{" "}
 								received:
+								{t.press ? (
+									<PressButton
+										eid={eid}
+										tids={[t.tid]}
+										className="ms-2 align-middle"
+									/>
+								) : null}
 							</h2>
 							{t.assets.length === 0 ? (
 								<div className="mb-2">Nothing!</div>

@@ -17,7 +17,7 @@ import {
 import { primeTimeFor } from "../core/game/primeTime.ts";
 import { takeArenaLooks } from "../core/game/replayLooks.ts";
 import { gamecastInfo } from "./liveGameInfo.ts";
-import { nationalBroadcastOf } from "./nationalBroadcast.ts";
+import { nationalBroadcastOf, nationalTag } from "./nationalBroadcast.ts";
 import type {
 	AllStars,
 	ArenaLooks,
@@ -541,10 +541,16 @@ export default defineView({
 			}
 			// The broadcast's own score bug, if it has one: a national network's
 			// (see nationalBroadcastOf), or the teams' (see scoreBugForGame).
+			const national = await nationalBroadcastOf(boxScore);
 			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
-				(await nationalBroadcastOf(boxScore))?.scoreBug ??
-					(await scoreBugOfGame(boxScore.teams)),
+				national?.scoreBug ?? (await scoreBugOfGame(boxScore.teams)),
 			);
+			// And its logo, for the header.
+			if (national && __SPORT === "basketball") {
+				try {
+					(out.initialBoxScore as any).national = await nationalTag(national);
+				} catch {}
+			}
 
 			// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
 			// "2026 Regular Season" label for the header.

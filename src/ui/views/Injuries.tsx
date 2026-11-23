@@ -10,7 +10,13 @@ import { wrappedCheckmarkOrCross } from "../components/CheckmarkOrCross.tsx";
 import { useLocal } from "../util/local.ts";
 import { injuryDropCell } from "../util/injuryDropCell.ts";
 
-const Injuries = ({ injuries, season, stats, team }: View<"injuries">) => {
+const Injuries = ({
+	inDays,
+	injuries,
+	season,
+	stats,
+	team,
+}: View<"injuries">) => {
 	useTitleBar({
 		title: "Injuries",
 		dropdown: {
@@ -41,20 +47,23 @@ const Injuries = ({ injuries, season, stats, team }: View<"injuries">) => {
 		userTid,
 	} = useLocal(["challengeNoRatings", "godMode", "season", "userTid"]);
 
-	const cols = getCols([
-		"Name",
-		"Pos",
-		"Team",
-		"Age",
-		"Ovr",
-		"Pot",
-		...stats.map((stat) => `stat:${stat}`),
-		"TypeInjury",
-		"Games",
-		"Playing Through?",
-		"Ovr Drop",
-		"Pot Drop",
-	]);
+	const cols = getCols(
+		[
+			"Name",
+			"Pos",
+			"Team",
+			"Age",
+			"Ovr",
+			"Pot",
+			...stats.map((stat) => `stat:${stat}`),
+			"TypeInjury",
+			"Games",
+			"Playing Through?",
+			"Ovr Drop",
+			"Pot Drop",
+		],
+		inDays ? { Games: { title: "Days", desc: "Days Out" } } : {},
+	);
 
 	const numericSeason = typeof season === "number" ? season : currentSeason;
 
@@ -96,7 +105,7 @@ const Injuries = ({ injuries, season, stats, team }: View<"injuries">) => {
 				showRatings ? p.ratings.pot : null,
 				...stats.map((stat) => helpers.roundStat(p.stats[stat], stat)),
 				p.type,
-				p.games,
+				inDays ? (p.days ?? p.games) : p.games,
 				wrappedCheckmarkOrCross({ hideCross: true, success: p.playingThrough }),
 				showRatings ? injuryDropCell(p.ovrDrop) : null,
 				showRatings ? injuryDropCell(p.potDrop) : null,

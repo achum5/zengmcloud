@@ -17,6 +17,8 @@ import {
 	Suspense,
 } from "react";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
+import { useHideTitleBar } from "../../components/TeamBanner.tsx";
+import { MatchupLine } from "./MatchupLine.tsx";
 import KeyPlaysSettings from "./KeyPlaysSettings.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
@@ -3382,6 +3384,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 					boxPeriod,
 				);
 
+	const matchupLine = hasMatchupLine(boxScore.current);
+
 	const layoutToggle =
 		__SPORT === "basketball" && !refreshedLook ? (
 			<div className="text-center mt-4">
@@ -3401,6 +3405,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	return (
 		<div>
 			{confetti.display ? <Confetti colors={confetti.colors} /> : null}
+
+			{matchupLine && boxScore.current.gid >= 0 ? (
+				<MatchupLine boxScore={boxScore.current} />
+			) : null}
 
 			{/* A follower was navigated here by someone else's sim, so there has to
 			    be a way out. Leaving unmounts this page, which fires onLiveSimOver
@@ -3431,7 +3439,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				</div>
 			) : null}
 
-			{isFollower || isBroadcaster ? null : showWarning ? ( // Broadcasting/watching needs no banner - the live game itself shows it.
+			{isFollower || isBroadcaster ? null : showWarning && navigateWarning ? ( // Broadcasting/watching needs no banner - the live game itself shows it. (Nor a replay: nothing to lose.)
 				<p className="text-danger">
 					{navigateWarning}
 					<>
@@ -3510,7 +3518,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 							) : null
 						}
 						header={
-							boxScore.current.replay ? (
+							boxScore.current.replay && !matchupLine ? (
 								<div className="text-center small text-body-secondary mb-1">
 									<span className="badge text-bg-secondary">▶ Replay</span>{" "}
 									{boxScore.current.replayLabel}
@@ -3565,7 +3573,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 						{boxScore.current.gid >= 0 ? (
 							<div className="live-game-sticky mb-3" ref={setLiveGameStickyDiv}>
 								<div className="pt-1 pt-md-0 live-game-score-wrapper">
-									{boxScore.current.replay ? (
+									{boxScore.current.replay && !matchupLine ? (
 										<div className="text-center small text-body-secondary mb-1">
 											<span className="badge text-bg-secondary">▶ Replay</span>{" "}
 											{boxScore.current.replayLabel}
@@ -3789,8 +3797,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 	);
 };
 
+// The matchup in place of the title bar (see MatchupLine).
+const hasMatchupLine = (boxScore: any) =>
+	__SPORT === "basketball" &&
+	Array.isArray(boxScore?.teams) &&
+	boxScore.teams.length === 2;
+
 const LiveGameWrapper = (props: View<"liveGame">) => {
-	useTitleBar({ title: "Live Game Simulation", hideNewWindow: true });
+	const matchup = hasMatchupLine(props.initialBoxScore);
+	const [home, away] = matchup ? props.initialBoxScore.teams : [];
+	useTitleBar({
+		title: matchup ? `${away.abbrev} @ ${home.abbrev}` : "Live Game Simulation",
+		hideNewWindow: true,
+	});
+	useHideTitleBar(matchup);
 
 	// When following a broadcast, remount LiveGame for each NEW live sim (so a
 	// follower still parked on the previous game's final box score gets a fresh

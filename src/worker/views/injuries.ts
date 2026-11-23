@@ -86,6 +86,8 @@ export default defineView({
 							...p,
 							type: p.injury.type,
 							games: p.injury.gamesRemaining,
+							// On the NBA calendar, the days it has left.
+							days: p.injury.daysRemaining,
 							...drops(p, p.injuries.length - 1),
 							playingThrough: false,
 						});
@@ -97,6 +99,7 @@ export default defineView({
 								...p,
 								type: injury.type,
 								games: injury.games,
+								days: injury.days,
 								...drops(p, i),
 								playingThrough: false,
 							});
@@ -128,6 +131,8 @@ export default defineView({
 			return {
 				team: inputs.team,
 				injuries: addFirstNameShort(injuries),
+				// A season on the NBA calendar: lengths in calendar days.
+				inDays: injuries.some((injury: any) => injury.days !== undefined),
 				season: inputs.season,
 				stats,
 			};
