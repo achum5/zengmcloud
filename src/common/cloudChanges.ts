@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 494,
+		date: "2026-11-23",
+		text: "NBA calendar scores bar: it now works like the regular one. It opens on its right end with your next game, runs through that game instead of the days after it, and has the same yesterday and today buttons on the right, which stay put while you scroll back.",
+	},
+	{
 		n: 493,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players' feet now plant on the floor and stay put instead of sliding. Pulling up takes braking steps out in front, a hard cut plants the outside foot, and defenders slide with their feet apart instead of skating.",
