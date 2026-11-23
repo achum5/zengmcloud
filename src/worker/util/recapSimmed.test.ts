@@ -323,22 +323,38 @@ describe("simmed recaps", () => {
 
 	// "Marcus Green pours in 40" in the deck, and never a word of him in the
 	// wrap under it - for whom, against whom, won or lost. Every one of 73
-	// deck performers in a 90-day corpus run.
-	test("a day wrap tells every performer its deck names", () => {
+	// deck performers in a 90-day corpus run. The headline names a man by his
+	// surname; the body has him by his whole name.
+	test("a day wrap tells every performer its headline names", () => {
 		let seen = 0;
+		const names = [
+			...new Set(
+				pairs.flatMap((x) =>
+					x.game.teams.flatMap((t) => t.players.map((p) => p.name)),
+				),
+			),
+		];
+		const bySurname = new Map<string, string[]>();
+		for (const name of names) {
+			const sur = name.split(" ").at(-1)!;
+			bySurname.set(sur, [...(bySurname.get(sur) ?? []), name]);
+		}
 		for (const recap of dayRecaps) {
-			const deck = /^\*([^*].*)\*$/m.exec(recap);
-			if (!deck) {
-				continue;
-			}
-			const body = recap.slice(deck.index + deck[0].length);
-			const names = pairs.flatMap((x) =>
-				x.game.teams.flatMap((t) => t.players.map((p) => p.name)),
-			);
-			for (const name of new Set(names)) {
-				if (deck[1]!.includes(name)) {
+			const [head = "", ...rest] = recap.split("\n\n");
+			const body = rest.join(" ");
+			for (const [sur, full] of bySurname) {
+				const esc = sur.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+				if (
+					new RegExp(String.raw`\b${esc}(?:'s?|,| scores| has| hit)`).test(
+						head,
+					) &&
+					!full.some((n) => head.includes(n))
+				) {
 					seen += 1;
-					assert.include(body, name, recap);
+					assert.ok(
+						full.some((n) => body.includes(n)),
+						`${sur}:\n${recap}`,
+					);
 				}
 			}
 		}

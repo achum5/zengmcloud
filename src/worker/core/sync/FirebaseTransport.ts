@@ -80,7 +80,8 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 // its own payload chunks - so nobody playing their game live waits on a slot.
 const LIVE_GAME_KIND = "liveGame";
 const liveGameDocId = (gid: number) => `liveGame_${gid}`;
-const liveGameDataDocId = (gid: number, i: number) => `liveGameData_${gid}_${i}`;
+const liveGameDataDocId = (gid: number, i: number) =>
+	`liveGameData_${gid}_${i}`;
 
 // Draft ready-up docs, also under control/ so the same holderId rule covers
 // them. draftReady holds everyone's ready entries (each device merges only its
@@ -143,6 +144,8 @@ const parseTids = (value: unknown): [number, number] | undefined =>
 		: undefined;
 
 // One broadcast doc, read: undefined unless it is a live game going on.
+// (Never a doc holding only heartbeat fields - a heartbeat that landed on a
+// game's doc after it was cleared: no start, no payload, nobody's game.)
 const parseLiveBroadcastMeta = (
 	data: Record<string, any> | undefined,
 	legacy: boolean,
@@ -151,7 +154,9 @@ const parseLiveBroadcastMeta = (
 		!data ||
 		!data.active ||
 		typeof data.holderId !== "string" ||
-		typeof data.gid !== "number"
+		typeof data.gid !== "number" ||
+		!(typeof data.startedAt === "number" && data.startedAt > 0) ||
+		!(typeof data.chunkCount === "number" && data.chunkCount > 0)
 	) {
 		return undefined;
 	}
@@ -165,8 +170,8 @@ const parseLiveBroadcastMeta = (
 		paused: !!data.paused,
 		speed: typeof data.speed === "number" ? data.speed : 7,
 		gameOver: !!data.gameOver,
-		startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
-		chunkCount: typeof data.chunkCount === "number" ? data.chunkCount : 0,
+		startedAt: data.startedAt,
+		chunkCount: data.chunkCount,
 		expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
 		view: typeof data.view === "string" ? data.view : undefined,
 		sync: parseLiveSync3D(data.sync),
@@ -1183,7 +1188,13 @@ export class FirebaseTransport implements SyncTransport {
 		}
 		for (let i = 0; i < chunks.length; i++) {
 			await setDoc(
-				doc(this.db, "leagues", this.code, "control", liveGameDataDocId(gid, i)),
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					liveGameDataDocId(gid, i),
+				),
 				{
 					holderId: this.clientId,
 					gid,
@@ -1232,8 +1243,7 @@ export class FirebaseTransport implements SyncTransport {
 						const kept = changed.has(docSnap.id)
 							? undefined
 							: before.get(docSnap.id);
-						const meta =
-							kept ?? parseLiveBroadcastMeta(docSnap.data(), false);
+						const meta = kept ?? parseLiveBroadcastMeta(docSnap.data(), false);
 						if (meta) {
 							perGame.set(docSnap.id, meta);
 						}
@@ -1259,7 +1269,13 @@ export class FirebaseTransport implements SyncTransport {
 		let out = "";
 		for (let i = 0; i < chunkCount; i++) {
 			const snap = await getDoc(
-				doc(this.db, "leagues", this.code, "control", liveGameDataDocId(gid, i)),
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					liveGameDataDocId(gid, i),
+				),
 			);
 			if (!snap.exists()) {
 				return undefined;

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { feedDayLabel } from "../util/feedDayLabel.ts";
 import type { View } from "../../common/types.ts";
 import {
 	Avatar,
@@ -215,7 +216,7 @@ const SocialAccount = ({
 						(mentions as any[]).map((post) => (
 							<SocialThread
 								key={post.id}
-								meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
+								meta={feedDayLabel(post.day, post.date)}
 								pictures={pictures ?? {}}
 								playerNames={playerNames}
 								post={post}
@@ -236,7 +237,7 @@ const SocialAccount = ({
 								key={post.id}
 								account={{ ...post, verified: account.verified }}
 								engagement={post.engagement}
-								meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
+								meta={feedDayLabel(post.day, post.date)}
 								picture={pictures?.[account.id]}
 								playerNames={playerNames}
 								season={season}
@@ -260,7 +261,7 @@ const SocialAccount = ({
 								account={reply.parent}
 								compact
 								engagement={reply.parent.engagement}
-								meta={reply.day === 0 ? "Offseason" : `Day ${reply.day}`}
+								meta={feedDayLabel(reply.day, reply.date)}
 								picture={pictures?.[reply.parent.accountId]}
 								team={
 									reply.parent.tid === undefined

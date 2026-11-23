@@ -12,9 +12,24 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 479,
+		n: 482,
 		date: "2026-11-23",
 		text: "Score bugs: a league with no national networks from a team looks file now gets our own National TV, with its logo on the national games' previews and its own score bug in the 3D game. Team score bugs in the 3D game now show all seven timeouts the way TV does. Loading a team looks file on one team's score bug or court page now tells you to import it in Manage Teams instead.",
+	},
+	{
+		n: 481,
+		date: "2026-11-23",
+		text: "Daily Schedule is now a league hub, like ESPN's or NBA.com's. A week strip runs across the top. The night's recap leads with the league's biggest stories, under the Nightly Recap video. Each final is a card in both teams' colors, with the records, the pregame line, the recap and each team's two best players. Beside it are top performers, standings, injuries and the next night's games with records and lines. On a phone, it's in Recap, Scores and Standings tabs.",
+	},
+	{
+		n: 480,
+		date: "2026-11-23",
+		text: "Live games: the League Hub's scores, your team's results and news, the Nightly Recap video and player game logs now also wait for a live game's final. If the screen playing a game goes quiet (phone locked, app closed), the header says Delayed, and after 3 minutes the game is final for everyone and stays final even if they pick it back up.",
+	},
+	{
+		n: 479,
+		date: "2026-11-23",
+		text: "NBA calendar leagues: the League Feed, profiles and quoted posts now show the date (Tue, Nov 11) instead of a day number, and so do the sim's pause stops: the ready-up says Play Jan 15 and auto play says it stopped after Jan 15.",
 	},
 	{
 		n: 478,

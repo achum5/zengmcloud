@@ -35,6 +35,7 @@
 
 import { PHASE } from "../../../common/constants.ts";
 import { helpers } from "../../../common/helpers.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, local, lock, toUI } from "../../util/index.ts";
@@ -257,7 +258,11 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 		if (stop.kind === "day") {
 			return {
 				nextStep: stopStep(stop),
-				nextLabel: `Play day ${stop.day}`,
+				nextLabel: `Play ${
+					stop.date !== undefined
+						? formatGameDate(stop.date, "monthDay")
+						: `day ${stop.day}`
+				}`,
 				onClockUser: false,
 				waypoints: [],
 				options: [],

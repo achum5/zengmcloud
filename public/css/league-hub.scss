@@ -1,0 +1,964 @@
+// THE LEAGUE HUB on the Daily Schedule (components/LeagueHub/*): the week of
+// nights across the top as NBA.com and ESPN have it, the night's top story
+// and scores in the main column, small cards down the side. One column on a
+// phone, the cards between the story and the scores in order of need.
+
+// The nights across the top.
+.lh-week {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	margin: 0.25rem 0 1rem;
+	padding: 0.4rem 0.75rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+}
+.lh-month-wrap {
+	position: relative;
+	flex: 0 0 auto;
+}
+.lh-month-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	padding: 0.3rem 0.2rem;
+	border: 0;
+	background: none;
+	color: var(--bs-body-color);
+	font-weight: 700;
+	font-size: 1rem;
+	white-space: nowrap;
+}
+.lh-month-static {
+	cursor: default;
+}
+.lh-month-icon {
+	opacity: 0.8;
+}
+.lh-caret {
+	display: inline-block;
+	border-top: 0.3em solid;
+	border-right: 0.3em solid transparent;
+	border-left: 0.3em solid transparent;
+}
+.lh-month-pop {
+	position: absolute;
+	top: calc(100% + 0.35rem);
+	left: 0;
+	z-index: 1040;
+	width: 22rem;
+	max-width: calc(100vw - 2rem);
+	padding: 0.6rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.25);
+	.lc-side {
+		width: 100%;
+	}
+}
+.lh-week-days {
+	display: flex;
+	align-items: stretch;
+	flex: 1 1 auto;
+	max-width: 36rem;
+	margin: 0 auto;
+}
+.lh-week-arrow {
+	flex: 0 0 auto;
+	width: 2rem;
+	border: 0;
+	background: none;
+	color: var(--bs-body-color);
+	font-size: 1.6rem;
+	line-height: 1;
+	padding: 0 0 0.2rem;
+	&:disabled {
+		opacity: 0.25;
+	}
+}
+.lh-week-day {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 0.25rem 0 0.35rem;
+	color: var(--bs-body-color);
+	text-decoration: none;
+	border-bottom: 3px solid transparent;
+	// (Not on a phone: a tap would leave it lit.)
+	@media (hover: hover) {
+		&:hover {
+			color: var(--bs-body-color);
+			background: var(--bs-tertiary-bg);
+		}
+	}
+	&.selected {
+		border-bottom-color: var(--bs-primary);
+		.lh-week-num {
+			font-weight: 800;
+		}
+	}
+	&.today .lh-week-top {
+		color: var(--bs-danger);
+		font-weight: 700;
+	}
+}
+.lh-week-off {
+	opacity: 0.35;
+	&:hover {
+		background: none;
+	}
+}
+.lh-week-pad {
+	visibility: hidden;
+}
+.lh-week-top {
+	font-size: 0.78rem;
+	line-height: 1.2;
+	color: var(--bs-secondary-color);
+}
+.lh-week-num {
+	font-size: 1.35rem;
+	font-weight: 600;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+// On a phone, the hub in tabs (HubTabs): a row pinned under the navbar,
+// the tab shown underlined and bold; the pieces of the other tabs hidden.
+.lh-tabbar {
+	position: sticky;
+	z-index: 1010;
+	display: flex;
+	margin: -0.25rem -0.5rem 1rem;
+	padding: 0 0.5rem;
+	background: var(--bs-body-bg);
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.lh-tabbar-tab {
+	flex: 1 1 0;
+	appearance: none;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	background: none;
+	padding: 0.7rem 0.25rem 0.55rem;
+	color: var(--bs-secondary-color);
+	font-weight: 600;
+	font-size: 0.95rem;
+	&.active {
+		color: var(--bs-body-color);
+		font-weight: 800;
+		border-bottom-color: var(--bs-primary);
+	}
+}
+@include media-breakpoint-up(lg) {
+	.lh-tabbar {
+		display: none;
+	}
+}
+@include media-breakpoint-down(lg) {
+	.lh-tabbed .lh-pane:not(.lh-pane-shown) {
+		display: none;
+	}
+	.lh-tabbed .lh-scores > .lh-section-title {
+		display: none;
+	}
+	.lh-wide-only {
+		display: none;
+	}
+}
+
+// The page: a column of everything on a phone, its order set on each piece.
+.lh-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+}
+.lh-main,
+.lh-rail {
+	display: contents;
+}
+@for $i from 1 through 7 {
+	.lh-o#{$i} {
+		order: $i;
+		min-width: 0;
+	}
+}
+@include media-breakpoint-up(lg) {
+	.lh-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 340px;
+		gap: 1.5rem;
+		align-items: start;
+	}
+	.lh-main,
+	.lh-rail {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		min-width: 0;
+	}
+}
+@include media-breakpoint-up(xxl) {
+	.lh-grid {
+		grid-template-columns: minmax(0, 1fr) 380px;
+	}
+}
+
+.lh-section-title {
+	font-size: 1.15rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	margin: 0 0 0.6rem;
+}
+
+// The night's story.
+.lh-headline {
+	font-size: 1.9rem;
+	font-weight: 800;
+	line-height: 1.15;
+	letter-spacing: -0.01em;
+	margin: 0 0 0.5rem;
+	p {
+		margin: 0;
+	}
+}
+.lh-body {
+	font-size: 1rem;
+	line-height: 1.55;
+	p {
+		margin: 0 0 0.75rem;
+	}
+}
+.lh-more {
+	font-weight: 700;
+	text-decoration: none;
+}
+@include media-breakpoint-down(sm) {
+	.lh-headline {
+		font-size: 1.45rem;
+	}
+	.lh-body {
+		font-size: 0.95rem;
+	}
+}
+
+// The cards down the side.
+.lh-card {
+	padding: 0.75rem 0.9rem 0.6rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+}
+.lh-card-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.4rem;
+}
+.lh-card-title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+.lh-card-more {
+	font-size: 0.8rem;
+	white-space: nowrap;
+}
+.lh-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	> li + li {
+		border-top: 1px solid var(--bs-border-color);
+	}
+}
+.lh-logo {
+	flex: 0 0 auto;
+	vertical-align: -0.2em;
+}
+
+.lh-perf {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.45rem 0;
+}
+.lh-perf-rank {
+	flex: 0 0 1rem;
+	text-align: center;
+	font-weight: 800;
+	color: var(--bs-secondary-color);
+}
+.lh-face {
+	flex: 0 0 auto;
+	width: 2.6rem;
+	height: 3.9rem;
+	> * {
+		width: 100%;
+		height: 100%;
+	}
+}
+.lh-perf-main {
+	min-width: 0;
+	flex: 1 1 auto;
+}
+.lh-perf-name {
+	font-weight: 700;
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-perf-team {
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	a {
+		color: inherit;
+	}
+}
+.lh-perf-stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 0.6rem;
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+	b {
+		font-size: 1.05rem;
+		color: var(--bs-body-color);
+		font-variant-numeric: tabular-nums;
+	}
+}
+
+.lh-headline-item {
+	padding: 0.45rem 0;
+	line-height: 1.3;
+	a {
+		color: var(--bs-body-color);
+		text-decoration: none;
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+}
+
+.lh-tabs {
+	display: flex;
+	gap: 0.25rem;
+	margin-bottom: 0.4rem;
+}
+.lh-tab {
+	flex: 1 1 0;
+	padding: 0.2rem 0.4rem;
+	font-size: 0.8rem;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
+	background: none;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	&.active {
+		color: var(--bs-body-color);
+		border-bottom-color: var(--bs-primary);
+	}
+}
+.lh-standings {
+	width: 100%;
+	font-size: 0.85rem;
+	font-variant-numeric: tabular-nums;
+	th {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: var(--bs-secondary-color);
+		text-align: right;
+		padding: 0 0.3rem 0.2rem;
+	}
+	td {
+		padding: 0.2rem 0.3rem;
+		text-align: right;
+		border-top: 1px solid var(--bs-border-color);
+	}
+	.lh-rank {
+		width: 1.6rem;
+		text-align: right;
+		color: var(--bs-secondary-color);
+	}
+	.lh-team {
+		text-align: left;
+		white-space: nowrap;
+		max-width: 9rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		.lh-logo {
+			margin-right: 0.35rem;
+		}
+	}
+	.lh-user td {
+		background: rgba(var(--bs-info-rgb), 0.14);
+	}
+	.lh-cut td {
+		border-bottom: 2px solid var(--bs-secondary-color);
+	}
+}
+.lh-result {
+	display: inline-block;
+	min-width: 1.2rem;
+	padding: 0 0.2rem;
+	border-radius: 0.2rem;
+	font-size: 0.7rem;
+	font-weight: 800;
+	text-align: center;
+	color: #fff;
+	&.won {
+		background: var(--bs-success);
+	}
+	&.lost {
+		background: var(--bs-danger);
+	}
+}
+
+.lh-injury {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	padding: 0.4rem 0;
+	line-height: 1.25;
+	.lh-logo {
+		margin-top: 0.15rem;
+	}
+}
+.lh-injury-what {
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+}
+
+// Away @ home, each with its record, and the line at the end.
+.lh-coming {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 4.6rem;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.35rem 0;
+	font-weight: 600;
+}
+.lh-coming-team {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	min-width: 0;
+	white-space: nowrap;
+}
+.lh-coming-record,
+.lh-coming-line {
+	font-size: 0.8rem;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.lh-coming-record {
+	font-weight: 500;
+	color: var(--bs-secondary-color);
+}
+.lh-coming-line {
+	text-align: right;
+	font-weight: 700;
+}
+.lh-coming-more {
+	font-size: 0.8rem;
+	padding-top: 0.25rem;
+}
+
+// The scores under the story: a column's width each, two across where
+// there's room.
+// The night's games side by side where the column has room for two.
+// The night's games side by side wherever two fit; a box too narrow for its
+// players' lines drops them, as on a phone (they're in Top performers).
+.lh-games {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+	gap: 1rem 1.5rem;
+}
+.lh-game {
+	min-width: 0;
+}
+.lh-box {
+	container-type: inline-size;
+}
+@container (max-width: 520px) {
+	.lh-box {
+		.score-box-player {
+			display: none !important;
+		}
+		.score-box-left-wrapper {
+			width: auto !important;
+			flex: 1 1 0;
+			min-width: 0;
+		}
+	}
+}
+
+@include media-breakpoint-down(md) {
+	.lh-week {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.1rem;
+		padding: 0.35rem 0.25rem;
+	}
+	.lh-month-wrap {
+		padding-left: 0.4rem;
+	}
+	.lh-week-days {
+		max-width: none;
+		width: 100%;
+	}
+	.lh-week-arrow {
+		width: 1.6rem;
+	}
+	.lh-week-num {
+		font-size: 1.2rem;
+	}
+}
+
+// A PLAYED GAME, as NBA.com's scoreboard shows one (LeagueHub/GameCard):
+// the card, and each team's best line beside it where there's room.
+.lh-finals {
+	grid-template-columns: minmax(0, 1fr);
+	max-width: 1100px;
+	// The whole game in one frame: the card, the lines, the recap.
+	> .lh-game {
+		padding: 0.6rem 0.6rem 0.5rem;
+		background: var(--bs-body-bg);
+		border: 1px solid var(--bs-border-color);
+		border-radius: 0.75rem;
+	}
+	// (An open recap lies over the games below it.)
+	> .lh-game:has(.game-note.open) {
+		position: relative;
+		z-index: 6;
+	}
+	.game-note-header {
+		border: 0;
+		padding: 0.4rem 0.15rem 0;
+		// (Markdown's paragraph margin would leave a blank strip under it.)
+		.markdown > :last-child {
+			margin-bottom: 0 !important;
+		}
+	}
+}
+.lh-gc {
+	container: lh-gc / inline-size;
+}
+.lh-gc-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1rem;
+	align-items: center;
+}
+// The card with its recap line under it, the card as tall as the lines
+// beside it.
+.lh-gc-main {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	> .lh-gc-card {
+		flex: 1 0 auto;
+	}
+}
+.lh-gc-card {
+	container-type: inline-size;
+	display: grid;
+	grid-template-columns:
+		clamp(2.4rem, 8cqw, 3.8rem) minmax(0, 1fr) auto minmax(0, 1fr)
+		clamp(2.4rem, 8cqw, 3.8rem);
+	min-height: 6.6rem;
+	position: relative;
+	overflow: hidden;
+	text-decoration: none;
+	// Each half its team's color, meeting on a slant in the middle.
+	background: linear-gradient(110deg, var(--gc-a-bg) 50%, var(--gc-h-bg) 50%);
+	border-radius: 0.6rem;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
+	// A soft light from the top, and a fine line where the colors meet.
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	&::before {
+		background: linear-gradient(
+			180deg,
+			rgb(255 255 255 / 0.1),
+			rgb(0 0 0 / 0.16)
+		);
+	}
+	&::after {
+		background: linear-gradient(
+			110deg,
+			transparent calc(50% - 1px),
+			rgb(255 255 255 / 0.45) calc(50% - 1px) calc(50% + 1px),
+			transparent calc(50% + 1px)
+		);
+	}
+	> * {
+		position: relative;
+		z-index: 1;
+	}
+	&:hover {
+		filter: brightness(1.06);
+		text-decoration: none;
+	}
+}
+.lh-gc-side {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 0.3rem;
+	// Stripes in its second color across the top and the foot.
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 15%;
+		background: repeating-linear-gradient(
+			110deg,
+			var(--gc-accent) 0 0.45rem,
+			transparent 0.45rem 0.9rem
+		);
+	}
+	&::before {
+		top: 0;
+	}
+	&::after {
+		bottom: 0;
+	}
+	img {
+		position: relative;
+		z-index: 1;
+		width: 100%;
+		max-width: 2.9rem;
+		height: auto;
+		filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+	}
+}
+.lh-gc-team {
+	min-width: 0;
+	color: var(--gc-a-fg);
+	padding: 0.55rem 0.4rem 0.5rem 0.7rem;
+	align-self: center;
+}
+.lh-gc-team-home {
+	color: var(--gc-h-fg);
+	text-align: right;
+	padding: 0.55rem 0.7rem 0.5rem 0.4rem;
+}
+.lh-gc-region {
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	opacity: 0.8;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+// The score, and the record beside it on the inner side.
+.lh-gc-scoreline {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+}
+.lh-gc-team-home .lh-gc-scoreline {
+	flex-direction: row-reverse;
+}
+.lh-gc-record {
+	flex: none;
+	font-size: 0.78rem;
+	font-weight: 700;
+	opacity: 0.8;
+	font-variant-numeric: tabular-nums;
+}
+.lh-gc-name {
+	font-size: clamp(1rem, 5.2cqw, 1.55rem);
+	font-weight: 800;
+	line-height: 1.05;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+// (A long name smaller, to fit whole.)
+.lh-gc-name-long {
+	font-size: clamp(0.9rem, 4.3cqw, 1.3rem);
+}
+.lh-gc-name-xlong {
+	font-size: clamp(0.8rem, 3.6cqw, 1.1rem);
+}
+.lh-gc-score {
+	font-size: clamp(1.7rem, 9cqw, 2.8rem);
+	font-weight: 800;
+	line-height: 1.05;
+	font-variant-numeric: tabular-nums;
+}
+.lh-gc-team.lost {
+	.lh-gc-name,
+	.lh-gc-score {
+		opacity: 0.62;
+	}
+}
+// How it ended, on a dark tab over the seam.
+.lh-gc-mid {
+	align-self: center;
+	min-width: 4.2rem;
+	padding: 0.3rem 0.55rem;
+	text-align: center;
+	color: #fff;
+	background: rgb(16 18 22 / 0.72);
+	border-radius: 0.45rem;
+	box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+}
+.lh-gc-final {
+	font-size: 0.85rem;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+}
+// The pregame line, under a hairline.
+.lh-gc-line {
+	margin-top: 0.2rem;
+	padding-top: 0.2rem;
+	border-top: 1px solid rgb(255 255 255 / 0.22);
+	font-size: 0.68rem;
+	font-weight: 700;
+	color: rgb(255 255 255 / 0.85);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.lh-gc-series {
+	margin-top: 0.15rem;
+	font-size: 0.7rem;
+	line-height: 1.25;
+	color: rgb(255 255 255 / 0.82);
+	white-space: nowrap;
+}
+.lh-gc-leaders {
+	display: none;
+}
+// Each team's logo once, beside its two players.
+.lh-gc-team-leaders {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	& + & {
+		padding-top: 0.3rem;
+		border-top: 1px solid var(--bs-border-color-translucent);
+	}
+}
+.lh-gc-team-players {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	min-width: 0;
+}
+.lh-gc-leader {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+}
+.lh-gc-leader-logo {
+	flex: none;
+	width: 18px;
+	display: flex;
+}
+// The whole face, not cropped.
+.lh-gc-face {
+	flex: none;
+	width: 1.5rem;
+	height: 2.25rem;
+	> * {
+		width: 100%;
+		height: 100%;
+	}
+}
+.lh-gc-leader-name {
+	flex: none;
+	width: 6.5rem;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	line-height: 1.15;
+	color: var(--bs-emphasis-color);
+	text-decoration: none;
+	&:hover .lh-gc-last {
+		text-decoration: underline;
+	}
+}
+.lh-gc-first {
+	font-size: 0.6rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+.lh-gc-first,
+.lh-gc-last {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-gc-last {
+	font-size: 0.88rem;
+	font-weight: 800;
+}
+.lh-gc-stats {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 2.75rem;
+	gap: 0.2rem;
+}
+.lh-gc-stat {
+	text-align: center;
+	line-height: 1.1;
+	b {
+		display: block;
+		font-size: 0.92rem;
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	// (Made of tried: "7/14".)
+	&.frac b {
+		font-size: 0.8rem;
+		line-height: 1.2;
+	}
+	span {
+		font-size: 0.55rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		color: var(--bs-secondary-color);
+	}
+}
+@container lh-gc (min-width: 620px) {
+	.lh-gc-row {
+		// (The lines as wide as they need, the card the rest.)
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: stretch;
+	}
+	.lh-gc-leaders {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 0.3rem;
+	}
+}
+@container lh-gc (max-width: 900px) {
+	.lh-gc-stat:nth-child(5) {
+		display: none;
+	}
+}
+@container lh-gc (max-width: 760px) {
+	.lh-gc-stat:nth-child(4) {
+		display: none;
+	}
+	.lh-gc-stats {
+		grid-auto-columns: 2.3rem;
+	}
+	.lh-gc-leader-name {
+		width: 5.6rem;
+	}
+}
+
+// ON A PHONE, the same card made small: the colored ends with their
+// stripes and logos, each side's city, name, score and record, how it ended
+// between them - a little over half the height.
+@container lh-gc (max-width: 559px) {
+	.lh-gc-card {
+		grid-template-columns: 2.7rem minmax(0, 1fr) auto minmax(0, 1fr) 2.7rem;
+		min-height: 0;
+		border-radius: 0.5rem;
+	}
+	.lh-gc-side {
+		&::before,
+		&::after {
+			height: 16%;
+			background: repeating-linear-gradient(
+				115deg,
+				var(--gc-accent) 0 0.3rem,
+				transparent 0.3rem 0.6rem
+			);
+		}
+		img {
+			max-width: 1.75rem;
+		}
+	}
+	.lh-gc-team {
+		padding: 0.3rem 0.2rem 0.3rem 0.5rem;
+	}
+	.lh-gc-team-home {
+		padding: 0.3rem 0.5rem 0.3rem 0.2rem;
+	}
+	.lh-gc-region {
+		font-size: 0.56rem;
+		line-height: 1.2;
+	}
+	.lh-gc-name {
+		font-size: 0.98rem;
+		line-height: 1.15;
+	}
+	.lh-gc-name-long {
+		font-size: 0.88rem;
+	}
+	.lh-gc-name-xlong {
+		font-size: 0.76rem;
+	}
+	.lh-gc-score {
+		font-size: 1.6rem;
+		line-height: 1.05;
+	}
+	.lh-gc-scoreline {
+		gap: 0.3rem;
+	}
+	.lh-gc-record {
+		font-size: 0.66rem;
+	}
+	.lh-gc-mid {
+		min-width: 3.1rem;
+		padding: 0.2rem 0.35rem;
+	}
+	.lh-gc-final {
+		font-size: 0.72rem;
+	}
+	.lh-gc-series {
+		font-size: 0.6rem;
+	}
+	.lh-gc-line {
+		margin-top: 0.1rem;
+		padding-top: 0.1rem;
+		font-size: 0.58rem;
+	}
+}
+// A phone's frame, tight around it.
+@include media-breakpoint-down(sm) {
+	.lh-finals {
+		gap: 0.6rem;
+		> .lh-game {
+			padding: 0.35rem 0.35rem 0.3rem;
+			border-radius: 0.6rem;
+		}
+		.game-note-header {
+			padding: 0.3rem 0.15rem 0;
+			font-size: 0.75rem;
+		}
+	}
+}

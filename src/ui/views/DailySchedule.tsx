@@ -22,10 +22,25 @@ import {
 	getDailyScheduleScroll,
 	setDailyScheduleScroll,
 } from "../util/dailyScheduleUiState.ts";
-import { useEffect, useState } from "react";
-import { isTradeDeadline } from "../../common/specialGames.ts";
+import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
+import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
-import { MonthCalendar } from "../components/MonthCalendar.tsx";
+import { WeekStrip } from "../components/LeagueHub/WeekStrip.tsx";
+import { LeadStory } from "../components/LeagueHub/LeadStory.tsx";
+import { GameCard } from "../components/LeagueHub/GameCard.tsx";
+import {
+	HubTabs,
+	useHubTab,
+	type HubTabId,
+} from "../components/LeagueHub/HubTabs.tsx";
+import {
+	ComingUp,
+	Headlines,
+	HubStandings,
+	InjuryReport,
+	TopPerformers,
+} from "../components/LeagueHub/HubRail.tsx";
 import {
 	LiveGameStatus,
 	watchLiveAction,
@@ -42,6 +57,9 @@ const DailySchedule = ({
 	dayNote,
 	days,
 	elam,
+	hub,
+	nights,
+	todayDay,
 	elamASG,
 	isToday,
 	ownGameSimCutoffSeconds,
@@ -258,26 +276,20 @@ const DailySchedule = ({
 			<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
 		) : null;
 
-	const dayRecap = dayNote ? (
-		<DayRecap
-			season={season}
-			day={day}
-			note={dayNote}
-			links={completed.flatMap((game) =>
-				buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
-			)}
-			sentenceGames={buildSentenceGamesForDay(
-				completed,
-				(tid) => teamInfoCache[tid],
-			)}
-		/>
-	) : null;
+	const recapLinks = completed.flatMap((game) =>
+		buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
+	);
+	const sentenceGames = buildSentenceGamesForDay(
+		completed,
+		(tid) => teamInfoCache[tid],
+	);
 
 	// (Nothing for a night with no recap plays.)
 	const recapVideo =
 		completed.length > 0 ? (
 			<div style={{ maxWidth: 960 }}>
-				<NightlyRecap season={season} day={day} />
+				{/* (Fetched again when a game played live goes final.) */}
+				<NightlyRecap key={completed.length} season={season} day={day} />
 			</div>
 		) : null;
 
@@ -288,38 +300,14 @@ const DailySchedule = ({
 		);
 	}
 
-	return (
+	// THE LEAGUE HUB (basketball, where the night's recaps are written): the
+	// nights across the top, the night's top story leading, its scores under
+	// it, and down the side its top performers, headlines, the standings, who
+	// got hurt and what's next. One column on a phone, in that order of need.
+	const hubOn = __SPORT === "basketball" && days.length > 0;
+
+	const scores = (
 		<>
-			<div className="d-flex flex-wrap align-items-center gap-3">
-				<MoreLinks type="schedule" page="daily_schedule" />
-			</div>
-
-			{calendar ? (
-				<div className="d-md-flex align-items-start gap-4">
-					<MonthCalendar
-						className="lc-side mb-3"
-						compact
-						games={calendar.games}
-						keyDates={calendar.keyDates}
-						season={season}
-						selected={date}
-						tid="all"
-						today={calendar.today}
-					/>
-					<div className="flex-grow-1" style={{ minWidth: 0 }}>
-						{dateHeading}
-						{recapVideo}
-						{dayRecap}
-					</div>
-				</div>
-			) : (
-				<>
-					{dateHeading}
-					{recapVideo}
-					{dayRecap}
-				</>
-			)}
-
 			{noGamesMessage ? (
 				noGamesMessage
 			) : (
@@ -336,7 +324,10 @@ const DailySchedule = ({
 					{upcoming.length > 0 ? (
 						<>
 							{upcomingAndCompleted ? <h2>Upcoming Games</h2> : null}
-							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
+							<div
+								className={hubOn ? "lh-games" : "d-flex flex-wrap"}
+								style={hubOn ? undefined : { gap: "1rem 2rem" }}
+							>
 								{upcoming.map((game) => {
 									const live = isLive(game);
 									const liveGame = liveGameByGid.get(game.gid);
@@ -351,59 +342,59 @@ const DailySchedule = ({
 												),
 											]
 										: isToday && !tradeDeadline
-												? (() => {
-														// Your own game stays available even when someone
-														// else is in charge of simming: one gid is a
-														// disjoint slice and the sim-day fence refuses any
-														// overlap. The worker owns the full rule (cutoff
-														// window, a sim already running) and names the
-														// reason when it refuses, so this only has to stop
-														// greying out the button.
-														const isOwnGame =
-															game.teams[0].tid === userTid ||
-															game.teams[1].tid === userTid;
-														const decision = ownGameSim(isOwnGame);
-														const blocked =
-															gameSimInProgress ||
-															(simAuthorityLocked && !decision.allow);
-														return [
-															{
-																disabled: blocked,
-																highlight: isOwnGame,
-																title:
-																	blocked && !decision.allow
-																		? decision.reason
-																		: undefined,
-																text: (
-																	<>
-																		Watch
-																		<br />
-																		game
-																	</>
-																),
-																onClick: () =>
-																	toWorker("actions", "liveGame", game.gid),
-															},
-															{
-																disabled: blocked,
-																highlight: isOwnGame,
-																title:
-																	blocked && !decision.allow
-																		? decision.reason
-																		: undefined,
-																text: (
-																	<>
-																		Sim
-																		<br />
-																		game
-																	</>
-																),
-																onClick: () =>
-																	toWorker("actions", "simGame", game.gid),
-															},
-														];
-													})()
-												: undefined;
+											? (() => {
+													// Your own game stays available even when someone
+													// else is in charge of simming: one gid is a
+													// disjoint slice and the sim-day fence refuses any
+													// overlap. The worker owns the full rule (cutoff
+													// window, a sim already running) and names the
+													// reason when it refuses, so this only has to stop
+													// greying out the button.
+													const isOwnGame =
+														game.teams[0].tid === userTid ||
+														game.teams[1].tid === userTid;
+													const decision = ownGameSim(isOwnGame);
+													const blocked =
+														gameSimInProgress ||
+														(simAuthorityLocked && !decision.allow);
+													return [
+														{
+															disabled: blocked,
+															highlight: isOwnGame,
+															title:
+																blocked && !decision.allow
+																	? decision.reason
+																	: undefined,
+															text: (
+																<>
+																	Watch
+																	<br />
+																	game
+																</>
+															),
+															onClick: () =>
+																toWorker("actions", "liveGame", game.gid),
+														},
+														{
+															disabled: blocked,
+															highlight: isOwnGame,
+															title:
+																blocked && !decision.allow
+																	? decision.reason
+																	: undefined,
+															text: (
+																<>
+																	Sim
+																	<br />
+																	game
+																</>
+															),
+															onClick: () =>
+																toWorker("actions", "simGame", game.gid),
+														},
+													];
+												})()
+											: undefined;
 
 									const allowTie = allowForceTie({
 										homeTid: game.teams[0].tid,
@@ -429,13 +420,19 @@ const DailySchedule = ({
 
 									return (
 										<div
-											className="flex-grow-1"
+											className={hubOn ? "lh-game" : "flex-grow-1"}
 											key={game.gid}
-											style={{
-												maxWidth: 510 + (nationalRoom ? NATIONAL_ROOM : 0),
-											}}
+											style={
+												hubOn
+													? undefined
+													: {
+															maxWidth:
+																510 + (nationalRoom ? NATIONAL_ROOM : 0),
+														}
+											}
 										>
 											<ScoreBox
+												className={hubOn ? "lh-box" : undefined}
 												game={{
 													// Leave out forceTie, since ScoreBox wants the value for finished games
 													finals: game.finals,
@@ -468,22 +465,50 @@ const DailySchedule = ({
 								<h2 className="mt-3">Completed Games</h2>
 							) : null}
 
-							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
+							<div
+								className={hubOn ? "lh-games lh-finals" : "d-flex flex-wrap"}
+								style={hubOn ? undefined : { gap: "1rem 2rem" }}
+							>
 								{completed.map((game) => {
+									const liveHere =
+										game.gid === liveBroadcastGid ||
+										liveGameByGid.has(game.gid);
+									// In the hub, a played game as NBA.com's scoreboard
+									// shows one.
+									const card =
+										hubOn &&
+										!liveHere &&
+										!isAllStarGame(game.teams[0].tid, game.teams[1].tid);
+									const note = game.note ? (
+										<GameNote
+											gid={game.gid}
+											note={game.note}
+											links={buildRecapLinksForGame(
+												game,
+												(tid) => teamInfoCache[tid],
+											)}
+										/>
+									) : null;
 									return (
 										<div
-											className="flex-grow-1"
+											className={hubOn ? "lh-game" : "flex-grow-1"}
 											key={game.gid}
-											style={{ maxWidth: 510 }}
+											style={hubOn ? undefined : { maxWidth: 510 }}
 										>
 											<div
 												className={
 													game.note ? "daily-game-with-note" : "daily-game"
 												}
 											>
-												<ScoreBox game={game} />
-												{game.gid === liveBroadcastGid ||
-												liveGameByGid.has(game.gid) ? (
+												{card ? (
+													<GameCard game={game}>{note}</GameCard>
+												) : (
+													<ScoreBox
+														className={hubOn ? "lh-box" : undefined}
+														game={game}
+													/>
+												)}
+												{liveHere ? (
 													<div className="mt-1 d-flex align-items-center gap-2">
 														<LiveGameStatus gid={game.gid} />
 														<button
@@ -497,16 +522,7 @@ const DailySchedule = ({
 														</button>
 													</div>
 												) : null}
-												{game.note ? (
-													<GameNote
-														gid={game.gid}
-														note={game.note}
-														links={buildRecapLinksForGame(
-															game,
-															(tid) => teamInfoCache[tid],
-														)}
-													/>
-												) : null}
+												{card ? null : note}
 											</div>
 										</div>
 									);
@@ -514,6 +530,162 @@ const DailySchedule = ({
 							</div>
 						</>
 					) : null}
+				</>
+			)}
+		</>
+	);
+
+	// On a phone, the hub in tabs: the night's recap once it's played, its
+	// scores, the standings.
+	const hubTabs: HubTabId[] = [];
+	if (
+		completed.length > 0 &&
+		(dayNote !== undefined ||
+			hub.performers.length > 0 ||
+			hub.injuries.length > 0)
+	) {
+		hubTabs.push("recap");
+	}
+	hubTabs.push("scores");
+	if (hub.standings) {
+		hubTabs.push("standings");
+	}
+	const [hubTab, setHubTab] = useHubTab(hubTabs);
+	const gridRef = useRef<HTMLDivElement>(null);
+	const pane = (id: HubTabId, order: number, extra?: string) =>
+		clsx(`lh-o${order} lh-pane`, extra, {
+			"lh-pane-shown": id === hubTab,
+		});
+
+	const playedTids = new Set<number>();
+	const wonTids = new Set<number>();
+	for (const game of completed) {
+		for (const t of game.teams) {
+			playedTids.add(t.tid);
+		}
+		const [t0, t1] = game.teams;
+		if (t0.pts > t1.pts) {
+			wonTids.add(t0.tid);
+		} else if (t1.pts > t0.pts) {
+			wonTids.add(t1.tid);
+		}
+	}
+
+	return (
+		<>
+			<div
+				className={clsx(
+					"flex-wrap align-items-center gap-3",
+					// (Not over the hub on a phone: the room goes to the night.)
+					hubOn ? "d-none d-sm-flex" : "d-flex",
+				)}
+			>
+				<MoreLinks type="schedule" page="daily_schedule" />
+			</div>
+
+			{hubOn ? (
+				<>
+					<WeekStrip
+						calendar={calendar}
+						date={date}
+						day={day}
+						nights={nights}
+						season={season}
+						todayDay={todayDay}
+					/>
+					<HubTabs
+						contentRef={gridRef}
+						onPick={setHubTab}
+						tab={hubTab}
+						tabs={hubTabs}
+					/>
+					<div
+						className={clsx("lh-grid", { "lh-tabbed": hubTabs.length > 1 })}
+						ref={gridRef}
+					>
+						<div className="lh-main">
+							{completed.length > 0 ? (
+								<div className={pane("recap", 1)}>
+									{/* The night's recap video on top, then its story. */}
+									{/* (Fetched again when a game played live goes final.) */}
+									<NightlyRecap
+										key={completed.length}
+										season={season}
+										day={day}
+									/>
+									{dayNote ? (
+										<LeadStory
+											day={day}
+											links={recapLinks}
+											note={dayNote}
+											season={season}
+											sentenceGames={sentenceGames}
+										/>
+									) : null}
+								</div>
+							) : null}
+							<div className={pane("scores", 3, "lh-scores")}>
+								<h2 className="lh-section-title">
+									{completed.length > 0 && upcoming.length === 0
+										? "Scores"
+										: "Games"}
+								</h2>
+								{scores}
+							</div>
+						</div>
+						<div className="lh-rail">
+							{hub.performers.length > 0 ? (
+								<div className={pane("recap", 2)}>
+									<TopPerformers performers={hub.performers} season={season} />
+								</div>
+							) : null}
+							{completed.length > 0 ? (
+								<div className={pane("recap", 4, "lh-wide-only")}>
+									<Headlines games={completed} season={season} />
+								</div>
+							) : null}
+							{hub.standings ? (
+								<div className={pane("standings", 5)}>
+									<HubStandings
+										playedTids={playedTids}
+										season={season}
+										standings={hub.standings}
+										userTid={userTid}
+										wonTids={wonTids}
+									/>
+								</div>
+							) : null}
+							{hub.injuries.length > 0 ? (
+								<div className={pane("recap", 6)}>
+									<InjuryReport injuries={hub.injuries} season={season} />
+								</div>
+							) : null}
+							{hub.next ? (
+								<div className={pane("scores", 7)}>
+									<ComingUp
+										next={hub.next}
+										season={season}
+										todayDay={todayDay}
+									/>
+								</div>
+							) : null}
+						</div>
+					</div>
+				</>
+			) : (
+				<>
+					{dateHeading}
+					{recapVideo}
+					{dayNote ? (
+						<DayRecap
+							season={season}
+							day={day}
+							note={dayNote}
+							links={recapLinks}
+							sentenceGames={sentenceGames}
+						/>
+					) : null}
+					{scores}
 				</>
 			)}
 

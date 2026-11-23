@@ -28,6 +28,9 @@ const clockText = (game: MpLiveGame | undefined) => {
 	if (!game) {
 		return "";
 	}
+	if (game.stalled) {
+		return "Delayed";
+	}
 	if (game.paused) {
 		return "Paused";
 	}
@@ -75,7 +78,8 @@ export const watchLiveAction = (gid: number, byName?: string) => ({
 });
 
 // Where a game being played live stands, the way a scoreboard puts it: the
-// period over the clock, Half or End Q3 on a break, Final at the buzzer.
+// period over the clock, Half or End Q3 on a break, Final at the buzzer,
+// Delayed while the screen playing it has gone quiet.
 const statusLines = (game: MpLiveGame): string[] => {
 	if (game.gameOver) {
 		return ["Final"];
@@ -87,6 +91,9 @@ const statusLines = (game: MpLiveGame): string[] => {
 	const clock = score.clock.trim();
 	if (/^[.0:]+$/.test(clock)) {
 		return [score.q === "Q2" ? "Half" : `End ${score.q}`];
+	}
+	if (game.stalled) {
+		return [`${score.q} ${clock}`.trim(), "Delayed"];
 	}
 	if (game.paused) {
 		return [`${score.q} ${clock}`.trim(), "Paused"];
@@ -118,7 +125,7 @@ export const LiveScoresStrip = ({ className }: { className?: string }) => {
 				const status = statusLines(game);
 				const title = `${game.byName} is simming ${
 					game.label || "this game"
-				} live${game.paused ? " (paused)" : ""}`;
+				} live${game.stalled ? " (not heard from)" : game.paused ? " (paused)" : ""}`;
 				return (
 					<button
 						key={game.gid}
@@ -166,7 +173,7 @@ export const LiveScoresStrip = ({ className }: { className?: string }) => {
 						<span
 							className={clsx(
 								"live-score-status",
-								game.paused && "live-score-status-paused",
+								(game.paused || game.stalled) && "live-score-status-paused",
 								game.gameOver && "live-score-status-final",
 							)}
 						>

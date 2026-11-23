@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
 	addDays,
 	formatGameDate,
@@ -14,10 +14,11 @@ import type {
 } from "../../worker/views/calendar.ts";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
+import { bannerColors, useAllTeamColors } from "./TeamBanner.tsx";
 
 // A MONTH OF THE NBA CALENDAR, Sunday to Saturday. For a team, its games -
 // home nights shaded, results, back-to-backs, playoff games; for the league,
-// how many games each night, the user's team's shaded. Full size on the
+// how many games each night, the user's team's road nights in its color. Full size on the
 // Calendar and Schedule pages, compact on Daily Schedule and the dashboard.
 
 type TeamInfo = LocalStateUI["teamInfoCache"][number];
@@ -282,7 +283,6 @@ const LeagueNight = ({
 			</span>
 			{opp !== undefined ? (
 				<span className="lc-opp lc-opp-small">
-					<span className="lc-at">{mine!.homeTid === userTid ? "" : "@"}</span>
 					<Logo t={teams[opp]} />
 				</span>
 			) : null}
@@ -348,6 +348,11 @@ export const MonthCalendar = ({
 		}
 		prev.current = { season, anchor };
 	}, [anchor, season, selected, startMonth]);
+
+	// The league's nights: the user's road nights in his team's color (so
+	// no "@" is needed), his home nights plain.
+	const allColors = useAllTeamColors(tid === "all");
+	const road = bannerColors(allColors?.[userTid]);
 
 	const month =
 		chosenMonth !== undefined && months.includes(chosenMonth)
@@ -436,6 +441,14 @@ export const MonthCalendar = ({
 				tid === "all" && "lc-league",
 				className,
 			)}
+			style={
+				tid === "all"
+					? ({
+							"--lc-road-bg": road.bg,
+							"--lc-road-fg": road.fg,
+						} as CSSProperties)
+					: undefined
+			}
 		>
 			<div className="lc-head">
 				<button
@@ -549,7 +562,7 @@ export const MonthCalendar = ({
 											game?.ifNecessary &&
 												typeof tid === "number" &&
 												"lc-maybe",
-											night?.mine && "lc-mine",
+											night?.mine?.awayTid === userTid && "lc-road",
 											date === today && "lc-today",
 											date === selected && "lc-selected",
 										)}

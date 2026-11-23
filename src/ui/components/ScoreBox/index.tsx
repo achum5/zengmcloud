@@ -601,7 +601,7 @@ export const ScoreBox = memo(
 									</div>
 									{p ? (
 										<div
-											className="align-self-stretch border-start ps-2 flex-grow-1 text-body-secondary d-none d-sm-flex align-items-center overflow-hidden text-nowrap"
+											className="score-box-player align-self-stretch border-start ps-2 flex-grow-1 text-body-secondary d-none d-sm-flex align-items-center overflow-hidden text-nowrap"
 											style={{
 												backgroundColor: "var(--bs-white)",
 												width: 200 - room,

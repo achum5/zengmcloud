@@ -4,6 +4,7 @@ import { g } from "../util/index.ts";
 import type { ViewArgs } from "../util/defineView.ts";
 import { getCalendarIfDated } from "./calendar.ts";
 import { processEvents } from "./news.ts";
+import { eventGivesAwayLiveGame, getLiveGate } from "../util/liveGameGate.ts";
 
 // The new interface's home (the League Hub), on top of the dashboard: the
 // inbox with subjects, the team's own news, its schedule with results, the
@@ -49,13 +50,19 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		!updateEvents.has("firstRun") &&
 		!updateEvents.has("gameSim") &&
 		!updateEvents.has("newPhase") &&
-		!updateEvents.has("playerMovement")
+		!updateEvents.has("playerMovement") &&
+		!updateEvents.has("liveGames")
 	) {
 		return;
 	}
 
 	const userTid = g.get("userTid");
 	const season = g.get("season");
+	// A game a league mate is playing live is not over yet here either (see
+	// util/liveGameGate.ts): not in the results, the scores or the news, and
+	// in the playoffs no next day's games till its final.
+	const gate = await getLiveGate();
+	const dayCutoff = gate.dayCutoff;
 
 	const hubMessages = (await idb.merged.messages.getAll({ limit: 12 }))
 		.reverse()
@@ -68,7 +75,9 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 			preview: plain(message.text).slice(0, 180),
 		}));
 
-	const eventsAll = await idb.merged.events.getAll({ season });
+	const eventsAll = (await idb.merged.events.getAll({ season })).filter(
+		(event) => !eventGivesAwayLiveGame(event, gate),
+	);
 	eventsAll.reverse();
 	const teamNews = (
 		await processEvents(eventsAll, { level: "all", limit: 16, tid: userTid })
@@ -78,7 +87,9 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		text: event.text,
 	}));
 
-	const schedule = await idb.cache.schedule.getAll();
+	const schedule = (await idb.cache.schedule.getAll()).filter(
+		(s) => dayCutoff === undefined || s.day <= dayCutoff,
+	);
 	const nextDay =
 		schedule.length > 0 ? Math.min(...schedule.map((s) => s.day)) : undefined;
 	const national = await nationalTags(schedule);
@@ -106,7 +117,7 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 
 	// The cache holds every game of the current season.
 	const games = (await idb.cache.games.getAll()).filter(
-		(game) => game.season === season,
+		(game) => game.season === season && !gate.hidden.has(game.gid),
 	);
 	const played = games
 		.filter((game) => game.teams.some((t) => t.tid === userTid))

@@ -503,3 +503,47 @@ export const roomGameStillLive = (
 ): boolean =>
 	!game.gameOver &&
 	now - Math.max(game.expiresAt, wokeAt) < QUIET_WATCH_MS;
+
+// A room game given up on stays over: once it has been quiet past
+// QUIET_WATCH_MS - its final, for everyone not watching - a screen that comes
+// back and heartbeats again does not put it back in progress (its final, and
+// in the playoffs whatever was simmed meanwhile, would go back into hiding).
+// Only while this device is hearing the room itself: its own dropped
+// connection is not the game's silence. Remembered by startedAt, bounded.
+export const createRoomLiveCheck = (
+	hearingRoom: (now: number) => boolean,
+	onGiveUp?: (game: { gid?: number; startedAt: number }) => void,
+) => {
+	const givenUp = new Set<number>();
+	return {
+		isLive: (
+			game: {
+				gid?: number;
+				startedAt: number;
+				gameOver: boolean;
+				expiresAt: number;
+			},
+			now: number,
+			wokeAt = 0,
+		): boolean => {
+			if (givenUp.has(game.startedAt)) {
+				return false;
+			}
+			if (roomGameStillLive(game, now, wokeAt)) {
+				return true;
+			}
+			if (!game.gameOver && hearingRoom(now)) {
+				givenUp.add(game.startedAt);
+				onGiveUp?.(game);
+				if (givenUp.size > 32) {
+					const oldest = givenUp.values().next().value;
+					if (oldest !== undefined) {
+						givenUp.delete(oldest);
+					}
+				}
+			}
+			return false;
+		},
+		givenUp: (startedAt: number) => givenUp.has(startedAt),
+	};
+};

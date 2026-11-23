@@ -11,6 +11,7 @@ import { processPlayerStats } from "../util/processPlayerStats.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { isAllStarTid } from "../../common/specialGames.ts";
+import { getLiveGate } from "../util/liveGameGate.ts";
 
 const processInputs = (params: RouteParams<"playerGameLog">) => {
 	return {
@@ -59,11 +60,16 @@ export default defineView({
 				new Set(Object.values(PLAYER_GAME_STATS).flatMap((x) => x.stats)),
 			);
 
+			// (Not a game still being played live - see util/liveGameGate.ts.)
+			const hidden =
+				season === g.get("season") ? (await getLiveGate()).hidden : undefined;
+
 			// Only keep games this player played in, rather than every game this season
 			const games = await idb.merged.games.getAll(
 				{ season },
 				{
 					filter: (game) =>
+						!hidden?.has(game.gid) &&
 						game.teams.some((t) => t.players.some((p) => p.pid === pid)),
 				},
 			);
