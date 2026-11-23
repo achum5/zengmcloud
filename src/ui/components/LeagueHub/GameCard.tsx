@@ -209,6 +209,12 @@ const TeamWords = ({
 	lost: boolean;
 }) => {
 	const brand = useBrand(t);
+	// Its record (in the playoffs, its seed).
+	const record = t.playoffs
+		? `No. ${t.playoffs.seed}`
+		: t.won !== undefined && t.lost !== undefined
+			? helpers.formatRecord({ ...t, won: t.won, lost: t.lost })
+			: undefined;
 	return (
 		<div className={clsx("lh-gc-team", `lh-gc-team-${side}`, { lost })}>
 			<div className="lh-gc-region">{brand.region}</div>
@@ -220,7 +226,10 @@ const TeamWords = ({
 			>
 				{brand.name}
 			</div>
-			<div className="lh-gc-score">{t.pts}</div>
+			<div className="lh-gc-scoreline">
+				<div className="lh-gc-score">{t.pts}</div>
+				{record ? <div className="lh-gc-record">{record}</div> : null}
+			</div>
 		</div>
 	);
 };

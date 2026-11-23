@@ -515,13 +515,20 @@
 .lh-finals {
 	grid-template-columns: minmax(0, 1fr);
 	max-width: 1100px;
+	// The whole game in one frame: the card, the lines, the recap.
+	> .lh-game {
+		padding: 0.6rem;
+		background: var(--bs-body-bg);
+		border: 1px solid var(--bs-border-color);
+		border-radius: 0.75rem;
+	}
 	.game-note-header {
 		border: 0;
-		padding: 0.35rem 0.15rem 0;
+		padding: 0.45rem 0.15rem 0;
 	}
 }
 .lh-gc {
-	container-type: inline-size;
+	container: lh-gc / inline-size;
 }
 .lh-gc-row {
 	display: grid;
@@ -576,16 +583,20 @@
 	img {
 		position: relative;
 		z-index: 1;
-		width: clamp(1.8rem, 9cqw, 3rem);
+		width: 100%;
+		max-width: 2.9rem;
 		height: auto;
 		filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
 	}
 }
+// (The logo kept clear of the slanted edge.)
 .lh-gc-side-away {
 	clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%);
+	padding: 0 22% 0 6%;
 }
 .lh-gc-side-home {
 	clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%);
+	padding: 0 6% 0 22%;
 }
 .lh-gc-team {
 	min-width: 0;
@@ -605,6 +616,22 @@
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+// The score, and the record beside it on the inner side.
+.lh-gc-scoreline {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+}
+.lh-gc-team-home .lh-gc-scoreline {
+	flex-direction: row-reverse;
+}
+.lh-gc-record {
+	flex: none;
+	font-size: 0.78rem;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
+	font-variant-numeric: tabular-nums;
 }
 .lh-gc-name {
 	font-size: clamp(1rem, 5.2cqw, 1.55rem);
@@ -735,7 +762,7 @@
 		color: var(--bs-secondary-color);
 	}
 }
-@container (min-width: 620px) {
+@container lh-gc (min-width: 620px) {
 	.lh-gc-row {
 		// (The lines as wide as they need, the card the rest.)
 		grid-template-columns: minmax(0, 1fr) auto;
@@ -746,14 +773,113 @@
 		gap: 0.4rem;
 	}
 }
-@container (max-width: 900px) {
+@container lh-gc (max-width: 900px) {
 	.lh-gc-stat:nth-child(5) {
 		display: none;
 	}
 }
-@container (max-width: 760px) {
+@container lh-gc (max-width: 760px) {
 	.lh-gc-stat:nth-child(4),
 	.lh-gc-leader-logo {
 		display: none;
+	}
+}
+
+// ON A PHONE, a game in two short rows, as the NBA app lists them: each
+// team's logo on its color, its name, record and score, and how it ended
+// beside both.
+@container lh-gc (max-width: 559px) {
+	.lh-gc-card {
+		grid-template-columns: 2.1rem minmax(0, 1fr) auto;
+		grid-template-areas:
+			"as at mid"
+			"hs ht mid";
+		min-height: 0;
+		border-radius: 0.5rem;
+	}
+	.lh-gc-side {
+		clip-path: none;
+		padding: 0.25rem;
+		&::before,
+		&::after {
+			display: none;
+		}
+		img {
+			max-width: 1.45rem;
+		}
+	}
+	.lh-gc-side-away {
+		grid-area: as;
+	}
+	.lh-gc-side-home {
+		grid-area: hs;
+	}
+	.lh-gc-team-away {
+		grid-area: at;
+	}
+	.lh-gc-team-home {
+		grid-area: ht;
+	}
+	.lh-gc-team,
+	.lh-gc-team-home {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.22rem 0.6rem;
+		text-align: left;
+	}
+	.lh-gc-region {
+		display: none;
+	}
+	.lh-gc-name,
+	.lh-gc-name-long,
+	.lh-gc-name-xlong {
+		min-width: 0;
+		font-size: 0.98rem;
+		line-height: 1.2;
+	}
+	.lh-gc-scoreline,
+	.lh-gc-team-home .lh-gc-scoreline {
+		display: contents;
+	}
+	.lh-gc-record {
+		order: 2;
+		font-size: 0.75rem;
+	}
+	.lh-gc-score {
+		order: 3;
+		margin-left: auto;
+		font-size: 1.2rem;
+		line-height: 1.2;
+	}
+	.lh-gc-mid {
+		grid-area: mid;
+		align-self: stretch;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		min-width: 4.6rem;
+		padding: 0 0.5rem;
+		border-left: 1px solid var(--bs-border-color);
+	}
+	.lh-gc-final {
+		font-size: 0.78rem;
+	}
+	.lh-gc-series {
+		font-size: 0.66rem;
+	}
+}
+// A phone's frame, tight around it.
+@include media-breakpoint-down(sm) {
+	.lh-finals {
+		gap: 0.6rem;
+		> .lh-game {
+			padding: 0.35rem 0.35rem 0.3rem;
+			border-radius: 0.6rem;
+		}
+		.game-note-header {
+			padding: 0.3rem 0.15rem 0;
+			font-size: 0.75rem;
+		}
 	}
 }
