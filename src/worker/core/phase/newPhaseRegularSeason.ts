@@ -1,4 +1,5 @@
 import { season, team } from "../index.ts";
+import { saveClassicDays } from "../game/saveClassicDays.ts";
 import { collegePreseasonPoll } from "../college/polls.ts";
 import { collegeMigrate } from "../college/setup.ts";
 import { idb } from "../../db/index.ts";
@@ -174,8 +175,11 @@ const newPhaseRegularSeason = async (
 		await team.checkRosterSizes("other");
 	}
 
-	const { tids, dates } = season.newCalendarSchedule(teams);
+	const { tids, dates, classicDays } = season.newCalendarSchedule(teams);
 	await season.setSchedule(tids, dates);
+	if (classicDays !== undefined) {
+		await saveClassicDays(classicDays);
+	}
 
 	await deleteOldBoxScores();
 

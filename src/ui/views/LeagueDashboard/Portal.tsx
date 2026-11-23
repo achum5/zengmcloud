@@ -1,16 +1,12 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PHASE } from "../../../common/constants.ts";
-import {
-	addDays,
-	daysBetween,
-	formatGameDate,
-	weekdayOf,
-} from "../../../common/calendarDates.ts";
+import { daysBetween, formatGameDate } from "../../../common/calendarDates.ts";
 import type { HeadlineSceneSpec } from "../../../common/headlineScene.ts";
 import { categories, types } from "../../../common/transactionInfo.ts";
 import type { View } from "../../../common/types.ts";
 import { GameHighlightsButton } from "../../components/GameHighlightsButton.tsx";
+import { MonthCalendar } from "../../components/MonthCalendar.tsx";
 import { NewsBlock } from "../../components/NewsBlock.tsx";
 import { NextPrevButtons } from "../../components/NextPrevButtons.tsx";
 import { PlayoffMatchup } from "../../components/PlayoffMatchup.tsx";
@@ -27,8 +23,8 @@ import StartingLineup from "./StartingLineup.tsx";
 import TeamStats from "./TeamStats.tsx";
 
 // The new interface's league home, laid out as a hub: the inbox down the
-// left; the league's news, the next game, the latest scores and the next two
-// weeks in the middle; the schedule and the standings on the right. Built
+// left; the league's news, the next game, the latest scores and the
+// calendar in the middle; the schedule and the standings on the right. Built
 // from the game's usual tables, cards and links. One column on a phone,
 // what's next first.
 
@@ -743,119 +739,56 @@ const CalendarCell = ({
 	</>
 );
 
-const WEEKDAY_LETTERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// On a calendar: two real weeks, Sunday to Saturday, around the next night
-// of games - or the busy nights in a list on a phone.
+// On the NBA calendar: the team's month.
 const DatedCalendar = ({
-	upcoming,
-	played,
-	keyDates,
-	nextDate,
-	teams,
-}: Pick<Props, "upcoming" | "played" | "keyDates" | "teams"> & {
-	nextDate: string;
-}) => {
-	const back = addDays(nextDate, -3);
-	const start = addDays(back, -weekdayOf(back));
-	const dates = Array.from({ length: 14 }, (_, j) => addDays(start, j));
-	const playedBy = new Map(
-		played.flatMap((game) => (game.date ? [[game.date, game] as const] : [])),
-	);
-	const upcomingBy = new Map(
-		upcoming.flatMap((game) => (game.date ? [[game.date, game] as const] : [])),
-	);
-	const keyBy = new Map(
-		keyDates.flatMap((k) => (k.date ? [[k.date, k.type] as const] : [])),
-	);
-	const busy = dates.filter(
-		(d) => playedBy.has(d) || upcomingBy.has(d) || keyBy.has(d),
-	);
-	if (busy.length === 0) {
-		return null;
-	}
-	const cell = (date: string) => (
-		<CalendarCell
-			done={playedBy.get(date)}
-			next={upcomingBy.get(date)}
-			keyDate={keyBy.get(date)}
-			teams={teams}
+	calendar,
+	season,
+	userTid,
+}: {
+	calendar: NonNullable<Props["calendar"]>;
+	season: number;
+	userTid: number;
+}) => (
+	<div className="mb-3">
+		<h2>Calendar</h2>
+		<MonthCalendar
+			className="mb-1"
+			compact
+			games={calendar.games}
+			keyDates={calendar.keyDates}
+			season={season}
+			tid={userTid}
+			today={calendar.today}
 		/>
-	);
+		<a href={helpers.leagueUrl(["calendar"])}>» Full Calendar</a>
+	</div>
+);
 
-	return (
-		<div className="mb-3">
-			<h2>Calendar</h2>
-			<table className="table table-bordered table-sm ni-calendar d-none d-sm-table mb-1">
-				<thead>
-					<tr>
-						{WEEKDAY_LETTERS.map((name) => (
-							<th key={name} className="text-body-secondary small fw-normal">
-								{name}
-							</th>
-						))}
-					</tr>
-				</thead>
-				<tbody>
-					{[dates.slice(0, 7), dates.slice(7)].map((week, i) => (
-						<tr key={i}>
-							{week.map((date) => (
-								<td
-									key={date}
-									className={clsx(date === nextDate && "table-info")}
-								>
-									<div className="text-body-secondary small">
-										{formatGameDate(date, "monthDay")}
-									</div>
-									{cell(date)}
-								</td>
-							))}
-						</tr>
-					))}
-				</tbody>
-			</table>
-			<table className="table table-striped table-borderless table-sm d-sm-none mb-1">
-				<tbody>
-					{busy.map((date) => (
-						<tr key={date} className={clsx(date === nextDate && "table-info")}>
-							<td className="text-body-secondary text-nowrap">
-								{formatGameDate(date)}
-							</td>
-							<td>{cell(date)}</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
-			<a href={helpers.leagueUrl(["calendar"])}>» Full Calendar</a>
-		</div>
-	);
-};
-
-// The days around today, with games, results and the season's key dates. A
-// grid of two weeks, or a list of the busy days on a phone.
+// The days around today, with games, results and the season's key dates: the
+// month on the NBA calendar, or else a grid of two weeks, or a list of the
+// busy days on a phone.
 const Calendar = ({
+	calendar,
 	upcoming,
 	played,
 	keyDates,
 	nextDay,
-	nextDate,
 	teams,
+	season,
+	userTid,
 }: Pick<
 	Props,
-	"upcoming" | "played" | "keyDates" | "nextDay" | "nextDate" | "teams"
->) => {
+	"calendar" | "upcoming" | "played" | "keyDates" | "nextDay" | "teams"
+> & {
+	season: number;
+	userTid: number;
+}) => {
 	if (nextDay === undefined) {
 		return null;
 	}
-	if (nextDate !== undefined) {
+	if (calendar !== undefined) {
 		return (
-			<DatedCalendar
-				upcoming={upcoming}
-				played={played}
-				keyDates={keyDates}
-				nextDate={nextDate}
-				teams={teams}
-			/>
+			<DatedCalendar calendar={calendar} season={season} userTid={userTid} />
 		);
 	}
 	const start = Math.max(1, nextDay - 3);
@@ -928,7 +861,7 @@ const Schedule = ({
 	if (rows.length === 0) {
 		return null;
 	}
-	// Phones get the same days from the calendar's list.
+	// Phones get the same days from the calendar.
 	return (
 		<div className="mb-3 d-none d-sm-block">
 			<h2>Schedule</h2>
@@ -1009,12 +942,14 @@ const Portal = (props: Props) => {
 					</div>
 				</div>
 				<Calendar
+					calendar={props.calendar}
 					upcoming={props.upcoming}
 					played={props.played}
 					keyDates={props.keyDates}
 					nextDay={props.nextDay}
-					nextDate={props.nextDate}
 					teams={props.teams}
+					season={season}
+					userTid={userTid}
 				/>
 			</div>
 			<div className="col-xl-4 col-lg-6 order-2 order-xl-1 mb-3">

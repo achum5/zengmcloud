@@ -1,20 +1,117 @@
+import clsx from "clsx";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
 import { isAllStarGame } from "../../../common/specialGames.ts";
+import {
+	addDays,
+	formatGameDate,
+	formatMonth,
+	weekdayOf,
+} from "../../../common/calendarDates.ts";
+import type { LocalStateUI } from "../../../common/types.ts";
+import { PHASE } from "../../../common/constants.ts";
 
 // The strip of recent scores under the navbar. Shown or hidden from Global
 // Settings (Scores Bar) rather than by a chevron pinned to its own right edge -
 // that button cost every browser a permanent reservation at the end of the
 // strip, and on iOS it was reserved twice over, which read as a dead gap after
 // the last score.
+//
+// On the NBA calendar it goes night by night instead: every night of the
+// season so far, today, and the coming nights, each with its weekday and
+// date, and the team's game that night if it has one.
+
+type BarGame = LocalStateUI["games"][number];
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// How many nights past today to show. The worker sends the games in them.
+const NIGHTS_AHEAD = 5;
+
+// A night as a page off a desk calendar, like today's date in the navbar.
+const DayStub = ({
+	date,
+	game,
+	today,
+}: {
+	date: string;
+	game: boolean;
+	today: string | undefined;
+}) => (
+	<div
+		className={clsx(
+			"ltb-stub",
+			game && "ltb-stub-game",
+			date === today && "ltb-stub-today",
+			today !== undefined && date > today && "ltb-stub-future",
+		)}
+		title={`${date === today ? "Today, " : ""}${formatGameDate(date, "full")}`}
+	>
+		<span className="ltb-stub-weekday">{WEEKDAYS[weekdayOf(date)]}</span>
+		<span className="ltb-stub-day">{Number(date.slice(8))}</span>
+		<span className="ltb-stub-month">{formatMonth(date, true)}</span>
+	</div>
+);
+
+// Every night from the first game to the coming nights, with the team's game
+// on each. The playoffs are scheduled a night at a time, so there the coming
+// nights stop at the next game rather than showing nights off that aren't.
+const nightsOf = (
+	games: BarGame[],
+	today: string | undefined,
+	playoffs: boolean,
+) => {
+	const byDate = new Map<string, BarGame>();
+	let first: string | undefined;
+	let last: string | undefined;
+	let upcoming = false;
+	for (const game of games) {
+		if (game.date === undefined) {
+			continue;
+		}
+		byDate.set(game.date, game);
+		if (first === undefined || game.date < first) {
+			first = game.date;
+		}
+		if (last === undefined || game.date > last) {
+			last = game.date;
+		}
+		if (game.teams[0].pts === undefined) {
+			upcoming = true;
+		}
+	}
+	if (first === undefined || last === undefined) {
+		return [];
+	}
+	if (today !== undefined) {
+		const end = upcoming && !playoffs ? addDays(today, NIGHTS_AHEAD) : today;
+		if (end > last) {
+			last = end;
+		}
+	}
+	const nights: { date: string; game: BarGame | undefined }[] = [];
+	for (let date = first; date <= last; date = addDays(date, 1)) {
+		nights.push({ date, game: byDate.get(date) });
+	}
+	return nights;
+};
 
 export const LeagueTopBar = memo(() => {
-	const { games, lid, liveGameInProgress, showLeagueTopBar } = useLocal([
+	const {
+		calendarDate,
+		games,
+		lid,
+		liveGameInProgress,
+		phase,
+		showLeagueTopBar,
+	} = useLocal([
+		"calendarDate",
 		"games",
 		"lid",
 		"liveGameInProgress",
+		"phase",
 		"showLeagueTopBar",
 	]);
 
@@ -47,6 +144,29 @@ export const LeagueTopBar = memo(() => {
 					: wrapperElement.scrollLeft - diff,
 		});
 	});
+
+	// On the NBA calendar, today stays in view when the coming nights fill a
+	// narrow screen, so a phone opens on today rather than next week.
+	const dated = games.some((game) => game.date !== undefined);
+	useLayoutEffect(() => {
+		if (!wrapperElement || !dated) {
+			return;
+		}
+		const showToday = () => {
+			const todayElement = wrapperElement.querySelector(".ltb-stub-today");
+			if (!todayElement) {
+				return;
+			}
+			const wrapperLeft = wrapperElement.getBoundingClientRect().left;
+			const todayLeft = todayElement.getBoundingClientRect().left;
+			if (todayLeft < wrapperLeft) {
+				wrapperElement.scrollBy({ left: todayLeft - wrapperLeft - 8 });
+			}
+		};
+		showToday();
+		window.addEventListener("resize", showToday);
+		return () => window.removeEventListener("resize", showToday);
+	}, [calendarDate, dated, wrapperElement]);
 
 	useEffect(() => {
 		if (!wrapperElement || !showLeagueTopBar) {
@@ -112,15 +232,32 @@ export const LeagueTopBar = memo(() => {
 		}
 	}
 
+	const nights = dated
+		? nightsOf(prevGames.current, calendarDate, phase === PHASE.PLAYOFFS)
+		: [];
+
 	return (
 		<div
 			className="league-top-bar flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row-reverse mt-2"
 			ref={setWrapperElement}
 		>
 			<div className="d-flex flex-shrink-0 ps-1" ref={contentRef}>
-				{games2.map((game) => (
-					<ScoreBox key={game.gid} className="me-2" game={game} small />
-				))}
+				{nights.length > 0
+					? nights.map(({ date, game }) => (
+							<div
+								key={date}
+								className={clsx(
+									"ltb-night me-2",
+									date === calendarDate && "ltb-night-today",
+								)}
+							>
+								<DayStub date={date} game={!!game} today={calendarDate} />
+								{game ? <ScoreBox game={game} small /> : null}
+							</div>
+						))
+					: games2.map((game) => (
+							<ScoreBox key={game.gid} className="me-2" game={game} small />
+						))}
 				{games2.length > 0 ? (
 					<>
 						<a

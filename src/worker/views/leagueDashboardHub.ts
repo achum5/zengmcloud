@@ -1,6 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { ViewArgs } from "../util/defineView.ts";
+import { getCalendarIfDated } from "./calendar.ts";
 import { processEvents } from "./news.ts";
 
 // The new interface's home (the League Hub), on top of the dashboard: the
@@ -167,5 +168,10 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 		nextDay,
 		nextDate,
 		latestScores,
+		// On the NBA calendar, the team's month, while there are games to play.
+		calendar:
+			nextDate !== undefined
+				? await getCalendarIfDated(season, userTid)
+				: undefined,
 	};
 };

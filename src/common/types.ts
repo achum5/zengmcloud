@@ -1206,6 +1206,10 @@ export type GameAttributesLeague = {
 	// cooldowns, FA demands, AI trades) ran, so a day simmed in slices on
 	// several devices is never counted twice. See game/dailyCountdownGate.ts.
 	lastDailyCountdownDay?: { season: number; phase: number; day: number };
+	// On an NBA calendar, how many classic days the season would have taken,
+	// so its end-of-day rules tick as often as classic days' would. See
+	// game/calendarTicks.ts.
+	calendarClassicDays?: { season: number; days: number };
 	// Vanilla+ front offices' market (worker/core/vanillaPlus/market.ts): its
 	// day this season, and the day each team last traded, kept with the league
 	// so a reload - or the sim moving to a league mate's device - doesn't let a
@@ -1746,6 +1750,8 @@ export type LocalStateUI = {
 	flagOverrides: Record<string, string>;
 	gameSimInProgress: boolean;
 	games: {
+		// On the NBA calendar, the game's night, for the top bar's days.
+		date?: string;
 		finals?: boolean;
 		forceWin?: number; // Number of iterations - defined means result was forced
 		gid: number;

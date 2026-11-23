@@ -12,8 +12,10 @@ import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { helpers } from "../util/helpers.ts";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { GameDate } from "../components/GameDate.tsx";
+import { MonthCalendar } from "../components/MonthCalendar.tsx";
 
 const Schedule = ({
+	calendar,
 	canLiveSimFirstGame,
 	completed,
 	elam,
@@ -31,10 +33,11 @@ const Schedule = ({
 		},
 	});
 
-	const { gameSimInProgress, godMode, phase, userTid } = useLocal([
+	const { gameSimInProgress, godMode, phase, season, userTid } = useLocal([
 		"gameSimInProgress",
 		"godMode",
 		"phase",
+		"season",
 		"userTid",
 	]);
 
@@ -84,6 +87,17 @@ const Schedule = ({
 						</Dropdown.Item>
 					</Dropdown.Menu>
 				</Dropdown>
+			) : null}
+			{calendar ? (
+				<MonthCalendar
+					className="mb-4"
+					games={calendar.games}
+					keyDates={calendar.keyDates}
+					monthChips
+					season={season}
+					tid={tid}
+					today={calendar.today}
+				/>
 			) : null}
 			<div className="d-flex flex-wrap" style={{ gap: "2rem" }}>
 				<div style={{ maxWidth: 510 }} className="flex-grow-1">

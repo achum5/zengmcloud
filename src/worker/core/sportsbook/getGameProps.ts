@@ -2,6 +2,7 @@ import { g } from "../../util/index.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { injuryTicksUntil } from "../game/calendarTicks.ts";
+import { getInjuryPace } from "../game/classicDays.ts";
 import {
 	simGameOutcomes,
 	type SimmedGame,
@@ -212,7 +213,7 @@ export const getGameProps = async (gid: number) => {
 	// spread/moneyline/total bet placed from this page validates against the
 	// board it was quoted from.
 	const todayDay = schedule[0]?.day ?? 0;
-	const ticksUntil = injuryTicksUntil(schedule);
+	const ticksUntil = injuryTicksUntil(schedule, await getInjuryPace());
 	const pricer = await buildGameLinePricer({
 		activeTeams: teams.filter((t) => !t.disabled) as any,
 		season,
