@@ -17,6 +17,7 @@ import type { DataTableRow } from "../../components/DataTable/index.tsx";
 import { arrayMove } from "@dnd-kit/sortable";
 import { groupByUnique } from "../../../common/utils.ts";
 import { StickyDraftInfo } from "./StickyDraftInfo.tsx";
+import { DraftWalkButton } from "../../components/DraftWalkButton.tsx";
 import { wrappedDraftAbbrev } from "../../components/DraftAbbrev.tsx";
 import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { confirm } from "../../util/confirm.tsx";
@@ -286,8 +287,29 @@ const Draft = ({
 		const prevAbbrev = isDraftedPlayer(p) ? p.prevAbbrev : undefined;
 		const prevTid = isDraftedPlayer(p) ? p.prevTid : undefined;
 
+		const pickLabel = `${p.draft.round}-${p.draft.pick}`;
 		const data: DataTableRow["data"] = [
-			`${p.draft.round}-${p.draft.pick}`,
+			// (His pick to watch again - see DraftHistory.)
+			isDraftedPlayer(p) &&
+			__SPORT === "basketball" &&
+			!fantasyDraft &&
+			!expansionDraft &&
+			p.draft.round >= 1 &&
+			!p.imgURL
+				? {
+						value: (
+							<>
+								{pickLabel}
+								<DraftWalkButton
+									pid={p.pid}
+									name={`${p.firstName} ${p.lastName}`}
+								/>
+							</>
+						),
+						searchValue: pickLabel,
+						sortValue: pickLabel,
+					}
+				: pickLabel,
 			wrappedDraftAbbrev(
 				{
 					originalTid: p.draft.originalTid,

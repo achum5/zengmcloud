@@ -226,6 +226,9 @@ export default defineView({
 						"injury",
 						"contract",
 						"watch",
+						// (A face that is a photo has no pick to watch - see the
+						// worker's headlineScene.)
+						"imgURL",
 					],
 					ratings: ["ovr", "pot", "skills", "pos"],
 					stats,

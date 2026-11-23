@@ -382,7 +382,7 @@ const DraftHistory = ({
 									title={`Read the writeup for ${p.firstName} ${p.lastName}`}
 								/>
 							) : null}
-							{/* (His walk-out in 3D: a pick with a face to put the cap on -
+							{/* (His pick in 3D: a pick with a face to put the cap on -
 							    see the worker's headlineScene.) */}
 							{__SPORT === "basketball" && p.draft.round >= 1 && !p.imgURL ? (
 								<DraftWalkButton

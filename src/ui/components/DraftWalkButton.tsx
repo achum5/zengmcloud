@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { useLocal } from "../util/local.ts";
 import { HeadlineScene } from "../views/LiveGame/court3d/HeadlineScene.tsx";
 import { Modal } from "./Modal.tsx";
 import { PlayButton } from "./PlayButton.tsx";
 
-// A drafted player's walk-out (see HeadlineScene), from his row of a draft:
-// the 3D court is fetched only once this is pressed. New interface only.
+// A drafted player's pick on draft night (see HeadlineScene), from his row
+// of a draft: the 3D room is fetched only once this is pressed.
 export const DraftWalkButton = ({
 	pid,
 	name,
@@ -14,10 +13,6 @@ export const DraftWalkButton = ({
 	name: string;
 }) => {
 	const [show, setShow] = useState(false);
-	const { newInterface } = useLocal(["newInterface"]);
-	if (!newInterface) {
-		return null;
-	}
 	return (
 		<>
 			<PlayButton
@@ -25,7 +20,7 @@ export const DraftWalkButton = ({
 				onClick={() => {
 					setShow(true);
 				}}
-				title={`Watch ${name} walk out`}
+				title={`Watch ${name} get picked`}
 			/>
 			{show ? (
 				<Modal

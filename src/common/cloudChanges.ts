@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 439,
+		date: "2026-11-23",
+		text: "Draft night is on for everyone now, whichever interface you use. Every pick on the Draft page has a play button too, so you can watch a player get picked as soon as it happens.",
+	},
+	{
 		n: 438,
 		date: "2026-11-23",
 		text: "3D game: games get ready to watch about 10% faster on phones - the stretches the replay fast-forwards through (free throws, substitutions, timeouts, the walk up the floor) are no longer worked out a step at a time.",
