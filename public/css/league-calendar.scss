@@ -159,24 +159,13 @@ $lc-dark: lightness($white) < 50%;
 		box-shadow: inset 0 0 0 1px var(--lc-card-border);
 	}
 
-	// A team's home night, filled in, its other color along the top - and
-	// the league's, the user's road nights the same.
+	// A team's home night, filled in its color - and the league's, the
+	// user's road nights the same.
 	td.lc-home,
 	td.lc-road {
 		color: var(--lc-team-fg);
 		background: var(--lc-team-bg);
 		box-shadow: none;
-
-		&::before {
-			content: "";
-			position: absolute;
-			top: 0;
-			left: 0;
-			right: 0;
-			height: 3px;
-			background: var(--lc-team-accent);
-			border-radius: var(--lc-radius) var(--lc-radius) 0 0;
-		}
 
 		.lc-num,
 		.lc-tag,
@@ -481,7 +470,6 @@ $lc-dark: lightness($white) < 50%;
 
 .lc-swatch-home {
 	background: var(--lc-team-bg);
-	box-shadow: inset 0 2px 0 var(--lc-team-accent);
 }
 
 .lc-swatch-away {
@@ -518,9 +506,19 @@ $lc-dark: lightness($white) < 50%;
 		}
 
 		td {
-			height: 3.1rem;
+			height: 3.7rem;
 			padding: 0.1rem 0.1rem 0.15rem;
 		}
+	}
+
+	// (The coin is on the crest.)
+	.lc-coin,
+	.lc-ot {
+		display: none;
+	}
+
+	.lc-score {
+		font-size: 0.55rem;
 	}
 
 	.lc-day-head {
@@ -688,10 +686,19 @@ $lc-dark: lightness($white) < 50%;
 			}
 
 			td {
-				height: 3.4rem;
+				height: 4rem;
 				padding: 0.15rem 0.15rem 0.2rem;
 				font-size: 0.8rem;
 			}
+		}
+
+		.lc-coin,
+		.lc-ot {
+			display: none;
+		}
+
+		.lc-score {
+			font-size: 0.62rem;
 		}
 
 		.lc-num {

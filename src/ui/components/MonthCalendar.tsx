@@ -252,7 +252,7 @@ const TeamNight = ({
 					</span>
 				)}
 			</span>
-			{compact ? null : final ? (
+			{final ? (
 				<span className="lc-result">
 					<Coin className="lc-coin" won={won} />
 					<span className="lc-score">
@@ -260,7 +260,7 @@ const TeamNight = ({
 						{ot ? <span className="lc-ot">{ot}</span> : null}
 					</span>
 				</span>
-			) : game.ifNecessary ? (
+			) : compact ? null : game.ifNecessary ? (
 				<span className="lc-note">If necessary</span>
 			) : game.national ? (
 				<NationalTag className="lc-national" tag={game.national} />
@@ -482,7 +482,6 @@ export const MonthCalendar = ({
 				{
 					"--lc-team-bg": colors.bg,
 					"--lc-team-fg": colors.fg,
-					"--lc-team-accent": colors.accent,
 				} as CSSProperties
 			}
 		>
