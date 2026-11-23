@@ -56,8 +56,9 @@ const DayStub = ({
 );
 
 // Every night from the first game to the coming nights, with the team's game
-// on each. The playoffs are scheduled a night at a time, so there the coming
-// nights stop at the next game rather than showing nights off that aren't.
+// on each. In the playoffs the coming nights are the team's series' planned
+// ones; with none (between rounds, or out), they stop at the next game rather
+// than showing nights off that aren't.
 const nightsOf = (
 	games: BarGame[],
 	today: string | undefined,
@@ -67,9 +68,13 @@ const nightsOf = (
 	let first: string | undefined;
 	let last: string | undefined;
 	let upcoming = false;
+	let planned = false;
 	for (const game of games) {
 		if (game.date === undefined) {
 			continue;
+		}
+		if (game.planned) {
+			planned = true;
 		}
 		byDate.set(game.date, game);
 		if (first === undefined || game.date < first) {
@@ -86,7 +91,8 @@ const nightsOf = (
 		return [];
 	}
 	if (today !== undefined) {
-		const end = upcoming && !playoffs ? addDays(today, NIGHTS_AHEAD) : today;
+		const end =
+			upcoming && (!playoffs || planned) ? addDays(today, NIGHTS_AHEAD) : today;
 		if (end > last) {
 			last = end;
 		}
@@ -104,6 +110,7 @@ export const LeagueTopBar = memo(() => {
 		games,
 		lid,
 		liveGameInProgress,
+		mpLiveGames,
 		phase,
 		showLeagueTopBar,
 	} = useLocal([
@@ -111,9 +118,16 @@ export const LeagueTopBar = memo(() => {
 		"games",
 		"lid",
 		"liveGameInProgress",
+		"mpLiveGames",
 		"phase",
 		"showLeagueTopBar",
 	]);
+
+	// (A league mate's game being played live: its score as it stands.)
+	const livePtsOf = (game: BarGame) =>
+		game.teams[0].pts === undefined
+			? mpLiveGames.find((live) => live.gid === game.gid)?.score?.pts
+			: undefined;
 
 	const [wrapperElement, setWrapperElement] = useState<HTMLDivElement | null>(
 		null,
@@ -252,11 +266,24 @@ export const LeagueTopBar = memo(() => {
 								)}
 							>
 								<DayStub date={date} game={!!game} today={calendarDate} />
-								{game ? <ScoreBox game={game} small /> : null}
+								{game ? (
+									<div
+										className={clsx(game.ifNecessary && "ltb-maybe")}
+										title={game.ifNecessary ? "If necessary" : undefined}
+									>
+										<ScoreBox game={game} livePts={livePtsOf(game)} small />
+									</div>
+								) : null}
 							</div>
 						))
 					: games2.map((game) => (
-							<ScoreBox key={game.gid} className="me-2" game={game} small />
+							<ScoreBox
+								key={game.gid}
+								className="me-2"
+								game={game}
+								livePts={livePtsOf(game)}
+								small
+							/>
 						))}
 				{games2.length > 0 ? (
 					<>

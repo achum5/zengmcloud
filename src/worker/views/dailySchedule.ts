@@ -14,6 +14,7 @@ import { validateSeason } from "../util/processInputs.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
 import { getCalendarIfDated } from "./calendar.ts";
+import { getLiveGate, liveScheduleRow } from "../util/liveGameGate.ts";
 
 const processInputs = (params: RouteParams<"dailySchedule">) => {
 	let cid;
@@ -76,6 +77,8 @@ export default defineView({
 			// A game note was added/edited (e.g. an AI recap filed from this page), so
 			// the note under each game card needs to refresh.
 			updateEvents.has("notes") ||
+			// A game started or finished being played live (see liveGameGate.ts).
+			(inputs.season === currentSeason && updateEvents.has("liveGames")) ||
 			// A background sim refined the point spreads, so the numbers next to
 			// each game changed.
 			inputs.season !== prevInputs?.season ||
@@ -105,12 +108,62 @@ export default defineView({
 					}
 				}
 
+				// Games still being played live somewhere read as in progress, and
+				// in the playoffs what their tip-off worked out (the next day's
+				// games) is not there yet - see liveGameGate.ts.
+				const gate =
+					inputs.season === currentSeason ? await getLiveGate() : undefined;
+				const liveRows = gate ? [...gate.games.values()] : [];
+
 				let schedule;
 				if (inputs.season === currentSeason) {
 					schedule = await season.getSchedule();
+					const dayCutoff = gate?.dayCutoff;
+					if (dayCutoff !== undefined) {
+						schedule = schedule.filter(
+							(game) => game.day === undefined || game.day <= dayCutoff,
+						);
+					}
+
+					// Today is the day of a game still being played, while nothing
+					// past it has been.
+					let liveDay: number | undefined;
+					for (const game of liveRows) {
+						if (
+							game.day !== undefined &&
+							(liveDay === undefined || game.day < liveDay)
+						) {
+							liveDay = game.day;
+						}
+					}
+					if (
+						liveDay !== undefined &&
+						schedule[0]?.day !== undefined &&
+						schedule[0].day <= liveDay
+					) {
+						liveDay = undefined;
+					}
+					if (liveDay !== undefined) {
+						let playedPast = false;
+						for (const game of await idb.cache.games.getAll()) {
+							if (
+								game.season === inputs.season &&
+								game.day !== undefined &&
+								game.day > liveDay
+							) {
+								playedPast = true;
+								break;
+							}
+						}
+						if (playedPast) {
+							liveDay = undefined;
+						}
+					}
 
 					if (day === -1) {
-						if (schedule[0]?.day !== undefined) {
+						if (liveDay !== undefined) {
+							day = liveDay;
+						} else if (schedule[0]?.day !== undefined) {
 							day = schedule[0].day;
 						}
 					}
@@ -142,7 +195,9 @@ export default defineView({
 					}
 
 					const scheduleDay = schedule.filter((game) => game.day === day);
-					isToday = !!scheduleDay[0] && schedule[0]!.gid === scheduleDay[0].gid;
+					isToday =
+						(!!scheduleDay[0] && schedule[0]!.gid === scheduleDay[0].gid) ||
+						(liveDay !== undefined && day === liveDay);
 				} else {
 					if (day === -1) {
 						day = 1;
@@ -231,15 +286,30 @@ export default defineView({
 
 				const completed = games
 					.map((game) => game.completedGame)
-					.filter((game) => game !== undefined);
+					.filter((game) => game !== undefined)
+					.filter((game) => !gate?.hidden.has(game.gid));
 
-				let upcoming: Awaited<ReturnType<typeof getUpcoming>> = [];
+				let upcoming: (Awaited<ReturnType<typeof getUpcoming>>[number] & {
+					live?: true;
+				})[] = [];
 				if (inputs.season === currentSeason) {
 					// If it's the current season, get any upcoming games
-					upcoming = await getUpcoming({
-						cid,
-						day,
-					});
+					upcoming =
+						gate?.dayCutoff !== undefined && day > gate.dayCutoff
+							? []
+							: await getUpcoming({
+									cid,
+									day,
+								});
+					upcoming = [
+						...liveRows
+							.filter(
+								(game) =>
+									game.day === day && (!cidFilter || cidFilter(game.teams)),
+							)
+							.map(liveScheduleRow),
+						...upcoming,
+					];
 				}
 
 				const cids = showCids
@@ -326,8 +396,10 @@ export default defineView({
 				// note - a filed AI/manual recap always wins. The "Copy AI Prompt" flow
 				// reads the database note/dayNote, which these never touch, so it stays
 				// available as the on-demand upgrade.
+				// (Nothing about the day while one of its games is still going.)
+				const dayStillPlaying = liveRows.some((game) => game.day === day);
 				let autoDayRecap = "";
-				if (completed.length > 0) {
+				if (completed.length > 0 && !dayStillPlaying) {
 					const { notes, dayRecap } = await getAutoRecapsForDay({
 						season: inputs.season,
 						day,
@@ -352,7 +424,9 @@ export default defineView({
 						: undefined;
 				// A filed "Day in the League" recap wins; otherwise fall back to the
 				// auto day recap (never persisted).
-				const dayNote = anchorGame?.dayNote ?? (autoDayRecap || undefined);
+				const dayNote = dayStillPlaying
+					? undefined
+					: (anchorGame?.dayNote ?? (autoDayRecap || undefined));
 
 				return {
 					cid,

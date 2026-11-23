@@ -14,6 +14,7 @@ import {
 	scoreBugPictureIds,
 } from "../../common/scoreBug.ts";
 import { STADIUM_PICTURE_KEYS } from "../../common/stadiumLook.ts";
+import { nationalPictureIds } from "../../common/nationalBroadcasts.ts";
 import {
 	arenaAdPictureIds,
 	withArenaAdPictures,
@@ -379,9 +380,7 @@ export const prunePictures = async (ids: Iterable<string>) => {
 	const used = new Set<string>([
 		...decalPictureIds(leagueDecals()),
 		...scoreBugPictureIds(g.get("scoreBug")),
-		...(g.get("nationalBroadcasts") ?? []).flatMap((n) =>
-			scoreBugPictureIds(n.scoreBug),
-		),
+		...(g.get("nationalBroadcasts") ?? []).flatMap(nationalPictureIds),
 	]);
 	for (const t of teams) {
 		for (const id of [t.jerseySkins?.home, t.jerseySkins?.away]) {

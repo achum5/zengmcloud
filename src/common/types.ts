@@ -17,6 +17,7 @@ import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
 import type { ReactNode } from "react";
 import type { LiveGameChatMessage } from "./liveGameChat.ts";
+import type { RecapReel } from "./recapReel.ts";
 import type { TickerItem } from "./ticker.ts";
 import type * as views from "../worker/views/index.ts";
 
@@ -598,6 +599,16 @@ export type LiveGamePlayByPlay = {
 	// meant to be watched before it is read, on every device in the room (see
 	// noticeLiveResults). Missing on games that were not watched live.
 	liveAt?: number;
+};
+
+// A GAME'S RECAP PLAYS, for the Nightly Recap (see recapReel.ts): cut as it
+// is simmed, keyed by gid, kept for the last few nights (see
+// saveRecapReels.ts) and synced to the whole room.
+export type RecapReelRow = {
+	gid: number;
+	season: number;
+	day: number;
+	reel: RecapReel;
 };
 
 // HOW A GAME LOOKED THE NIGHT IT WAS PLAYED.
@@ -1687,6 +1698,35 @@ export type MpLiveBroadcast = {
 	recvAt?: number;
 };
 
+// The score of a game being played live, as the screen playing it shows it -
+// sent with every heartbeat, so a device not watching can keep up with it.
+export type LiveScore = {
+	// Home then away (the game's teams[0] and teams[1]).
+	pts: [number, number];
+	// The period as the live game names it ("Q3", "OT", "2OT"), and the time
+	// left in it ("4:12").
+	q: string;
+	clock: string;
+};
+
+// A game a league mate is playing live right now: the header's live scores,
+// and LIVE wherever the game is listed.
+export type MpLiveGame = {
+	gid: number;
+	byName: string;
+	// "PHO @ DAL".
+	label: string;
+	startedAt: number;
+	// Home then away, when known.
+	tids?: [number, number];
+	score?: LiveScore;
+	paused: boolean;
+	// Over on the screen of whoever is playing it.
+	gameOver: boolean;
+	// This device is in it right now.
+	watching: boolean;
+};
+
 // Where the 3D court of the device in charge of simming is, so a device
 // watching in 3D can play the game along with it rather than be stepped
 // line by line (see the 3D court's follow.ts). Absent from older builds.
@@ -1755,6 +1795,12 @@ export type LocalStateUI = {
 		finals?: boolean;
 		forceWin?: number; // Number of iterations - defined means result was forced
 		gid: number;
+		// A playoff game on the NBA calendar's plan, not yet on the schedule
+		// (gid negative, made up), and whether it may not be needed.
+		planned?: boolean;
+		ifNecessary?: boolean;
+		// An upcoming game on a national network.
+		national?: NationalTag;
 		numPeriods?: number;
 		overtimes?: number;
 		// The displayed point spread for an upcoming game, computed in the worker
@@ -1850,6 +1896,9 @@ export type LocalStateUI = {
 		| undefined;
 	// A league-mate's live sim just started: "Watch PHO @ DAL live?", its
 	// result held back until answered. Undefined when not asking.
+	// Every game league mates are playing live right now, newest first (this
+	// device's own live game is not among them).
+	mpLiveGames: MpLiveGame[];
 	mpLiveOffer:
 		| {
 				gid: number;
@@ -2845,6 +2894,8 @@ type PlayInMatchup = {
 	home: PlayoffSeriesTeam;
 	away: PlayoffSeriesTeam;
 	gids?: number[];
+	// On the NBA calendar, the night of each game (see playoffCalendar.ts).
+	dates?: string[];
 };
 
 // Each entry is the 2 first round games (7/8 and 9/10) and the 1 game between the loser of the 7/8 game and the winner of the 9/10 game
@@ -2862,6 +2913,9 @@ export type PlayoffSeries = {
 		home: PlayoffSeriesTeam;
 		away?: PlayoffSeriesTeam;
 		gids?: number[];
+		// On the NBA calendar, the night of each game, Game 1 on, including
+		// the ones that may not be needed (see playoffCalendar.ts).
+		dates?: string[];
 	}[][];
 
 	// undefined means no play-in tournament
@@ -3546,8 +3600,14 @@ export type NationalBroadcast = {
 	// "Mon".."Sun". (With no calendar, opening night is a Tuesday.)
 	nights?: string[];
 	finals?: boolean;
+	// The network's logo on its games' previews: a link, or a picture written
+	// in. (Without one, its name.)
+	logo?: string;
 	scoreBug: ScoreBugStyle;
 };
+// A game's national network as its preview shows it: the name, and the
+// logo ready to show (if it has one).
+export type NationalTag = { network: string; logo?: string };
 export type ScoreBugShow =
 	| "awayLogo"
 	| "homeLogo"
@@ -3961,6 +4021,10 @@ export type UpdateEvent =
 	// broadcast payload (recovery when the navigation carrying it was dropped).
 	| "mpLiveBroadcast"
 	| "mpLiveChat"
+
+	// A game started or finished being played live somewhere in a shared
+	// league, so pages that show it as in progress (see liveGameGate.ts) redo it.
+	| "liveGames"
 
 	// Background-simulated game spreads landed, so the sportsbook can re-render
 

@@ -42,7 +42,11 @@ import { syncDebugLog } from "./debugLog.ts";
 // is a runaway guard, not a real limit (200k entries is far past any league).
 const FULL_LOG_PAGE_SIZE = 200;
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
-import type { LiveSync3D, SyncedAutoPlay } from "../../../common/types.ts";
+import type {
+	LiveScore,
+	LiveSync3D,
+	SyncedAutoPlay,
+} from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
 import { parseLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
@@ -71,6 +75,12 @@ const AUTHORITY_DOC_ID = "authority";
 // them - no rules change needed.
 const LIVE_BROADCAST_DOC_ID = "liveBroadcast";
 const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
+
+// Several live games at once: each its own meta doc, found by its `kind`, with
+// its own payload chunks - so nobody playing their game live waits on a slot.
+const LIVE_GAME_KIND = "liveGame";
+const liveGameDocId = (gid: number) => `liveGame_${gid}`;
+const liveGameDataDocId = (gid: number, i: number) => `liveGameData_${gid}_${i}`;
 
 // Draft ready-up docs, also under control/ so the same holderId rule covers
 // them. draftReady holds everyone's ready entries (each device merges only its
@@ -105,6 +115,69 @@ const parseDraftReady = (
 	data && typeof data.ready === "object" && data.ready !== null
 		? (data.ready as Record<string, DraftReadyEntry | null>)
 		: undefined;
+
+// The live score on a broadcast doc (see LiveScore), whole or not at all.
+const parseLiveScore = (value: unknown): LiveScore | undefined => {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+	const v = value as Record<string, unknown>;
+	const pts = v.pts;
+	if (
+		!Array.isArray(pts) ||
+		pts.length !== 2 ||
+		!pts.every((x) => typeof x === "number" && Number.isFinite(x)) ||
+		typeof v.q !== "string" ||
+		typeof v.clock !== "string"
+	) {
+		return undefined;
+	}
+	return { pts: [pts[0], pts[1]], q: v.q, clock: v.clock };
+};
+
+const parseTids = (value: unknown): [number, number] | undefined =>
+	Array.isArray(value) &&
+	value.length === 2 &&
+	value.every((x) => typeof x === "number")
+		? [value[0]!, value[1]!]
+		: undefined;
+
+// One broadcast doc, read: undefined unless it is a live game going on.
+const parseLiveBroadcastMeta = (
+	data: Record<string, any> | undefined,
+	legacy: boolean,
+): LiveBroadcastMeta | undefined => {
+	if (
+		!data ||
+		!data.active ||
+		typeof data.holderId !== "string" ||
+		typeof data.gid !== "number"
+	) {
+		return undefined;
+	}
+	return {
+		holderId: data.holderId,
+		active: true,
+		gid: data.gid,
+		byName: typeof data.byName === "string" ? data.byName : "Someone",
+		label: typeof data.label === "string" ? data.label : undefined,
+		cursor: typeof data.cursor === "number" ? data.cursor : 0,
+		paused: !!data.paused,
+		speed: typeof data.speed === "number" ? data.speed : 7,
+		gameOver: !!data.gameOver,
+		startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
+		chunkCount: typeof data.chunkCount === "number" ? data.chunkCount : 0,
+		expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
+		view: typeof data.view === "string" ? data.view : undefined,
+		sync: parseLiveSync3D(data.sync),
+		score: parseLiveScore(data.score),
+		tids: parseTids(data.tids),
+		day: typeof data.day === "number" ? data.day : undefined,
+		playoffs: typeof data.playoffs === "boolean" ? data.playoffs : undefined,
+		...(legacy ? { legacy: true } : {}),
+		recvAt: Date.now(),
+	};
+};
 
 // Where the simmer's 3D court is (see LiveSync3D), if the doc says - whole,
 // or not at all.
@@ -1014,36 +1087,7 @@ export class FirebaseTransport implements SyncTransport {
 				doc(this.db, "leagues", this.code, "control", LIVE_BROADCAST_DOC_ID),
 				(snapshot) => {
 					this.markContact();
-					const data = snapshot.data();
-					if (
-						data &&
-						data.active &&
-						typeof data.holderId === "string" &&
-						typeof data.gid === "number"
-					) {
-						onChange({
-							holderId: data.holderId,
-							active: true,
-							gid: data.gid,
-							byName: typeof data.byName === "string" ? data.byName : "Someone",
-							label: typeof data.label === "string" ? data.label : undefined,
-							cursor: typeof data.cursor === "number" ? data.cursor : 0,
-							paused: !!data.paused,
-							speed: typeof data.speed === "number" ? data.speed : 7,
-							gameOver: !!data.gameOver,
-							startedAt:
-								typeof data.startedAt === "number" ? data.startedAt : 0,
-							chunkCount:
-								typeof data.chunkCount === "number" ? data.chunkCount : 0,
-							expiresAt:
-								typeof data.expiresAt === "number" ? data.expiresAt : 0,
-							view: typeof data.view === "string" ? data.view : undefined,
-							sync: parseLiveSync3D(data.sync),
-							recvAt: Date.now(),
-						});
-					} else {
-						onChange(undefined);
-					}
+					onChange(parseLiveBroadcastMeta(snapshot.data(), false));
 				},
 				(error) => {
 					console.error("Live broadcast subscription failed", error);
@@ -1098,6 +1142,154 @@ export class FirebaseTransport implements SyncTransport {
 				);
 			} catch {
 				// Best-effort; the lease handles a leftover payload.
+			}
+		}
+		this.markContact();
+	}
+
+	// ---- Several live games at once ----------------------------------------
+	// Same shape as the one shared broadcast above, a doc per game: merged
+	// meta (holderId stamped, so the control-doc rule passes), payload chunks
+	// written before the meta says active, and a clear that deletes the lot.
+
+	async publishLiveGame(gid: number, update: LiveBroadcastUpdate) {
+		const clean: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(update)) {
+			if (value !== undefined) {
+				clean[key] = value;
+			}
+		}
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", liveGameDocId(gid)),
+			{
+				...clean,
+				kind: LIVE_GAME_KIND,
+				gid,
+				holderId: this.clientId,
+				updatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	async publishLiveGameData(gid: number, serialized: string) {
+		const chunks: string[] = [];
+		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
+			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
+		}
+		if (chunks.length === 0) {
+			chunks.push("");
+		}
+		for (let i = 0; i < chunks.length; i++) {
+			await setDoc(
+				doc(this.db, "leagues", this.code, "control", liveGameDataDocId(gid, i)),
+				{
+					holderId: this.clientId,
+					gid,
+					data: chunks[i],
+					updatedAt: serverTimestamp(),
+				},
+			);
+		}
+		this.markContact();
+		return chunks.length;
+	}
+
+	// Every live game in the room, each time any of them changes: the
+	// per-game docs, plus the old shared doc while a device on an older build
+	// may still be broadcasting there.
+	//
+	// A game whose doc did not change keeps the very same object from one
+	// delivery to the next (and so its recvAt): every heartbeat of one game
+	// re-delivers all of them, and a watcher's 3D court times its play-along
+	// from when ITS game's doc was heard.
+	subscribeLiveGames(onChange: (metas: LiveBroadcastMeta[]) => void) {
+		const perGame = new Map<string, LiveBroadcastMeta>();
+		let legacy: LiveBroadcastMeta | undefined;
+		const emit = () => {
+			const metas = [...perGame.values()];
+			onChange(
+				legacy && !metas.some((m) => m.gid === legacy!.gid)
+					? [...metas, legacy]
+					: metas,
+			);
+		};
+		const unsubGames = this.tracked(() =>
+			onSnapshot(
+				query(
+					collection(this.db, "leagues", this.code, "control"),
+					where("kind", "==", LIVE_GAME_KIND),
+				),
+				(snapshot) => {
+					this.markContact();
+					const changed = new Set(
+						snapshot.docChanges().map((change) => change.doc.id),
+					);
+					const before = new Map(perGame);
+					perGame.clear();
+					for (const docSnap of snapshot.docs) {
+						const kept = changed.has(docSnap.id)
+							? undefined
+							: before.get(docSnap.id);
+						const meta =
+							kept ?? parseLiveBroadcastMeta(docSnap.data(), false);
+						if (meta) {
+							perGame.set(docSnap.id, meta);
+						}
+					}
+					emit();
+				},
+				(error) => {
+					console.error("Live games subscription failed", error);
+				},
+			),
+		);
+		const unsubLegacy = this.subscribeLiveBroadcast((meta) => {
+			legacy = meta ? { ...meta, legacy: true } : undefined;
+			emit();
+		});
+		return () => {
+			unsubGames();
+			unsubLegacy();
+		};
+	}
+
+	async fetchLiveGameData(gid: number, chunkCount: number) {
+		let out = "";
+		for (let i = 0; i < chunkCount; i++) {
+			const snap = await getDoc(
+				doc(this.db, "leagues", this.code, "control", liveGameDataDocId(gid, i)),
+			);
+			if (!snap.exists()) {
+				return undefined;
+			}
+			out += (snap.data().data as string | undefined) ?? "";
+		}
+		this.markContact();
+		return out;
+	}
+
+	// The game is over here: its doc and payload go. (A doc left by a device
+	// that never got to this is ignored once its lease is long gone, and
+	// cleared by the next device to start a live game - see connect.ts.)
+	async clearLiveGame(gid: number, chunkCount: number) {
+		await deleteDoc(
+			doc(this.db, "leagues", this.code, "control", liveGameDocId(gid)),
+		);
+		for (let i = 0; i < chunkCount; i++) {
+			try {
+				await deleteDoc(
+					doc(
+						this.db,
+						"leagues",
+						this.code,
+						"control",
+						liveGameDataDocId(gid, i),
+					),
+				);
+			} catch {
+				// Best-effort, like the shared broadcast's.
 			}
 		}
 		this.markContact();

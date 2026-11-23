@@ -1,4 +1,4 @@
-import { parseScoreBug } from "./scoreBug.ts";
+import { parseScoreBug, scoreBugPictureIds } from "./scoreBug.ts";
 import type { NationalBroadcast } from "./types.ts";
 
 // NATIONAL BROADCASTS (see NationalBroadcast): which game of a night a
@@ -22,7 +22,7 @@ export const parseNationalBroadcasts = (
 		const label =
 			typeof r.network === "string" ? r.network : `Network ${i + 1}`;
 		for (const key of Object.keys(r)) {
-			if (!["network", "nights", "finals", "scoreBug"].includes(key)) {
+			if (!["network", "nights", "finals", "logo", "scoreBug"].includes(key)) {
 				return `${label}: unknown field "${key}".`;
 			}
 		}
@@ -39,6 +39,9 @@ export const parseNationalBroadcasts = (
 		if (r.finals !== undefined && typeof r.finals !== "boolean") {
 			return `${label}: "finals" should be true or false.`;
 		}
+		if (r.logo !== undefined && typeof r.logo !== "string") {
+			return `${label}: "logo" should be a picture's link.`;
+		}
 		const bug = parseScoreBug(r.scoreBug);
 		if (typeof bug === "string") {
 			return `${label}: ${bug}`;
@@ -47,11 +50,18 @@ export const parseNationalBroadcasts = (
 			network: r.network,
 			...(r.nights !== undefined ? { nights: r.nights as string[] } : {}),
 			...(r.finals !== undefined ? { finals: r.finals } : {}),
+			...(r.logo !== undefined ? { logo: r.logo } : {}),
 			scoreBug: bug,
 		});
 	}
 	return out;
 };
+
+// The pictures a network keeps in the league: its bug's, and its logo.
+export const nationalPictureIds = (n: NationalBroadcast) => [
+	...scoreBugPictureIds(n.scoreBug),
+	...(n.logo?.startsWith("pic:") ? [n.logo.slice(4)] : []),
+];
 
 // The night of the week a game is on (0 Sunday): by its date, or with no
 // calendar, counted from opening night (`openingDay`), a Tuesday as in the

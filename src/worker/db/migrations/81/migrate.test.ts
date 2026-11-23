@@ -1,7 +1,11 @@
 import * as fakeIndexedDB from "fake-indexeddb";
 import { openDB } from "@dumbmatter/idb";
 import { afterAll, assert, beforeAll, test } from "vitest";
-import { PHASE, PLAYER } from "../../../../common/constants.ts";
+import {
+	LEAGUE_DATABASE_VERSION,
+	PHASE,
+	PLAYER,
+} from "../../../../common/constants.ts";
 import { resetG } from "../../../../test/helpers.ts";
 import connectLeague from "../../connectLeague.ts";
 
@@ -132,8 +136,11 @@ test("version 80 leagues get p.contracts, and records already converted are left
 
 	const db = await connectLeague(LID);
 	try {
-		assert.strictEqual(db.version, 81);
+		// (Upgraded on through any later versions too.)
+		assert.strictEqual(db.version, LEAGUE_DATABASE_VERSION);
 		assert.isFalse(db.objectStoreNames.contains("releasedPlayers" as any));
+		// (82: the Nightly Recap's plays.)
+		assert.isTrue(db.objectStoreNames.contains("recapReels"));
 
 		const p1: any = await db.get("players", 1);
 		assert.notProperty(p1, "contract");

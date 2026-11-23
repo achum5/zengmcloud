@@ -12,6 +12,8 @@ import { getCol } from "../../../common/getCol.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { showNotification } from "../../util/showNotification.ts";
+import { NationalTag } from "../NationalTag.tsx";
+import type { NationalTag as NationalTagType } from "../../../common/types.ts";
 import {
 	isAllStarGame,
 	isTradeDeadline,
@@ -74,6 +76,7 @@ export const ScoreBox = memo(
 		boxScoreTeamOverride,
 		className,
 		game,
+		livePts,
 		playersUpcoming,
 		playersUpcomingAbbrev,
 		small,
@@ -94,6 +97,8 @@ export const ScoreBox = memo(
 			finals?: boolean;
 			forceWin?: number;
 			gid: number;
+			// An upcoming game on a national network.
+			national?: NationalTagType;
 			neutralSite?: boolean;
 			season?: number;
 			// The displayed spread: for an upcoming game, worked out in the worker
@@ -107,6 +112,8 @@ export const ScoreBox = memo(
 			numPeriods?: number;
 			overtimes?: number;
 		};
+		// A game being played live: the score as it stands (home, away).
+		livePts?: [number, number];
 		playersUpcoming?: [any, any];
 		playersUpcomingAbbrev?: boolean;
 		small?: boolean;
@@ -141,6 +148,8 @@ export const ScoreBox = memo(
 
 		const final = winner !== undefined;
 
+		const national = !final ? game.national : undefined;
+
 		const hasOvrs =
 			!small &&
 			!challengeNoRatings &&
@@ -155,7 +164,7 @@ export const ScoreBox = memo(
 		if (
 			game.teams[0].ovr !== undefined &&
 			game.teams[1].ovr !== undefined &&
-			(!small || !final)
+			(!small || (!final && !livePts))
 		) {
 			// Neutral site drops home-court advantage: a completed neutral game, or an
 			// upcoming finals/playoff game the settings mark neutral.
@@ -547,6 +556,20 @@ export const ScoreBox = memo(
 													</>
 												)}
 											</div>
+										) : livePts ? (
+											<div
+												className={clsx(
+													"text-body text-end align-self-stretch d-flex align-items-center",
+													{
+														"fw-bold score-box-score": small,
+														"ps-2 pe-2": !small,
+														"pe-1": small,
+													},
+												)}
+												style={!small ? { fontSize: 16 } : undefined}
+											>
+												{livePts[i]}
+											</div>
 										) : null}
 									</div>
 									{p ? (
@@ -576,6 +599,9 @@ export const ScoreBox = memo(
 						})
 					)}
 				</div>
+				{small && national ? (
+					<NationalTag className="score-box-national-small" tag={national} />
+				) : null}
 				{small && overtimes ? (
 					<div
 						className="text-end text-body-secondary px-1 d-flex align-items-center"
@@ -587,9 +613,20 @@ export const ScoreBox = memo(
 			</div>
 		);
 
+		// (A tab on the box's top edge, so national games' boxes still line up
+		// with the rest.)
+		const nationalStrip =
+			national && !small ? (
+				<NationalTag className="score-box-national" tag={national} />
+			) : null;
+		const outerClassName = nationalStrip
+			? clsx(className, "position-relative")
+			: className;
+
 		if (actions.length > 0) {
 			return (
-				<div className={className}>
+				<div className={outerClassName}>
+					{nationalStrip}
 					<div className="d-flex">
 						{scoreBox}
 						<div className="btn-group-vertical score-box-action">
@@ -646,6 +683,11 @@ export const ScoreBox = memo(
 			);
 		}
 
-		return <div className={className}>{scoreBox}</div>;
+		return (
+			<div className={outerClassName}>
+				{nationalStrip}
+				{scoreBox}
+			</div>
+		);
 	},
 );

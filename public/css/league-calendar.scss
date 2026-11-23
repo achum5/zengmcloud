@@ -143,11 +143,6 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 			color: #fff;
 			opacity: 0.85;
 		}
-
-		.lc-pill {
-			color: #fff;
-			border-color: #fff;
-		}
 	}
 
 	td.lc-mine {
@@ -202,6 +197,17 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 
 .lc-tag-playoffs {
 	color: var(--bs-warning-text-emphasis);
+}
+
+// A playoff game that may not be needed.
+.lc-maybe .lc-game {
+	opacity: 0.6;
+}
+
+.lc-maybe-note {
+	font-size: 0.6rem;
+	font-style: italic;
+	line-height: 1;
 }
 
 .lc-game {
@@ -290,18 +296,6 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 
 .lc-l {
 	background: #dc3545;
-}
-
-.lc-pill {
-	margin-top: 0.1rem;
-	padding: 0.1rem 0.55rem;
-	font-size: 0.6rem;
-	font-weight: 700;
-	letter-spacing: 0.03em;
-	text-transform: uppercase;
-	color: var(--bs-emphasis-color);
-	border: 1.5px solid var(--bs-emphasis-color);
-	border-radius: 999px;
 }
 
 .lc-count {
@@ -560,6 +554,11 @@ $lc-home-bg: if(lightness($white) < 50%, #000, #111);
 	display: flex;
 	flex-shrink: 0;
 	align-items: flex-start;
+}
+
+// A playoff game that may not be needed.
+.ltb-maybe {
+	opacity: 0.55;
 }
 
 .ltb-stub {

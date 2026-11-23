@@ -12,9 +12,29 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 467,
+		date: "2026-11-23",
+		text: "Nightly Recap: the Daily Schedule now has a recap video of the night, for games played from this update on. Each game gets a Game Recap card, its biggest plays on the 3D court, and a Final card with the score and three players a side. Pick how long it runs (Full, Medium, Short or One play a game). The shortest still shows each game's biggest play: the game-winner if there was one, otherwise the best play of the game's top player. The last 7 nights can be watched.",
+	},
+	{
+		n: 466,
+		date: "2026-11-23",
+		text: 'NBA calendar leagues: the playoffs now run on the NBA\'s real schedule. The play-in is Tuesday, Wednesday and Friday, round 1 opens with four series on Saturday and four on Sunday, series play every two or three nights with no back-to-backs, the conference finals alternate nights, and the Finals start on a Thursday. Every game of a series shows on the calendar and in the scores bar once the matchup is set, with "if necessary" on the games that may not be played. One day sims one night, and injuries heal at the same pace as in a classic league.',
+	},
+	{
+		n: 465,
+		date: "2026-11-23",
+		text: "Live games in shared leagues: several of you can live sim your own games at the same time, and nobody waits on anyone else's. Every game being played live shows at the top of the screen with its score and clock; tap one to watch from where it is. Until the final buzzer on the screen playing it, the game looks in progress everywhere: LIVE with the score on the Daily Schedule, the team schedule and the scores bar, and no final in the box score, standings, playoff bracket or news. In the regular season, once a later day is simmed the result shows for everyone not watching. In the playoffs, the next day waits for every live game to finish.",
+	},
+	{
+		n: 464,
+		date: "2026-11-23",
+		text: "National broadcasts now show before tipoff: a game on a national network has the network's tag on its box on the Daily Schedule and the team schedule, beside it in the scores bar, and next to the next game on the dashboard. A night's pick can still change as records change, until it's the next night.",
+	},
+	{
 		n: 463,
 		date: "2026-11-23",
-		text: "NBA calendar leagues: the team calendar has a new look, like a team's own schedule page. Home nights are filled in black, each game has the opponent's logo and name, and played games show a green W or red L with the score and a Box Score button. Today is outlined in red.",
+		text: "NBA calendar leagues: the team calendar has a new look, like a team's own schedule page. Home nights are filled in black, each game has the opponent's logo and name, and played games show a green W or red L with the score (tap a game for its box score). Today is outlined in red.",
 	},
 	{
 		n: 462,
