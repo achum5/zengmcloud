@@ -11,7 +11,7 @@ import type {
 } from "./faces.ts";
 import type { KitArt } from "./kitArt.ts";
 import { capBack, capSide, type Cap } from "./cap.ts";
-import { skeleton, type Body, type V3 } from "./poses.ts";
+import { skeleton, type Body, type Pose, type V3 } from "./poses.ts";
 
 // WHAT HE LOOKS LIKE - and his head (see sprite.ts).
 //
@@ -217,6 +217,7 @@ export const drawHeadAt = (
 		(Math.cos(st.yaw + turned) * toCamX + Math.sin(st.yaw + turned) * toCamY) /
 		toCamL;
 	const headC = at(head);
+	const q = poseOf(st);
 	drawHead(
 		ctx,
 		headC,
@@ -227,10 +228,35 @@ export const drawHeadAt = (
 		head,
 		OUTLINE * headC.k,
 		turned,
-		yellOf(st),
+		Math.max(yellOf(st), q.yell),
 		whistleOf(st),
+		bowOf(q, body),
+		q.grin,
 	);
 };
+// How far his head is bowed (to 1) or tipped back (to -1) for his face: as
+// far as his neck has it - and, bowing it, as far over as all of him is
+// with it (bent forward in his chair, his head down too).
+const bowOf = (q: Pose, body: Body): number => {
+	if (q.nod <= 0) {
+		return Math.max(-1, q.nod / BOW_MOST);
+	}
+	const sk = skeleton(body, q);
+	const over =
+		(Math.atan2(sk.head.f - sk.chest.f, sk.head.u - sk.chest.u) * 180) /
+		Math.PI;
+	return Math.min(1, Math.max(0, over / BOW_MOST)) * Math.min(1, q.nod / 10);
+};
+// (His head bowed this far - degrees - shows the crown of it all it does,
+// his face tipped down under it.)
+const BOW_MOST = 50;
+// (Bowed right down, his face so much shorter and so far down - head radii;
+// tipped back, the same.)
+const BOW_FROM = 0.3;
+const BOW_SQUASH = 0.32;
+const BOW_DROP = 0.3;
+const TIP_SQUASH = 0.16;
+const TIP_LIFT = 0.12;
 // Where his head is on his body, in his pose.
 export const headOf = (st: PlayerState, body: Body): V3 =>
 	skeleton(body, poseOf(st)).head;
@@ -904,6 +930,10 @@ const drawHead = (
 	yell = 0,
 	// An official's whistle in his mouth (see whistleOf).
 	whistle = false,
+	// His head bowed (to 1: right down) or tipped back (to -1).
+	bow = 0,
+	// Grinning (0 to 1).
+	grin = 0,
 ) => {
 	const c = { x: middle.x, y: middle.y - r * FACE_LIFT };
 	// Which way his nose points on screen.
@@ -1182,10 +1212,24 @@ const drawHead = (
 	const squash = 0.82 + 0.18 * Math.max(0, front);
 	const shift = turn * (1 - Math.max(0, front)) * r * 0.14;
 	const scale = (r * 2.45) / sprite.h;
+	// Bowed, the crown of his head toward the camera - his hair over the
+	// top of it - and his face tipped down under it, foreshortened; tipped
+	// back, his face up under his hair, his jaw.
+	// (A little way down, his face as it is: only bowed right down does the
+	// crown of his head show over it.)
+	// (In his cap, the cap on his face is all there is over it: not the back
+	// of another one.)
+	const down = Math.max(0, (bow - BOW_FROM) / (1 - BOW_FROM));
+	const up = Math.max(0, -bow);
+	if (down > 0.05 && !look.cap) {
+		back();
+	}
+	const tall = 1 - BOW_SQUASH * down - TIP_SQUASH * up;
+	const drop = BOW_DROP * down * (look.cap ? 0.5 : 1);
 	ctx.save();
 	ctx.globalAlpha *= vis;
-	ctx.translate(c.x + shift, c.y);
-	ctx.scale(scale * squash, scale);
+	ctx.translate(c.x + shift, c.y + r * (drop - TIP_LIFT * up));
+	ctx.scale(scale * squash, scale * tall);
 	ctx.drawImage(sprite.img, -sprite.cx, -sprite.cy);
 	if (whistle) {
 		// His whistle in his mouth, over the one he has (where faces.js puts
@@ -1195,6 +1239,36 @@ const drawHead = (
 		ctx.beginPath();
 		ctx.ellipse(0, 0.355 * h, h * 0.045, h * 0.03, 0, 0, Math.PI * 2);
 		ctx.fill();
+	} else if (grin > 0.05 && grin >= yell) {
+		// Grinning: a wide smile over the one he has - its corners turned up,
+		// his top teeth filling most of it.
+		const h = sprite.h;
+		const y = 0.34 * h;
+		const half = h * (0.075 + 0.03 * grin);
+		const deep = h * (0.024 + 0.03 * grin);
+		const lift = deep * 0.55;
+		const mouth = new Path2D();
+		mouth.moveTo(-half, y - lift);
+		mouth.quadraticCurveTo(0, y + deep * 0.25, half, y - lift);
+		mouth.quadraticCurveTo(half * 0.8, y + deep * 1.15, 0, y + deep * 1.15);
+		mouth.quadraticCurveTo(-half * 0.8, y + deep * 1.15, -half, y - lift);
+		mouth.closePath();
+		ctx.fillStyle = "#3a1416";
+		ctx.strokeStyle = INK;
+		ctx.lineWidth = Math.max(1, h * 0.01);
+		ctx.fill(mouth);
+		ctx.save();
+		ctx.clip(mouth);
+		const teeth = new Path2D();
+		teeth.moveTo(-half, y - lift - deep);
+		teeth.lineTo(half, y - lift - deep);
+		teeth.lineTo(half, y - lift * 0.15);
+		teeth.quadraticCurveTo(0, y + deep * 0.95, -half, y - lift * 0.15);
+		teeth.closePath();
+		ctx.fillStyle = "#f4efe6";
+		ctx.fill(teeth);
+		ctx.restore();
+		ctx.stroke(mouth);
 	} else if (yell > 0.05) {
 		// Yelling: his mouth open over the one he has - where faces.js puts
 		// it, a third of the way down from the middle of his face - his top

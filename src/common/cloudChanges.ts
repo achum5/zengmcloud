@@ -17,6 +17,11 @@ export const CLOUD_CHANGES: CloudChange[] = [
 		text: "3D game, New sim (Global Settings, 3D Game Sim): after a miss or a turnover, defenders now run back and pick up their man on the way, the way NBA defenses do, instead of all dropping into the paint. On a fast break the engine scored, the play still has them beaten.",
 	},
 	{
+		n: 472,
+		date: "2026-11-23",
+		text: "Draft night: players now take hearing their name like the real thing. Some smile, nod and button their jacket, some bury their face in their hands or wipe away tears, some throw their arms up, pump a fist and shout, point to the sky or put a hand on their heart, and some just sit there stunned. There are 13 ways to take it in the chair and 16 on their feet, each player always takes it the same way, and the happy ones grin through the hugs. On stage they wave, point, raise a fist, clap or bow with their hands together instead of dropping into a game stance.",
+	},
+	{
 		n: 471,
 		date: "2026-11-23",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders now guard their own man between plays. On the ball they sit about a step and a half off, tighter on a shooter and looser on a quick driver; off the ball they sag toward the rim and over to the ball's side the way NBA defenders do, more off a man who can't shoot. When a man drives, the nearest defender away from the ball steps up into his way.",

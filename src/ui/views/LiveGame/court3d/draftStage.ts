@@ -102,18 +102,27 @@ export const groundAt = (x: number, y: number): number => {
 // ---- the takes ---------------------------------------------------------------
 
 // HOW HIS PICK GOES: his family's table on the aisle - either side of it,
-// in the front three rows; how he takes his name being read (straight up, a
-// moment sat there taking it in, his hands on his head, both arms at the
-// sky, a fist pumped); who is with him, and which of them comes round to
-// hug him; his pace up the aisle; what he does for the cameras once the
-// commissioner has had him; and where the cameras are for the room, the
-// podium and the stage.
-export type DraftReact = "up" | "beat" | "hands" | "sky" | "pump";
+// in the front three rows; how he takes his name being read (see MOODS); who
+// is with him, and which of them comes round to hug him; his pace up the
+// aisle; what he does for the cameras once the commissioner has had him;
+// and where the cameras are for the room, the podium and the stage.
 export type DraftKin = "mom" | "dad" | "brother" | "none";
+export type DraftMood =
+	| "composed"
+	| "overcome"
+	| "overjoyed"
+	| "firedUp"
+	| "faith"
+	| "stunned"
+	| "relieved";
 export type DraftTake = {
 	side: 1 | -1;
 	row: -1 | 0 | 1;
-	react: DraftReact;
+	// How it hits him: what he does in his chair as his name is read, and up
+	// on his feet after (see SITS, UPS).
+	mood: DraftMood;
+	sit: AnimName;
+	up: AnimName;
 	hugger: "mom" | "dad";
 	other: DraftKin;
 	pose: AnimName;
@@ -125,19 +134,83 @@ export type DraftTake = {
 	// coming up the aisle there too.
 	footCam: 1 | -1;
 };
-const REACTS: DraftReact[] = ["up", "up", "beat", "hands", "sky", "pump"];
-const REACT_ANIM: Partial<Record<DraftReact, AnimName>> = {
-	hands: "headHands",
-	sky: "skyPoint",
-	pump: "fistPump",
+// HOW IT HITS HIM, as it hits the men in the green room on the broadcasts:
+// most of them composed - a smile, a nod, the jacket done up; plenty
+// overcome, bent over in tears; some beside themselves, or fired up, or
+// thanking God; some stunned, some just relieved it is over. (So many in
+// twenty.)
+const MOODS: [DraftMood, number][] = [
+	["composed", 5],
+	["overcome", 4],
+	["overjoyed", 3],
+	["firedUp", 2],
+	["faith", 2],
+	["stunned", 2],
+	["relieved", 2],
+];
+// What he does with it in his chair...
+export const SITS: Record<DraftMood, AnimName[]> = {
+	composed: ["sitSmile", "sitStunned", "sitHeart"],
+	overcome: ["sitBow", "sitFaceHands", "sitHandEyes"],
+	overjoyed: ["sitJolt", "sitClap", "sitLaugh"],
+	firedUp: ["sitFist", "sitJolt"],
+	faith: ["sitPray", "sitHeart"],
+	stunned: ["sitHandMouth", "sitStunned", "sitHandEyes"],
+	relieved: ["sitLeanBack", "sitSmile", "sitLaugh"],
 };
-const REACT_MS: Record<DraftReact, number> = {
-	up: 0,
-	beat: 0,
-	hands: 1300,
-	sky: 1200,
-	pump: 1100,
+// ...and up on his feet.
+export const UPS: Record<DraftMood, AnimName[]> = {
+	composed: ["upButton", "upWave", "upClap", "upHeart"],
+	overcome: ["upWipeEyes", "upFaceHands", "upHeart", "upButton"],
+	overjoyed: ["upArmsOut", "upClap", "upHandsHead", "upSky"],
+	firedUp: ["upFistPump", "upRoar", "upChestThump"],
+	faith: ["upSky", "upPointUp", "upPray"],
+	stunned: ["upHandsHead", "upHandMouth", "upButton"],
+	relieved: ["upExhale", "upHandsHead", "upButton"],
 };
+// (Grinning after - all but those overcome.)
+const GRINS: Record<DraftMood, boolean> = {
+	composed: true,
+	overcome: false,
+	overjoyed: true,
+	firedUp: true,
+	faith: true,
+	stunned: true,
+	relieved: true,
+};
+// How long each takes (ms).
+const BEAT_MS: Partial<Record<AnimName, number>> = {
+	sitSmile: 1300,
+	sitBow: 2300,
+	sitFaceHands: 2200,
+	sitHandMouth: 1800,
+	sitHandEyes: 2000,
+	sitPray: 2200,
+	sitLeanBack: 1700,
+	sitClap: 1300,
+	sitFist: 1100,
+	sitStunned: 1800,
+	sitLaugh: 1600,
+	sitHeart: 1600,
+	sitJolt: 1100,
+	upButton: 1500,
+	upHandsHead: 1600,
+	upHandMouth: 1600,
+	upWipeEyes: 1800,
+	upSky: 1500,
+	upPointUp: 1600,
+	upFistPump: 1200,
+	upRoar: 1400,
+	upChestThump: 1400,
+	upHeart: 1600,
+	upArmsOut: 1300,
+	upClap: 1300,
+	upPray: 1700,
+	upExhale: 1500,
+	upWave: 1400,
+	upFaceHands: 1900,
+};
+const beatOf = (anim: AnimName) => BEAT_MS[anim] ?? 1400;
 const FAMILIES: ["mom" | "dad", DraftKin][] = [
 	["mom", "dad"],
 	["mom", "dad"],
@@ -146,13 +219,17 @@ const FAMILIES: ["mom" | "dad", DraftKin][] = [
 	["dad", "mom"],
 	["dad", "none"],
 ];
+// For the cameras on the stage.
 export const POSES: AnimName[] = [
-	"waveBall",
-	"point",
-	"chestPound",
-	"skyPoint",
-	"thanksBoth",
-	"armsWide",
+	"upWave",
+	"stagePoint",
+	"upHeart",
+	"upSky",
+	"stageFist",
+	"upClap",
+	"stageThanks",
+	"upArmsOut",
+	"upChestThump",
 ];
 const unit = (n: number): number => {
 	let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
@@ -166,10 +243,16 @@ export const takeOf = (pid: number): DraftTake => {
 	const of = <T>(a: readonly T[], k: number): T =>
 		a[Math.min(a.length - 1, Math.floor(r(k) * a.length))]!;
 	const [hugger, other] = of(FAMILIES, 3);
+	const mood = of(
+		MOODS.flatMap(([m, n]) => Array<DraftMood>(n).fill(m)),
+		4,
+	);
 	return {
 		side: of([1, -1] as const, 1),
 		row: of([-1, 0, 0, 1] as const, 2),
-		react: of(REACTS, 4),
+		mood,
+		sit: of(SITS[mood], 11),
+		up: of(UPS[mood], 12),
 		hugger,
 		other,
 		pose: of(POSES, 5),
@@ -244,6 +327,15 @@ const hugPartner = (at: Pt, yaw: number): Pt => ({
 // than him, him bent over her - his father or his brother much of a height,
 // chest to chest; and where they stand for it, facing him - so far out in
 // front of him, and over to his left.
+// (His side of a hug, grinning.)
+const grinned = (anim: AnimName, grin: boolean): AnimName =>
+	!grin
+		? anim
+		: anim === "embrace"
+			? "embraceGrin"
+			: anim === "embraceMan"
+				? "embraceManGrin"
+				: anim;
 export const embraceOf = (
 	who: DraftKin,
 ): { him: AnimName; them: AnimName; apart: number; left: number } =>
@@ -392,6 +484,8 @@ const path = (pts: Pt[], pace: number) => {
 	return ms;
 };
 const CHAIR_UP_MS = 900;
+// (His name read, a moment before it hits him.)
+const SIT_AFTER_MS = 200;
 const POSE_MS = 1700;
 // (And off, at a walk.)
 const OFF_PACE = 3.4;
@@ -412,18 +506,20 @@ export const DRAFT_CALL = { podium: 2400, call: 7400 };
 export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 	// The commissioner reads it out from the podium: the room first, then him.
 	const { podium, call } = DRAFT_CALL;
-	const react = REACT_MS[take.react];
-	const stand = call + (take.react === "beat" ? 1500 : 350);
+	// A moment in his chair with it, and up; and a moment on his feet.
+	const sat = call + SIT_AFTER_MS;
+	const stand = sat + beatOf(take.sit);
 	const stood = stand + CHAIR_UP_MS;
+	const react = beatOf(take.up);
 	const reacted = stood + react;
 	// The one who hugs him up out of their chair and round the back of his
 	// to him - never across his way: waiting there till he is past (or, this
 	// side of the aisle, there first, and him coming to them).
+	// (Not before he is getting up himself: not stood in front of him while
+	// it hits him.)
 	const kinUp = g.kinFirst
-		? call + 400
-		: take.react === "beat"
-			? call + 500
-			: stand + 150 + Math.max(0, react - 300);
+		? Math.max(call + 400, stand - 400)
+		: stand + 150 + Math.max(0, react - 300);
 	const kinStood = kinUp + CHAIR_UP_MS;
 	const kinVia = kinStood + legs(g.kinSeat, g.kinVia, OTHERS_PACE);
 	const kinLeg = legs(g.kinVia, g.kinWait, OTHERS_PACE);
@@ -477,6 +573,7 @@ export const nightOf = (take: DraftTake, g: DraftPlaces) => {
 	return {
 		podium,
 		call,
+		sat,
 		stand,
 		stood,
 		reacted,
@@ -900,6 +997,9 @@ const HUG_CAM = {
 };
 // (Cut to it just before they come together.)
 const HUG_CUT_MS = 250;
+// Close on him sat at his table: how high it looks, and how wide (feet).
+// (Out from it as he gets up, from just before - so long, ms.)
+const SAT_CAM = { z: 3.5, width: 7, lead: 250, out: 750 };
 export const hugCamOf = (
 	at: Pt,
 	yaw: number,
@@ -953,17 +1053,27 @@ export const draftCameraAt = (
 	const st = him ?? { x: g.seat.x, y: g.seat.y, z: 0 };
 	const hugFrom = N.hug - HUG_CUT_MS;
 	if (t < hugFrom) {
-		// In on him at his table, from the stage side of it: up out of his
-		// chair, and out to them - the photographers crowded in behind him.
+		// In on him at his table, from the stage side of it: close on him in
+		// his chair as it hits him; out as he gets up out of it, and out to
+		// them - the photographers crowded in behind him.
 		const u = smooth((t - N.stand) / (hugFrom - N.stand));
-		return {
-			at: { x: g.tableCam.x, y: g.tableCam.y, z: 5.8 },
+		const up = smooth((t - N.stand + SAT_CAM.lead) / SAT_CAM.out);
+		const wide = {
 			look: mix3(
 				{ x: g.tableLook.x, y: g.tableLook.y, z: 3.3 },
 				{ x: g.hugged.x - 0.4 * g.side, y: g.hugged.y, z: 5 },
 				u,
 			),
-			width: (10.5 + 2 * u) * k,
+			width: 10.5 + 2 * u,
+		};
+		return {
+			at: { x: g.tableCam.x, y: g.tableCam.y, z: 5.8 },
+			look: mix3(
+				{ x: g.tableLook.x, y: g.tableLook.y, z: SAT_CAM.z },
+				wide.look,
+				up,
+			),
+			width: (SAT_CAM.width + (wide.width - SAT_CAM.width) * up) * k,
 		};
 	}
 	if (t < N.leave + 500) {
@@ -1113,7 +1223,8 @@ export const stageDraftNight = (
 		walk(N.off, N.offVia, MARK, EXIT_VIA),
 		walk(N.offVia, N.offVia + legs(EXIT_VIA, EXIT, OFF_PACE), EXIT_VIA, EXIT),
 	];
-	const reactAnim = REACT_ANIM[take.react];
+	const grin = GRINS[take.mood];
+	const easy: AnimName = grin ? "easyGrin" : "easy";
 	const hug1 = embraceOf(take.hugger);
 	const hug2 = embraceOf(take.other);
 	const hugLook = ahead(g.hugged, g.hugYaw);
@@ -1124,41 +1235,40 @@ export const stageDraftNight = (
 		start: { x: SEAT.x, y: SEAT.y },
 		moves,
 		acts: [
-			{ t0: 0, t1: N.stand, anim: "chairSit", look: ahead(SEAT, SEAT.yaw) },
+			{ t0: 0, t1: N.sat, anim: "tableSit", look: ahead(SEAT, SEAT.yaw) },
+			{ t0: N.sat, t1: N.stand, anim: take.sit, look: ahead(SEAT, SEAT.yaw) },
 			{
 				t0: N.stand,
 				t1: N.stood,
-				anim: "chairUp",
+				anim: grin ? "tableUpGrin" : "tableUp",
 				look: ahead(SEAT, SEAT.yaw),
 			},
-			...(reactAnim
-				? [{ t0: N.stood, t1: N.reacted, anim: reactAnim, look: TABLE_CAM }]
-				: []),
+			{ t0: N.stood, t1: N.reacted, anim: take.up, look: TABLE_CAM },
 			// (Waiting on them to come out to him.)
 			...(N.walkOff > N.reacted
 				? [
 						{
 							t0: N.reacted,
 							t1: N.walkOff,
-							anim: "easy" as const,
+							anim: easy,
 							look: g.kinHug,
 						},
 					]
 				: []),
-			{ t0: N.stepped, t1: N.hug, anim: "easy", look: hugLook },
-			{ t0: N.hug, t1: N.hugEnd, anim: hug1.him, look: hugLook },
+			{ t0: N.stepped, t1: N.hug, anim: easy, look: hugLook },
+			{ t0: N.hug, t1: N.hugEnd, anim: grinned(hug1.him, grin), look: hugLook },
 			...(two
 				? [
 						{
 							t0: N.hugEnd,
 							t1: N.hug2,
-							anim: "easy" as const,
+							anim: easy,
 							look: hug2Look,
 						},
 						{
 							t0: N.hug2,
 							t1: N.hug2End,
-							anim: hug2.him,
+							anim: grinned(hug2.him, grin),
 							look: hug2Look,
 						},
 					]
@@ -1169,15 +1279,15 @@ export const stageDraftNight = (
 			{ t0: N.handed, t1: N.atSteps, anim: "capOn", look: STEPS_TOP },
 			{ t0: N.arrive, t1: N.meet, anim: "easy", look: ahead(MARK, MEET_YAW) },
 			{ t0: N.meet, t1: N.photo, anim: "dapHug", look: ahead(MARK, MEET_YAW) },
-			{ t0: N.photo, t1: N.pose, anim: "easy", look: STAGE_LOOK },
+			{ t0: N.photo, t1: N.pose, anim: "easyGrin", look: STAGE_LOOK },
 			{ t0: N.pose, t1: N.pose + POSE_MS, anim: take.pose, look: STAGE_LOOK },
-			{ t0: N.pose + POSE_MS, t1: N.off, anim: "easy", look: STAGE_LOOK },
+			{ t0: N.pose + POSE_MS, t1: N.off, anim: "easyGrin", look: STAGE_LOOK },
 		],
 		arms: [],
 		faces: [],
 		looks: [
 			[0, ahead(SEAT, SEAT.yaw)],
-			...(reactAnim ? ([[N.stood, TABLE_CAM]] as [number, Pt][]) : []),
+			[N.stood, TABLE_CAM],
 			[N.stepped, hugLook],
 			...(two ? ([[N.hugEnd, hug2Look]] as [number, Pt][]) : []),
 			[N.atFoot, STAFF],
