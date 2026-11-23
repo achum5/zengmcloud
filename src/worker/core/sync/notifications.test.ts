@@ -202,6 +202,55 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("L @ BOS 98-102"));
 	});
 
+	test("the day opens the body: its date on the NBA calendar, a span for a week", async () => {
+		const dated = (
+			gid: number,
+			home: { tid: number; pts: number },
+			away: { tid: number; pts: number },
+			date: string,
+		) => {
+			const change = gamePut(gid, home, away, gid);
+			return {
+				...change,
+				value: { ...(change as any).value, date },
+			} as Changeset["changes"][number];
+		};
+		const day = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [
+					dated(7, { tid: 0, pts: 110 }, { tid: 1, pts: 86 }, "2025-11-12"),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(day[0]!.title, "Lakers 110 vs. Celtics 86");
+		assert.ok(day[0]!.body.startsWith("Wed, Nov 12\n"));
+
+		const week = await buildNotifications(
+			"playMenu.week",
+			{
+				changes: [
+					dated(8, { tid: 0, pts: 110 }, { tid: 1, pts: 105 }, "2025-11-28"),
+					dated(9, { tid: 1, pts: 102 }, { tid: 0, pts: 98 }, "2025-12-02"),
+				],
+			},
+			opts,
+		);
+		assert.ok(week[0]!.title.startsWith("Your LA Lakers went 1-1"));
+		assert.ok(week[0]!.body.startsWith("Nov 28–Dec 2\nW vs BOS 110-105"));
+	});
+
+	test("on classic numbered days the day number opens the body", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [gamePut(3, { tid: 0, pts: 110 }, { tid: 1, pts: 86 }, 34)] },
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Lakers 110 vs. Celtics 86");
+		assert.ok(notifs[0]!.body.startsWith("Day 34\n"));
+	});
+
 	test("single game → ESPN-style final-score title, top 2 stat lines per team", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
@@ -297,11 +346,11 @@ describe("buildNotifications", () => {
 			opts,
 		);
 		// The headline takes the title - a phone renders it bold and never
-		// truncates it - and the story's first line goes under it.
+		// truncates it - and the story's first line goes under it, after the day.
 		assert.strictEqual(notifs[0]!.title, "Celtics stun the Bulls at the wire");
 		assert.strictEqual(
 			notifs[0]!.body,
-			"The Celtics beat the Bulls 120-114 on a buzzer-beater.",
+			"Day 12\nThe Celtics beat the Bulls 120-114 on a buzzer-beater.",
 		);
 		// The column of final scores it replaced, and the deck, are both gone.
 		assert.ok(!notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
