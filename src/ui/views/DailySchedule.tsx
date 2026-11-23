@@ -320,7 +320,10 @@ const DailySchedule = ({
 					{upcoming.length > 0 ? (
 						<>
 							{upcomingAndCompleted ? <h2>Upcoming Games</h2> : null}
-							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
+							<div
+								className={hubOn ? "lh-games" : "d-flex flex-wrap"}
+								style={hubOn ? undefined : { gap: "1rem 2rem" }}
+							>
 								{upcoming.map((game) => {
 									const live = isLive(game);
 									const liveGame = liveGameByGid.get(game.gid);
@@ -418,6 +421,7 @@ const DailySchedule = ({
 											style={hubOn ? undefined : { maxWidth: 510 }}
 										>
 											<ScoreBox
+												className={hubOn ? "lh-box" : undefined}
 												game={{
 													// Leave out forceTie, since ScoreBox wants the value for finished games
 													finals: game.finals,
@@ -449,7 +453,10 @@ const DailySchedule = ({
 								<h2 className="mt-3">Completed Games</h2>
 							) : null}
 
-							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
+							<div
+								className={hubOn ? "lh-games" : "d-flex flex-wrap"}
+								style={hubOn ? undefined : { gap: "1rem 2rem" }}
+							>
 								{completed.map((game) => {
 									return (
 										<div
@@ -462,7 +469,10 @@ const DailySchedule = ({
 													game.note ? "daily-game-with-note" : "daily-game"
 												}
 											>
-												<ScoreBox game={game} />
+												<ScoreBox
+													className={hubOn ? "lh-box" : undefined}
+													game={game}
+												/>
 												{game.gid === liveBroadcastGid ||
 												liveGameByGid.has(game.gid) ? (
 													<div className="mt-1 d-flex align-items-center gap-2">

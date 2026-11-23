@@ -461,9 +461,31 @@
 
 // The scores under the story: a column's width each, two across where
 // there's room.
+// The night's games side by side where the column has room for two.
+// The night's games side by side wherever two fit; a box too narrow for its
+// players' lines drops them, as on a phone (they're in Top performers).
+.lh-games {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+	gap: 1rem 1.5rem;
+}
 .lh-game {
-	flex: 1 1 510px;
 	min-width: 0;
+}
+.lh-box {
+	container-type: inline-size;
+}
+@container (max-width: 520px) {
+	.lh-box {
+		.score-box-player {
+			display: none !important;
+		}
+		.score-box-left-wrapper {
+			width: auto !important;
+			flex: 1 1 0;
+			min-width: 0;
+		}
+	}
 }
 
 @include media-breakpoint-down(md) {
