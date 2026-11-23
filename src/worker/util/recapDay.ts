@@ -221,6 +221,9 @@ const stateOf = (
 						? "alive"
 						: "cut";
 
+// A win streak this long ended is one of the night's stories.
+const LONG_RUN = 10;
+
 const storyOf = (game: RecapGame): Story => {
 	const shape = analyzeShape(game);
 	const W = shape.winner;
@@ -399,7 +402,11 @@ const storyOf = (game: RecapGame): Story => {
 		hurt,
 		post,
 		series,
-		weight: notability(game),
+		// (A long win streak ended is news on a night, not in its game's own
+		// recap.)
+		weight:
+			notability(game) +
+			(!game.playoffs && (lRun ?? 0) >= LONG_RUN ? 40 + 2 * lRun! : 0),
 	};
 };
 
@@ -2201,6 +2208,9 @@ const headClause = (
 										? `${W} move into 1st in ${confShort(s.firstIn)}`
 										: `${W} beat ${L}`;
 	let result: string;
+	if (endsLongRun(s) && !(bigLine && s.star!.pts >= 35)) {
+		return `${W} end ${poss(L)} ${s.ended}-game ${short ? "" : "win "}streak`;
+	}
 	switch (s.kind) {
 		case "title":
 			return sr && sr.lAfter === 0
@@ -2337,26 +2347,36 @@ const headClause = (
 
 // What a story is, for telling two of a kind as one: a shot that won it and
 // a late go-ahead basket are both games won late.
+// A long win streak ended outranks how the game went: "Kings end Pelicans'
+// 16-game win streak" over "Kings rally from 15 down".
+const endsLongRun = (s: Story) =>
+	(s.ended ?? 0) >= LONG_RUN &&
+	/^(?:comeback|lateGoAhead|upset|snap|ot|streak|close|rout|plain)$/.test(
+		s.kind,
+	);
+
 const groupKey = (s: Story): string =>
-	starLed(s) && /^(?:series|streak|plain|close|rout)$/.test(s.kind)
-		? `star ${s.game.gid}`
-		: s.kind === "clinch" && s.series
-			? s.series.wAfter + s.series.lAfter === s.series.bestOf
-				? "clinch decider"
-				: s.series.lAfter === 0
-					? "clinch sweep"
-					: "clinch close"
-			: s.kind === "series"
-				? // (A series game won at the end is its own clause.)
-					s.shot
-					? `shot ${s.game.gid}`
-					: `series ${stateKey(s) ?? ""}`
-				: s.kind === "shot" || s.kind === "lateGoAhead"
-					? "late"
-					: s.unbeaten !== undefined &&
-						  /^(?:streak|plain|close|rout)$/.test(s.kind)
-						? "unbeaten"
-						: s.kind;
+	endsLongRun(s) && !starLed(s)
+		? "ended"
+		: starLed(s) && /^(?:series|streak|plain|close|rout)$/.test(s.kind)
+			? `star ${s.game.gid}`
+			: s.kind === "clinch" && s.series
+				? s.series.wAfter + s.series.lAfter === s.series.bestOf
+					? "clinch decider"
+					: s.series.lAfter === 0
+						? "clinch sweep"
+						: "clinch close"
+				: s.kind === "series"
+					? // (A series game won at the end is its own clause.)
+						s.shot
+						? `shot ${s.game.gid}`
+						: `series ${stateKey(s) ?? ""}`
+					: s.kind === "shot" || s.kind === "lateGoAhead"
+						? "late"
+						: s.unbeaten !== undefined &&
+							  /^(?:streak|plain|close|rout)$/.test(s.kind)
+							? "unbeaten"
+							: s.kind;
 
 // Two or three stories of one kind are one clause: "Kings, Rockets extend
 // win streaks", "Mathis, Murray hit game-winners".
@@ -2450,12 +2470,18 @@ const nightHeadline = (units: Story[][], themes: Theme[], rng: Rng): string => {
 		// "Hawks stun Grizzlies as 4 favorites fall; Kings win 5th straight".
 		const theme = themes.find((t) => t.games.includes(lede));
 		const other = top.find((s) => !theme?.games.includes(s));
-		for (const short of [false, true]) {
-			const both = other
-				? `${surnamesIn(themed, lede.game)}; ${clause(other, { short })}`
-				: undefined;
-			if (both && both.length <= NIGHT_HEAD_MAX) {
-				return cap(both);
+		// ("Timberwolves, Bulls, Warriors advance" to fit a second story.)
+		const compact = themed
+			.replace(/ and ([^;]*?) all /, ", $1 ")
+			.replace(" all ", " ");
+		for (const head of [themed, compact]) {
+			for (const short of [false, true]) {
+				const both = other
+					? `${surnamesIn(head, lede.game)}; ${clause(other, { short })}`
+					: undefined;
+				if (both && both.length <= NIGHT_HEAD_MAX) {
+					return cap(both);
+				}
 			}
 		}
 		return cap(themed);
