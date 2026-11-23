@@ -2525,6 +2525,14 @@ const storyParagraph = (
 	alone: boolean,
 	night: string,
 ): string => {
+	// Told as the headline has it.
+	if (
+		endsLongRun(s) &&
+		s.kind !== "ended" &&
+		headClause(s, {}).includes(" end ")
+	) {
+		s = { ...s, kind: "ended" };
+	}
 	const para: string[] = [ledeSentence(s, rng, night)];
 	const detail = ledeDetail(s, para.join(" "));
 	if (detail) {
