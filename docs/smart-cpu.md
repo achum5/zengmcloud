@@ -2807,3 +2807,40 @@ on average; the offer market's table (`HAUL`) has 95-98%. Room is not
 repriced from it: it is low partly because teams hold out for what the model
 says room buys, and priced lower, room would go on exactly the late
 leftovers the margin stops.
+
+## Human trades on vanilla's rules: smart CPU on and off (2026-11-23)
+
+The owner asked how a person's trades with CPU teams differ with the smart
+CPU on and off at a trade difficulty of 3.5. On vanilla's rules both judge a
+person's offer by vanilla's value at the difficulty (`trade/propose.ts`):
+the CPU team's own players count 1.35 times over, and the person's picks
+are valued as the last pick of their round. The smart CPU only adds a veto
+on top (`smartCpu/humanTrades.ts`, `smartGuardOffer`): a contender (3% or
+better to win the title this season or next) won't give up near odds, a
+rebuilding team (0.5% or less) won't give up later odds, and a contender
+won't hand another contender a bigger gain than its own. The same veto
+filters "What would make this work", the CPU's proposals and the trading
+block. Teams between 0.5% and 3% have no veto, and the smart GM's own
+read of value is not asked.
+
+Measured (`humanTradeAudit`, League 40 20 days into 2010): for three
+person's teams, every 1-for-1 and 2-for-1 deal with every CPU team among
+the best players each side has, and each 1-for-1 again with the person's
+first added - 9,048 deals each.
+
+| person's team (title odds) | within the salary rules | vanilla takes | smart CPU vetoes |
+| -------------------------- | ----------------------- | ------------- | ---------------- |
+| Atlanta (12.2%)            | 1,751                   | 980           | 24               |
+| Miami (4.3%)               | 1,420                   | 721           | 62               |
+| New Orleans (0.2%)         | 1,683                   | 785           | 66               |
+
+Of the deals vanilla takes, those the CPU team loses by its own smart read
+(all / by more than 0.05 titles), off against on: Atlanta 46/19 against
+31/12, Miami 54/24 against 24/8, New Orleans 69/24 against 37/6. The
+person's best gain by the smart read: Atlanta 0.082 titles against 0.046,
+Miami 0.014 against none, New Orleans 0.017 both ways. What the veto stops
+are contenders selling their best for the future: 10.7% Houston's Tim
+Duncan for Chris Paul and Emeka Okafor, 5.6% Denver's Chauncey Billups for
+Paul. What it lets through are teams in the middle: 1.9% Dallas giving
+Jason Kidd (37, 60) for Marvin Williams (24, 57/62, $7.5M to 2014), -0.177
+titles to Dallas, +0.046 to Atlanta.
