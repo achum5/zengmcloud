@@ -308,6 +308,25 @@ export const RAFTERS = plane(
 	24,
 	8,
 );
+// The same round the near side of the building, for a scene whose cameras
+// look back across the floor at it (see Venue.round): each turned half way
+// round about the middle of the floor.
+const turnedRound = (p: Plane, key: string): Plane => ({
+	key,
+	origin: {
+		x: COURT_W - p.origin.x,
+		y: FLOOR_EDGE.y0 + FLOOR_EDGE.y1 - p.origin.y,
+		z: p.origin.z,
+	},
+	alongX: { x: -p.alongX.x, y: -p.alongX.y, z: p.alongX.z },
+	alongY: { x: -p.alongY.x, y: -p.alongY.y, z: p.alongY.z },
+	w: p.w,
+	h: p.h,
+});
+export const NEAR_STANDS = turnedRound(STANDS, "nearStands");
+export const NEAR_WALL = turnedRound(LED_WALL, "nearWall");
+export const NEAR_RIBBON = turnedRound(RIBBON, "nearRibbon");
+export const NEAR_RAFTERS = turnedRound(RAFTERS, "nearRafters");
 // Its lights, along under the lower chord: the first this far (ft) in from
 // its end, and the rest this far apart (see paintRafters, and drawGlints).
 const LIGHT_FIRST = 6;

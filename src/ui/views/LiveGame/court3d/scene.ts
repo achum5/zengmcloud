@@ -9,6 +9,10 @@ import {
 	FLOOR,
 	jumboScored,
 	LED_WALL,
+	NEAR_RAFTERS,
+	NEAR_RIBBON,
+	NEAR_STANDS,
+	NEAR_WALL,
 	RAFTERS,
 	RIBBON,
 	STANDS,
@@ -529,6 +533,9 @@ export type Venue = {
 	) => { depth: number; draw: () => void }[];
 	// Over the whole picture once everybody is in it: its lights, its smoke.
 	over?: (ctx: CanvasRenderingContext2D, cam: Camera, t: number) => void;
+	// Stands all the way round - the near side's too, for cameras on the
+	// floor looking back at it.
+	round?: true;
 	// How high the floor under a spot is (a stage, its steps - feet).
 	ground?: (x: number, y: number) => number;
 };
@@ -1887,6 +1894,33 @@ export const drawFrame = (f: Frame) => {
 	drawTexturedPlane(ctx, cam, RIBBON, arena.boards.ribbon[screen], 24, 1);
 	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
 	drawTexturedPlane(ctx, cam, LED_WALL, arena.boards.wall[screen], 24, 1);
+	// (And round the near side, if the cameras look back at it.)
+	if (f.venue?.round) {
+		drawTexturedPlane(
+			ctx,
+			cam,
+			NEAR_STANDS,
+			f.crowd.up > 0.5
+				? f.crowd.wave
+					? arena.standsWave
+					: arena.standsUp
+				: f.crowd.clap && arena.standsClap
+					? arena.standsClap
+					: arena.stands,
+			24,
+			6,
+		);
+		drawTexturedPlane(
+			ctx,
+			cam,
+			NEAR_RIBBON,
+			arena.boards.ribbon[screen],
+			24,
+			1,
+		);
+		drawTexturedPlane(ctx, cam, NEAR_RAFTERS, arena.rafters, 24, 2);
+		drawTexturedPlane(ctx, cam, NEAR_WALL, arena.boards.wall[screen], 24, 1);
+	}
 	floorQuad(
 		ctx,
 		cam,

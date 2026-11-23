@@ -24,12 +24,13 @@ import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { drawChair, type Venue } from "./scene.ts";
 
 // THE DRAFT'S ROOM (see draftStage.ts): the building's floor given over to
-// the green room - round tables in white cloths, families and agents sat at
+// the green room - round tables in black cloths, families and agents sat at
 // them - and at the far end the stage: the LED wall behind it in the picking
-// team's colors with its logo the size of a house, a podium with the logo on
-// it, steps down the middle of its front, the draft board up beside it and
-// the team's own tower on the other side. The house lights down; the stage
-// lit.
+// team's colors with its logo the size of a house, a dark podium before a
+// pale panel and the team's color either side of it, steps down the middle
+// of its front, the draft board up beside it and the team's own tower on the
+// other side. Stands full all the way round; the house lights down; the
+// stage lit.
 //
 // All of it painted once, a few pictures stood up in the world, and the
 // people round the tables each a picture of their own (as the courtside seats
@@ -98,6 +99,34 @@ const ledColors = (colors: [string, string, string]): [string, string] => {
 	const main = lightness(a) < 0.1 ? b : a;
 	const accent = main === a ? (lightness(b) < 0.1 ? c : b) : c;
 	return [main, accent === main ? "#ffffff" : accent];
+};
+
+// The team's color for the dots either side of the podium: its first, if
+// that is a color and not near white or black - its boldest otherwise.
+const rgbOf = (hex: string): [number, number, number] => {
+	const m = /rgba\((\d+), (\d+), (\d+)/.exec(rgba(hex, 1));
+	return m ? [+m[1]!, +m[2]!, +m[3]!] : [255, 255, 255];
+};
+const boldColor = (colors: [string, string, string], main: string) => {
+	const scoreOf = (c: string) => {
+		const [r, g, b] = rgbOf(c);
+		const chroma = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+		const l = lightness(c);
+		return l < 0.06 || l > 0.85 ? 0 : chroma * (1 - Math.abs(l - 0.35));
+	};
+	if (scoreOf(colors[0]) > 0.2) {
+		return colors[0];
+	}
+	let best = main;
+	let score = -1;
+	for (const c of colors) {
+		const s = scoreOf(c);
+		if (s > score) {
+			score = s;
+			best = c;
+		}
+	}
+	return score > 0.12 ? best : main;
 };
 
 // The logo fit in a box round (cx, cy).
@@ -244,27 +273,108 @@ const paintWall = (info: DraftVenueInfo, main: string, accent: string) => {
 	return c;
 };
 
-const paintPodium = (info: DraftVenueInfo, main: string, accent: string) => {
+// Behind the podium, its own backdrop: a pale stone panel no wider than the
+// man reading, lit, and a panel of the team's color either side of it - rows
+// of dots of light all over them - the commissioner read out in front of it.
+export const BACKDROP = {
+	x0: PODIUM.x - 1.35,
+	x1: PODIUM.x + 1.35,
+	y: PODIUM.y - PODIUM.d / 2 - 2.4,
+	z0: STAGE.z,
+	z1: STAGE.z + 13,
+	side: 4.6,
+};
+const BACKDROP_PX = 24;
+const paintBackdrop = () => {
+	const w = Math.round((BACKDROP.x1 - BACKDROP.x0) * BACKDROP_PX);
+	const h = Math.round((BACKDROP.z1 - BACKDROP.z0) * BACKDROP_PX);
+	const c = canvas(w, h);
+	const g = c.getContext("2d")!;
+	const grad = g.createLinearGradient(0, 0, w, 0);
+	grad.addColorStop(0, "#d4d6da");
+	grad.addColorStop(0.45, "#f1f2f3");
+	grad.addColorStop(1, "#c9cbd0");
+	g.fillStyle = grad;
+	g.fillRect(0, 0, w, h);
+	// A stone's grain to it: streaks down it, flecks.
+	const rng = makeCourtRng("draft|backdrop");
+	for (let i = 0; i < 60; i++) {
+		g.fillStyle = `rgba(90, 92, 100, ${0.04 + rng() * 0.06})`;
+		g.fillRect(rng() * w, rng() * h, 1 + rng() * 2, 8 + rng() * 40);
+	}
+	for (let i = 0; i < 1600; i++) {
+		g.fillStyle = `rgba(0, 0, 0, ${0.04 + rng() * 0.07})`;
+		g.fillRect(rng() * w, rng() * h, 1 + rng() * 2, 1 + rng() * 2);
+	}
+	// Its edges: lit down the one, in shadow down the other.
+	g.fillStyle = "rgba(255, 255, 255, 0.6)";
+	g.fillRect(0, 0, 3, h);
+	g.fillStyle = "#26272d";
+	g.fillRect(w - 5, 0, 5, h);
+	return c;
+};
+const paintDots = (main: string) => {
+	const w = Math.round(BACKDROP.side * BACKDROP_PX);
+	const h = Math.round((BACKDROP.z1 - BACKDROP.z0) * BACKDROP_PX);
+	const c = canvas(w, h);
+	const g = c.getContext("2d")!;
+	const grad = g.createLinearGradient(0, 0, 0, h);
+	grad.addColorStop(0, shade(main, 0.2));
+	grad.addColorStop(0.6, main);
+	grad.addColorStop(1, shade(main, -0.3));
+	g.fillStyle = grad;
+	g.fillRect(0, 0, w, h);
+	// The dots: each a dark hole with the light catching under it.
+	const step = 8;
+	for (let y = step / 2; y < h; y += step) {
+		for (let x = step / 2; x < w; x += step) {
+			g.fillStyle = "rgba(255, 255, 255, 0.16)";
+			g.beginPath();
+			g.arc(x, y + 0.8, 2.1, 0, Math.PI * 2);
+			g.fill();
+			g.fillStyle = "rgba(0, 0, 0, 0.45)";
+			g.beginPath();
+			g.arc(x, y, 1.9, 0, Math.PI * 2);
+			g.fill();
+		}
+	}
+	return c;
+};
+
+// The podium: a dark wood lectern, two bands of brushed steel round its top,
+// the team's logo small low on its front.
+const paintPodium = (info: DraftVenueInfo, main: string) => {
 	const px = 24;
 	const w = Math.round(PODIUM.w * px);
 	const h = Math.round(PODIUM.h * px);
 	const c = canvas(w, h);
 	const g = c.getContext("2d")!;
-	const grad = g.createLinearGradient(0, 0, 0, h);
-	grad.addColorStop(0, shade(main, 0.1));
-	grad.addColorStop(1, shade(main, -0.35));
+	const grad = g.createLinearGradient(0, 0, w, 0);
+	grad.addColorStop(0, "#1a1716");
+	grad.addColorStop(0.5, "#2b2624");
+	grad.addColorStop(1, "#171413");
 	g.fillStyle = grad;
 	g.fillRect(0, 0, w, h);
-	g.fillStyle = accent;
-	g.fillRect(0, 0, w, 6);
+	// The wood's grain.
+	const rng = makeCourtRng("draft|podium");
+	for (let i = 0; i < 40; i++) {
+		g.fillStyle = `rgba(255, 240, 220, ${0.015 + rng() * 0.03})`;
+		g.fillRect(0, rng() * h, w, 1);
+	}
+	for (const y of [0.04, 0.1]) {
+		g.fillStyle = "#d9dadd";
+		g.fillRect(0, Math.round(h * y), w, 2);
+		g.fillStyle = "#7d7e84";
+		g.fillRect(0, Math.round(h * y) + 2, w, 1);
+	}
 	g.fillStyle = "#0b0c10";
-	g.fillRect(0, h - 8, w, 8);
+	g.fillRect(0, h - 6, w, 6);
 	drawLogo(
 		g,
 		info.logo,
 		w / 2,
-		h * 0.46,
-		w * 0.78,
+		h * 0.6,
+		w * 0.32,
 		info.team.abbrev,
 		inkOn(main),
 	);
@@ -414,6 +524,8 @@ type Guest = {
 export type DraftVenuePaint = {
 	wall: HTMLCanvasElement;
 	podium: HTMLCanvasElement;
+	backdrop: HTMLCanvasElement;
+	dots: HTMLCanvasElement;
 	fascia: HTMLCanvasElement;
 	tower: HTMLCanvasElement;
 	board: HTMLCanvasElement;
@@ -675,7 +787,9 @@ export const paintDraftVenue = (
 	}
 	return {
 		wall: paintWall(info, main, accent),
-		podium: paintPodium(info, main, accent),
+		podium: paintPodium(info, main),
+		backdrop: paintBackdrop(),
+		dots: paintDots(boldColor(info.team.colors, main)),
 		fascia: paintFascia(info, main),
 		tower: paintTower(info, main, accent),
 		board: paintBoard(info, main),
@@ -785,8 +899,8 @@ const drawBox = (
 	}
 };
 
-// A round table in its white cloth, down to the floor.
-const CLOTH = "#eeeef1";
+// A round table in its black cloth, down to the floor.
+const CLOTH = "#202127";
 const drawTable = (ctx: Ctx, cam: Camera, c: Pt) => {
 	const toward = Math.atan2(cam.pos.y - c.y, cam.pos.x - c.x);
 	const N = 14;
@@ -810,10 +924,10 @@ const drawTable = (ctx: Ctx, cam: Camera, c: Pt) => {
 	const left = project(cam, top[0]!);
 	const right = project(cam, top[N]!);
 	const g = ctx.createLinearGradient(left.x, 0, right.x, 0);
-	g.addColorStop(0, "#9a9aa3");
-	g.addColorStop(0.35, "#d6d6dc");
-	g.addColorStop(0.65, "#d6d6dc");
-	g.addColorStop(1, "#9a9aa3");
+	g.addColorStop(0, "#0c0c10");
+	g.addColorStop(0.35, "#1b1c22");
+	g.addColorStop(0.65, "#1b1c22");
+	g.addColorStop(1, "#0c0c10");
 	fill(ctx, cam, [...top, ...bottom], g);
 	fill(ctx, cam, ring(TABLE_H, 0, Math.PI * 2), CLOTH);
 	// Something in the middle of it: a little low arrangement, a glass or two.
@@ -938,13 +1052,34 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 		paint.board.width,
 		paint.board.height,
 	);
+	const backdropPlane = wall(
+		BACKDROP.x0,
+		BACKDROP.x1,
+		BACKDROP.y,
+		BACKDROP.z0,
+		BACKDROP.z1,
+		paint.backdrop.width,
+		paint.backdrop.height,
+	);
+	const dotPlanes = [BACKDROP.x0 - BACKDROP.side, BACKDROP.x1].map((x0) =>
+		wall(
+			x0,
+			x0 + BACKDROP.side,
+			BACKDROP.y - 0.3,
+			BACKDROP.z0,
+			BACKDROP.z1,
+			paint.dots.width,
+			paint.dots.height,
+		),
+	);
 	return {
+		round: true,
 		ground: groundAt,
 		floor: (ctx, cam, t) => {
 			// The house lights down.
 			ctx.save();
 			ctx.setTransform(1, 0, 0, 1, 0, 0);
-			ctx.fillStyle = "rgba(2, 2, 8, 0.5)";
+			ctx.fillStyle = "rgba(4, 8, 30, 0.72)";
 			ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 			ctx.restore();
 			// The floor: dark, a pool of each team-colored light moving over it.
@@ -1016,6 +1151,11 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 					sheen,
 				);
 			}
+			// The podium's backdrop, stood on the stage behind it.
+			for (const d of dotPlanes) {
+				drawTexturedPlane(ctx, cam, d, paint.dots, 2, 6);
+			}
+			drawTexturedPlane(ctx, cam, backdropPlane, paint.backdrop, 2, 6);
 			// Its steps: the furthest first, each a riser and a tread, an edge
 			// of light along each.
 			const tread = (STEPS.y1 - STAGE.y1) / STEPS.n;
@@ -1077,7 +1217,7 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 					});
 				}
 			}
-			// The podium, the logo on its front.
+			// The podium.
 			const pod = {
 				x0: PODIUM.x - PODIUM.w / 2,
 				x1: PODIUM.x + PODIUM.w / 2,
@@ -1096,11 +1236,7 @@ export const draftVenue = (paint: DraftVenuePaint, room: DraftRoom): Venue => {
 						pod.y1,
 						STAGE.z,
 						STAGE.z + PODIUM.h,
-						{
-							front: paint.main,
-							top: "#16171d",
-							side: shade(paint.main, -0.5),
-						},
+						{ front: "#211d1c", top: "#2e2927", side: "#120f0e" },
 						{ img: paint.podium, cols: 2, rows: 2 },
 					);
 				},

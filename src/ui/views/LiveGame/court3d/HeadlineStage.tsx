@@ -5,6 +5,7 @@ import type { headlineScene } from "../../../../worker/util/headlineScene.ts";
 import type { Authored } from "./authored.ts";
 import { capOf } from "./cap.ts";
 import { cappedHead } from "./capHead.ts";
+import { loadHead, type HeadSprite } from "./faces.ts";
 import Court3D from "./Court3D.tsx";
 import {
 	DraftBroadcast,
@@ -179,12 +180,30 @@ const HeadlineStage = ({
 			room,
 		);
 	}, [made, room, wallLogo, faces]);
+	const capOn = staged?.night.capOn;
 	const dressing = useMemo(() => {
 		const cap = capOf(colors);
+		// Bare-headed till the cap is handed him at the foot of the steps:
+		// his own head and hair (kept for each look he is in, so his
+		// pictures, kept by it, are).
+		const bareHeads = new Map<number, HeadSprite | undefined>();
+		const cuts = new Map<number, Look["cut"]>();
+		const bare = new WeakMap<Look, Look>();
 		return {
-			dress: (who: number, look: Look): Look => draftLook(who, look, cap),
-			head: async (_pid: number, face: Parameters<typeof cappedHead>[0]) => {
-				const head = await cappedHead(face, cap, await crest);
+			dress: (who: number, look: Look): Look => {
+				cuts.set(who, look.cut);
+				return draftLook(who, look, cap);
+			},
+			head: async (
+				who: number,
+				face: Parameters<typeof cappedHead>[0],
+				faceColors: [string, string, string] | undefined,
+			) => {
+				const [head, plain] = await Promise.all([
+					(async () => cappedHead(face, cap, await crest))(),
+					loadHead(face, faceColors),
+				]);
+				bareHeads.set(who, plain.sprite);
 				// (Drawn: he can be seen now - a moment on, the court having
 				// been handed it.)
 				setTimeout(() => {
@@ -192,8 +211,24 @@ const HeadlineStage = ({
 				}, 60);
 				return head;
 			},
+			lookAt: (who: number, t: number, look: Look): Look => {
+				if (who !== pid || capOn === undefined || t >= capOn) {
+					return look;
+				}
+				let out = bare.get(look);
+				if (!out) {
+					out = {
+						...look,
+						head: bareHeads.get(who) ?? look.head,
+						cut: cuts.get(who) ?? look.cut,
+					};
+					delete out.cap;
+					bare.set(look, out);
+				}
+				return out;
+			},
 		};
-	}, [colors, crest]);
+	}, [colors, crest, pid, capOn]);
 
 	useEffect(() => {
 		feed.set({ cover: !(preDone && dressed) });

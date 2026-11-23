@@ -2782,6 +2782,22 @@ const HUG = pose({
 	kneeF: 18,
 });
 const HUG_PAT = { ...HUG, shF: 85, elF: 80, abF: -40 };
+// Held in a long hug (see embrace): both arms round them, his head down on
+// their shoulder - and rocked a little, side to side.
+const HOLD = pose({
+	shN: 80,
+	elN: 72,
+	abN: -30,
+	shF: 75,
+	elF: 66,
+	abF: -45,
+	lean: 14,
+	twist: -8,
+	tilt: 6,
+	kneeN: 16,
+	kneeF: 18,
+});
+const HOLD_ROCK = { ...HOLD, twist: -14, tilt: 1, shF: 82, elF: 74 };
 // Two men in that hug stand this far apart (feet, middle to middle, the way
 // they face) and this far over to each one's right of the other - right
 // shoulder to right shoulder, the gripped hands between their chests, heads
@@ -11499,6 +11515,46 @@ export const ANIMS = {
 				0.88,
 				pose({ shN: 25, elN: 90, abN: 0, shF: 40, elF: 30, abF: 15, lean: 8 }),
 			],
+			[1, P.ready],
+		],
+	},
+	// A long hug, held: in close, both arms round them, rocked a little,
+	// and apart - his family, his name just read.
+	embrace: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.ready],
+			[
+				0.1,
+				pose({
+					shN: 50,
+					elN: 50,
+					abN: 5,
+					shF: 50,
+					elF: 50,
+					abF: 5,
+					lean: 8,
+				}),
+			],
+			[0.2, HOLD],
+			[0.38, HOLD_ROCK],
+			[0.56, HOLD],
+			[0.74, HOLD_ROCK],
+			[0.88, HOLD],
+			[1, P.ready],
+		],
+	},
+	// Handed his cap: up onto his head with both hands, pulled down onto it,
+	// the brim set with the one.
+	capOn: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.3, pose({ onHeadN: 1, onHeadF: 1, lean: 4 })],
+			[0.55, pose({ onHeadN: 1, onHeadF: 0.85, lean: 6, tilt: 2 })],
+			[0.78, pose({ onHeadN: 0.8, lean: 3 })],
 			[1, P.ready],
 		],
 	},

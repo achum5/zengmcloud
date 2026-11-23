@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 447,
+		date: "2026-11-23",
+		text: "Draft night looks more like the real broadcast. The commissioner reads each pick square on at a dark lectern, team-color panels either side of him. At his table the player faces the stage, with the room, the photographers and the stands behind him, and hugs each of his family. He walks up to the stage through the smoke, is handed his cap at the foot of the steps and puts it on, and hugs the commissioner, seen from behind the commissioner looking out at the room. The arena is darker, with full stands all the way round and black tablecloths.",
+	},
+	{
 		n: 446,
 		date: "2026-11-23",
 		text: "3D game: score bugs can now show timeouts running up and down and the home team's lead (THE DIFF +4), the way some local broadcasts do, and a bug made bigger to read on a phone no longer runs off the side of the screen.",

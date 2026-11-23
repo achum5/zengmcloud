@@ -11,8 +11,10 @@ import {
 	mix3,
 	NO_BALL,
 	OPENING,
+	OPENING_LOOK,
+	OPENING_WIDTH,
 	placesOf,
-	PODIUM,
+	podiumCam,
 	shotOf,
 	takeOf,
 	type Beat,
@@ -125,12 +127,13 @@ export const stageOnTheClock = (
 		const { shot, t0, t1 } = clockShotAt(t, seated.length);
 		const u = smooth(((t % CLOCK_LOOP) - t0) / (t1 - t0));
 		if (shot.kind === "room") {
-			// From the back of the room: down the middle, or a corner of it.
+			// From high in the stands at the back: down the middle, or a
+			// corner of it.
 			const [from, to] = OPENING[shot.side];
 			return {
 				at: mix3(from, to, u),
-				look: { x: 47, y: 2, z: 5 },
-				width: (76 - 6 * u) * k,
+				look: OPENING_LOOK,
+				width: (OPENING_WIDTH + 4 - 8 * u) * k,
 			};
 		}
 		if (shot.kind === "wall") {
@@ -142,18 +145,14 @@ export const stageOnTheClock = (
 			};
 		}
 		if (shot.kind === "podium") {
-			return {
-				at: { x: PODIUM.x + 3.5, y: 12, z: 7.8 },
-				look: { x: PODIUM.x, y: PODIUM.y - 1, z: 7.4 },
-				width: (16 - 1.5 * u) * k,
-			};
+			return podiumCam(1, u, k);
 		}
 		// In on him at his table, across it - as when his name is read.
 		const { g } = seated[shot.i]!;
 		return {
-			at: { x: g.tableCam.x, y: g.tableCam.y, z: 6.4 },
-			look: { x: g.tableLook.x, y: g.tableLook.y, z: 3.9 },
-			width: (12.5 - 1.5 * u) * k,
+			at: { x: g.tableCam.x, y: g.tableCam.y, z: 5.8 },
+			look: { x: g.tableLook.x, y: g.tableLook.y, z: 3.2 },
+			width: (10.5 - 1.2 * u) * k,
 		};
 	};
 

@@ -2,10 +2,14 @@ import { assert, describe, test } from "vitest";
 import { makeCamera, project } from "./camera.ts";
 import type { CrewRole } from "./crew.ts";
 import {
+	BROTHER,
 	COMMISSIONER,
 	DRAFT_CALL,
+	FATHER,
 	MARK,
+	MOTHER,
 	PODIUM,
+	STAFFER,
 	POSES,
 	STAGE,
 	STEPS,
@@ -18,7 +22,6 @@ import {
 	type DraftReact,
 	type DraftTake,
 } from "./draftStage.ts";
-import { HUG_MS } from "./poses.ts";
 import { bodyPoint, poseOf } from "./evaluate.ts";
 import { bodyOf, skeleton } from "./poses.ts";
 
@@ -52,6 +55,7 @@ for (const side of [1, -1] as const) {
 					open: ([-1, 0, 1] as const)[i % 3]!,
 					podiumCam: i % 2 === 0 ? 1 : -1,
 					stageCam: ([-1, 0, 1] as const)[(i >> 1) % 3]!,
+					footCam: (i >> 2) % 2 === 0 ? 1 : -1,
 				});
 			}
 		}
@@ -63,6 +67,12 @@ const scenes = TAKES.map((take, i) => ({
 	take,
 	scene: stageDraftNight(PID + i, undefined, take),
 }));
+const KIN: Record<DraftKin, number | undefined> = {
+	mom: MOTHER,
+	dad: FATHER,
+	brother: BROTHER,
+	none: undefined,
+};
 const name = (take: DraftTake) =>
 	`${take.side}/${take.row}/${take.react}/${take.hugger}+${take.other}`;
 
@@ -97,7 +107,11 @@ describe("a pick made on draft night", () => {
 				N.stand,
 				N.stood,
 				N.hug,
+				N.hugEnd,
 				N.leave,
+				N.atFoot,
+				N.handed,
+				N.capOn,
 				N.atSteps,
 				N.onStage,
 				N.arrive,
@@ -112,9 +126,16 @@ describe("a pick made on draft night", () => {
 			// The broadcast's graphics go by these.
 			assert.strictEqual(N.podium, DRAFT_CALL.podium);
 			assert.strictEqual(N.call, DRAFT_CALL.call);
-			// Long enough to be the moment, short enough to watch every pick.
-			assert.isAbove(N.ms, 15_000, name(take));
-			assert.isBelow(N.ms, 26_000, name(take));
+			// Long enough to be the moment the broadcast makes of it, short
+			// enough to watch every pick.
+			assert.isAbove(N.ms, 24_000, name(take));
+			assert.isBelow(N.ms, 38_000, name(take));
+			// Each of his family's hugs held a while.
+			assert.isAtLeast(N.hugEnd - N.hug, 2500);
+			if (take.other !== "none") {
+				assert.isAtLeast(N.hug2, N.hugEnd);
+				assert.isAtLeast(N.hug2End - N.hug2, 2000);
+			}
 			// The commissioner is there to meet him before he gets there.
 			assert.isBelow(N.commGo, N.arrive);
 		}
@@ -156,7 +177,10 @@ describe("a pick made on draft night", () => {
 				assert.isAtLeast(lift, -1e-9, where);
 				assert.isBelow(lift, 0.3, where);
 				for (const c of TABLES) {
-					assert.isAbove(Math.hypot(b.x - c.x, b.y - c.y), TABLE_R, where);
+					const apart = Math.hypot(b.x - c.x, b.y - c.y);
+					if (apart <= TABLE_R) {
+						assert.isAbove(apart, TABLE_R, where);
+					}
 				}
 			}
 			// On the stage only by its steps: whenever he is over its front
@@ -178,16 +202,26 @@ describe("a pick made on draft night", () => {
 				const him = scene.moment(t, bodyFor).players[0]!;
 				for (const c of scene.castAt!(t)) {
 					const where = `${name(take)}: ${c.pid} at ${t}`;
+					// (The nearest table: asked once, not of every one.)
+					let nearest = Infinity;
 					for (const tb of TABLES) {
-						assert.isAbove(Math.hypot(c.x - tb.x, c.y - tb.y), TABLE_R, where);
+						nearest = Math.min(nearest, Math.hypot(c.x - tb.x, c.y - tb.y));
+					}
+					if (nearest <= TABLE_R) {
+						assert.isAbove(nearest, TABLE_R, where);
 					}
 					// (Hugging him, as close as a hug is.)
 					const hugging =
 						c.pid === COMMISSIONER
 							? t >= N.arrive - 300 && t < N.photo + 300
-							: t >= N.hug - 300 && t < N.hug + HUG_MS + 300;
-					if (!hugging) {
-						assert.isAbove(Math.hypot(c.x - him.x, c.y - him.y), 1.3, where);
+							: c.pid === KIN[take.hugger]
+								? t >= N.hug - 300 && t < N.hugEnd + 300
+								: c.pid === KIN[take.other]
+									? t >= N.hug2 - 300 && t < N.hug2End + 300
+									: false;
+					const apart = Math.hypot(c.x - him.x, c.y - him.y);
+					if (!hugging && apart <= 1.3) {
+						assert.isAbove(apart, 1.3, where);
 					}
 				}
 			}
@@ -197,7 +231,7 @@ describe("a pick made on draft night", () => {
 	test("his feet step him up the aisle: the one on the floor stays where it is", () => {
 		for (const { take, scene } of scenes) {
 			const N = scene.night;
-			if (N.atSteps - N.leave < 2500) {
+			if (N.atFoot - N.leave < 2500) {
 				// (From the front row it is a step or two.)
 				continue;
 			}
@@ -207,7 +241,7 @@ describe("a pick made on draft night", () => {
 			let prev:
 				| { x: number; y: number; feet: { x: number; y: number }[] }
 				| undefined;
-			for (let t = N.leave + 700; t < N.atSteps - 500; t += STEP) {
+			for (let t = N.leave + 700; t < N.atFoot - 500; t += STEP) {
 				const st = scene.moment(t, bodyFor).players[0]!;
 				const sk = skeleton(body, poseOf(st));
 				const feet = [bodyPoint(st, sk.legR.end), bodyPoint(st, sk.legL.end)];
@@ -244,26 +278,45 @@ describe("a pick made on draft night", () => {
 			assert.strictEqual(meeting.anim, "dapHug");
 			assert.strictEqual(him.anim, "dapHug");
 			assert.isBelow(Math.hypot(meeting.x - him.x, meeting.y - him.y), 2);
-			// One of his family hugs him at the table; whoever else is with
-			// them is up on their feet.
-			const family = scene.castAt!(N.hug + 400).filter(
-				(c) => c.pid !== COMMISSIONER,
-			);
-			assert.lengthOf(family, take.other === "none" ? 1 : 2, name(take));
-			const himThen = scene.moment(N.hug + 400, bodyFor).players[0]!;
-			assert.strictEqual(himThen.anim, "dapHug", name(take));
-			assert.strictEqual(family[0]!.anim, "dapHug", name(take));
-			assert.isBelow(
-				Math.hypot(family[0]!.x - himThen.x, family[0]!.y - himThen.y),
-				2,
-			);
-			if (family[1]) {
-				assert.include(["clap", "cheer"], family[1].anim, name(take));
+			// One of his family hugs him at the table, and then whoever else
+			// is with them.
+			const family = (t: number) =>
+				scene.castAt!(t).filter((c) =>
+					[MOTHER, FATHER, BROTHER].includes(c.pid),
+				);
+			assert.lengthOf(family(N.hug), take.other === "none" ? 1 : 2, name(take));
+			const hugs: [number, number][] = [[N.hug + 600, KIN[take.hugger]!]];
+			if (take.other !== "none") {
+				hugs.push([N.hug2 + 600, KIN[take.other]!]);
+			}
+			for (const [t, pid] of hugs) {
+				const himThen = scene.moment(t, bodyFor).players[0]!;
+				const them = family(t).find((c) => c.pid === pid)!;
+				assert.strictEqual(himThen.anim, "embrace", name(take));
+				assert.strictEqual(them.anim, "embrace", name(take));
+				assert.isBelow(Math.hypot(them.x - himThen.x, them.y - himThen.y), 2);
 			}
 			// All of them their own people, below any pid of the crew's.
 			for (const m of scene.cast!) {
 				assert.isBelow(m.pid, -200);
 			}
+		}
+	});
+
+	test("his cap is handed him at the foot of the steps, and on before he goes up them", () => {
+		for (const { take, scene } of scenes) {
+			const N = scene.night;
+			const t = (N.handFrom + N.handed) / 2;
+			const him = scene.moment(t, bodyFor).players[0]!;
+			const staff = scene.castAt!(t).find((c) => c.pid === STAFFER)!;
+			assert.strictEqual(him.anim, "dap", name(take));
+			assert.strictEqual(staff.anim, "dap", name(take));
+			assert.isBelow(Math.hypot(staff.x - him.x, staff.y - him.y), 2.6);
+			assert.isAbove(him.y, STEPS.y1, name(take));
+			const on = scene.moment(N.capOn, bodyFor).players[0]!;
+			assert.strictEqual(on.anim, "capOn", name(take));
+			assert.isAbove(N.capOn, N.handed);
+			assert.isBelow(N.capOn, N.atSteps);
 		}
 	});
 
@@ -278,7 +331,10 @@ describe("a pick made on draft night", () => {
 					const { shot, rig } = scene.aim(t, narrow, m);
 					const cam = makeCamera(shot, w, h, rig);
 					const st = m.players[0]!;
-					const head = project(cam, { x: st.x, y: st.y, z: st.z + body.H });
+					// (His head where his pose has it: sat, it is down at the
+					// table.)
+					const at = bodyPoint(st, skeleton(body, poseOf(st)).head);
+					const head = project(cam, { ...at, z: at.z + 0.4 });
 					const where = `${name(take)} ${narrow ? "phone" : "wide"} at ${t}`;
 					assert.isAbove(head.x, w * 0.1, where);
 					assert.isBelow(head.x, w * 0.9, where);

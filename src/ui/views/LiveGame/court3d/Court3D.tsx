@@ -1575,7 +1575,11 @@ const Court3D = ({
 				tl,
 				roster: rosterRef.current,
 				bodyFor: bodyOfPid,
-				lookFor: lookOf,
+				// (A scene of its own changing what somebody wears as it goes -
+				// a draft pick's cap put on: see authored.ts.)
+				lookFor: p.authored?.lookAt
+					? (pid: number) => p.authored!.lookAt!(pid, moment.t, lookOf(pid))
+					: lookOf,
 				padColor: p.homePad,
 				lineColor: p.lineColor,
 				apron: floorEdge.current ?? p.apron,

@@ -27,6 +27,10 @@ export type Authored = {
 	aim: (t: number, narrow: boolean, m: Moment) => { shot: Shot; rig: Rig };
 	// What a man in it wears, from how the game would have dressed him.
 	dress?: (pid: number, look: Look) => Look;
+	// What somebody wears at t, from what they are dressed in (see dress):
+	// the same look each time for the same, so the pictures of them kept by
+	// it are.
+	lookAt?: (pid: number, t: number, look: Look) => Look;
 	// His head drawn its own way (a cap on it), in place of the game's.
 	head?: (
 		pid: number,
