@@ -79,11 +79,12 @@ looks better.
 3. **Movement, done properly**. Today's plan, today's actions,
    each man moved by his own body. Judged on its own before anything decides
    differently.
-4. **How they move** (here now): the first packages (walk, run, stance,
+4. **How they move**: the first packages (walk, run, stance,
    backpedal) and each man's signature; his steps at his own beat and
-   length. Then stops, plant-and-cut and slides, judged in the movement
-   lab (`tools/court3d-tape/lab.test.ts`) beside real footage.
-5. Defense, the first of the ten deciding for themselves. The facts, the
+   length. Then stops, plant-and-cut and slides (here now, on the paths
+   the defense takes itself), judged in the movement lab
+   (`tools/court3d-tape/lab.test.ts`) beside real footage.
+5. Defense (built), the first of the ten deciding for themselves. The facts, the
    planner's first pieces and the per-possession loop come in with it, in
    this folder, and today's defensive patch passes are off under the switch.
 6. Offense off the ball.
@@ -159,8 +160,19 @@ ground to a jab, holding his ground on a jumper) no longer move a defender
 guarding his man under the switch: what they add as acts stays, as facts.
 
 Built as: 5a the facts, the loop, guarding his man on and off the ball;
-5b help and recover, closeouts; 5c transition; 5d the old defense off where
-the five own it.
+5b help and recover, closeouts; 5c transition; 5d what the play keeps.
+
+What the play keeps (real_11, live defense after the first 4 s of a trip):
+the five decide 84% of it. The rest is the shot in the air till the
+rebound (4%), a break the engine scored, the end of a quarter, and stretches
+the planner gives nobody a man because the engine's result needs him
+somewhere: rotated off a shooter the engine left open, a closeout that
+arrives late, a man backing him down in the post, a foul. Those stay laid
+by the play till the planner can say them as aims (be this far off the
+shooter at the release) rather than runs; so does `planned`, the help that
+stops a drive (0.1%). Nothing after the stepper moves the five to speak of:
+the court's own passes shift a man the five laid more than 1 ft on under 1%
+of their steps; turning the steps into runs, 0.2 ft at the median.
 
 ## How we know
 
