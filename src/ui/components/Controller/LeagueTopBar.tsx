@@ -104,6 +104,7 @@ export const LeagueTopBar = memo(() => {
 		games,
 		lid,
 		liveGameInProgress,
+		mpLiveGames,
 		phase,
 		showLeagueTopBar,
 	} = useLocal([
@@ -111,9 +112,16 @@ export const LeagueTopBar = memo(() => {
 		"games",
 		"lid",
 		"liveGameInProgress",
+		"mpLiveGames",
 		"phase",
 		"showLeagueTopBar",
 	]);
+
+	// (A league mate's game being played live: its score as it stands.)
+	const livePtsOf = (game: BarGame) =>
+		game.teams[0].pts === undefined
+			? mpLiveGames.find((live) => live.gid === game.gid)?.score?.pts
+			: undefined;
 
 	const [wrapperElement, setWrapperElement] = useState<HTMLDivElement | null>(
 		null,
@@ -252,11 +260,19 @@ export const LeagueTopBar = memo(() => {
 								)}
 							>
 								<DayStub date={date} game={!!game} today={calendarDate} />
-								{game ? <ScoreBox game={game} small /> : null}
+								{game ? (
+									<ScoreBox game={game} livePts={livePtsOf(game)} small />
+								) : null}
 							</div>
 						))
 					: games2.map((game) => (
-							<ScoreBox key={game.gid} className="me-2" game={game} small />
+							<ScoreBox
+								key={game.gid}
+								className="me-2"
+								game={game}
+								livePts={livePtsOf(game)}
+								small
+							/>
 						))}
 				{games2.length > 0 ? (
 					<>

@@ -9,6 +9,7 @@ import {
 	type ViewArgs,
 	type ViewInput,
 } from "../util/defineView.ts";
+import { getLiveGate } from "../util/liveGameGate.ts";
 import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getAutoRecapForGid } from "../util/getDayGamesForRecap.ts";
@@ -193,6 +194,11 @@ export const makeAbbrevsUnique = <T extends { abbrev: string }>(
  * @return {Promise.Object} Resolves to an object containing the box score data (or a blank object).
  */
 const boxScore = async (gid: number) => {
+	// Still being played live: no box score till the final (liveGameGate.ts).
+	if (gid >= 0 && (await getLiveGate()).hidden.has(gid)) {
+		return { gid: -1, liveGid: gid };
+	}
+
 	const gameRaw = await idb.merged.games.get(gid);
 
 	// If game doesn't exist (bad gid or deleted box scores), show nothing
@@ -493,12 +499,14 @@ const teamNav = async (gid: number) => {
 		nav[tid] = { prev, next };
 	}
 	// (And the rest of that day's games - "all games this day".)
+	// (Not one still being played live.)
+	const { hidden } = await getLiveGate();
 	const day =
 		game.day === undefined
 			? []
 			: await Promise.all(
 					rows
-						.filter((row) => row.day === game.day)
+						.filter((row) => row.day === game.day && !hidden.has(row.gid))
 						.map((row) => dayGameOf(row, game)),
 				);
 	return { teamNav: nav, dayGames: day };
@@ -513,6 +521,7 @@ const updateTeamNav = async ({
 	if (
 		updateEvents.has("firstRun") ||
 		updateEvents.has("gameSim") ||
+		updateEvents.has("liveGames") ||
 		gid !== prevInputs?.gid
 	) {
 		try {
@@ -542,6 +551,9 @@ const updateBoxScore = async ({
 		// A game note may have been added/edited (locally or synced from another
 		// device) - reload so the box score picks it up.
 		updateEvents.has("notes") ||
+		// (One being played live goes final, or a day simmed past shows it.)
+		updateEvents.has("liveGames") ||
+		updateEvents.has("gameSim") ||
 		gid !== prevInputs?.gid
 	) {
 		const game = await boxScore(gid);
@@ -603,17 +615,30 @@ const updateGamesList = async ({
 	updateEvents,
 	prevOutput: { gamesList },
 }: ViewArgs<typeof processInputs, typeof keepPrevOutput>) => {
+	// Games still being played live are left out (liveGameGate.ts); with any
+	// about, or one just over, the list is loaded again whole, as adding on
+	// only newer games could never put one back.
+	const { hidden } =
+		season === g.get("season") ? await getLiveGate() : { hidden: new Set() };
+	const reloadForLive =
+		season === g.get("season") &&
+		(updateEvents.has("liveGames") ||
+			(updateEvents.has("gameSim") && hidden.size > 0));
 	if (
 		updateEvents.has("firstRun") ||
 		!gamesList ||
 		tid !== gamesList.tid ||
 		season !== gamesList.season ||
-		(updateEvents.has("gameSim") && season === g.get("season"))
+		(updateEvents.has("gameSim") && season === g.get("season")) ||
+		reloadForLive
 	) {
 		let games: Game[];
 		let abbrevs: Record<number, string>;
 
-		if (gamesList && (tid !== gamesList.tid || season !== gamesList.season)) {
+		if (
+			reloadForLive ||
+			(gamesList && (tid !== gamesList.tid || season !== gamesList.season))
+		) {
 			// Switching to a new list
 			games = [];
 		} else {
@@ -627,11 +652,13 @@ const updateGamesList = async ({
 			abbrevs = gamesList.abbrevs;
 		}
 
-		const newGames = await getProcessedGames({
-			tid,
-			season,
-			loadedGames: games,
-		});
+		const newGames = (
+			await getProcessedGames({
+				tid,
+				season,
+				loadedGames: games,
+			})
+		).filter((game) => !hidden.has(game.gid));
 
 		if (games.length === 0) {
 			games = newGames;
@@ -663,9 +690,14 @@ const updateReactions = async ({
 		updateEvents.has("firstRun") ||
 		updateEvents.has("gameSim") ||
 		updateEvents.has("gameAttributes") ||
+		updateEvents.has("liveGames") ||
 		gid !== prevInputs?.gid
 	) {
-		if (!g.get("socialFeed") || gid < 0) {
+		if (
+			!g.get("socialFeed") ||
+			gid < 0 ||
+			(await getLiveGate()).hidden.has(gid)
+		) {
 			return { reactions: undefined, reactionsGid: gid };
 		}
 		try {

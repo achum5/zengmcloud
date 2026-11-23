@@ -76,6 +76,7 @@ export const ScoreBox = memo(
 		boxScoreTeamOverride,
 		className,
 		game,
+		livePts,
 		playersUpcoming,
 		playersUpcomingAbbrev,
 		small,
@@ -111,6 +112,8 @@ export const ScoreBox = memo(
 			numPeriods?: number;
 			overtimes?: number;
 		};
+		// A game being played live: the score as it stands (home, away).
+		livePts?: [number, number];
 		playersUpcoming?: [any, any];
 		playersUpcomingAbbrev?: boolean;
 		small?: boolean;
@@ -161,7 +164,7 @@ export const ScoreBox = memo(
 		if (
 			game.teams[0].ovr !== undefined &&
 			game.teams[1].ovr !== undefined &&
-			(!small || !final)
+			(!small || (!final && !livePts))
 		) {
 			// Neutral site drops home-court advantage: a completed neutral game, or an
 			// upcoming finals/playoff game the settings mark neutral.
@@ -552,6 +555,20 @@ export const ScoreBox = memo(
 														</div>
 													</>
 												)}
+											</div>
+										) : livePts ? (
+											<div
+												className={clsx(
+													"text-body text-end align-self-stretch d-flex align-items-center",
+													{
+														"fw-bold score-box-score": small,
+														"ps-2 pe-2": !small,
+														"pe-1": small,
+													},
+												)}
+												style={!small ? { fontSize: 16 } : undefined}
+											>
+												{livePts[i]}
 											</div>
 										) : null}
 									</div>

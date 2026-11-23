@@ -21,6 +21,12 @@ import { getStrengthOfSchedule } from "../util/getStrengthOfSchedule.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { validateSeason } from "../util/processInputs.ts";
+import {
+	getLiveGate,
+	recordDeltas,
+	streakAndLastTen,
+	teamResultsNewestFirst,
+} from "../util/liveGameGate.ts";
 
 const processInputs = (params: RouteParams<"standings">) => {
 	let type: "conf" | "div" | "league" =
@@ -78,9 +84,17 @@ export default defineView({
 		if (
 			updateEvents.has("firstRun") ||
 			(inputs.season === g.get("season") && updateEvents.has("gameSim")) ||
+			(inputs.season === g.get("season") && updateEvents.has("liveGames")) ||
 			inputs.season !== prevInputs?.season ||
 			inputs.type !== prevInputs?.type
 		) {
+			// Games still being played live aren't in the standings yet (see
+			// liveGameGate.ts): taken back out of the records shown here.
+			const { hidden, games: liveRows } =
+				inputs.season === g.get("season")
+					? await getLiveGate()
+					: { hidden: new Set<number>(), games: new Map() };
+
 			const confs = g.get("confs", inputs.season);
 			const divs = g.get("divs", inputs.season);
 
@@ -98,10 +112,83 @@ export default defineView({
 
 			// One load of the season's games, shared by both columns built from them -
 			// a season of box scores is not something to read twice per render.
-			const games = await idb.merged.games.getAll({ season: inputs.season });
+			const games = (
+				await idb.merged.games.getAll({ season: inputs.season })
+			).filter((game) => !hidden.has(game.gid));
 			const atsRecords = await getTeamAtsRecords(inputs.season, games);
 			const over500Records = await getTeamOver500Records(inputs.season, games);
 			const sosByTid = await getStrengthOfSchedule(inputs.season);
+
+			const otlSetting = !!g.get("otl", inputs.season);
+			const deltas =
+				liveRows.size === 0
+					? new Map()
+					: recordDeltas(liveRows.values(), {
+							otlSetting,
+							divByTid: new Map(
+								(await idb.cache.teams.getAll()).map((t) => [t.tid, t.did]),
+							),
+							confByTid: new Map(
+								(await idb.cache.teams.getAll()).map((t) => [t.tid, t.cid]),
+							),
+						});
+			const liveAdjust = <
+				T extends Record<string, any> & {
+					won: number;
+					lost: number;
+					tied: number;
+					otl: number;
+				},
+			>(
+				tid: number,
+				seasonAttrs: T,
+			): T => {
+				const d = deltas.get(tid);
+				if (!d) {
+					return seasonAttrs;
+				}
+				const out: Record<string, any> = { ...seasonAttrs };
+				for (const [key, value] of Object.entries(d)) {
+					if (typeof out[key] === "number" && key !== "pts") {
+						out[key] = Math.max(0, out[key] - (value as number));
+					}
+				}
+				out.winp = helpers.calcWinp(out as any);
+				out.pts = team.evaluatePointsFormula(out as any, {
+					season: inputs.season,
+				});
+				if ("ptsPct" in out) {
+					out.ptsPct = team.ptsPct({ ...(out as any), season: inputs.season });
+				}
+				const results = teamResultsNewestFirst(
+					games,
+					tid,
+					hidden,
+					otlSetting,
+				);
+				const { streak, lastTen } = streakAndLastTen(results);
+				out.streak = streak;
+				out.lastTen = lastTen;
+				return out as T;
+			};
+			const liveAdjustStats = <T extends Record<string, any>>(
+				tid: number,
+				stats: T,
+			): T => {
+				const d = deltas.get(tid);
+				if (!d || typeof stats.gp !== "number") {
+					return stats;
+				}
+				// Per game averages: back to the totals, the game out, averaged
+				// again.
+				const gp = Math.max(0, stats.gp - d.gp);
+				return {
+					...stats,
+					gp,
+					pts: gp > 0 ? (stats.pts * stats.gp - d.pts) / gp : 0,
+					oppPts: gp > 0 ? (stats.oppPts * stats.gp - d.oppPts) / gp : 0,
+				};
+			};
 
 			const teams = (
 				await team.getFormattedAll({
@@ -132,6 +219,8 @@ export default defineView({
 				})
 			).map((t) => ({
 				...t,
+				seasonAttrs: liveAdjust(t.tid, t.seasonAttrs),
+				stats: liveAdjustStats(t.tid, t.stats),
 				ats: formatAtsRecord(atsRecords.get(t.tid)),
 				over500: formatOver500Record(over500Records.get(t.tid)),
 				sos: sosByTid.get(t.tid),

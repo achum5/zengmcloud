@@ -2397,6 +2397,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 				return;
 			}
 			lastBroadcastSent.current = { cursor, paused, gameOver, w, how, at: now };
+			// (The score as it stands on this screen, for the league's live
+			// scores - the header, the schedules.)
+			const teams = boxScore.current.teams;
+			const score = teams
+				? {
+						pts: [Number(teams[0]?.pts) || 0, Number(teams[1]?.pts) || 0] as [
+							number,
+							number,
+						],
+						q: String(boxScore.current.quarterShort ?? ""),
+						clock: String(boxScore.current.time ?? ""),
+					}
+				: undefined;
 			void toWorker("main", "updateLiveBroadcast", {
 				cursor,
 				paused,
@@ -2404,6 +2417,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				gameOver,
 				view,
 				sync,
+				score,
 			});
 		};
 

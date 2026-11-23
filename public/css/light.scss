@@ -2078,6 +2078,54 @@ tr.table-warning:hover > td {
 	border-bottom: 1px solid $gray-200;
 }
 
+// Games being played live in a shared league, under the top bar (see
+// components/LiveGames.tsx). One row; more than fit scroll sideways.
+.live-scores-strip {
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+// (In the top bar it takes only the room left over, never squeezing the
+// rest of the bar.)
+.live-scores-inline {
+	min-width: 0;
+	flex: 1000 1 0;
+}
+.live-score-chip {
+	flex-shrink: 0;
+	font-size: 0.8125rem;
+	line-height: 1.2;
+	padding: 0.2rem 0.6rem;
+	border-radius: 999px;
+}
+.live-score-dot {
+	display: inline-block;
+	width: 0.45rem;
+	height: 0.45rem;
+	border-radius: 50%;
+	background-color: currentColor;
+	animation: live-score-pulse 1.6s ease-in-out infinite;
+}
+.live-score-clock {
+	opacity: 0.8;
+	font-variant-numeric: tabular-nums;
+}
+@keyframes live-score-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.live-score-dot {
+		animation: none;
+	}
+}
+
 // The top header only (.navbar-border is shared with the title bar). It is
 // position:sticky, NOT position:fixed. In iOS standalone PWAs, WebKit's
 // compositor can permanently lose a fixed element's viewport attachment

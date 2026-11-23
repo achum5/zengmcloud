@@ -436,3 +436,70 @@ export const createLiveResultWait = ({
 		settle,
 	};
 };
+
+// SEVERAL LIVE GAMES AT ONCE, ONE FOLLOW.
+//
+// Anybody can play their own game live while somebody else's is on, so the
+// room can have several. This device still follows one at a time - the game
+// it is in, or the one it is being asked about - and everything above decides
+// against that one, its focus. The rest are on the header's live scores.
+//
+// The focus: the game this device is in or being asked about, for as long as
+// that lasts (gone from the room means its broadcast ended, which the follow
+// handles); otherwise the newest game it has not been asked about yet, so it
+// gets asked; otherwise the one it last answered or walked out of, while that
+// is still on (its record is what keeps it from being asked again).
+export type FocusRecord =
+	| {
+			startedAt: number;
+			offered?: boolean;
+			over?: boolean;
+			left?: boolean;
+	  }
+	| undefined;
+
+export const chooseFocusGame = <
+	M extends { startedAt: number; gameOver: boolean; expiresAt: number },
+>(
+	games: readonly M[],
+	followed: FocusRecord,
+	// Games already offered, joined or walked out of here (by startedAt).
+	answered: ReadonlySet<number>,
+	now: number,
+): M | undefined => {
+	if (followed && (followed.offered || (!followed.over && !followed.left))) {
+		return games.find((game) => game.startedAt === followed.startedAt);
+	}
+	let fresh: M | undefined;
+	for (const game of games) {
+		if (
+			answered.has(game.startedAt) ||
+			game.gameOver ||
+			game.expiresAt <= now
+		) {
+			continue;
+		}
+		if (!fresh || game.startedAt > fresh.startedAt) {
+			fresh = game;
+		}
+	}
+	if (fresh) {
+		return fresh;
+	}
+	return followed
+		? games.find((game) => game.startedAt === followed.startedAt)
+		: undefined;
+};
+
+// Is this live game still going on, for everyone not watching it? Over once
+// the screen playing it reaches the final; and a game whose broadcast has
+// gone quiet longer than a watch waits (QUIET_WATCH_MS) is given up on.
+export const roomGameStillLive = (
+	game: { gameOver: boolean; expiresAt: number },
+	now: number,
+	// When this device last came back from being parked (see
+	// createWakeClock): its own sleep is not the broadcast's silence.
+	wokeAt = 0,
+): boolean =>
+	!game.gameOver &&
+	now - Math.max(game.expiresAt, wokeAt) < QUIET_WATCH_MS;

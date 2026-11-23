@@ -4,8 +4,6 @@ import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
 import { decideOwnGameSim } from "../../common/ownGameSim.ts";
-import { helpers } from "../util/helpers.ts";
-import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
@@ -27,6 +25,11 @@ import { useEffect, useState } from "react";
 import { isTradeDeadline } from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
 import { MonthCalendar } from "../components/MonthCalendar.tsx";
+import {
+	LiveGameStatus,
+	watchLiveAction,
+	watchLiveGame,
+} from "../components/LiveGames.tsx";
 
 const DailySchedule = ({
 	calendar,
@@ -63,6 +66,7 @@ const DailySchedule = ({
 		ownLiveSim,
 		mpAutoPlay,
 		mpLiveBroadcast,
+		mpLiveGames,
 		mpLiveOffer,
 		mpLiveWatchable,
 		mpSyncActive,
@@ -79,6 +83,7 @@ const DailySchedule = ({
 		"ownLiveSim",
 		"mpAutoPlay",
 		"mpLiveBroadcast",
+		"mpLiveGames",
 		"mpLiveOffer",
 		"mpLiveWatchable",
 		"mpSyncActive",
@@ -148,6 +153,14 @@ const DailySchedule = ({
 			? { gid: liveBroadcastGid, byName: mpLiveBroadcast?.byName }
 			: (mpLiveWatchable ?? mpLiveOffer);
 
+	// Every game being played live: LIVE, its score as it stands, Watch live.
+	// One already played here reads as not played yet (the worker sends it as
+	// `live`) till its final on the screen playing it.
+	const liveGameByGid = new Map(mpLiveGames.map((game) => [game.gid, game]));
+	const isLive = (game: (typeof upcoming)[number]) =>
+		!!game.live || liveGameByGid.has(game.gid) || mateLive?.gid === game.gid;
+	const playable = upcoming.filter((game) => !isLive(game));
+
 	// Can't sim/watch games from here unless this device is in charge of simming.
 	const { locked: simAuthorityLocked, reason: simAuthorityReason } =
 		useSimAuthorityLocked();
@@ -173,8 +186,8 @@ const DailySchedule = ({
 	}, [season, day]);
 
 	let simToDay = null;
-	if (upcoming.length > 0 && !isToday) {
-		const minGid = Math.min(...upcoming.map((game) => game.gid));
+	if (playable.length > 0 && !isToday) {
+		const minGid = Math.min(...playable.map((game) => game.gid));
 		simToDay = (
 			<div className="mb-3">
 				<button
@@ -205,12 +218,13 @@ const DailySchedule = ({
 	const showSimCpu =
 		simsHere &&
 		isToday &&
-		upcoming.some((game) => !isUserGame(game)) &&
-		upcoming.some(isUserGame);
+		playable.some((game) => !isUserGame(game)) &&
+		playable.some(isUserGame);
 
 	const tradeDeadline =
+		playable.length === 1 &&
 		upcoming.length === 1 &&
-		isTradeDeadline(upcoming[0]!.teams[0].tid, upcoming[0]!.teams[1].tid);
+		isTradeDeadline(playable[0]!.teams[0].tid, playable[0]!.teams[1].tid);
 
 	const simCpuButton =
 		showSimCpu && !tradeDeadline ? (
@@ -311,24 +325,19 @@ const DailySchedule = ({
 							{upcomingAndCompleted ? <h2>Upcoming Games</h2> : null}
 							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
 								{upcoming.map((game) => {
-									const actions =
-										mateLive?.gid === game.gid
-											? [
-													{
-														highlight: true,
-														title: `${mateLive.byName ?? "A league-mate"} is simming this game live`,
-														text: (
-															<>
-																Watch
-																<br />
-																live
-															</>
-														),
-														onClick: () =>
-															toWorker("main", "watchLiveBroadcast", undefined),
-													},
-												]
-											: isToday && !tradeDeadline
+									const live = isLive(game);
+									const liveGame = liveGameByGid.get(game.gid);
+									const actions = live
+										? [
+												watchLiveAction(
+													game.gid,
+													liveGame?.byName ??
+														(mateLive?.gid === game.gid
+															? mateLive.byName
+															: undefined),
+												),
+											]
+										: isToday && !tradeDeadline
 												? (() => {
 														// Your own game stays available even when someone
 														// else is in charge of simming: one gid is a
@@ -421,10 +430,15 @@ const DailySchedule = ({
 													spread: game.spread,
 													teams: game.teams,
 												}}
+												livePts={live ? liveGame?.score?.pts : undefined}
 												playersUpcoming={playersUpcoming}
 												actions={actions}
 											/>
-											<ForceWin allowTie={allowTie} game={game} />
+											{live ? (
+												<LiveGameStatus className="mt-1" gid={game.gid} />
+											) : (
+												<ForceWin allowTie={allowTie} game={game} />
+											)}
 										</div>
 									);
 								})}
@@ -452,19 +466,15 @@ const DailySchedule = ({
 												}
 											>
 												<ScoreBox game={game} />
-												{game.gid === liveBroadcastGid ? (
-													<div className="mt-1">
-														<span className="badge text-bg-danger me-2">
-															LIVE
-														</span>
+												{game.gid === liveBroadcastGid ||
+												liveGameByGid.has(game.gid) ? (
+													<div className="mt-1 d-flex align-items-center gap-2">
+														<LiveGameStatus gid={game.gid} />
 														<button
 															className="btn btn-sm btn-link p-0 border-0"
 															type="button"
 															onClick={() => {
-																void realtimeUpdate(
-																	[],
-																	helpers.leagueUrl(["live_game"]),
-																);
+																watchLiveGame(game.gid);
 															}}
 														>
 															Watch

@@ -5,6 +5,7 @@ import { getUpcoming } from "../views/schedule.ts";
 import { nationalTags } from "../views/nationalBroadcast.ts";
 import g from "./g.ts";
 import toUI from "./toUI.ts";
+import { getLiveGate } from "./liveGameGate.ts";
 
 // How many nights past today the top bar shows on the NBA calendar.
 const TOP_BAR_NIGHTS_AHEAD = 5;
@@ -18,7 +19,10 @@ export const getOneUpcomingGame = async (): Promise<
 			onlyOneGame: true,
 		})
 	)[0];
-	if (game) {
+	// (Not the next playoff day's while a game of today's is still being
+	// played live - see liveGameGate.ts.)
+	const dayCutoff = game ? (await getLiveGate()).dayCutoff : undefined;
+	if (game && (dayCutoff === undefined || game.day <= dayCutoff)) {
 		return {
 			date: game.date,
 			finals: game.finals,
