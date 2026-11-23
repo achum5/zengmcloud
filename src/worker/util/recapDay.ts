@@ -775,15 +775,17 @@ const plainHeads = (
 	return out;
 };
 
-// "Young" for Walker Young, "Walker Young" when a Darius Young played too.
+// "Young" for Walker Young, "Walker Young" when a Darius Young played too -
+// or when Young is what a team in the game is called.
 const headName = (name: string, s: Story): string => {
 	const sur = surnameOf(name);
 	if (!sur) {
 		return name;
 	}
-	const clash = [...s.W.players, ...s.L.players].some(
-		(p) => p.name !== name && surnameOf(p.name) === sur,
-	);
+	const clash =
+		[...s.W.players, ...s.L.players].some(
+			(p) => p.name !== name && surnameOf(p.name) === sur,
+		) || [s.W, s.L].some((t) => [t.name, nick(t)].includes(sur));
 	return clash ? name : sur;
 };
 
@@ -1438,7 +1440,7 @@ const statePast = (s: Story, rng: Rng): string => {
 
 // The top story as a wire lede: the man, what he did, the result and the
 // score, in one sentence.
-const ledeSentence = (s: Story, rng: Rng): string => {
+const ledeSentence = (s: Story, rng: Rng, night = ""): string => {
 	const { w, l, score } = s;
 	const star = s.star;
 	const by = star
@@ -1470,6 +1472,26 @@ const ledeSentence = (s: Story, rng: Rng): string => {
 				: `${cap(w)} beat ${l} ${score}${s.post?.playInLede ?? ""}.`;
 		case "series": {
 			const sr = ser!;
+			// A round the night has named already is not named again, nor a
+			// night of openers' "Game 1": "... as the Pistons beat the Pelicans
+			// 104-96."
+			if (night.includes(sr.round)) {
+				const tail =
+					sr.state === "opener"
+						? ""
+						: sr.state === "force"
+							? ` to force a Game ${sr.bestOf}`
+							: sr.state === "even"
+								? ` to even the series ${sr.wAfter}-${sr.lAfter}`
+								: sr.state === "alive"
+									? " to stay alive"
+									: sr.state === "cut"
+										? ` to cut the deficit to ${sr.lAfter}-${sr.wAfter}`
+										: ` for ${aFigure(`${sr.wAfter}-${sr.lAfter}`)} series lead`;
+				return star
+					? `${star.name} ${did(star, rng)} as ${w} beat ${l} ${score}${tail}.`
+					: `${cap(w)} beat ${l} ${score}${tail}.`;
+			}
 			const tail =
 				sr.state === "opener"
 					? ""
@@ -1568,6 +1590,10 @@ const ledeDetail = (s: Story, written: string): string | undefined => {
 			? `${sh.name} won it with ${what} and finished with ${lineOf(hero)}.`
 			: `${sh.name} won it with ${what}.`;
 	}
+	// He was named for his line, and the shot that won it was not said.
+	if (sh && hero && !/seconds? left|buzzer/.test(written)) {
+		return `${he(hero)} won it with ${shotWhat(sh)}.`;
+	}
 	if (sh && hero && hero.pts >= 12) {
 		const other =
 			star && star !== hero && star.pts >= hero.pts + 5 ? star : undefined;
@@ -1578,6 +1604,12 @@ const ledeDetail = (s: Story, written: string): string | undefined => {
 		return second
 			? `${he(hero)} finished with ${lineOf(hero)}. ${second}`
 			: `${he(hero)} finished with ${lineOf(hero)}.`;
+	}
+	// A late go-ahead basket the sentence before did not tell (a playoff
+	// lede tells the series instead).
+	if (s.late && !/go-ahead/.test(written)) {
+		const late = s.late;
+		return `${late.name} ${shotVerb(late.what)} the go-ahead ${late.what} with ${late.left} left.`;
 	}
 	if (s.late) {
 		const lateHero = s.W.players.find((p) => p.name === s.late!.name);
@@ -1999,7 +2031,7 @@ const contextOf = (
 	} else if (
 		s.unbeaten === undefined &&
 		s.streak !== undefined &&
-		!/straight|in a row/.test(told)
+		!/straight|in a row|winning streak/.test(told)
 	) {
 		out.push(
 			pick(
@@ -2088,10 +2120,400 @@ const theyNext = (sentences: string[], clubs: string[]): string => {
 };
 
 // --- The night ---------------------------------------------------------------
+//
+// THE NIGHT AS ONE PIECE, EASY TO READ. The headline is the league's night,
+// not one game's: its two or three biggest stories, each as a desk heads it
+// ("Everett scores 48 as Thunder snap skid; Kings win 5th straight"), one
+// game's alone only when nothing else that night was a story. Then each of
+// those stories gets a short paragraph of its own, in the order the headline
+// has them; every other game a line in a list under "Around the league"; and
+// what the night left - the standings, who got hurt, what's next - one short
+// paragraph each.
 
-// How many games get an item of their own. A wire roundup gives every game
-// one; past this many the quiet ones are told together at the end.
-const MAX_ITEMS = 9;
+// How many games get a line of their own in the list; past this many the
+// rest are told together at the end of it.
+const MAX_ITEMS = 12;
+
+// At most this many stories get a paragraph (and the headline).
+const MAX_TOP = 3;
+
+// A game that is a story of its own, beyond who won: not just a win, a close
+// one or a blowout - unless it moved a team into first, kept one perfect or
+// cost one a regular for a while.
+const isStory = (s: Story): boolean =>
+	!/^(?:plain|close|rout|tie)$/.test(s.kind) ||
+	(s.star?.pts ?? 0) >= 35 ||
+	s.firstIn !== undefined ||
+	s.unbeaten !== undefined ||
+	(s.winless ?? 0) >= 6 ||
+	s.hurt.some((h) => h.n >= 15 && (h.p.seasonAvg?.min ?? 0) >= 28);
+
+// "East" for "Eastern Conference".
+const confShort = (conf: string): string =>
+	/^(east|west)/i.test(conf)
+		? `${conf[0]!.toUpperCase()}${conf.slice(1, 4).toLowerCase()}`
+		: conf;
+
+// A man's night that leads his game's clause: 35 points (30 in the
+// playoffs), a triple-double, 20 and 20.
+const starLed = (s: Story): boolean => {
+	const star = s.star;
+	return (
+		!!star &&
+		(star.pts >= (s.game.playoffs ? 30 : 35) ||
+			doubleCategories(star).length >= 3 ||
+			(star.pts >= 20 && star.reb >= 20))
+	);
+};
+
+// A story as one clause of the night's headline, present tense, no score:
+// "Thunder snap 6-game skid", "Everett scores 48 as Thunder end skid".
+// Short, it leaves out who they beat where the clause says enough without:
+// "Heat rally from 15 down". Whole names; `surnamesIn` makes them a
+// headline's.
+const headClause = (
+	s: Story,
+	{ withStar = false, short = false }: { withStar?: boolean; short?: boolean },
+): string => {
+	const W = s.wn;
+	const L = s.ln;
+	const star = s.star;
+	const sr = s.series;
+	const ot = s.shape.ot > 1 ? `${s.shape.ot}OT` : "OT";
+	const bigLine = starLed(s);
+	// What else the game was, for a clause led by its man.
+	const otherwise = (): string =>
+		s.skid !== undefined && s.skid >= 5
+			? `${W} snap ${s.skid}-game skid`
+			: s.ended !== undefined
+				? `${W} end ${poss(L)} ${s.ended}-game win streak`
+				: s.dog !== undefined
+					? `${W} upset ${L}`
+					: s.comeback >= 12
+						? `${W} rally past ${L}`
+						: s.shape.ot > 0
+							? `${W} outlast ${L} in ${ot}`
+							: s.unbeaten !== undefined
+								? `${W} improve to ${s.unbeaten}-0`
+								: s.streak !== undefined
+									? `${W} win ${headOrd(s.streak)} straight`
+									: s.firstIn
+										? `${W} move into 1st in ${confShort(s.firstIn)}`
+										: `${W} beat ${L}`;
+	let result: string;
+	switch (s.kind) {
+		case "title":
+			return sr && sr.lAfter === 0
+				? `${W} sweep ${L} for championship`
+				: `${W} win championship`;
+		case "clinch": {
+			const games = sr ? sr.wAfter + sr.lAfter : 0;
+			return sr && sr.lAfter === 0
+				? `${W} sweep ${L}`
+				: games === sr?.bestOf
+					? `${W} win Game ${games} over ${L}`
+					: `${W} eliminate ${L} in ${games}`;
+		}
+		case "playIn": {
+			const pi = s.game.playIn;
+			return pi?.kind === "seed9v10"
+				? `${W} end ${poss(L)} season`
+				: pi?.kind === "final"
+					? `${W} take last playoff spot`
+					: pi?.prizeSeed !== undefined
+						? `${W} clinch No. ${pi.prizeSeed} seed`
+						: `${W} win play-in game`;
+		}
+		case "series":
+			if (s.shot) {
+				const { wAfter: a, lAfter: b } = sr!;
+				const tail =
+					sr!.state === "force"
+						? ` to force Game ${sr!.bestOf}`
+						: sr!.state === "even"
+							? " to even series"
+							: sr!.state === "opener"
+								? " in Game 1"
+								: sr!.state === "alive"
+									? " to stay alive"
+									: sr!.state === "cut"
+										? ` to cut series deficit to ${b}-${a}`
+										: ` for ${a}-${b} series lead`;
+				return `${poss(s.shot.name)} ${headShot(s.shot.shot)} lifts ${W}${short ? "" : tail}`;
+			}
+			result = `${W} ${headState(sr!)}`;
+			break;
+		case "shot": {
+			const sh = s.shot!;
+			const what = headShot(sh.shot);
+			const shot =
+				what === "buzzer-beater"
+					? what
+					: sh.buzzer
+						? `${what} at buzzer`
+						: `late ${what}`;
+			return `${poss(sh.name)} ${shot} lifts ${W}${short ? "" : ` past ${L}`}`;
+		}
+		case "lateGoAhead":
+			return `${W} edge ${L} late`;
+		case "monsterLoss":
+			return `${s.loserStar!.name} scores ${s.loserStar!.pts} in loss${short ? "" : ` to ${W}`}`;
+		case "big": {
+			const p = star!;
+			const dd = doubleCategories(p).length;
+			const his =
+				dd >= 3
+					? `${p.name} has ${doubleWord(dd)}`
+					: p.reb >= 20
+						? `${p.name} has ${p.pts} points, ${p.reb} rebounds`
+						: `${p.name} scores ${p.pts}`;
+			return short ? `${his} for ${W}` : `${his} as ${otherwise()}`;
+		}
+		case "comeback":
+			result = short
+				? `${W} rally from ${s.comeback} down`
+				: `${W} rally from ${s.comeback} down to beat ${L}`;
+			break;
+		case "upset":
+			result = `${W} ${s.dog! >= 9 ? "stun" : "upset"} ${L}`;
+			break;
+		case "snap":
+			result = `${W} snap ${s.skid}-game skid`;
+			break;
+		case "ended":
+			result = `${W} end ${poss(L)} ${s.ended}-game win streak`;
+			break;
+		case "ot":
+			result = short ? `${W} win in ${ot}` : `${W} outlast ${L} in ${ot}`;
+			break;
+		case "streak":
+			result =
+				s.unbeaten !== undefined
+					? `${W} improve to ${s.unbeaten}-0`
+					: `${W} win ${headOrd(s.streak!)} straight`;
+			break;
+		case "tie":
+			return s.game.shootout
+				? `${W} beat ${L} in shootout`
+				: `${W}, ${L} play to tie`;
+		default:
+			// A story for its man's night: his line leads it.
+			if (
+				star &&
+				star.pts >= 35 &&
+				!s.firstIn &&
+				s.unbeaten === undefined &&
+				(s.winless ?? 0) < 6
+			) {
+				const his = `${star.name} scores ${star.pts}`;
+				return short ? `${his} for ${W}` : `${his} as ${otherwise()}`;
+			}
+			result = s.firstIn
+				? `${W} move into 1st in ${confShort(s.firstIn)}`
+				: s.unbeaten !== undefined
+					? `${W} improve to ${s.unbeaten}-0`
+					: (s.winless ?? 0) >= 6
+						? `${L} fall to 0-${s.winless}`
+						: s.kind === "rout"
+							? `${W} rout ${L}`
+							: s.kind === "close"
+								? heldOn(s.game)
+									? `${W} hold off ${L}`
+									: `${W} edge ${L}`
+								: `${W} beat ${L}`;
+	}
+	if ((withStar || s.game.playoffs) && star && bigLine) {
+		const dd = doubleCategories(star).length;
+		const his =
+			dd >= 3
+				? `${star.name} has ${doubleWord(dd)}`
+				: star.reb >= 20
+					? `${star.name} has ${star.pts} points, ${star.reb} rebounds`
+					: `${star.name} scores ${star.pts}`;
+		return `${his} as ${result}`;
+	}
+	return result;
+};
+
+// What a story is, for telling two of a kind as one: a shot that won it and
+// a late go-ahead basket are both games won late.
+const groupKey = (s: Story): string =>
+	starLed(s) && /^(?:series|streak|plain|close|rout)$/.test(s.kind)
+		? `star ${s.game.gid}`
+		: s.kind === "clinch" && s.series
+			? s.series.wAfter + s.series.lAfter === s.series.bestOf
+				? "clinch decider"
+				: s.series.lAfter === 0
+					? "clinch sweep"
+					: "clinch close"
+			: s.kind === "series"
+				? // (A series game won at the end is its own clause.)
+					s.shot
+					? `shot ${s.game.gid}`
+					: `series ${stateKey(s) ?? ""}`
+				: s.kind === "shot" || s.kind === "lateGoAhead"
+					? "late"
+					: s.unbeaten !== undefined &&
+						  /^(?:streak|plain|close|rout)$/.test(s.kind)
+						? "unbeaten"
+						: s.kind;
+
+// Two or three stories of one kind are one clause: "Kings, Rockets extend
+// win streaks", "Mathis, Murray hit game-winners".
+const groupClause = (ss: Story[]): string | undefined => {
+	const key = groupKey(ss[0]!);
+	if (ss.length < 2 || !ss.every((s) => groupKey(s) === key)) {
+		return undefined;
+	}
+	const list = (xs: string[]) =>
+		xs.length === 2
+			? `${xs[0]}, ${xs[1]}`
+			: `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+	const names = list(ss.map((s) => s.wn));
+	if (key.startsWith("series ")) {
+		const sr = ss[0]!.series!;
+		const { wAfter: a, lAfter: b } = sr;
+		const k = key.slice("series ".length);
+		return k === "opener"
+			? `${names} win series openers`
+			: k === "force"
+				? `${names} force Game ${sr.bestOf}s`
+				: k === "alive"
+					? `${names} stay alive`
+					: k.startsWith("lead")
+						? `${names} take ${a}-${b} series leads`
+						: k.startsWith("even")
+							? `${names} even series at ${a}-${b}`
+							: k.startsWith("cut")
+								? `${names} cut series deficits to ${b}-${a}`
+								: undefined;
+	}
+	switch (key) {
+		case "clinch decider":
+			return `${names} win Game ${ss[0]!.series!.bestOf}s`;
+		case "clinch sweep":
+			return `${names} complete sweeps`;
+		case "clinch close":
+			return `${names} close out their series`;
+		case "late":
+			return ss.every((s) => s.shot)
+				? `${list(ss.map((s) => surnamesIn(s.shot!.name, s.game)))} hit game-winners`
+				: `${names} win it late`;
+		case "upset":
+			return `${names} pull upsets`;
+		case "unbeaten":
+			return `${names} stay unbeaten`;
+		case "streak":
+			return `${names} extend win streaks`;
+		case "snap":
+			return `${names} end losing streaks`;
+		case "ended":
+			return `${names} snap win streaks`;
+		case "comeback":
+			return `${names} win from double digits down`;
+		case "ot":
+			return `${names} win in overtime`;
+		default:
+			return undefined;
+	}
+};
+
+// The top stories as the headline tells them: stories of a kind together,
+// where the first of them stood.
+const unitsOf = (top: Story[]): Story[][] => {
+	const units: Story[][] = [];
+	for (const s of top) {
+		const unit = units.find((u) => groupClause([...u, s]) !== undefined);
+		if (unit) {
+			unit.push(s);
+		} else {
+			units.push([s]);
+		}
+	}
+	return units;
+};
+
+// The night's headline: its top stories, biggest first, each as a clause.
+// One story alone is headed as its game is, score and all.
+const NIGHT_HEAD_MAX = 85;
+const nightHeadline = (units: Story[][], themes: Theme[], rng: Rng): string => {
+	const top = units.flat();
+	const lede = top[0]!;
+	const single = () => surnamesIn(headlineOf(lede, rng, themes), lede.game);
+	if (top.length === 1) {
+		return single();
+	}
+	const clause = (s: Story, o: { withStar?: boolean; short?: boolean }) =>
+		surnamesIn(headClause(s, o), s.game);
+	const themed = nightHead(lede, themes);
+	if (themed) {
+		// "Hawks stun Grizzlies as 4 favorites fall; Kings win 5th straight".
+		const theme = themes.find((t) => t.games.includes(lede));
+		const other = top.find((s) => !theme?.games.includes(s));
+		for (const short of [false, true]) {
+			const both = other
+				? `${surnamesIn(themed, lede.game)}; ${clause(other, { short })}`
+				: undefined;
+			if (both && both.length <= NIGHT_HEAD_MAX) {
+				return cap(both);
+			}
+		}
+		return cap(themed);
+	}
+	const unitClause = (
+		u: Story[],
+		o: { withStar?: boolean; short?: boolean },
+	): string => (u.length > 1 ? groupClause(u)! : clause(u[0]!, o));
+	const tries: string[][] = [];
+	for (const n of [units.length, 2]) {
+		const us = units.slice(0, n);
+		tries.push(
+			us.map((u, i) => unitClause(u, { withStar: i === 0 })),
+			us.map((u) => unitClause(u, {})),
+			us.map((u, i) => unitClause(u, { withStar: i === 0, short: true })),
+			us.map((u) => unitClause(u, { short: true })),
+		);
+	}
+	for (const parts of tries) {
+		const head = parts.join("; ");
+		if (parts.length >= 2 && head.length <= NIGHT_HEAD_MAX) {
+			return cap(head);
+		}
+	}
+	// One story told in full, when a second will not fit beside it.
+	if (units[0]!.length > 1) {
+		const head = unitClause(units[0]!, {});
+		if (head.length <= NIGHT_HEAD_MAX) {
+			return cap(head);
+		}
+	}
+	return single();
+};
+
+// A top story as a paragraph of its own: the wire lede, the detail that made
+// it, and what it meant.
+const storyParagraph = (
+	s: Story,
+	rng: Rng,
+	first: boolean,
+	alone: boolean,
+	night: string,
+): string => {
+	const para: string[] = [ledeSentence(s, rng, night)];
+	const detail = ledeDetail(s, para.join(" "));
+	if (detail) {
+		para.push(detail);
+	}
+	const ctx = contextOf(s, para.join(" "), rng, alone, night);
+	para.push(...ctx.slice(0, detail ? 1 : first ? 2 : 1));
+	if (para.length === 1) {
+		const extra = depthLine(s, para[0]!);
+		if (extra) {
+			para.push(extra);
+		}
+	}
+	return theyNext(para, [s.w, s.l]);
+};
 
 export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 	const { games, standings, playoffs } = input;
@@ -2102,58 +2524,55 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 	if (stories.length === 0) {
 		return "";
 	}
-	const lede = stories[0]!;
-	const rest = stories.slice(1);
 	const themes = themesOf(stories);
 
-	// The headline: the top story, as a desk writes it.
-	const headline = surnamesIn(headlineOf(lede, rng, themes), lede.game);
-
-	// The deck: the night's other stories, in a line.
-	const deck = deckLine(rest, themes, lede);
-
-	// The lede paragraph: the top story, its detail, what it meant, and the
-	// line that turns to the rest of the night.
-	const ledePara: string[] = [ledeSentence(lede, rng)];
-	const detail = ledeDetail(lede, ledePara.join(" "));
-	if (detail) {
-		ledePara.push(detail);
+	// The night's top stories: its biggest that are stories of their own -
+	// or, on a night with none, its biggest game. They head it and get a
+	// paragraph each, in the headline's order.
+	let top = stories.filter(isStory).slice(0, MAX_TOP);
+	if (top.length === 0) {
+		top = [stories[0]!];
 	}
+	const units = unitsOf(top);
+	const headline = nightHeadline(units, themes, rng);
+	top = units.flat();
+	const rest = stories.filter((s) => !top.includes(s));
+
+	// The night's shape (three games won at the buzzer, five favorites
+	// beaten): after the first story when it was one of them, else over the
+	// list of the rest. Not when the paragraphs tell every game in it anyway.
 	const theme = [...themes].sort(
 		(a, b) =>
 			themeRank(b) +
-			(b.games.includes(lede) ? 1 : 0) -
-			(themeRank(a) + (a.games.includes(lede) ? 1 : 0)),
+			(b.games.includes(top[0]!) ? 1 : 0) -
+			(themeRank(a) + (a.games.includes(top[0]!) ? 1 : 0)),
 	)[0];
-	const ledeCtx = contextOf(
-		lede,
-		ledePara.join(" "),
-		rng,
-		stories.length === 1,
-	);
-	ledePara.push(...ledeCtx.slice(0, detail ? 1 : 2));
-	// A lede is more than its one sentence: who else had a night.
-	if (ledePara.length === 1) {
-		const extra = depthLine(lede, ledePara[0]!);
-		if (extra) {
-			ledePara.push(extra);
-		}
-	}
-	if (theme) {
-		const line = themeLine(theme, lede);
-		if (line) {
-			ledePara.push(line);
-		}
-	}
-	const ledeText = theyNext(ledePara, [lede.w, lede.l]);
+	const themeTold =
+		theme !== undefined &&
+		theme.kind !== "upsets" &&
+		theme.games.every((x) => top.includes(x));
+	const themeText =
+		theme && !themeTold ? themeLine(theme, top[0]!) || undefined : undefined;
+	const themeInLede = theme !== undefined && theme.games.includes(top[0]!);
 
-	// An item for each other game, biggest story first.
+	// A paragraph for each top story, in the headline's order.
+	const paragraphs: string[] = [];
+	let night = "";
+	for (const [i, s] of top.entries()) {
+		let text = storyParagraph(s, rng, i === 0, stories.length === 1, night);
+		if (i === 0 && themeText && (themeInLede || rest.length === 0)) {
+			text += ` ${themeText}`;
+		}
+		night += ` ${text}`;
+		paragraphs.push(text);
+	}
+
+	// Every other game, a line in a list, biggest story first.
 	const itemStories = rest.slice(0, MAX_ITEMS);
 	const quiet = rest.slice(MAX_ITEMS);
 	let lastKey = "";
-	let nightSoFar = ledeText;
-	let openers = lede.series?.state === "opener" ? 1 : 0;
-	const items = itemStories.map((s0, i) => {
+	let openers = top.filter((s) => s.series?.state === "opener").length;
+	const items = itemStories.map((s0) => {
 		let s = s0;
 		if (s.kind === "series" && s.series!.state === "opener") {
 			openers += 1;
@@ -2172,25 +2591,32 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 			"day:item",
 		);
 		lastKey = main.key;
-		const ctx = contextOf(s, main.text, rng, false, nightSoFar);
-		// The night's bigger stories get two notes; the rest one.
-		const take = i < 3 && s.kind !== "plain" ? 2 : 1;
-		const text = theyNext([main.text, ...ctx.slice(0, take)], [s.w, s.l]);
-		nightSoFar += ` ${text}`;
-		return `**${s.header}:** ${text}`;
+		// One more thing it meant, when it meant something; who got hurt is
+		// told at the end with the rest.
+		const ctx = contextOf({ ...s, hurt: [] }, main.text, rng, false, night);
+		const text = theyNext([main.text, ...ctx.slice(0, 1)], [s.w, s.l]);
+		night += ` ${text}`;
+		return `- **${s.header}:** ${text}`;
 	});
-
-	// The quiet games past the cap, told together.
-	const close: string[] = [];
 	if (quiet.length > 0) {
 		const clauses = quiet.map(
 			(s) => `${s.w} ${beatVerb(s, rng)} ${s.l} ${s.score}`,
 		);
-		close.push(`Elsewhere, ${naturalList(clauses)}.`);
+		items.push(`- ${cap(`${naturalList(clauses)}.`)}`);
+	}
+	const intro = themeText && !themeInLede ? themeText : undefined;
+	if (items.length === 1 && !intro) {
+		// (One game left: a paragraph of its own, not a list of one.)
+		paragraphs.push(items[0]!.replace(/^- /, ""));
+	} else if (items.length > 0) {
+		paragraphs.push(
+			[`**Around the league**`, ...(intro ? [intro] : []), ...items].join("\n"),
+		);
 	}
 
-	// The close: where the league stands and what is next.
-	const said = [headline, deck ?? "", ...ledePara, ...items].join(" ");
+	// What the night left: the standings, who got hurt in the games the list
+	// told, what's next.
+	const said = [headline, ...paragraphs].join(" ");
 	const dayCtx: DayBeatContext = {
 		games,
 		standings,
@@ -2203,7 +2629,7 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 			bracket &&
 			!/face elimination|stay alive|from elimination|more loss ends/.test(said)
 		) {
-			close.push(bracket);
+			paragraphs.push(bracket);
 		}
 	} else {
 		const picture = conferencePictureSentence(
@@ -2226,235 +2652,25 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 			},
 		);
 		if (picture && !/first place|unbeaten/.test(said)) {
-			close.push(picture);
+			paragraphs.push(picture);
 		}
-		// The injuries of the quiet games, which had no item to carry them.
-		for (const st of quiet.filter((x) => x.hurt.length > 0).slice(0, 2)) {
-			const text = hurtSentence(st.hurt, "", false);
-			if (text) {
-				close.push(text);
-			}
+	}
+	const hurt: string[] = [];
+	for (const s of rest.filter((x) => x.hurt.length > 0)) {
+		const text = hurtSentence(s.hurt, "", s.game.playoffs);
+		if (text && hurt.length < 3) {
+			hurt.push(text);
 		}
+	}
+	if (hurt.length > 0) {
+		paragraphs.push(hurt.join(" "));
+	}
+	if (!playoffs) {
 		const next = dayNextSlate(dayCtx, rng);
 		if (next) {
-			close.push(next);
+			paragraphs.push(next);
 		}
 	}
 
-	const paragraphs = [ledeText, ...items];
-	if (close.length > 0) {
-		paragraphs.push(close.join(" "));
-	}
-	const head = deck ? `**${headline}**\n\n*${deck}*` : `**${headline}**`;
-	return `${head}\n\n${paragraphs.join("\n\n")}`;
-};
-
-// --- The deck ----------------------------------------------------------------
-
-// A story as a clause of the deck, present tense: "Corey Vance scores 49
-// for the Spurs", "the Clippers upset the Suns".
-const deckClause = (s: Story): string | undefined => {
-	const { w, l } = s;
-	const star = s.star;
-	switch (s.kind) {
-		case "title":
-			return `${w} win the championship`;
-		case "clinch": {
-			const sr = s.series;
-			const games = sr ? sr.wAfter + sr.lAfter : 0;
-			return sr && sr.lAfter === 0
-				? `${w} sweep ${l}`
-				: games === sr?.bestOf
-					? `${w} beat ${l} in Game ${games}`
-					: `${w} eliminate ${l} in ${numWord(games)} games`;
-		}
-		case "playIn":
-			return `${w} win their play-in game`;
-		case "series": {
-			const sr = s.series!;
-			return sr.state === "force"
-				? `${w} force a Game ${sr.bestOf}`
-				: sr.state === "alive"
-					? `${w} stay alive`
-					: sr.state === "brink"
-						? `${w} move within a win of advancing`
-						: sr.state === "even"
-							? `${w} even their series at ${sr.wAfter}-${sr.lAfter}`
-							: sr.state === "opener"
-								? deckClause({ ...s, kind: s.gameKind })
-								: sr.state === "cut"
-									? `${w} cut their series deficit to ${sr.lAfter}-${sr.wAfter}`
-									: `${w} go up ${sr.wAfter}-${sr.lAfter}`;
-		}
-		case "shot":
-			return `${s.shot!.name} wins it at the end for ${w}`;
-		case "lateGoAhead":
-			return `${w} edge ${l} late`;
-		case "monsterLoss":
-			return `${s.loserStar!.name} scores ${s.loserStar!.pts} in a loss to ${w}`;
-		case "big": {
-			const dd = doubleCategories(star!).length;
-			return dd >= 3
-				? `${star!.name} has a ${doubleWord(dd)!} for ${w}`
-				: star!.reb >= 20
-					? `${star!.name} has ${star!.pts} points and ${star!.reb} rebounds for ${w}`
-					: `${star!.name} scores ${star!.pts} for ${w}`;
-		}
-		case "comeback":
-			return `${w} rally from ${s.comeback} down to beat ${l}`;
-		case "upset":
-			return `${w} upset ${l}`;
-		case "snap":
-			return `${w} end ${aNumWord(s.skid!)}-game skid`;
-		case "ended":
-			return `${w} end ${poss(l)} winning streak`;
-		case "ot":
-			return `${w} outlast ${l} in ${otPhrase(s.shape.ot)}`;
-		case "streak":
-			return s.unbeaten !== undefined
-				? `${w} stay unbeaten`
-				: `${w} win their ${ordinal(s.streak!)} straight`;
-		case "rout":
-			return `${w} rout ${l} by ${s.shape.margin}`;
-		default:
-			return undefined;
-	}
-};
-
-const deckLine = (
-	rest: Story[],
-	themes: Theme[],
-	lede: Story,
-): string | undefined => {
-	const clauses: string[] = [];
-	const told = new Set<Story>();
-	// Two of a kind are told together: "the Clippers and the Hawks pull off
-	// upsets", "five teams go up 2-0".
-	const groups: { stories: Story[]; text: string }[] = [];
-	// A series opener is told as the game it was.
-	const kindOf = (s: Story): Kind =>
-		s.kind === "series" && s.series!.state === "opener" ? s.gameKind : s.kind;
-	const ofKind = (k: Kind) => rest.filter((s) => kindOf(s) === k);
-	const clinches = ofKind("clinch");
-	if (clinches.length >= 2) {
-		const ledeClinched = lede.kind === "clinch" || lede.kind === "title";
-		groups.push({
-			stories: clinches,
-			// The headline has the winners when the lede was one of them.
-			text: ledeClinched
-				? `${naturalList([lede, ...clinches].slice(0, 4).map((s) => s.l))} are eliminated`
-				: `${naturalList(clinches.slice(0, 3).map((s) => s.w))} close out their series`,
-		});
-	}
-	const routs = ofKind("rout");
-	if (routs.length >= 2) {
-		groups.push({
-			stories: routs,
-			text: `${naturalList(routs.slice(0, 3).map((s) => s.w))} win in blowouts`,
-		});
-	}
-	const upsets = ofKind("upset");
-	if (upsets.length >= 2) {
-		groups.push({
-			stories: upsets,
-			text: `${naturalList(upsets.slice(0, 3).map((s) => s.w))} pull off upsets`,
-		});
-	}
-	const ended = ofKind("ended");
-	if (ended.length >= 2) {
-		groups.push({
-			stories: ended,
-			text: `${naturalList(ended.slice(0, 3).map((s) => s.w))} snap winning streaks`,
-		});
-	}
-	const snapped = ofKind("snap");
-	if (snapped.length >= 2) {
-		groups.push({
-			stories: snapped,
-			text: `${naturalList(snapped.slice(0, 3).map((s) => s.w))} end losing streaks`,
-		});
-	}
-	const comebacks = ofKind("comeback");
-	if (comebacks.length >= 2) {
-		groups.push({
-			stories: comebacks,
-			text: `${naturalList(comebacks.slice(0, 3).map((s) => s.w))} win from double digits down`,
-		});
-	}
-	const byState = new Map<string, Story[]>();
-	for (const s of rest) {
-		const k = stateKey(s);
-		if (k) {
-			byState.set(k, [...(byState.get(k) ?? []), s]);
-		}
-	}
-	for (const [k, ss] of byState) {
-		if (ss.length < 2) {
-			continue;
-		}
-		const sr = ss[0]!.series!;
-		const n = ss.length;
-		const teams =
-			n <= 2 ? naturalList(ss.map((s) => s.w)) : `${numWord(n)} teams`;
-		const text =
-			k === "force"
-				? `${teams} force Game ${sr.bestOf}s`
-				: k.startsWith("lead")
-					? `${teams} go up ${sr.wAfter}-${sr.lAfter}`
-					: k.startsWith("even")
-						? `${teams} even their series at ${sr.wAfter}-${sr.lAfter}`
-						: k === "alive"
-							? `${teams} stay alive`
-							: k.startsWith("cut")
-								? `${teams} cut their series deficits to ${sr.lAfter}-${sr.wAfter}`
-								: "";
-		if (text) {
-			groups.push({ stories: ss, text });
-		}
-	}
-	const streaks = ofKind("streak").filter((s) => s.unbeaten === undefined);
-	if (streaks.length >= 2) {
-		const n = streaks[0]!.streak!;
-		groups.push({
-			stories: streaks,
-			text: streaks.every((s) => s.streak === n)
-				? `${naturalList(streaks.slice(0, 3).map((s) => s.w))} each win their ${ordinal(n)} straight`
-				: `${naturalList(streaks.slice(0, 3).map((s) => s.w))} extend winning streaks`,
-		});
-	}
-	// Routs, streaks and skids say less than an upset, a comeback or a
-	// series; they go last.
-	const late = (g: { stories: Story[] }) =>
-		/^(?:rout|ended|snap|streak)$/.test(kindOf(g.stories[0]!)) ? 1 : 0;
-	groups.sort((a, b) => late(a) - late(b));
-	for (const g of groups) {
-		clauses.push(g.text);
-		g.stories.forEach((s) => told.add(s));
-	}
-	for (const s of rest) {
-		if (told.has(s) || clauses.length >= 3) {
-			continue;
-		}
-		const c = deckClause(s);
-		if (c) {
-			clauses.push(c);
-			told.add(s);
-		}
-	}
-	// A night of upsets the lede did not carry leads the deck.
-	const upsetTheme = themes.find((t) => t.kind === "upsets");
-	if (upsetTheme && !upsetTheme.games.includes(lede) && upsets.length < 2) {
-		clauses.unshift(
-			`${numWord(upsetTheme.games.length)} of ${numWord(upsetTheme.of!)} favorites lose`,
-		);
-	}
-	if (clauses.length === 0) {
-		return undefined;
-	}
-	const list = clauses.slice(0, 3);
-	// Clauses with lists of their own are kept apart by semicolons.
-	if (list.length > 1 && list.some((c) => c.includes(", "))) {
-		return `${cap(list.join("; "))}.`;
-	}
-	return `${cap(list.length === 2 ? `${list[0]}, and ${list[1]}` : naturalList(list))}.`;
+	return `**${headline}**\n\n${paragraphs.join("\n\n")}`;
 };
