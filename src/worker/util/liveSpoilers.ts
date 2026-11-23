@@ -15,22 +15,46 @@
 
 import type { LocalStateUI } from "../../common/types.ts";
 
-let provider: (() => ReadonlySet<number>) | undefined;
+//
+// Two kinds, because they end differently (see util/liveGameGate.ts):
+// `watching` - this device's own live game, the one it is watching or being
+// asked about, a result held for a broadcast on its way - stays out until this
+// screen has played it out; `room` - every other game a league mate is
+// playing live - until it is over on theirs, or (regular season) a day has
+// been simmed past it.
+export type LiveSpoilerSets = {
+	watching: ReadonlySet<number>;
+	room: ReadonlySet<number>;
+};
+
+let provider: (() => LiveSpoilerSets) | undefined;
 
 export const setLiveSpoilerProvider = (
-	fn: (() => ReadonlySet<number>) | undefined,
+	fn: (() => LiveSpoilerSets) | undefined,
 ) => {
 	provider = fn;
 };
 
 const NONE: ReadonlySet<number> = new Set();
+const NO_SETS: LiveSpoilerSets = { watching: NONE, room: NONE };
+
+export const liveSpoilerSets = (): LiveSpoilerSets => {
+	try {
+		return provider?.() ?? NO_SETS;
+	} catch {
+		return NO_SETS;
+	}
+};
 
 export const liveSpoilerGids = (): ReadonlySet<number> => {
-	try {
-		return provider?.() ?? NONE;
-	} catch {
-		return NONE;
+	const { watching, room } = liveSpoilerSets();
+	if (room.size === 0) {
+		return watching;
 	}
+	if (watching.size === 0) {
+		return room;
+	}
+	return new Set([...watching, ...room]);
 };
 
 type BarGame = LocalStateUI["games"][number];

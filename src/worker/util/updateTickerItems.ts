@@ -14,7 +14,11 @@ import {
 import { getUpcoming } from "../views/schedule.ts";
 import getAwardRaceOdds from "../core/season/getAwardRaceOdds.ts";
 import type { EventBBGM, Game } from "../../common/types.ts";
-import { liveSpoilerGids, mentionsHiddenGame } from "./liveSpoilers.ts";
+import {
+	eventGivesAwayLiveGame,
+	getLiveGate,
+	type LiveGate,
+} from "./liveGameGate.ts";
 
 // Everything the bottom ticker shows, built league-wide.
 //
@@ -321,15 +325,13 @@ export const tightenNews = (text: string, type: string): string => {
 		.replace(" has recovered from his injury.", " is back");
 };
 
-const newsItems = async (
-	hidden: ReadonlySet<number>,
-): Promise<TickerItem[]> => {
+const newsItems = async (gate: LiveGate): Promise<TickerItem[]> => {
 	const qualifies = (event: EventBBGM) =>
 		!IGNORE_TYPES.has(event.type) &&
 		event.score !== undefined &&
 		event.score >= MIN_NEWS_SCORE &&
 		// (A story about a game still playing out live gives it away.)
-		!mentionsHiddenGame(event.text, hidden);
+		!eventGivesAwayLiveGame(event, gate);
 
 	const picked: EventBBGM[] = [];
 	const seen = new Set<number>();
@@ -392,7 +394,10 @@ let memo: { at: number; key: string; items: TickerItem[] } | undefined;
 const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 	const now = Date.now();
 	const phase = g.get("phase");
-	const key = `${g.get("lid")}|${g.get("season")}|${phase}`;
+	// (In the playoffs, not the next day's games while a game of today's is
+	// still being played live - see liveGameGate.ts.)
+	const dayCutoff = (await getLiveGate()).dayCutoff;
+	const key = `${g.get("lid")}|${g.get("season")}|${phase}|${dayCutoff}`;
 	if (!fresh && memo && memo.key === key && now - memo.at < MEMO_MS) {
 		return memo.items;
 	}
@@ -404,7 +409,9 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 	// count: that is when the slate matters most.
 	if (phase >= PHASE.REGULAR_SEASON && phase <= PHASE.PLAYOFFS) {
 		try {
-			const upcoming = await getUpcoming({});
+			const upcoming = (await getUpcoming({})).filter(
+				(game) => dayCutoff === undefined || game.day <= dayCutoff,
+			);
 			for (const game of upcoming.slice(0, TICKER_LIMITS.upcoming)) {
 				const [home, away] = game.teams;
 				if (home.tid < 0 || away.tid < 0) {
@@ -489,12 +496,14 @@ export const updateTickerItems = async ({ fresh = false } = {}) => {
 	try {
 		await loadTeamMarks();
 		// (Nothing from a game still playing out live - see liveSpoilers.ts.)
-		const hidden = liveSpoilerGids();
-		const games = (await recentGames()).filter((game) => !hidden.has(game.gid));
+		const gate = await getLiveGate();
+		const games = (await recentGames()).filter(
+			(game) => !gate.hidden.has(game.gid),
+		);
 		items = [
 			...scoreItems(games),
 			...performanceItems(games),
-			...(await newsItems(hidden)),
+			...(await newsItems(gate)),
 			...(await upcomingAndRaces(fresh)),
 		];
 	} catch (error) {

@@ -167,13 +167,25 @@ const TeamNight = ({
 			])
 		: game.day !== undefined
 			? helpers.leagueUrl(["daily_schedule", season, game.day])
-			: undefined;
+			: game.planned
+				? helpers.leagueUrl(["playoffs", season])
+				: undefined;
 	const t = teams[opp];
 
 	return (
 		<>
-			{playoffGame !== undefined ? (
-				<span className="lc-tag lc-tag-playoffs">G{playoffGame}</span>
+			{game.playIn ? (
+				<span className="lc-tag lc-tag-playoffs" title="Play-In">
+					{compact ? "PI" : "Play-In"}
+				</span>
+			) : playoffGame !== undefined ? (
+				<span
+					className="lc-tag lc-tag-playoffs"
+					title={game.ifNecessary ? "If necessary" : undefined}
+				>
+					G{playoffGame}
+					{game.ifNecessary ? "*" : null}
+				</span>
 			) : b2b ? (
 				<span className="lc-tag" title="Back-to-back">
 					B2B
@@ -184,7 +196,7 @@ const TeamNight = ({
 				href={href}
 				title={`${home ? "vs" : "@"} ${t?.region ?? ""} ${t?.name ?? ""}${
 					final ? `, ${won ? "W" : "L"} ${pts}-${oppPts}` : ""
-				}`}
+				}${game.ifNecessary ? " (if necessary)" : ""}`}
 			>
 				<span className="lc-opp">
 					<span className="lc-at">{home ? "" : "@"}</span>
@@ -195,6 +207,9 @@ const TeamNight = ({
 						</span>
 					)}
 				</span>
+				{game.ifNecessary && !compact ? (
+					<span className="lc-maybe-note d-none d-md-inline">If necessary</span>
+				) : null}
 				{final ? (
 					<span className="lc-result">
 						<span className={clsx("lc-wl", won ? "lc-w" : "lc-l")}>
@@ -219,7 +234,9 @@ const LeagueNight = ({
 	compact,
 	count,
 	day,
+	maybe,
 	mine,
+	planned,
 	season,
 	teams,
 	userTid,
@@ -227,7 +244,11 @@ const LeagueNight = ({
 	compact: boolean;
 	count: number;
 	day: number | undefined;
+	// Games that may not be needed.
+	maybe: number;
 	mine: CalendarGame | undefined;
+	// Playoff games on the plan, not yet on the schedule.
+	planned: boolean;
 	season: number;
 	teams: TeamInfo[];
 	userTid: number;
@@ -244,8 +265,11 @@ const LeagueNight = ({
 			href={
 				day !== undefined
 					? helpers.leagueUrl(["daily_schedule", season, day])
-					: undefined
+					: planned
+						? helpers.leagueUrl(["playoffs", season])
+						: undefined
 			}
+			title={maybe > 0 ? `${maybe} if necessary` : undefined}
 		>
 			<span className="lc-count">
 				{count}
@@ -255,6 +279,7 @@ const LeagueNight = ({
 						{helpers.plural("game", count)}
 					</span>
 				)}
+				{maybe > 0 ? "*" : null}
 			</span>
 			{opp !== undefined ? (
 				<span className="lc-opp lc-opp-small">
@@ -324,6 +349,11 @@ export const MonthCalendar = ({
 		prev.current = { season, anchor };
 	}, [anchor, season, selected, startMonth]);
 
+	// The league's nights: the user's road nights in his team's color (so
+	// no "@" is needed), his home nights plain.
+	const allColors = useAllTeamColors(tid === "all");
+	const road = bannerColors(allColors?.[userTid]);
+
 	const month =
 		chosenMonth !== undefined && months.includes(chosenMonth)
 			? chosenMonth
@@ -348,7 +378,7 @@ export const MonthCalendar = ({
 	for (const game of teamGames) {
 		const home = game.homeTid === tid;
 		const opp = home ? game.awayTid : game.homeTid;
-		if (game.playoffs) {
+		if (game.playoffs && !game.playIn) {
 			const n = (playoffCounts.get(opp) ?? 0) + 1;
 			playoffCounts.set(opp, n);
 			playoffGameNumbers.set(game.gid, n);
@@ -369,16 +399,30 @@ export const MonthCalendar = ({
 	// The league's nights: how many games, and the user's team's.
 	const nights = new Map<
 		string,
-		{ count: number; day: number | undefined; mine: CalendarGame | undefined }
+		{
+			count: number;
+			day: number | undefined;
+			maybe: number;
+			mine: CalendarGame | undefined;
+			planned: boolean;
+		}
 	>();
 	if (tid === "all") {
 		for (const game of games) {
 			const night = nights.get(game.date) ?? {
 				count: 0,
 				day: game.day,
+				maybe: 0,
 				mine: undefined,
+				planned: false,
 			};
 			night.count += 1;
+			if (game.ifNecessary) {
+				night.maybe += 1;
+			}
+			if (game.planned) {
+				night.planned = true;
+			}
 			if (game.homeTid === userTid || game.awayTid === userTid) {
 				night.mine = game;
 			}
@@ -388,11 +432,6 @@ export const MonthCalendar = ({
 
 	const monthIndex = months.indexOf(month);
 	const todayMonth = today !== undefined ? monthOf(today) : undefined;
-
-	// The league's nights: the user's road nights in his team's color (so
-	// no "@" is needed), his home nights plain.
-	const allColors = useAllTeamColors(tid === "all");
-	const road = bannerColors(allColors?.[userTid]);
 
 	return (
 		<div
@@ -520,6 +559,9 @@ export const MonthCalendar = ({
 										key={date}
 										className={clsx(
 											home && "lc-home",
+											game?.ifNecessary &&
+												typeof tid === "number" &&
+												"lc-maybe",
 											night?.mine?.awayTid === userTid && "lc-road",
 											date === today && "lc-today",
 											date === selected && "lc-selected",
@@ -545,7 +587,9 @@ export const MonthCalendar = ({
 												compact={compact}
 												count={night.count}
 												day={night.day}
+												maybe={night.maybe}
 												mine={night.mine}
+												planned={night.planned}
 												season={season}
 												teams={teamInfoCache}
 												userTid={userTid}

@@ -13,6 +13,15 @@ import {
 import { ALL_STAR_GAME_TIDS } from "../../../common/specialGames.ts";
 import { collegeNitDay } from "../college/tournaments.ts";
 import { nextPlayoffDate } from "./playoffDates.ts";
+import {
+	planPlayIn,
+	planRound,
+	playInFinalNight,
+	playoffsAllStarNight,
+	roundKind,
+	roundStartNight,
+} from "./playoffCalendar.ts";
+import { addDays } from "../../../common/calendarDates.ts";
 
 // Play 2 home (true) then 2 away (false) and repeat, but ensure that the better
 // team always gets the last game. betterSeedHome lives in
@@ -25,6 +34,36 @@ const seriesIsNotOver = (
 	numGamesToWin: number,
 ): away is PlayoffSeriesTeam =>
 	!!(away && home.won < numGamesToWin && away.won < numGamesToWin);
+
+// On the NBA calendar: the night of this season's last game so far, and each
+// team's. Undefined on classic numbered days.
+const playedNights = async () => {
+	const season = g.get("season");
+	let last: string | undefined;
+	const byTid = new Map<number, string>();
+	for (const game of await idb.cache.games.getAll()) {
+		if (game.season !== season || game.date === undefined) {
+			continue;
+		}
+		if (last === undefined || game.date > last) {
+			last = game.date;
+		}
+		for (const { tid } of game.teams) {
+			const prev = byTid.get(tid);
+			if (prev === undefined || game.date > prev) {
+				byTid.set(tid, game.date);
+			}
+		}
+	}
+	return { last, byTid };
+};
+
+// The games on the first of these nights.
+const firstNight = (tids: [number, number][], dates: string[]) => {
+	const night = [...dates].sort()[0];
+	const tonight = tids.filter((_, i) => dates[i] === night);
+	return { tids: tonight, dates: tonight.map(() => night) };
+};
 
 const getTeamsForOrderTeams = () => {
 	return team.getFormattedAll({
@@ -50,7 +89,34 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 
 	const playIns = playoffSeries.playIns;
 	if (playoffSeries.currentRound === -1 && playIns && playIns.length > 0) {
+		// On the calendar, the play-in's nights are set before its first game
+		// (see playoffCalendar.ts). One that started without them (from before
+		// they were) keeps the old every-other-night dates.
+		if (
+			playIns.every((playIn) =>
+				playIn.every(
+					(matchup) =>
+						matchup.dates === undefined &&
+						matchup.home.won + matchup.away.won === 0,
+				),
+			)
+		) {
+			const { last } = await playedNights();
+			if (last !== undefined) {
+				const firstNights = planPlayIn(playIns.length, last);
+				for (const [i, playIn] of playIns.entries()) {
+					for (const matchup of playIn) {
+						matchup.dates = [firstNights[i]!];
+					}
+				}
+			}
+		}
+		const finalNight = playIns.every((playIn) => playIn[0].dates)
+			? playInFinalNight(playIns.map((playIn) => playIn[0].dates![0]!))
+			: undefined;
+
 		const tids: [number, number][] = [];
+		const dates: string[] = [];
 
 		// Is play-in tournament still going on?
 		for (const playIn of playIns) {
@@ -76,14 +142,22 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 				const matchup = {
 					home: getTeam(0, "lost"),
 					away: getTeam(1, "won"),
+					...(finalNight === undefined ? {} : { dates: [finalNight] }),
 				};
 				playIn.push(matchup);
 
 				tids.push([matchup.home.tid, matchup.away.tid]);
+				if (finalNight !== undefined) {
+					dates.push(finalNight);
+				}
 			} else {
 				for (const matchup of playIn) {
 					if (matchup.home.won === 0 && matchup.away.won === 0) {
 						tids.push([matchup.home.tid, matchup.away.tid]);
+						const night = matchup.dates?.[0];
+						if (night !== undefined) {
+							dates.push(night);
+						}
 					}
 				}
 			}
@@ -91,6 +165,12 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 
 		if (tids.length > 0) {
 			await idb.cache.playoffSeries.put(playoffSeries);
+			if (finalNight !== undefined && dates.length === tids.length) {
+				// One night at a time.
+				const tonight = firstNight(tids, dates);
+				await setSchedule(tonight.tids, tonight.dates);
+				return false;
+			}
 			const date = await nextPlayoffDate({
 				kind: playIns.some((playIn) =>
 					playIn.some((matchup) => matchup.home.won + matchup.away.won > 0),
@@ -118,6 +198,59 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 	const rnd = playoffSeries.currentRound;
 	const tids: [number, number][] = [];
 	const numGamesToWin = helpers.numGamesToWinRound(rnd);
+	const numRounds = g.get("numGamesPlayoffSeries", "current").length;
+	const finals = rnd === numRounds - 1;
+
+	// On the calendar, every game of the round gets its night before Game 1
+	// (see playoffCalendar.ts). A round that started without them (from before
+	// they were) keeps the old every-other-night dates.
+	const roundSeries = series[rnd]!;
+	if (
+		roundSeries.every(
+			(matchup) =>
+				matchup.dates === undefined &&
+				(!matchup.away || matchup.home.won + matchup.away.won === 0),
+		)
+	) {
+		const nights = await playedNights();
+		if (nights.last !== undefined) {
+			const active = roundSeries.filter((matchup) => matchup.away);
+			const planned = planRound({
+				kind: roundKind(rnd, numRounds),
+				firstNight: roundStartNight({
+					rnd,
+					kind: roundKind(rnd, numRounds),
+					lastNight: nights.last,
+					afterPlayIn: !!playIns && playIns.length > 0,
+					random: Math.random,
+				}),
+				series: active.map((matchup) => ({
+					tids: [matchup.home.tid, matchup.away!.tid],
+					numGames: g.get("numGamesPlayoffSeries", "current")[rnd]!,
+				})),
+				lastPlayed: nights.byTid,
+			});
+			for (const [i, matchup] of active.entries()) {
+				matchup.dates = planned[i];
+			}
+			await idb.cache.playoffSeries.put(playoffSeries);
+		}
+	}
+
+	// Tonight on the calendar: the first night any series has a game left.
+	let tonight: string | undefined;
+	let calendarRound = roundSeries.some((matchup) => matchup.dates);
+	for (const { away, home, dates } of roundSeries) {
+		if (seriesIsNotOver(home, away, numGamesToWin)) {
+			const night = dates?.[home.won + away.won];
+			if (night === undefined) {
+				// Not on the plan (the series got longer?): the old dates.
+				calendarRound = false;
+			} else if (tonight === undefined || night < tonight) {
+				tonight = night;
+			}
+		}
+	}
 
 	let minGamesPlayedThisRound = Infinity;
 	for (const { away, home } of series[rnd]!) {
@@ -130,12 +263,16 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 	}
 
 	// Try to schedule games if there are active series
-	for (const { away, home } of series[rnd]!) {
+	for (const { away, home, dates } of series[rnd]!) {
 		if (seriesIsNotOver(home, away, numGamesToWin)) {
 			const numGames = home.won + away.won;
 
-			// Because live game sim is an individual game now, not a whole day, need to check if some series are ahead of others and therefore should not get a game today.
-			if (numGames > minGamesPlayedThisRound) {
+			if (calendarRound) {
+				if (dates?.[numGames] !== tonight) {
+					continue;
+				}
+			} else if (numGames > minGamesPlayedThisRound) {
+				// Because live game sim is an individual game now, not a whole day, need to check if some series are ahead of others and therefore should not get a game today.
 				continue;
 			}
 
@@ -165,6 +302,16 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 			// Make sure we didn't just play the All-Star Game - only schedule once
 			const allStar = await idb.merged.allStars.get(g.get("season"));
 			if (!allStar?.score) {
+				if (calendarRound && tonight !== undefined) {
+					// On the calendar, a night of its own before Game 1.
+					const { last } = await playedNights();
+					let night = playoffsAllStarNight(tonight);
+					if (last !== undefined && night <= last) {
+						night = addDays(last, 1);
+					}
+					await setSchedule([[...ALL_STAR_GAME_TIDS]], [night]);
+					return false;
+				}
 				tids.unshift([...ALL_STAR_GAME_TIDS]);
 			}
 		}
@@ -172,7 +319,13 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 		if (g.get("college")) {
 			tids.push(...(await collegeNitDay(true)));
 		}
-		const finals = rnd === g.get("numGamesPlayoffSeries", "current").length - 1;
+		if (calendarRound && tonight !== undefined) {
+			await setSchedule(
+				tids,
+				tids.map(() => tonight),
+			);
+			return false;
+		}
 		const date = await nextPlayoffDate(
 			minGamesPlayedThisRound === 0
 				? {

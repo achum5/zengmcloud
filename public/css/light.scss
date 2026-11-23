@@ -2079,6 +2079,54 @@ tr.table-warning:hover > td {
 	border-bottom: 1px solid $gray-200;
 }
 
+// Games being played live in a shared league, under the top bar (see
+// components/LiveGames.tsx). One row; more than fit scroll sideways.
+.live-scores-strip {
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+// (In the top bar it takes only the room left over, never squeezing the
+// rest of the bar.)
+.live-scores-inline {
+	min-width: 0;
+	flex: 1000 1 0;
+}
+.live-score-chip {
+	flex-shrink: 0;
+	font-size: 0.8125rem;
+	line-height: 1.2;
+	padding: 0.2rem 0.6rem;
+	border-radius: 999px;
+}
+.live-score-dot {
+	display: inline-block;
+	width: 0.45rem;
+	height: 0.45rem;
+	border-radius: 50%;
+	background-color: currentColor;
+	animation: live-score-pulse 1.6s ease-in-out infinite;
+}
+.live-score-clock {
+	opacity: 0.8;
+	font-variant-numeric: tabular-nums;
+}
+@keyframes live-score-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.live-score-dot {
+		animation: none;
+	}
+}
+
 // The top header only (.navbar-border is shared with the title bar). It is
 // position:sticky, NOT position:fixed. In iOS standalone PWAs, WebKit's
 // compositor can permanently lose a fixed element's viewport attachment
@@ -2483,7 +2531,7 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	height: 18px;
+	height: 20px;
 	padding: 0 6px;
 	border-radius: 3px;
 	background: #15181e;
@@ -2497,8 +2545,9 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 
 	img {
 		display: block;
-		max-height: 12px;
-		max-width: 64px;
+		height: 14px;
+		width: auto;
+		max-width: 72px;
 		object-fit: contain;
 	}
 }
@@ -2506,11 +2555,15 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 // On the top edge of a national game's score box, at its right.
 .score-box-national {
 	position: absolute;
-	top: -10px;
-	height: 16px;
+	top: -12px;
 	right: 8px;
 	z-index: 1;
+	height: 22px;
 	box-shadow: 0 0 0 2px var(--bs-body-bg);
+
+	img {
+		height: 15px;
+	}
 }
 
 // Beside a national game's small score box, both teams high.
@@ -2522,8 +2575,8 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	font-size: 0.55rem;
 
 	img {
-		max-width: 30px;
-		max-height: 18px;
+		height: 24px;
+		max-width: 46px;
 	}
 }
 

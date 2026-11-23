@@ -6,6 +6,8 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import { validateSeason, validateTeam } from "../util/processInputs.ts";
+import { getLiveGate } from "../util/liveGameGate.ts";
+import { getPlannedPlayoffGames } from "../util/plannedPlayoffGames.ts";
 
 // THE CALENDAR PAGE: a season's nights, month by month, for a team or the
 // whole league. The same month calendar sits on Daily Schedule, Schedule and
@@ -27,6 +29,12 @@ export type CalendarGame = {
 	homeTid: number;
 	awayTid: number;
 	playoffs: boolean;
+	// A play-in game.
+	playIn?: boolean;
+	// A playoff game on the plan, not yet on the schedule (no gid of its own,
+	// a negative one), and whether it may not be needed.
+	planned?: boolean;
+	ifNecessary?: boolean;
 	// The final, once it's played.
 	homePts?: number;
 	awayPts?: number;
@@ -62,6 +70,17 @@ export const getCalendarData = async (
 	const forTeam = (homeTid: number, awayTid: number) =>
 		tid === "all" || homeTid === tid || awayTid === tid;
 
+	const playoffSeries = await idb.merged.playoffSeries.get(season);
+	const playInGids = new Set(
+		(playoffSeries?.playIns ?? []).flatMap((playIn) =>
+			playIn.flatMap((matchup) => matchup.gids ?? []),
+		),
+	);
+
+	// A game still being played live hasn't happened yet, and nothing it gave
+	// rise to has (see liveGameGate.ts).
+	const gate = season === g.get("season") ? await getLiveGate() : undefined;
+
 	const played = await idb.merged.games.getAll({ season });
 	for (const game of played) {
 		if (game.date === undefined) {
@@ -88,19 +107,34 @@ export const getCalendarData = async (
 			homeTid: home.tid,
 			awayTid: away.tid,
 			playoffs: !!game.playoffs,
-			homePts: home.pts,
-			awayPts: away.pts,
-			overtimes: game.overtimes,
+			...(playInGids.has(game.gid) ? { playIn: true } : {}),
+			...(gate?.hidden.has(game.gid)
+				? {}
+				: {
+						homePts: home.pts,
+						awayPts: away.pts,
+						overtimes: game.overtimes,
+					}),
 		});
 	}
 
 	let today: string | undefined;
 	if (season === g.get("season")) {
 		today = await seasonCore.getCalendarDate();
+		if (gate?.dayCutoff !== undefined) {
+			for (const game of gate.games.values()) {
+				if (game.day === gate.dayCutoff && game.date !== undefined) {
+					today = game.date;
+				}
+			}
+		}
 		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 		for (const game of await seasonCore.getSchedule()) {
 			if (game.date === undefined) {
 				undated = true;
+				continue;
+			}
+			if (gate?.dayCutoff !== undefined && game.day > gate.dayCutoff) {
 				continue;
 			}
 			if (isTradeDeadline(game.homeTid, game.awayTid)) {
@@ -123,7 +157,39 @@ export const getCalendarData = async (
 					homeTid: game.homeTid,
 					awayTid: game.awayTid,
 					playoffs,
+					...(playoffs && playoffSeries?.currentRound === -1
+						? { playIn: true }
+						: {}),
 				});
+			}
+		}
+
+		// The rest of the round's games, on the nights they're planned for
+		// (see playoffCalendar.ts).
+		if (playoffs) {
+			const listed = new Set(
+				games
+					.filter((game) => game.playoffs)
+					.map((game) => `${game.date}:${game.homeTid}:${game.awayTid}`),
+			);
+			let gid = -1;
+			for (const game of await getPlannedPlayoffGames()) {
+				if (
+					forTeam(game.homeTid, game.awayTid) &&
+					!listed.has(`${game.date}:${game.homeTid}:${game.awayTid}`)
+				) {
+					games.push({
+						gid: gid--,
+						date: game.date,
+						day: undefined,
+						homeTid: game.homeTid,
+						awayTid: game.awayTid,
+						playoffs: true,
+						planned: true,
+						...(game.playIn ? { playIn: true } : {}),
+						...(game.ifNecessary ? { ifNecessary: true } : {}),
+					});
+				}
 			}
 		}
 	}
@@ -151,6 +217,7 @@ export default defineView({
 			!updateEvents.has("gameAttributes") &&
 			!updateEvents.has("newPhase") &&
 			!(inputs.season === g.get("season") && updateEvents.has("gameSim")) &&
+			!(inputs.season === g.get("season") && updateEvents.has("liveGames")) &&
 			inputs.season === prevInputs?.season &&
 			inputs.tid === prevInputs.tid
 		) {
