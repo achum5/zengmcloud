@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 548,
+		date: "2026-11-24",
+		text: "3D games: each player's picture takes about a quarter less work to make, pixel for pixel the same, so the background helpers keep up with more of them.",
+	},
+	{
 		n: 547,
 		date: "2026-11-24",
 		text: "Live games and replays: the buttons over the 3D court (pause, skip, speed, settings) now stay out of the way like the Nightly Recap's, and show when you hover over or tap the court. A new full size button beside them fills the screen with the game.",
