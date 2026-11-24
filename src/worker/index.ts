@@ -202,6 +202,11 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getImages",
 	// Read-only fetch of teams' 3D uniform pictures.
 	"getJerseySkins",
+	// Read-only fetch of teams' colors, asked as soon as the top bar shows -
+	// while a shared league is still reconnecting. Refused then, it answered
+	// undefined and no team colors showed anywhere for the rest of the visit.
+	"getTeamColorsUI",
+	"getAllTeamColorsUI",
 	// Read-only lookup of a saved live-game replay.
 	"getLiveGamePlayByPlay",
 	"getLiveGameChat",

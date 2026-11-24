@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 532,
+		date: "2026-11-24",
+		text: "Team colors show again in shared leagues. Opening a league while it was still reconnecting left them off for the whole visit, so home games on the scores bar were black. The scores bar's days and arrows also line up now, with no stray line under them.",
+	},
+	{
 		n: 531,
 		date: "2026-11-24",
 		text: "National TV score bug: the scores, team names, clock and records now sit right in the middle of their bars.",

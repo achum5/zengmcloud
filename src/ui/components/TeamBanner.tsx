@@ -225,8 +225,15 @@ export const useAllTeamColors = (on = true) => {
 				);
 				allColorsAsked.set(lid, asked);
 			}
-			const got = await asked;
+			let got: Record<number, string[]> | undefined;
+			try {
+				got = await asked;
+			} catch {}
 			if (!got) {
+				// (Not kept: the next spot to show asks again.)
+				if (allColorsAsked.get(lid) === asked) {
+					allColorsAsked.delete(lid);
+				}
 				return;
 			}
 			allColorsCache.set(lid, got);
