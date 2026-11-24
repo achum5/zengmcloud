@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 531,
+		date: "2026-11-24",
+		text: "National TV score bug: the scores, team names, clock and records now sit right in the middle of their bars.",
+	},
+	{
 		n: 530,
 		date: "2026-11-24",
 		text: "Fixes from BBGM: dropdown menus are readable again in dark mode on the newest Chrome, pausing and playing a live game can no longer count its result twice in the standings, the top bar shows your next game right after the trade deadline, and undoing a trade gives players back their playing time settings.",

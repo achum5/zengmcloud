@@ -15,6 +15,8 @@ const BOLD = "National Bold";
 const DARK = "#0d1520";
 const LIGHT = "#e9edf2";
 
+// (Each piece's letters, baseline to cap height, on the middle of what they
+// sit on: a team's panel above its stripe, the bar, the strip.)
 const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{ show: "box", x, y: 0, w: 440, h: 96, background: `${who}0` },
 	{ show: "box", x, y: 90, w: 440, h: 6, background: `${who}1` },
@@ -22,7 +24,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Abbrev`,
 		x: x + 104,
-		y: 0,
+		y: -2.7,
 		w: 160,
 		h: 96,
 		color: `${who}Ink`,
@@ -33,7 +35,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Score`,
 		x: x + 250,
-		y: -2,
+		y: -1.5,
 		w: 166,
 		h: 96,
 		color: `${who}Ink`,
@@ -44,7 +46,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Record`,
 		x: x + 20,
-		y: 96,
+		y: 97.7,
 		w: 400,
 		h: 54,
 		color: LIGHT,
@@ -68,7 +70,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Bonus`,
 		x: x + 240,
-		y: 96,
+		y: 97.7,
 		w: 180,
 		h: 54,
 		color: "#ffcc4d",
@@ -121,7 +123,7 @@ const scoreBug: ScoreBugStyle = {
 		{
 			show: "period",
 			x: 1076,
-			y: 0,
+			y: 0.9,
 			w: 110,
 			h: 96,
 			color: "#c9d1dc",
@@ -134,7 +136,7 @@ const scoreBug: ScoreBugStyle = {
 		{
 			show: "clock",
 			x: 1186,
-			y: 0,
+			y: 2.6,
 			w: 250,
 			h: 96,
 			color: "#ffffff",
@@ -169,7 +171,7 @@ const scoreBug: ScoreBugStyle = {
 		{
 			show: "series",
 			x: 1076,
-			y: 96,
+			y: 98.5,
 			w: 500,
 			h: 54,
 			color: LIGHT,
