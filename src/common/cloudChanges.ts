@@ -12,6 +12,21 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 539,
+		date: "2026-11-24",
+		text: "The rest of BBGM's latest updates: releasing a player now gives you an Undo button, exhibition games can heal injuries first, Back from Customize Settings keeps what you entered for a new league, the graph pages remember your picks, and God Mode's Danger Zone can randomize every contract. Starting and stopping sims is also more reliable.",
+	},
+	{
+		n: 538,
+		date: "2026-11-24",
+		text: "Daily Schedule: a national TV game's network logo now sits in the same spot on every upcoming game, at the end of the team names next to Watch/Sim, instead of floating mid-card or running into the buttons.",
+	},
+	{
+		n: 537,
+		date: "2026-11-24",
+		text: "National TV: a game you watch live is on the same network the Daily Schedule showed for it. Watching your game before the rest of its night was played could put it on national TV by mistake.",
+	},
+	{
 		n: 536,
 		date: "2026-11-24",
 		text: "Sportsbook: preseason win totals are no longer too far apart. Before the schedule comes out, the best teams' lines ran up to 3 wins too high and the worst teams' up to 3 too low, so a favourite's over hardly ever hit. They now match the lines opening night shows.",
