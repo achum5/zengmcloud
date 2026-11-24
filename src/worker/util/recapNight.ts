@@ -427,7 +427,12 @@ export const raceSection = (
 	if (!standings || games.some((g) => g.playoffs)) {
 		return undefined;
 	}
-	const lines: string[] = [];
+	// Each line with its weight, 0 first: what the night settled, who
+	// crossed a line, the top and the cut lines, then magic numbers.
+	const lines: { text: string; pri: number }[] = [];
+	const add = (pri: number, text: string) => {
+		lines.push({ text, pri });
+	};
 	const named = new Set<number>();
 	// What the night settled, for the clubs a paragraph above has not.
 	for (const g of games) {
@@ -441,7 +446,7 @@ export const raceSection = (
 				String.raw`${nick(t)}[^.]*(?:clinch|eliminated|first team to)`,
 			).test(said);
 			if (!told) {
-				lines.push(note);
+				add(0, note);
 			}
 			named.add(t.tid);
 		}
@@ -484,12 +489,23 @@ export const raceSection = (
 			second && numGames !== undefined
 				? numGames + 1 - first.won - second.lost
 				: undefined;
+		// Only on a night that moved it: the leader won, or the runner-up
+		// lost.
+		const moved =
+			(tid !== undefined && winners.has(tid)) ||
+			(second?.tid !== undefined &&
+				played.has(second.tid) &&
+				!winners.has(second.tid));
 		const magicNews =
 			magic !== undefined &&
 			magic >= 1 &&
 			magic <= 10 &&
+			moved &&
 			!new RegExp(String.raw`${first.name}[^.]*clinch`).test(said);
-		const tight = second !== undefined && second.gb <= 1;
+		const tight =
+			second !== undefined &&
+			second.gb <= 1 &&
+			[tid, second.tid].some((x) => x !== undefined && played.has(x));
 		const told = new RegExp(
 			String.raw`${first.name}[^.]*(?:first place|unbeaten|perfect)`,
 		).test(said);
@@ -500,15 +516,18 @@ export const raceSection = (
 		) {
 			const who = `the ${first.name} (${first.won}-${first.lost})`;
 			if (perfect) {
-				lines.push(
+				add(
+					2,
 					`The ${first.name} are still perfect at ${first.won}-0 atop ${where}.`,
 				);
 			} else if (second && second.gb === 0) {
-				lines.push(
+				add(
+					2,
 					`${cap(who)} and the ${second.name} (${second.won}-${second.lost}) are tied for first in ${where}.`,
 				);
 			} else if (second) {
-				lines.push(
+				add(
+					2,
 					pick(
 						rng,
 						[
@@ -519,13 +538,23 @@ export const raceSection = (
 					),
 				);
 			} else {
-				lines.push(`${cap(who)} lead ${where}.`);
+				add(2, `${cap(who)} lead ${where}.`);
 			}
 			// The magic number for first: wins by the leader or losses by the
 			// runner-up, a tie going to the runner-up.
 			if (magicNews) {
-				lines.push(
-					`${cap(poss(`the ${first.name}`))} magic number for first in ${where} is ${magic}.`,
+				add(
+					3,
+					pick(
+						rng,
+						[
+							`${cap(poss(`the ${first.name}`))} magic number for first in ${where} is ${magic}.`,
+							magic === 1
+								? `One more ${first.name} win or ${second!.name} loss clinches first in ${where} for the ${first.name}.`
+								: `Any combination of ${numWord(magic!)} ${first.name} wins or ${second!.name} losses clinches first in ${where} for the ${first.name}.`,
+						],
+						"night:race:magic",
+					),
 				);
 			}
 		}
@@ -534,6 +563,7 @@ export const raceSection = (
 			const playIn = rules.reach > rules.direct;
 			const zone = (rank: number) =>
 				rank <= rules.direct ? 0 : rank <= rules.reach ? 1 : 2;
+			let crossed = false;
 			for (const t of conf.teams) {
 				const before = t.rankBefore;
 				if (
@@ -555,7 +585,7 @@ export const raceSection = (
 							: playIn
 								? `into the top ${numWord(rules.direct)}`
 								: "into a playoff spot";
-					lines.push(`The ${t.name} moved ${from}, ${into}.`);
+					add(1, `The ${t.name} moved ${from}, ${into}.`);
 				} else {
 					const out =
 						zone(t.rank) === 1
@@ -563,25 +593,52 @@ export const raceSection = (
 							: playIn
 								? "out of the play-in spots"
 								: "out of the playoff spots";
-					lines.push(`The ${t.name} slipped ${from}, ${out}.`);
+					add(1, `The ${t.name} slipped ${from}, ${out}.`);
 				}
 				named.add(t.tid);
+				crossed = true;
 			}
-			// The cut lines, when they are close.
+			// The cut lines, when they are close, on a night that touched
+			// them: one of the two clubs played, or a club crossed a line.
 			const cut = (spot: number, what: string) => {
 				const inside = conf.teams.find((t) => t.rank === spot);
 				const outside = conf.teams.find((t) => t.rank === spot + 1);
 				if (!inside || !outside) {
 					return;
 				}
+				const touched =
+					crossed ||
+					[inside.tid, outside.tid].some(
+						(x) => x !== undefined && played.has(x),
+					);
+				if (!touched) {
+					return;
+				}
 				const gap = Math.round((outside.gb - inside.gb) * 2) / 2;
 				if (gap <= 0) {
-					lines.push(
-						`The ${inside.name} and the ${outside.name} are tied for ${what} in ${where}.`,
+					add(
+						2,
+						pick(
+							rng,
+							[
+								`The ${inside.name} and the ${outside.name} are tied for ${what} in ${where}.`,
+								`The ${inside.name} and the ${outside.name} are level for ${what} in ${where}.`,
+							],
+							"night:race:cutTied",
+						),
 					);
 				} else if (gap <= 2) {
-					lines.push(
-						`The ${inside.name} hold ${what} in ${where} by ${gbText(gap)} over the ${outside.name}.`,
+					add(
+						2,
+						pick(
+							rng,
+							[
+								`The ${inside.name} hold ${what} in ${where} by ${gbText(gap)} over the ${outside.name}.`,
+								`The ${inside.name} are ${gbText(gap)} ahead of the ${outside.name} for ${what} in ${where}.`,
+								`The ${outside.name} are ${gbText(gap)} behind the ${inside.name} for ${what} in ${where}.`,
+							],
+							"night:race:cut",
+						),
 					);
 				}
 			};
@@ -595,9 +652,17 @@ export const raceSection = (
 	if (lines.length === 0) {
 		return undefined;
 	}
+	// Six at most, dropping the least of them, latest first.
+	while (lines.length > 6) {
+		const least = Math.max(...lines.map((l) => l.pri));
+		lines.splice(
+			lines.findLastIndex((l) => l.pri === least),
+			1,
+		);
+	}
 	return section(
 		"The race",
-		lines.slice(0, 6).map((l) => `- ${l}`),
+		lines.map((l) => `- ${l.text}`),
 	);
 };
 
@@ -776,6 +841,7 @@ type Row = RecapDayStandings["confs"][number]["teams"][number] & {
 export const worthWatching = (
 	next: RecapNextSlate | undefined,
 	standings: RecapDayStandings | undefined,
+	rng: Rng,
 ): string | undefined => {
 	if (!next || !standings || next.games.length === 0) {
 		return undefined;
@@ -786,6 +852,14 @@ export const worthWatching = (
 			if (t.tid !== undefined) {
 				rows.set(t.tid, { ...t, conf: c.name, confRank: t.rank });
 			}
+		}
+	}
+	// How far each conference's leader is clear of second.
+	const clear = new Map<string, number>();
+	for (const c of standings.confs) {
+		const second = c.teams.find((t) => t.rank === 2);
+		if (second) {
+			clear.set(c.name, Math.round(second.gb * 2) / 2);
 		}
 	}
 	const rules = standings.race;
@@ -819,7 +893,17 @@ export const worthWatching = (
 			);
 		} else if (same && gp >= RACE_GAMES && lo.rank <= 3) {
 			weight += 0.8;
-			why.push(`Two of the top three in ${where} meet.`);
+			const place = ["first", "second", "third"];
+			why.push(
+				pick(
+					rng,
+					[
+						`Two of the top three in ${where} meet.`,
+						`The ${place[hi.rank - 1]}- and ${place[lo.rank - 1]}-place teams in ${where} meet.`,
+					],
+					"night:watch:top3",
+				),
+			);
 		} else if (same && rules?.byConf && gp >= CUT_GAMES && gap <= 1.5) {
 			const line = [rules.direct, rules.reach].find(
 				(l) => hi.rank === l && lo.rank === l + 1,
@@ -861,10 +945,25 @@ export const worthWatching = (
 		} else if (leaders.length === 1) {
 			const t = leaders[0]!;
 			weight += 0.4;
+			const by = clear.get(t.conf);
+			const lead =
+				by === undefined
+					? `lead ${confShort(t.conf)}`
+					: by === 0
+						? `are tied for first in ${confShort(t.conf)}`
+						: pick(
+								rng,
+								[
+									`lead ${confShort(t.conf)} by ${gbText(by)}`,
+									`are ${gbText(by)} clear in ${confShort(t.conf)}`,
+									`sit ${gbText(by)} up in ${confShort(t.conf)}`,
+								],
+								"night:watch:leader",
+							);
 			why.push(
 				streaky === t
-					? `The ${t.name} lead ${confShort(t.conf)} and have ${run(t)}.`
-					: `The ${t.name} lead ${confShort(t.conf)}.`,
+					? `The ${t.name} ${lead} and have ${run(t)}.`
+					: `The ${t.name} ${lead}.`,
 			);
 		}
 		if (streaky && !(leaders.length === 1 && leaders[0] === streaky)) {
