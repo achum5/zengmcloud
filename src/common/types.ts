@@ -12,6 +12,11 @@ import type {
 import type { GameFlow } from "./gameFlow.ts";
 import type { HomeCity } from "./teamLocation.ts";
 import * as z from "zod";
+import {
+	realCourtSchema,
+	realJerseySkinsSchema,
+	realScoreBugSchema,
+} from "./realTeamLooks.ts";
 import type { IsExact } from "conditional-type-checks";
 import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
@@ -4131,6 +4136,10 @@ export const individualRealTeamInfoSchema = z.object({
 	imgURL: z.string().exactOptional(),
 	imgURLSmall: z.string().exactOptional(),
 	jersey: z.string().exactOptional(),
+	// Its look in the 3D game (see common/realTeamLooks.ts).
+	jerseySkins: realJerseySkinsSchema.exactOptional(),
+	court: realCourtSchema.exactOptional(),
+	scoreBug: realScoreBugSchema.exactOptional(),
 });
 export type IndividualRealTeamInfo = z.infer<
 	typeof individualRealTeamInfoSchema

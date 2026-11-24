@@ -5,9 +5,13 @@ import type {
 	CourtDecalPlaced,
 	CourtStyle,
 	CourtVersionName,
+	JerseySkinIds,
 	ScoreBugStyle,
 	StadiumLook,
+	Team,
 } from "../../common/types.ts";
+import { mapCourtURLs } from "../../common/courtFile.ts";
+import type { RealTeamLooks } from "../../common/realTeamLooks.ts";
 import {
 	mapScoreBugURLs,
 	scoreBugForGame,
@@ -402,4 +406,79 @@ export const prunePictures = async (ids: Iterable<string>) => {
 			await idb.cache.jerseySkins.delete(id);
 		}
 	}
+};
+
+// (A jersey picture kept is a PNG, see setJerseySkin.)
+const JERSEY_PNG = /^data:image\/png;base64,[\w+/]+=*$/;
+
+// A TEAM'S REAL LOOK PUT ON (see common/realTeamLooks.ts): each part Real
+// Team Info lists for it - its jerseys, its court, its score bug - in place
+// of its own, the pictures written into it kept in the league (a link is
+// its own picture), and those it no longer wears let go. A part whose
+// pictures can't be kept is left as it was. Whether anything changed; the
+// team is saved if so.
+export const applyRealTeamLooks = async (
+	t: Team,
+	looks: RealTeamLooks | undefined,
+): Promise<boolean> => {
+	if (!looks) {
+		return false;
+	}
+	const before = [
+		t.jerseySkins?.home,
+		t.jerseySkins?.away,
+		...courtPictureIds(t.court),
+		...scoreBugPictureIds(t.scoreBug),
+	].filter((id): id is string => id !== undefined);
+	const keep = async (url: string, types?: RegExp) =>
+		url.startsWith("data:") ? `${PIC}${await storePicture(url, types)}` : url;
+	let changed = false;
+
+	if (looks.jerseySkins) {
+		try {
+			const skins: JerseySkinIds = {};
+			for (const side of ["home", "away"] as const) {
+				const url = looks.jerseySkins[side];
+				if (url !== undefined) {
+					skins[side] = url.startsWith("data:")
+						? await storePicture(url, JERSEY_PNG)
+						: url;
+				}
+			}
+			if (skins.home === undefined && skins.away === undefined) {
+				delete t.jerseySkins;
+			} else {
+				t.jerseySkins = skins;
+			}
+			changed = true;
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
+	if (looks.court) {
+		try {
+			t.court = await mapCourtURLs(looks.court, (url) => keep(url));
+			changed = true;
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
+	if (looks.scoreBug) {
+		try {
+			t.scoreBug = await mapScoreBugURLs(looks.scoreBug, (url) =>
+				keep(url, url.startsWith("data:font/") ? FONT_TYPES : undefined),
+			);
+			changed = true;
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
+	if (changed) {
+		await idb.cache.teams.put(t);
+		await prunePictures(before);
+	}
+	return changed;
 };

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 533,
+		date: "2026-11-24",
+		text: "3D game: the court floor is drawn at twice the detail, so wood planks, paint and floor pictures look sharper. Real players leagues: Real Team Info (Global Settings) can now also set each team's 3D jerseys, court and score bug season by season, put on automatically each new season.",
+	},
+	{
 		n: 532,
 		date: "2026-11-24",
 		text: "Team colors show again in shared leagues. Opening a league while it was still reconnecting left them off for the whole visit, so home games on the scores bar were black. The scores bar's days and arrows also line up now, with no stray line under them.",

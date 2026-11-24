@@ -6,6 +6,7 @@ import { team } from "../core/index.ts";
 import { changeTracker } from "../db/changeTracker.ts";
 import {
 	PIC,
+	applyRealTeamLooks,
 	courtPictureIds,
 	decalsForGame,
 	homeCourtForGame,
@@ -334,5 +335,55 @@ describe("court pictures", () => {
 		assert.strictEqual(await resolveScoreBug(null), null);
 		await prunePictures([id]);
 		assert.ok(await idb.cache.jerseySkins.get(id));
+	});
+
+	test("a real look put on: what is written in kept, links as they are, what it wore let go", async () => {
+		await setup();
+		const t0 = (await idb.cache.teams.get(0))!;
+		const worn = await storePicture(PNG(7));
+		t0.jerseySkins = { home: worn };
+		await idb.cache.teams.put(t0);
+		const floor = `data:image/jpeg;base64,${"C".repeat(100)}`;
+		const font = `data:font/woff2;base64,${"D".repeat(40)}`;
+		const changed = await applyRealTeamLooks(t0, {
+			jerseySkins: { home: PNG(8), away: "https://example.com/away.png" },
+			court: { floorImageURL: floor, floorLines: "picture" },
+			scoreBug: {
+				width: 100,
+				height: 20,
+				fonts: [{ name: "Tall", src: font }],
+				pieces: [{ show: "clock", x: 0, y: 0, w: 5, h: 5 }],
+			},
+		});
+		assert.isTrue(changed);
+
+		const t = (await idb.cache.teams.get(0))!;
+		assert.strictEqual(t.jerseySkins?.away, "https://example.com/away.png");
+		const home = await idb.cache.jerseySkins.get(t.jerseySkins!.home!);
+		assert.strictEqual(home?.url, PNG(8));
+		assert.ok(t.court?.floorImageURL?.startsWith(PIC));
+		assert.strictEqual((await resolveCourt(t.court))?.floorImageURL, floor);
+		assert.ok(t.scoreBug?.fonts?.[0]?.src.startsWith(PIC));
+		assert.strictEqual(await idb.cache.jerseySkins.get(worn), undefined);
+
+		// Nothing listed: nothing to put on.
+		assert.isFalse(await applyRealTeamLooks(t, undefined));
+	});
+
+	test("a real look's part that can't be kept leaves that part as it was", async () => {
+		await setup();
+		const t0 = (await idb.cache.teams.get(0))!;
+		t0.court = { floor: "#123456" };
+		await idb.cache.teams.put(t0);
+		const changed = await applyRealTeamLooks(t0, {
+			court: { floorImageURL: "data:image/jpeg;base64,not*base64" },
+			jerseySkins: { home: "https://example.com/home.png" },
+		});
+		assert.isTrue(changed);
+		const t = (await idb.cache.teams.get(0))!;
+		assert.deepStrictEqual(t.court, { floor: "#123456" });
+		assert.deepStrictEqual(t.jerseySkins, {
+			home: "https://example.com/home.png",
+		});
 	});
 });

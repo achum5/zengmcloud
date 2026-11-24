@@ -4,6 +4,7 @@ import {
 	type RealTeamInfo,
 	individualRealTeamInfoSchema,
 } from "./types.ts";
+import { REAL_LOOK_KEYS } from "./realTeamLooks.ts";
 
 const POTENTIAL_OVERRIDES = [
 	"abbrev",
@@ -90,13 +91,18 @@ export const applyRealTeamInfo = (
 	}
 
 	// Merge prior seasons, in case there is a partial one and applyToObject above applied something from the root (like updating imgURLSmall without updating imgURL, would default to root imgURL otherwise)
-	const realInfoMerged = individualRealTeamInfoSchema.parse(
-		Object.assign(
-			{},
-			realInfoRoot,
-			...seasons.map((season) => realInfoSeasons[season]),
-		),
+	const merged = Object.assign(
+		{},
+		realInfoRoot,
+		...seasons.map((season) => realInfoSeasons[season]),
 	);
+	// (Not its look, which isn't put on here - see realTeamLooks - and is
+	// already checked: its pictures can be big.)
+	delete merged.seasons;
+	for (const key of REAL_LOOK_KEYS) {
+		delete merged[key];
+	}
+	const realInfoMerged = individualRealTeamInfoSchema.parse(merged);
 
 	return applyToObject(t, realInfoMerged);
 };
