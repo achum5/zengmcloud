@@ -25,7 +25,7 @@ const staged: Stager<CourtInput, CourtTimeline> = makeStager({
 
 // Every man stepped (see stepper.ts) - unless this device says not to:
 // court3dStep = "0" in its local storage.
-const stepHere = () => {
+export const stepHere = () => {
 	try {
 		return localStorage.getItem("court3dStep") !== "0";
 	} catch {

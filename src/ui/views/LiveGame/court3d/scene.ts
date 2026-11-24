@@ -41,6 +41,8 @@ import {
 import { drawCourtLines } from "./courtLines.ts";
 import { callAt, rowSpot } from "./intro.ts";
 import { drawLights } from "./lights.ts";
+import type { ShowFx } from "./pregameShow.ts";
+import { drawShowFx } from "./showFx.ts";
 import { atTable, TABLE_SEAT_Y } from "./crew.ts";
 import {
 	STRIP_MS,
@@ -699,6 +701,8 @@ export type Frame = {
 	black?: boolean;
 	// Not a game's floor at all (see Venue): somewhere else on it.
 	venue?: Venue;
+	// The pregame show's fire, beams and phones (see pregameShow.ts).
+	showFx?: ShowFx;
 };
 
 // THE BUILDING DRESSED FOR SOMETHING ELSE - draft night (see draftVenue.ts):
@@ -2499,7 +2503,11 @@ export const drawFrame = (f: Frame) => {
 		t,
 		players,
 		f.teamColors ?? DEFAULT_TEAM_COLORS,
+		f.showFx,
 	);
+	if (f.showFx) {
+		drawShowFx(ctx, cam, f.showFx, f.now ?? t);
+	}
 	// The board over center court, when the picture takes it in.
 	if (arena.jumbotron && !venue) {
 		drawJumbotron(
@@ -2995,6 +3003,17 @@ const AMBIENT: BoardScreen[] = [
 	"ad3",
 ];
 export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
+	// The starting lineups (see intro.ts): the building told to make some
+	// noise in the dark, the visitors' names called over the home team's,
+	// and then "LET'S GO" for each of its own.
+	const intro = tl.intro;
+	if (intro && t >= intro.t0 && t < intro.t1) {
+		const call = callAt(intro, t);
+		if (!call) {
+			return t < (intro.calls[0]?.t0 ?? 0) ? "noise" : "name";
+		}
+		return call.team === 1 ? "letsGo" : "name";
+	}
 	const roar = recentFx(tl, t, ["roar"], 3200);
 	if (roar?.team === 1 && roar.what) {
 		return roar.what;
