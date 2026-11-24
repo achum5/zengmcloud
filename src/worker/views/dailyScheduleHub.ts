@@ -69,7 +69,7 @@ export type DailyScheduleHub = {
 // Hollinger's game score, from what a recap line keeps (total rebounds, so
 // offensive and defensive are weighed alike): the usual way a box score picks
 // its best line.
-export const gameScore = (p: RecapPlayer) =>
+const gameScore = (p: RecapPlayer) =>
 	p.pts +
 	0.4 * p.fg -
 	0.7 * p.fga -

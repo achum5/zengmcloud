@@ -1,10 +1,8 @@
-import { GARBAGE_W, LEVERAGE_W, type RecapPlay } from "./recapReel.ts";
+import type { RecapPlay } from "./recapReel.ts";
 
 // HOW LONG A NIGHTLY RECAP RUNS: picked on each device. Every length is cut
 // from the same reel of each game's plays (see recapReel.ts), and every game
-// gets at least its play of the game and its FINAL card. After the games,
-// the longer ones have the Player of the Night's plays, the night's top
-// plays counted down, and the standings.
+// gets at least its play of the game and its FINAL card.
 
 export type RecapLength = "full" | "medium" | "short" | "one";
 
@@ -15,11 +13,6 @@ export type RecapLengthRow = {
 	short: string;
 	// Plays a game.
 	plays: number;
-	// The Player of the Night's plays (none: no Player of the Night).
-	star: number;
-	// The night's top plays, counted down.
-	top: number;
-	standings: boolean;
 };
 
 export const RECAP_LENGTHS: RecapLengthRow[] = [
@@ -28,36 +21,24 @@ export const RECAP_LENGTHS: RecapLengthRow[] = [
 		label: "Full",
 		short: "Full",
 		plays: 14,
-		star: 6,
-		top: 10,
-		standings: true,
 	},
 	{
 		key: "medium",
 		label: "Medium",
 		short: "Medium",
 		plays: 6,
-		star: 3,
-		top: 5,
-		standings: true,
 	},
 	{
 		key: "short",
 		label: "Short",
 		short: "Short",
 		plays: 2,
-		star: 0,
-		top: 3,
-		standings: true,
 	},
 	{
 		key: "one",
 		label: "One play a game",
 		short: "1 play",
 		plays: 1,
-		star: 0,
-		top: 0,
-		standings: false,
 	},
 ];
 
@@ -229,97 +210,4 @@ const pickFrom = (
 		take(p);
 	}
 	return [...out].sort((a, b) => a.i - b.i);
-};
-
-// THE PLAYER OF THE NIGHT'S PLAYS, in the order they happened: his own from
-// his game's reel, picked the way a game's are (his biggest, through the
-// whole game, not all of one kind). A shorter list is the top of a longer.
-export const starPlays = (
-	plays: readonly RecapPlay[],
-	pid: number,
-	n: number,
-): RecapPlay[] =>
-	pickRecapPlays(
-		plays.filter((p) => p.pid === pid),
-		n,
-		pid,
-	);
-
-// His plays a recap would show: enough of them makes him one to show.
-export const starPlayCount = (plays: readonly RecapPlay[], pid: number) =>
-	plays.filter((p) => p.pid === pid && shown(p) && !isDefense(p)).length;
-
-// THE NIGHT'S TOP PLAYS, best first (#1 first; the recap counts them down):
-// the plays of the night that look the best - the poster, the and-one dunk,
-// the deep three, the block at the rim - with the shot that won a game on
-// top. A play's swing of its game counts here for far less than in its
-// game's own recap: a top ten is the night's best plays, not its tightest
-// finishes. No game, man or kind fills it, a block or two at most, a steal
-// only when it turned a game, and never garbage time. A shorter list is the
-// top of the longer one.
-export const TOP_PLAYS_MOST = 10;
-// How much of a play's swing of its game counts here (LEVERAGE_W in its
-// game's).
-const TOP_LEV_W = 15;
-const TOP_PER_GAME = 3;
-const TOP_PER_MAN = 2;
-const TOP_STOPS = 2;
-
-export type NightPlay = { gid: number; play: RecapPlay };
-
-// How good a play looks (see weighPlays: its weight, less most of its
-// swing).
-export const flashOf = (p: RecapPlay) =>
-	p.w -
-	lev(p) *
-		(LEVERAGE_W - TOP_LEV_W) *
-		(p.garbage && p.winner === undefined ? GARBAGE_W : 1);
-
-export const pickTopPlays = (
-	games: readonly { gid: number; plays: readonly RecapPlay[] }[],
-	n = TOP_PLAYS_MOST,
-): NightPlay[] => {
-	const all: (NightPlay & { flash: number })[] = [];
-	for (const { gid, plays } of games) {
-		for (const play of plays) {
-			if (shown(play)) {
-				all.push({ gid, play, flash: flashOf(play) });
-			}
-		}
-	}
-	all.sort((a, b) => b.flash - a.flash || a.gid - b.gid || a.play.i - b.play.i);
-	const out: NightPlay[] = [];
-	const inGame = new Map<number, number>();
-	const byMan = new Map<number, number>();
-	const byKind = new Map<string, number>();
-	let stops = 0;
-	const fits = (x: NightPlay) =>
-		(inGame.get(x.gid) ?? 0) < TOP_PER_GAME &&
-		(byMan.get(x.play.pid) ?? 0) < TOP_PER_MAN &&
-		(!isDefense(x.play) || stops < TOP_STOPS);
-	const worth = (x: NightPlay & { flash: number }) =>
-		x.flash *
-		SAME_MAN ** (byMan.get(x.play.pid) ?? 0) *
-		SAME_KIND ** (byKind.get(x.play.kind) ?? 0);
-	const taken = new Set<NightPlay>();
-	while (out.length < n) {
-		let top: (NightPlay & { flash: number }) | undefined;
-		for (const x of all) {
-			if (!taken.has(x) && fits(x) && (!top || worth(x) > worth(top))) {
-				top = x;
-			}
-		}
-		if (!top) {
-			break;
-		}
-		taken.add(top);
-		out.push({ gid: top.gid, play: top.play });
-		inGame.set(top.gid, (inGame.get(top.gid) ?? 0) + 1);
-		byMan.set(top.play.pid, (byMan.get(top.play.pid) ?? 0) + 1);
-		byKind.set(top.play.kind, (byKind.get(top.play.kind) ?? 0) + 1);
-		if (isDefense(top.play)) {
-			stops += 1;
-		}
-	}
-	return out;
 };

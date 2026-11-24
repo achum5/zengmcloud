@@ -1,7 +1,6 @@
 import { Dropdown } from "react-bootstrap";
 import {
 	type ReactNode,
-	type RefObject,
 	Suspense,
 	useEffect,
 	useMemo,
@@ -10,11 +9,9 @@ import {
 } from "react";
 import {
 	DEFAULT_RECAP_LENGTH,
-	lengthRow,
 	pickRecapPlays,
 	playsPerGame,
 	RECAP_LENGTHS,
-	starPlays,
 	type RecapLength,
 } from "../../../common/recapLength.ts";
 import {
@@ -25,9 +22,6 @@ import {
 import type {
 	RecapNight,
 	RecapNightGame,
-	RecapStandings,
-	RecapStar,
-	RecapTopPlay,
 } from "../../../worker/util/nightlyRecap.ts";
 import { isLine } from "../../util/filterPlayerHighlights.ts";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
@@ -38,28 +32,19 @@ import {
 import { toWorker } from "../../util/toWorker.ts";
 import { helpers } from "../../util/helpers.ts";
 import {
-	COUNT_STINGER_MS,
-	CountStinger,
 	FinalCard,
 	GameRecapCard,
 	OPEN_MS,
 	posterTitleTop,
 	RecapPoster,
-	StandingsCard,
-	STANDINGS_MS,
-	STAR_STINGER_MS,
-	StarStinger,
-	StarStripBox,
 	Stinger,
 	STINGER_MS,
-	WIPE_MS,
 } from "./RecapCards.tsx";
 
 // THE NIGHTLY RECAP: a night's games, the biggest first, each its GAME RECAP
 // card, its plays on the 3D court under its own score bug, and its FINAL
-// card; then the Player of the Night's plays, the night's top plays counted
-// down and the standings - at the length picked on this device. Nothing at
-// all for a night with no recap plays (see core/game/saveRecapReels.ts).
+// card - at the length picked on this device. Nothing at all for a night with
+// no recap plays (see core/game/saveRecapReels.ts).
 
 const CARD_MS = 4500;
 // How long the controls stay up over the picture after a touch.
@@ -92,8 +77,7 @@ type Feed = {
 	plays: RecapPlay[];
 };
 
-// The night's games' plays, each fetched once (a game's plays come back in
-// the Player of the Night's and the top plays), and fetched ahead.
+// The night's games' plays, each fetched once, and fetched ahead.
 type Feeds = Map<number, Promise<Feed | null>>;
 const loadFeed = (feeds: Feeds, gid: number) => {
 	let had = feeds.get(gid);
@@ -173,19 +157,16 @@ const useHold = (
 	}, [on, paused, ms]);
 };
 
-// The 3D court is set up under a card or a stinger once that has come on:
-// its building painted, its men drawn. Setting it up takes the page a
-// moment, and the card coming on would stutter through it. A card is still
-// once it is on; a stinger keeps moving, slowly after its rush in, and
-// leaves the court less time to be ready.
-const CARD_SETTLE_MS = 900;
-const STINGER_SETTLE_MS = 650;
+// The 3D court is set up under the GAME RECAP card once that has come on
+// and is still: its building painted, its men drawn. Setting it up takes the
+// page a moment, and the card coming on would stutter through it.
+const SETTLE_MS = 900;
 // (And the first court of the visit readied this long after the poster is
 // up at the latest - sooner, if the page is quiet before then.)
 const WARM_MS = 2000;
-const useSettled = (ms: number, paused: boolean) => {
+const useSettled = (paused: boolean) => {
 	const [settled, setSettled] = useState(false);
-	useHold(!settled, ms, paused, () => setSettled(true));
+	useHold(!settled, SETTLE_MS, paused, () => setSettled(true));
 	return settled;
 };
 
@@ -286,7 +267,7 @@ const RecapGame = ({
 	useHold(sting !== undefined, STINGER_MS, paused, () => setSting(undefined));
 	const numPeriods: number = feed?.initialBoxScore?.numPeriods ?? 4;
 
-	const settled = useSettled(CARD_SETTLE_MS, paused);
+	const settled = useSettled(paused);
 
 	const [home, away] = game.teams;
 	return (
@@ -337,342 +318,21 @@ const RecapGame = ({
 	);
 };
 
-// THE PLAYER OF THE NIGHT'S STRIP over his plays: beside the score bug
-// along the foot of the picture where there is room for it (the bug is in
-// the middle, or on the right), else just above it - the bug's place is
-// its broadcast's, so it is looked for.
-const StarStrip = ({
-	star,
-	boxRef,
-}: {
-	star: RecapStar;
-	boxRef: RefObject<HTMLDivElement | null>;
-}) => {
-	const stripRef = useRef<HTMLDivElement | null>(null);
-	const [bottom, setBottom] = useState("1.6cqw");
-	useEffect(() => {
-		const fit = () => {
-			const strip = stripRef.current;
-			const frame = strip?.parentElement?.getBoundingClientRect();
-			const bug = boxRef.current
-				?.querySelector("[data-score-bug]")
-				?.firstElementChild?.getBoundingClientRect();
-			if (!strip || !frame || frame.width === 0) {
-				return;
-			}
-			let next = "1.6cqw";
-			if (bug && bug.width > 0) {
-				const gap = frame.width * 0.012;
-				const room = bug.left - frame.left - frame.width * 0.016 - gap;
-				next =
-					strip.offsetWidth <= room
-						? `${Math.max(0, frame.bottom - bug.bottom)}px`
-						: `${Math.max(0, frame.bottom - bug.top + gap)}px`;
-			}
-			setBottom((had) => (had === next ? had : next));
-		};
-		fit();
-		const id = setInterval(fit, 400);
-		return () => {
-			clearInterval(id);
-		};
-	}, [boxRef]);
-	return (
-		<StarStripBox
-			name={star.name}
-			line={star.line}
-			team={star}
-			bottom={bottom}
-			stripRef={stripRef}
-		/>
-	);
-};
+type Segment = { kind: "open" } | { kind: "game"; game: RecapNightGame };
 
-// PLAYER OF THE NIGHT: its stinger, then his plays from his game, his strip
-// under them.
-const StarSegment = ({
-	star,
-	n,
-	feeds,
-	paused,
-	rate,
-	narrow,
-	onDone,
-}: Playing & { star: RecapStar; n: number }) => {
-	const feed = useFeed(feeds, star.gid);
-	const clip = useMemo((): RecapReel | null | undefined => {
-		if (feed === undefined) {
-			return undefined;
-		}
-		const picked = new Set(
-			feed ? starPlays(feed.plays, star.pid, n).map((p) => p.i) : [],
-		);
-		return feed && picked.size > 0
-			? subReel({ events: feed.events, plays: feed.plays }, (p) =>
-					picked.has(p.i),
-				)
-			: null;
-	}, [feed, star.pid, n]);
-	const [start, end] = useMemo(() => spanOf(clip), [clip]);
-	const onDoneRef = useRef(onDone);
-	onDoneRef.current = onDone;
-	useEffect(() => {
-		if (clip === null) {
-			onDoneRef.current();
-		}
-	}, [clip]);
-	const [phase, setPhase] = useState<"sting" | "plays">("sting");
-	useHold(phase === "sting" && !!clip, STAR_STINGER_MS, paused, () =>
-		setPhase("plays"),
-	);
-	const settled = useSettled(STINGER_SETTLE_MS, paused);
-	const boxRef = useRef<HTMLDivElement | null>(null);
-	return (
-		<div ref={boxRef} style={{ position: "relative" }}>
-			{clip && feed && settled ? (
-				<Suspense fallback={<Frame narrow={narrow} />}>
-					<ClipCourt
-						events={clip.events}
-						start={start}
-						end={end}
-						initialBoxScore={feed.initialBoxScore}
-						paused={paused || phase === "sting"}
-						rate={rate}
-						onDone={onDone}
-						onFail={onDone}
-					/>
-				</Suspense>
-			) : (
-				<Frame narrow={narrow} />
-			)}
-			<Frame narrow={narrow} over>
-				{phase === "sting" ? (
-					<StarStinger />
-				) : (
-					<StarStrip star={star} boxRef={boxRef} />
-				)}
-			</Frame>
-		</div>
-	);
-};
-
-// One of the top plays: its number's stinger, the court staging the play
-// under it, then the play under its own game's score bug.
-const TopPlay = ({
-	play,
-	n,
-	feeds,
-	paused,
-	rate,
-	narrow,
-	onDone,
-}: Playing & { play: RecapTopPlay; n: number }) => {
-	const feed = useFeed(feeds, play.gid);
-	const clip = useMemo((): RecapReel | null | undefined => {
-		if (feed === undefined) {
-			return undefined;
-		}
-		const one = feed
-			? subReel(
-					{ events: feed.events, plays: feed.plays },
-					(p) => p.i === play.i,
-				)
-			: undefined;
-		return one && one.plays.length > 0 ? one : null;
-	}, [feed, play.i]);
-	const [start, end] = useMemo(() => spanOf(clip), [clip]);
-	const onDoneRef = useRef(onDone);
-	onDoneRef.current = onDone;
-	useEffect(() => {
-		if (clip === null) {
-			onDoneRef.current();
-		}
-	}, [clip]);
-	const [phase, setPhase] = useState<"sting" | "play">("sting");
-	useHold(phase === "sting" && !!clip, COUNT_STINGER_MS, paused, () =>
-		setPhase("play"),
-	);
-	const settled = useSettled(STINGER_SETTLE_MS, paused);
-	return (
-		<div style={{ position: "relative" }}>
-			{clip && feed && settled ? (
-				<Suspense fallback={<Frame narrow={narrow} />}>
-					<ClipCourt
-						events={clip.events}
-						start={start}
-						end={end}
-						initialBoxScore={feed.initialBoxScore}
-						paused={paused || phase === "sting"}
-						rate={rate}
-						onDone={onDone}
-						onFail={onDone}
-					/>
-				</Suspense>
-			) : (
-				<Frame narrow={narrow} />
-			)}
-			{phase === "sting" ? (
-				<Frame narrow={narrow} over>
-					<CountStinger n={n} />
-				</Frame>
-			) : null}
-		</div>
-	);
-};
-
-// THE NIGHT'S TOP PLAYS, counted down to the best.
-const TopSegment = ({
-	plays,
-	feeds,
-	...playing
-}: Playing & { plays: RecapTopPlay[] }) => {
-	// (How many are done.)
-	const [k, setK] = useState(0);
-	useEffect(() => {
-		for (const play of plays) {
-			void loadFeed(feeds, play.gid);
-		}
-	}, [feeds, plays]);
-	const n = plays.length - k;
-	const play = plays[n - 1];
-	if (!play) {
-		return <Frame narrow={playing.narrow} />;
-	}
-	return (
-		<TopPlay
-			key={k}
-			{...playing}
-			feeds={feeds}
-			play={play}
-			n={n}
-			onDone={() => {
-				if (n <= 1) {
-					playing.onDone();
-				} else {
-					setK(k + 1);
-				}
-			}}
-		/>
-	);
-};
-
-const ConfCard = ({
-	standings,
-	k,
-	paused,
-	narrow,
-	onDone,
-}: {
-	standings: RecapStandings;
-	k: number;
-	paused: boolean;
-	narrow: boolean;
-	onDone: () => void;
-}) => {
-	useHold(true, STANDINGS_MS, paused, onDone);
-	return (
-		<StandingsCard
-			conf={standings.confs[k]!}
-			through={standings.through}
-			k={k}
-			narrow={narrow}
-		/>
-	);
-};
-
-// THE STANDINGS: the wipe, then each conference's card.
-const StandingsSegment = ({
-	standings,
-	paused,
-	narrow,
-	onDone,
-}: {
-	standings: RecapStandings;
-	paused: boolean;
-	narrow: boolean;
-	onDone: () => void;
-}) => {
-	// (-1: the wipe.)
-	const [k, setK] = useState(-1);
-	useHold(k === -1, WIPE_MS, paused, () => setK(0));
-	return (
-		<Frame narrow={narrow}>
-			{k === -1 ? (
-				<Stinger text="STANDINGS" title={false} ms={WIPE_MS} />
-			) : (
-				<ConfCard
-					key={k}
-					standings={standings}
-					k={k}
-					paused={paused}
-					narrow={narrow}
-					onDone={() => {
-						if (k + 1 < standings.confs.length) {
-							setK(k + 1);
-						} else {
-							onDone();
-						}
-					}}
-				/>
-			)}
-		</Frame>
-	);
-};
-
-type Segment =
-	| { kind: "open" }
-	| { kind: "game"; game: RecapNightGame }
-	| { kind: "star"; star: RecapStar; n: number }
-	| { kind: "top"; plays: RecapTopPlay[] }
-	| { kind: "standings"; standings: RecapStandings };
-
-// The night at a length: the open, each game, then what the length has of
-// the Player of the Night, the top plays (on a night of more than one game)
-// and the standings.
-const segmentsOf = (night: RecapNight, length: RecapLength): Segment[] => {
-	const row = lengthRow(length);
-	const out: Segment[] = [{ kind: "open" }];
-	for (const game of night.games) {
-		out.push({ kind: "game", game });
-	}
-	if (row.star > 0 && night.star) {
-		out.push({ kind: "star", star: night.star, n: row.star });
-	}
-	if (row.top > 0 && night.games.length > 1 && night.top.length > 0) {
-		out.push({ kind: "top", plays: night.top.slice(0, row.top) });
-	}
-	if (row.standings && night.standings) {
-		out.push({ kind: "standings", standings: night.standings });
-	}
-	return out;
-};
-
-const gidsOf = (segment: Segment | undefined): number[] =>
-	segment?.kind === "game"
-		? [segment.game.gid]
-		: segment?.kind === "star"
-			? [segment.star.gid]
-			: segment?.kind === "top"
-				? segment.plays.map((play) => play.gid)
-				: [];
+// The night: the open, then each game.
+const segmentsOf = (night: RecapNight): Segment[] => [
+	{ kind: "open" },
+	...night.games.map((game): Segment => ({ kind: "game", game })),
+];
 
 const minutes = (night: RecapNight, length: RecapLength, speed: number) => {
 	const n = playsPerGame(length);
-	let s = 0;
-	for (const segment of segmentsOf(night, length)) {
-		if (segment.kind === "open") {
-			s += OPEN_MS / 1000;
-		} else if (segment.kind === "game") {
-			s +=
-				(CARD_MS + FINAL_MS) / 1000 +
-				(Math.min(n, segment.game.numPlays) * PLAY_S) / speed;
-		} else if (segment.kind === "star") {
-			s += STAR_STINGER_MS / 1000 + (segment.n * PLAY_S) / speed;
-		} else if (segment.kind === "top") {
-			s += segment.plays.length * (COUNT_STINGER_MS / 1000 + PLAY_S / speed);
-		} else {
-			s += (WIPE_MS + segment.standings.confs.length * STANDINGS_MS) / 1000;
-		}
+	let s = OPEN_MS / 1000;
+	for (const game of night.games) {
+		s +=
+			(CARD_MS + FINAL_MS) / 1000 +
+			(Math.min(n, game.numPlays) * PLAY_S) / speed;
 	}
 	return Math.max(1, Math.round(s / 60));
 };
@@ -772,10 +432,7 @@ const NightlyRecap = ({
 	// (Bumped to start a segment over: a new length, a step back to it.)
 	const [take, setTake] = useState(0);
 
-	const segments = useMemo(
-		() => (night ? segmentsOf(night, length) : []),
-		[night, length],
-	);
+	const segments = useMemo(() => (night ? segmentsOf(night) : []), [night]);
 	const segment = at === undefined ? undefined : segments[at];
 
 	// (The court readied once the page is quiet, the poster up - all of it
@@ -802,12 +459,11 @@ const NightlyRecap = ({
 		};
 	}, [hasGames]);
 
-	// (The next one's plays fetched while this one plays.)
+	// (The next game's plays fetched while this one plays.)
 	useEffect(() => {
-		if (at !== undefined) {
-			for (const gid of gidsOf(segments[at + 1])) {
-				void loadFeed(feeds, gid);
-			}
+		const next = at === undefined ? undefined : segments[at + 1];
+		if (next?.kind === "game") {
+			void loadFeed(feeds, next.game.gid);
 		}
 	}, [at, segments, feeds]);
 
@@ -913,29 +569,11 @@ const NightlyRecap = ({
 	}
 	const controlsUp = awake || paused || at === undefined;
 
-	// A new length: the same game (or the same part after the games) over at
-	// it, or on to what is next if it has none.
+	// A new length: the same game over at it.
 	const setLength = (next: RecapLength) => {
 		setLengthState(next);
 		safeLocalStorage.setItem(LENGTH_KEY, next);
-		if (at === undefined || !segment) {
-			return;
-		}
-		const nextSegments = segmentsOf(night, next);
-		if (segment.kind === "open" || segment.kind === "game") {
-			setTake((n) => n + 1);
-			return;
-		}
-		const same = nextSegments.findIndex((row) => row.kind === segment.kind);
-		if (same >= 0) {
-			setAt(same);
-			setTake((n) => n + 1);
-		} else {
-			const order = ["star", "top", "standings"];
-			const later = nextSegments.findIndex(
-				(row) => order.indexOf(row.kind) > order.indexOf(segment.kind),
-			);
-			setAt(later >= 0 ? later : undefined);
+		if (at !== undefined) {
 			setTake((n) => n + 1);
 		}
 	};
@@ -1008,23 +646,6 @@ const NightlyRecap = ({
 						game={segment.game}
 						length={length}
 						{...playing}
-					/>
-				) : segment?.kind === "star" ? (
-					<StarSegment
-						key={key}
-						star={segment.star}
-						n={segment.n}
-						{...playing}
-					/>
-				) : segment?.kind === "top" ? (
-					<TopSegment key={key} plays={segment.plays} {...playing} />
-				) : segment?.kind === "standings" ? (
-					<StandingsSegment
-						key={key}
-						standings={segment.standings}
-						paused={stopped}
-						narrow={narrow}
-						onDone={playing.onDone}
 					/>
 				) : (
 					<Frame narrow={narrow}>

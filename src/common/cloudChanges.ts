@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 515,
+		date: "2026-11-24",
+		text: "Nightly Recap is now just the night's games, one after another (no Player of the Night, top plays or standings after them). A night's recap also waits until the whole day is over: simming one or a few of a day's games no longer brings it up.",
+	},
+	{
 		n: 514,
 		date: "2026-11-24",
 		text: "Daily Schedule's row of days: each day shows how many games it has, on your team's color when your team plays.",

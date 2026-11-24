@@ -149,8 +149,7 @@ export const shortSeries = (line: string | undefined) => {
 // the standard one - its clocks and marks written by the frames (see
 // writeBug), and a playoff game's round and series across its top
 // (`series` - the standard one's). `bugRef`: where it is, for what is kept
-// clear of it (and `data-score-bug`, for what is drawn over the picture -
-// see the Nightly Recap's StarStrip).
+// clear of it.
 export const GameBug = ({
 	bugRef,
 	own,
@@ -184,7 +183,7 @@ export const GameBug = ({
 		refs,
 	};
 	return (
-		<div ref={bugRef} data-score-bug="" style={{ display: "contents" }}>
+		<div ref={bugRef} style={{ display: "contents" }}>
 			{own ? (
 				<CustomScoreBug
 					style={own}
