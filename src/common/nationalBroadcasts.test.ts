@@ -1,9 +1,13 @@
 import { assert, describe, test } from "vitest";
 import {
 	biggestGame,
+	nationalGamesOn,
+	nationalNight,
 	networkFor,
+	nightNetworks,
 	nightOf,
 	parseNationalBroadcasts,
+	slateOf,
 	strengthOf,
 } from "./nationalBroadcasts.ts";
 import { recordText } from "./scoreBug.ts";
@@ -45,6 +49,9 @@ describe("parseNationalBroadcasts", () => {
 		];
 		assert.deepStrictEqual(parseNationalBroadcasts(list), list);
 		assert.deepStrictEqual(parseNationalBroadcasts([]), []);
+		const christmas = { ...ESPN, nights: undefined, slate: "christmas" };
+		delete christmas.nights;
+		assert.deepStrictEqual(parseNationalBroadcasts([christmas]), [christmas]);
 		// (Ours, as a file could have it.)
 		assert.deepStrictEqual(parseNationalBroadcasts([GENERIC_NATIONAL]), [
 			GENERIC_NATIONAL,
@@ -61,6 +68,7 @@ describe("parseNationalBroadcasts", () => {
 			[{ ...NBC, logoDark: 4 }],
 			[{ ...NBC, channel: 4 }],
 			[{ ...NBC, scoreBug: { width: 10 } }],
+			[{ ...NBC, slate: "boxingDay" }],
 		]) {
 			assert.strictEqual(
 				typeof parseNationalBroadcasts(bad),
@@ -166,6 +174,139 @@ describe("networkFor", () => {
 		assert.strictEqual(
 			networkFor([{ ...ESPN, nights: [] }], playoff, 0, false),
 			undefined,
+		);
+	});
+});
+
+describe("the NBA's national slate", () => {
+	const OPENING = "2025-10-21";
+
+	test("the special nights", () => {
+		assert.strictEqual(slateOf(OPENING, OPENING), "openingNight");
+		assert.strictEqual(slateOf("2025-12-25", OPENING), "christmas");
+		// MLK Day 2026: Monday, January 19; Rivals Week the Tuesday to Saturday
+		// after.
+		assert.strictEqual(slateOf("2026-01-19", OPENING), "mlkDay");
+		assert.strictEqual(slateOf("2026-01-20", OPENING), "rivalsWeek");
+		assert.strictEqual(slateOf("2026-01-24", OPENING), "rivalsWeek");
+		assert.isUndefined(slateOf("2026-01-25", OPENING));
+		assert.isUndefined(slateOf("2025-10-22", OPENING));
+	});
+
+	test("how many games a night is national", () => {
+		const on = (date: string, numGames = 10) =>
+			nationalGamesOn(date, nightOf({ date }, undefined), OPENING, numGames);
+		// Every game on opening night and Christmas.
+		assert.strictEqual(on(OPENING, 2), 2);
+		assert.strictEqual(on("2025-12-25", 5), 5);
+		// Opening week, a doubleheader a night - even Thursday.
+		assert.strictEqual(on("2025-10-23"), 2);
+		// Tuesdays and Wednesdays, two; Thursdays none till mid-January.
+		assert.strictEqual(on("2025-11-04"), 2);
+		assert.strictEqual(on("2025-11-05"), 2);
+		assert.strictEqual(on("2025-11-06"), 0);
+		assert.strictEqual(on("2026-01-15"), 2);
+		// Fridays two, then four from January.
+		assert.strictEqual(on("2025-11-07"), 2);
+		assert.strictEqual(on("2026-01-09"), 4);
+		// Saturdays one, two from January to March; Sundays from February.
+		assert.strictEqual(on("2025-11-08"), 1);
+		assert.strictEqual(on("2026-01-10"), 2);
+		assert.strictEqual(on("2026-04-04"), 1);
+		assert.strictEqual(on("2026-01-11"), 0);
+		assert.strictEqual(on("2026-02-01"), 2);
+		assert.strictEqual(on("2026-04-05"), 1);
+		// The night before Thanksgiving, three; MLK Day four; Rivals Week's
+		// Friday three.
+		assert.strictEqual(on("2025-11-26"), 3);
+		assert.strictEqual(on("2026-01-19"), 4);
+		assert.strictEqual(on("2026-01-23"), 3);
+		// Never more than the night has; no calendar, one.
+		assert.strictEqual(on("2026-01-19", 2), 2);
+		assert.strictEqual(nationalGamesOn(undefined, 2, undefined, 6), 1);
+		assert.strictEqual(nationalGamesOn(undefined, 2, undefined, 0), 0);
+	});
+
+	const XMAS: NationalBroadcast = {
+		network: "ESPN",
+		slate: "christmas",
+		scoreBug: bug("CHRISTMAS"),
+	};
+	const PRIME: NationalBroadcast = {
+		network: "Prime",
+		nights: ["Thu", "Fri"],
+		scoreBug: bug("TNF"),
+	};
+
+	test("who carries a night: its slate's network, else its weekday's", () => {
+		const networks = [XMAS, NBC, PRIME, ESPN];
+		assert.deepStrictEqual(nightNetworks(networks, 4, "christmas"), [XMAS]);
+		assert.deepStrictEqual(nightNetworks(networks, 5, undefined), [
+			PRIME,
+			ESPN,
+		]);
+		// A slate with no network of its own: the weekday's.
+		assert.deepStrictEqual(nightNetworks(networks, 2, "openingNight"), [NBC]);
+		// ...or, nobody having that weekday either, the league's in turn.
+		assert.deepStrictEqual(nightNetworks([NBC, ESPN], 1, "mlkDay"), [
+			NBC,
+			ESPN,
+		]);
+		assert.deepStrictEqual(nightNetworks([NBC, ESPN], 1, undefined), []);
+		// The slate's network has nothing else.
+		assert.deepStrictEqual(nightNetworks([XMAS], 4, undefined), []);
+		assert.strictEqual(
+			networkFor(
+				[XMAS, NBC],
+				{ season: 2026, tids: [1, 2], playoffs: true },
+				4,
+				false,
+			),
+			NBC,
+		);
+	});
+
+	test("a night's national games: the biggest, shared out in order", () => {
+		const strength = (tid: number) => tid / 10;
+		const night = [
+			{ gid: 1, tids: [1, 2] as [number, number] },
+			{ gid: 2, tids: [9, 8] as [number, number] },
+			{ gid: 3, tids: [3, 4] as [number, number] },
+			{ gid: 4, tids: [7, 6] as [number, number] },
+			{ gid: 5, tids: [5, 0] as [number, number] },
+		];
+		const picks = (
+			date: string,
+			networks: NationalBroadcast[],
+			rivals?: (a: number, b: number) => boolean,
+		) =>
+			[
+				...nationalNight(
+					networks,
+					night,
+					{ date, night: nightOf({ date }, undefined), openingDate: OPENING },
+					strength,
+					rivals,
+				),
+			].map(([gid, n]) => `${gid} ${n.network}`);
+		// A January Friday: four, Prime the two biggest, ESPN the next two.
+		assert.deepStrictEqual(picks("2026-01-09", [NBC, PRIME, ESPN]), [
+			"2 Prime",
+			"4 Prime",
+			"3 ESPN",
+			"5 ESPN",
+		]);
+		// Christmas: all five, on its own network.
+		assert.deepStrictEqual(
+			picks("2025-12-25", [XMAS, ESPN]).map((p) => p.split(" ")[1]),
+			["ESPN", "ESPN", "ESPN", "ESPN", "ESPN"],
+		);
+		// A Thursday in November: none.
+		assert.deepStrictEqual(picks("2025-11-06", [NBC, PRIME, ESPN]), []);
+		// Rivals Week: the division rivals first.
+		assert.deepStrictEqual(
+			picks("2026-01-20", [NBC], (a, b) => a + b === 7),
+			["3 NBC", "2 NBC"],
 		);
 	});
 });

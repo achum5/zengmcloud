@@ -18,6 +18,8 @@ import { getMetaAttribute, putMetaAttribute } from "../../db/metaAttributes.ts";
 import { savePreseasonOdds } from "../sportsbook/savePreseasonOdds.ts";
 import { isAllStarGame } from "../../../common/specialGames.ts";
 import { smartBrainOn } from "../realisticFrontOffice/isOn.ts";
+import { calendarOn } from "../season/newCalendarSchedule.ts";
+import { marqueeDraw } from "../season/marqueeDraw.ts";
 
 class GameHasYourTeamCache {
 	cache: Record<number, boolean> = {};
@@ -177,7 +179,20 @@ const newPhaseRegularSeason = async (
 		await team.checkRosterSizes("other");
 	}
 
-	const { tids, dates, classicDays } = season.newCalendarSchedule(teams);
+	// Opening night and Christmas get the matchups the league wants to see.
+	let marquee;
+	if (calendarOn()) {
+		try {
+			marquee = await marqueeDraw(g.get("season"));
+		} catch (error) {
+			console.error("Could not rate the teams' draw", error);
+		}
+	}
+	const { tids, dates, classicDays } = season.newCalendarSchedule(
+		teams,
+		undefined,
+		marquee,
+	);
 	await season.setSchedule(tids, dates);
 	if (classicDays !== undefined) {
 		await saveClassicDays(classicDays);

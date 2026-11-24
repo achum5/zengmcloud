@@ -26,7 +26,7 @@ export const isPrimeTime = (
 
 // Each team's rating in `season`: as it began, or - nobody having played
 // yet this season - as it is now.
-const ovrsIn = async (season: number): Promise<Map<number, number>> => {
+export const ovrsIn = async (season: number): Promise<Map<number, number>> => {
 	const ovrs = new Map<number, number>();
 	const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 	const now = season === g.get("season");

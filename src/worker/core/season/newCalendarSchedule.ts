@@ -17,6 +17,7 @@ import { getRealSchedule } from "./getRealSchedule.basketball.ts";
 import { generateCalendar } from "./generateCalendar.ts";
 import { teamLocation, type HomeCity } from "../../../common/teamLocation.ts";
 import { countClassicDays } from "../game/calendarTicks.ts";
+import { featureMarquee, type MarqueeDraw } from "./marqueeNights.ts";
 
 // THE REGULAR SEASON ON REAL DATES (basketball): every game gets the night
 // it's played on, and each night is one sim day. A league shaped like the
@@ -195,9 +196,12 @@ export const assembleDatedSchedule = (
 	return { tids, dates };
 };
 
+// `marquee`: who the league wants to see, for opening night and Christmas
+// (see marqueeNights.ts) - without it, they're as they fall.
 const newCalendarSchedule = (
 	teams: CalendarScheduleTeam[],
 	conditions?: Conditions,
+	marquee?: MarqueeDraw,
 ): DatedSchedule => {
 	if (!calendarOn() || teams.length >= TOO_MANY_TEAMS_TOO_SLOW) {
 		return { tids: newSchedule(teams, conditions) };
@@ -209,6 +213,12 @@ const newCalendarSchedule = (
 
 	const locationOf = (t: CalendarScheduleTeam) =>
 		teamLocation({ region: t.seasonAttrs.region, homeCity: t.homeCity });
+
+	const featured = <
+		T extends { homeTid: number; awayTid: number; date: string },
+	>(
+		games: T[],
+	) => (marquee ? featureMarquee(games, marquee) : games);
 
 	const real = getRealSchedule(
 		teams.map((t) => ({
@@ -232,7 +242,7 @@ const newCalendarSchedule = (
 						];
 		}
 		return {
-			...assembleDatedSchedule(real, allStarDate, tradeDeadline),
+			...assembleDatedSchedule(featured(real), allStarDate, tradeDeadline),
 			classicDays: countClassicDays(newSchedule(teams)),
 		};
 	}
@@ -253,11 +263,13 @@ const newCalendarSchedule = (
 	}
 	return {
 		...assembleDatedSchedule(
-			regular.map(([homeTid, awayTid], i) => ({
-				homeTid,
-				awayTid,
-				date: calendar.dates[i]!,
-			})),
+			featured(
+				regular.map(([homeTid, awayTid], i) => ({
+					homeTid,
+					awayTid,
+					date: calendar.dates[i]!,
+				})),
+			),
 			calendar.allStarDate,
 			tradeDeadline,
 		),

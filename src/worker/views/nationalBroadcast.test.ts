@@ -109,6 +109,69 @@ describe("national broadcasts", () => {
 		assert.strictEqual(await nationalBroadcastOf(night[0]), GENERIC_NATIONAL);
 	});
 
+	test("on the calendar: every game opening night and Christmas, Tuesday's doubleheader", async () => {
+		const dated = (
+			gid: number,
+			day: number,
+			date: string,
+			home: number,
+			away: number,
+		) => ({ ...game(gid, day, home, away), date });
+		// Opening night, Tuesday Oct 21; a Tuesday in November; Christmas, a
+		// Thursday nobody has (so NBC's and ESPN's in turn).
+		const opening = [
+			dated(1, 1, "2025-10-21", 0, 1),
+			dated(2, 1, "2025-10-21", 5, 4),
+		];
+		const tuesday = [
+			dated(3, 2, "2025-11-04", 0, 1),
+			dated(4, 2, "2025-11-04", 5, 4),
+			dated(5, 2, "2025-11-04", 2, 3),
+		];
+		const christmas = [
+			dated(6, 3, "2025-12-25", 0, 1),
+			dated(7, 3, "2025-12-25", 5, 4),
+			dated(8, 3, "2025-12-25", 2, 3),
+		];
+		await setup([...opening, ...tuesday, ...christmas]);
+		const network = async (x: any) => (await nationalBroadcastOf(x))?.network;
+		assert.deepStrictEqual(await Promise.all(opening.map(network)), [
+			"NBC",
+			"NBC",
+		]);
+		// (0 v 1, the two worst-rated teams, the one left out.)
+		assert.deepStrictEqual(await Promise.all(tuesday.map(network)), [
+			undefined,
+			"NBC",
+			"NBC",
+		]);
+		assert.deepStrictEqual(await Promise.all(christmas.map(network)), [
+			"ESPN",
+			"NBC",
+			"NBC",
+		]);
+
+		// Previews tell it the same, Christmas still to come.
+		await setup([...opening, ...tuesday]);
+		const picks = await nationalSchedule(
+			christmas.map((x) => ({
+				gid: x.gid,
+				day: x.day,
+				date: x.date,
+				homeTid: x.teams[0].tid,
+				awayTid: x.teams[1].tid,
+			})),
+		);
+		assert.deepStrictEqual(
+			[...picks].map(([gid, n]) => [gid, n.network]).sort(),
+			[
+				[6, "ESPN"],
+				[7, "NBC"],
+				[8, "NBC"],
+			],
+		);
+	});
+
 	test("previews: a night still to come has the game it'll have once played", async () => {
 		const scheduled = (night: any[]) =>
 			night.map((x) => ({

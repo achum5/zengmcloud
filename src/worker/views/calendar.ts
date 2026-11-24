@@ -1,5 +1,6 @@
 import { PHASE } from "../../common/constants.ts";
-import type { NationalTag } from "../../common/types.ts";
+import type { NationalSlate, NationalTag } from "../../common/types.ts";
+import { slateOf } from "../../common/nationalBroadcasts.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { season as seasonCore } from "../core/index.ts";
@@ -48,7 +49,9 @@ export type CalendarGame = {
 export type CalendarKeyDate = {
 	date: string;
 	day: number | undefined;
-	type: "allStar" | "tradeDeadline";
+	// The NBA's special nights too: opening night, Christmas, MLK Day and
+	// Rivals Week (see slateOf).
+	type: "allStar" | "tradeDeadline" | NationalSlate;
 	// The All-Star Game's box score, once it's played.
 	gid?: number;
 };
@@ -85,6 +88,9 @@ export const getCalendarData = async (
 	// rise to has (see liveGameGate.ts).
 	const gate = season === g.get("season") ? await getLiveGate() : undefined;
 
+	// Every regular season night, with its day.
+	const regularNights = new Map<string, number | undefined>();
+
 	const played = await idb.merged.games.getAll({ season });
 	for (const game of played) {
 		if (game.date === undefined) {
@@ -92,6 +98,9 @@ export const getCalendarData = async (
 			continue;
 		}
 		const [home, away] = game.teams;
+		if (!game.playoffs && !isAllStarGame(home.tid, away.tid)) {
+			regularNights.set(game.date, game.day);
+		}
 		if (isAllStarGame(home.tid, away.tid)) {
 			keyDates.push({
 				date: game.date,
@@ -149,6 +158,13 @@ export const getCalendarData = async (
 			if (game.date === undefined) {
 				undated = true;
 				continue;
+			}
+			if (
+				!playoffs &&
+				!isTradeDeadline(game.homeTid, game.awayTid) &&
+				!isAllStarGame(game.homeTid, game.awayTid)
+			) {
+				regularNights.set(game.date, game.day);
 			}
 			if (gate?.dayCutoff !== undefined && game.day > gate.dayCutoff) {
 				continue;
@@ -210,6 +226,15 @@ export const getCalendarData = async (
 					});
 				}
 			}
+		}
+	}
+
+	// The special nights, from opening night on.
+	const nights = [...regularNights.keys()].sort();
+	for (const date of nights) {
+		const slate = slateOf(date, nights[0]);
+		if (slate !== undefined) {
+			keyDates.push({ date, day: regularNights.get(date), type: slate });
 		}
 	}
 

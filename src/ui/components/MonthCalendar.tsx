@@ -126,6 +126,16 @@ const Coin = ({ className, won }: { className: string; won: boolean }) => (
 	</span>
 );
 
+// [on a phone, wider]
+const KEY_DATE_LABELS: Record<CalendarKeyDate["type"], [string, string]> = {
+	tradeDeadline: ["Deadline", "Trade deadline"],
+	allStar: ["All-Star", "All-Star Game"],
+	openingNight: ["Opening", "Opening Night"],
+	christmas: ["Christmas", "Christmas Day"],
+	mlkDay: ["MLK Day", "MLK Day"],
+	rivalsWeek: ["Rivals", "Rivals Week"],
+};
+
 const KeyDateLabel = ({
 	compact,
 	keyDate,
@@ -135,10 +145,7 @@ const KeyDateLabel = ({
 	keyDate: CalendarKeyDate;
 	season: number;
 }) => {
-	const [short, long] =
-		keyDate.type === "tradeDeadline"
-			? ["Deadline", "Trade deadline"]
-			: ["All-Star", "All-Star Game"];
+	const [short, long] = KEY_DATE_LABELS[keyDate.type];
 	const label = compact ? (
 		short
 	) : (
@@ -410,7 +417,13 @@ export const MonthCalendar = ({
 		return null;
 	}
 
-	const keyByDate = new Map(keyDates.map((keyDate) => [keyDate.date, keyDate]));
+	// (A night's first: the deadline over Rivals Week.)
+	const keyByDate = new Map<string, CalendarKeyDate>();
+	for (const keyDate of keyDates) {
+		if (!keyByDate.has(keyDate.date)) {
+			keyByDate.set(keyDate.date, keyDate);
+		}
+	}
 
 	// A team's own nights, results by month, back-to-backs and playoff game
 	// numbers.

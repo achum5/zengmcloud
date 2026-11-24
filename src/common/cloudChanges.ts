@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 519,
+		date: "2026-11-24",
+		text: "NBA calendar: national TV now follows the NBA's real TV schedule. Tuesdays and Wednesdays are doubleheaders, Thursdays get games from mid-January, Fridays double up from January, and weekend games start in January and February. Every game on opening night and Christmas is national, MLK Day has four, and Rivals Week (the week after MLK Day) features division rivals. Starting next season, the champion hosts opening night, and the biggest matchups land on opening night and Christmas. The calendar marks all these nights.",
+	},
+	{
 		n: 518,
 		date: "2026-11-24",
 		text: "NBA calendar month view: the arrows now sit on either side of the month, and the month itself is a menu to jump to any month of the season.",

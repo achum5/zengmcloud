@@ -3615,6 +3615,10 @@ export type NationalBroadcast = {
 	network: string;
 	// "Mon".."Sun". (With no calendar, opening night is a Tuesday.)
 	nights?: string[];
+	// One of the NBA calendar's special nights instead (see NationalSlate):
+	// every national game of it, over the weekday's networks - and none of
+	// the weekdays or the playoffs.
+	slate?: NationalSlate;
 	finals?: boolean;
 	// The network's logo on its games' previews: a link, or a picture written
 	// in (without one, its name) - and `logoDark`, the one for a dark page
@@ -3623,6 +3627,13 @@ export type NationalBroadcast = {
 	logoDark?: string;
 	scoreBug: ScoreBugStyle;
 };
+// THE NBA CALENDAR'S SPECIAL NIGHTS for national TV: opening night, Christmas,
+// MLK Day and Rivals Week (the Tuesday to Saturday after MLK Day).
+export type NationalSlate =
+	| "openingNight"
+	| "christmas"
+	| "mlkDay"
+	| "rivalsWeek";
 // A game's national network as its preview shows it: the name, and the
 // logos ready to show (if it has them).
 export type NationalTag = { network: string; logo?: string; logoDark?: string };

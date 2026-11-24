@@ -1,7 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import {
-	biggestGame,
+	nationalNight,
 	networkFor,
 	nightOf,
 	strengthOf,
@@ -40,17 +40,37 @@ const ratedOf = (teamSeasons: { tid: number; ovrStart?: number }[]) => {
 	);
 };
 
+// Two teams of one division, by their team seasons.
+const rivalsBy =
+	(teamSeasons: { tid: number; cid: number; did: number }[]) =>
+	(a: number, b: number) => {
+		const ta = teamSeasons.find((ts) => ts.tid === a);
+		const tb = teamSeasons.find((ts) => ts.tid === b);
+		return !!ta && !!tb && ta.cid === tb.cid && ta.did === tb.did;
+	};
+
+// The season's first night, of the dates given.
+const firstDate = (dates: (string | undefined)[]) => {
+	let first: string | undefined;
+	for (const date of dates) {
+		if (date !== undefined && (first === undefined || date < first)) {
+			first = date;
+		}
+	}
+	return first;
+};
+
 const isRegular = (p: Game) =>
 	!p.playoffs &&
 	!(p as any).exhibition &&
 	p.teams[0].tid >= 0 &&
 	p.teams[1].tid >= 0;
 
-// THE NATIONAL NETWORK A GAME IS ON, if it's on one (see networkFor): for
-// the regular season, its night's games are all played by the time it's
-// watched, so the night's biggest is known - by the records going into the
-// night, and the teams' ratings as the season began. Cosmetic, so nothing
-// when it can't be told.
+// THE NATIONAL NETWORK A GAME IS ON, if it's on one (see nationalNight;
+// networkFor in the playoffs): for the regular season, its night's games
+// are all played by the time it's watched, so the night's biggest are known
+// - by the records going into the night, and the teams' ratings as the
+// season began. Cosmetic, so nothing when it can't be told.
 export const nationalBroadcastOf = async (
 	game: Pick<
 		Game,
@@ -84,29 +104,39 @@ export const nationalBroadcastOf = async (
 			tids: [number, number];
 		}[];
 
-		const rated = ratedOf(
-			await idb.merged.teamSeasons.getAll({ season: game.season }),
-		);
+		const teamSeasons = await idb.merged.teamSeasons.getAll({
+			season: game.season,
+		});
+		const rated = ratedOf(teamSeasons);
 		const records = standingsAsOf(game, regular, false);
 		const strength = (tid: number) =>
 			strengthOf(records.get(tid), rated.get(tid) ?? 0.5);
 
-		const biggest = biggestGame(night, strength)?.gid === game.gid;
 		const days = regular
 			.map((p) => p.day)
 			.filter((d): d is number => d !== undefined);
 		const openingDay = days.length > 0 ? Math.min(...days) : game.day;
-		return networkFor(networks, base, nightOf(game, openingDay), biggest);
+		return nationalNight(
+			networks,
+			night,
+			{
+				date: game.date,
+				night: nightOf(game, openingDay),
+				openingDate: firstDate([game.date, ...regular.map((p) => p.date)]),
+			},
+			strength,
+			rivalsBy(teamSeasons),
+		).get(game.gid);
 	} catch {
 		return undefined;
 	}
 };
 
-// THE NATIONAL GAMES TO COME, by gid (see networkFor): of the schedule, the
-// games on a network. A night's biggest is told as nationalBroadcastOf will
-// tell it once it's played, by the records as they stand - so the next
-// night's is what it will be, and one further out can still change as the
-// records do.
+// THE NATIONAL GAMES TO COME, by gid (see nationalNight): of the schedule,
+// the games on a network. A night's biggest are told as nationalBroadcastOf
+// will tell them once played, by the records as they stand - so the next
+// night's are what they will be, and one further out can still change as
+// the records do.
 export const nationalSchedule = async (
 	schedule: ScheduleGame[],
 ): Promise<Map<number, NationalBroadcast>> => {
@@ -144,34 +174,38 @@ export const nationalSchedule = async (
 		const strength = (tid: number) =>
 			strengthOf(records.get(tid), rated.get(tid) ?? 0.5);
 
-		const days = (await idb.cache.games.getAll())
-			.filter((p) => p.season === season && isRegular(p))
+		const played = (await idb.cache.games.getAll()).filter(
+			(p) => p.season === season && isRegular(p),
+		);
+		const days = played
 			.map((p) => p.day)
 			.concat(games.map((s) => s.day))
 			.filter((d): d is number => d !== undefined);
 		const openingDay = days.length > 0 ? Math.min(...days) : undefined;
+		const openingDate = firstDate([
+			...played.map((p) => p.date),
+			...games.map((s) => s.date),
+		]);
+		const rivals = rivalsBy(teamSeasons);
 
 		const nights = Map.groupBy(games, (s) => s.day);
 		for (const night of nights.values()) {
-			const biggest = biggestGame(
+			const picks = nationalNight(
+				networks,
 				night.map((s) => ({
-					s,
 					gid: s.gid,
 					tids: [s.homeTid, s.awayTid] as [number, number],
 				})),
+				{
+					date: night[0]!.date,
+					night: nightOf(night[0]!, openingDay),
+					openingDate,
+				},
 				strength,
+				rivals,
 			);
-			if (!biggest) {
-				continue;
-			}
-			const n = networkFor(
-				networks,
-				{ season, tids: biggest.tids },
-				nightOf(biggest.s, openingDay),
-				true,
-			);
-			if (n) {
-				out.set(biggest.gid, n);
+			for (const [gid, n] of picks) {
+				out.set(gid, n);
 			}
 		}
 	} catch {}

@@ -1,10 +1,17 @@
 import { parseScoreBug, scoreBugPictureIds } from "./scoreBug.ts";
-import type { NationalBroadcast } from "./types.ts";
+import type { NationalBroadcast, NationalSlate } from "./types.ts";
+import { addDays, daysBetween, nthWeekday } from "./calendarDates.ts";
 
 // NATIONAL BROADCASTS (see NationalBroadcast): which game of a night a
 // national network has, and so whose score bug it carries.
 
 export const NIGHTS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export const SLATES: NationalSlate[] = [
+	"openingNight",
+	"christmas",
+	"mlkDay",
+	"rivalsWeek",
+];
 const MAX_NETWORKS = 12;
 
 export const parseNationalBroadcasts = (
@@ -26,6 +33,7 @@ export const parseNationalBroadcasts = (
 				![
 					"network",
 					"nights",
+					"slate",
 					"finals",
 					"logo",
 					"logoDark",
@@ -45,6 +53,9 @@ export const parseNationalBroadcasts = (
 		) {
 			return `${label}: "nights" should be a list of ${NIGHTS.join(", ")}.`;
 		}
+		if (r.slate !== undefined && !SLATES.includes(r.slate as NationalSlate)) {
+			return `${label}: "slate" should be one of ${SLATES.join(", ")}.`;
+		}
 		if (r.finals !== undefined && typeof r.finals !== "boolean") {
 			return `${label}: "finals" should be true or false.`;
 		}
@@ -60,6 +71,7 @@ export const parseNationalBroadcasts = (
 		out.push({
 			network: r.network,
 			...(r.nights !== undefined ? { nights: r.nights as string[] } : {}),
+			...(r.slate !== undefined ? { slate: r.slate as NationalSlate } : {}),
 			...(r.finals !== undefined ? { finals: r.finals } : {}),
 			...(r.logo !== undefined ? { logo: r.logo } : {}),
 			...(r.logoDark !== undefined ? { logoDark: r.logoDark } : {}),
@@ -144,17 +156,19 @@ export const networkFor = (
 	biggest: boolean,
 ): NationalBroadcast | undefined => {
 	if (game.playoffs) {
+		// (A slate's network has only its nights.)
+		const weekly = networks.filter((n) => n.slate === undefined);
 		if (game.finals) {
-			const finals = networks.find((n) => n.finals);
+			const finals = weekly.find((n) => n.finals);
 			if (finals) {
 				return finals;
 			}
 		}
 		// (A network once, however many of its nights have their own bug.)
-		const shared = networks.filter(
+		const shared = weekly.filter(
 			(n, i) =>
 				(n.nights?.length ?? 0) > 0 &&
-				networks.findIndex(
+				weekly.findIndex(
 					(m) => m.network === n.network && (m.nights?.length ?? 0) > 0,
 				) === i,
 		);
@@ -168,5 +182,168 @@ export const networkFor = (
 	if (!biggest || night === undefined) {
 		return undefined;
 	}
-	return networks.find((n) => n.nights?.includes(NIGHTS[night]!));
+	return nightNetworks(networks, night, undefined)[0];
+};
+
+// THE NBA CALENDAR'S SPECIAL NIGHT a date is, if any (see NationalSlate):
+// `openingDate`, the season's first night.
+export const slateOf = (
+	date: string,
+	openingDate: string | undefined,
+): NationalSlate | undefined => {
+	if (date === openingDate) {
+		return "openingNight";
+	}
+	if (date.slice(5) === "12-25") {
+		return "christmas";
+	}
+	const mlk = nthWeekday(Number(date.slice(0, 4)), 1, 1, 3);
+	if (date === mlk) {
+		return "mlkDay";
+	}
+	const after = daysBetween(mlk, date);
+	if (after >= 1 && after <= 5) {
+		return "rivalsWeek";
+	}
+};
+
+// HOW MANY OF A NIGHT'S GAMES ARE NATIONAL, as in the NBA's TV deal from
+// 2025-26: Monday's games on Peacock, NBC's Tuesday and ESPN's Wednesday
+// doubleheaders all season, Prime's Thursday ones once football is over
+// (mid-January), Friday's Prime doubleheader with ESPN's beside it from
+// January, a Saturday game (two from January: Prime's afternoon, ABC's
+// night), and Sundays from February (ABC's afternoon, NBC's night; just
+// NBC's in April). Opening week, a doubleheader every night; the night
+// before Thanksgiving, three; opening night and Christmas, every game; MLK
+// Day, four; Rivals Week, eleven over its five nights. With no calendar,
+// one game a night as ever. `night`: the weekday, 0 Sunday.
+export const nationalGamesOn = (
+	date: string | undefined,
+	night: number | undefined,
+	openingDate: string | undefined,
+	numGames: number,
+) => {
+	if (date === undefined || night === undefined) {
+		return Math.min(1, numGames);
+	}
+	const slate = slateOf(date, openingDate);
+	let count;
+	if (slate === "openingNight" || slate === "christmas") {
+		count = numGames;
+	} else if (slate === "mlkDay") {
+		count = 4;
+	} else if (slate === "rivalsWeek") {
+		count = night === 5 ? 3 : 2;
+	} else {
+		// Month and day as a number, 1015 for October 15.
+		const md = Number(date.slice(5, 7)) * 100 + Number(date.slice(8, 10));
+		const from = (start: number) => md >= start && md < 700;
+		count = [
+			from(401) ? 1 : from(201) ? 2 : 0,
+			2,
+			2,
+			2,
+			from(115) ? 2 : 0,
+			from(101) ? 4 : 2,
+			from(101) && !from(401) ? 2 : 1,
+		][night]!;
+		if (openingDate !== undefined) {
+			const into = daysBetween(openingDate, date);
+			if (into >= 1 && into <= 6) {
+				count = Math.max(count, 2);
+			}
+		}
+		const thanksgiving = nthWeekday(Number(date.slice(0, 4)), 11, 4, 4);
+		if (date === addDays(thanksgiving, -1)) {
+			count = 3;
+		}
+	}
+	return Math.min(count, numGames);
+};
+
+// WHO CARRIES A NIGHT'S NATIONAL GAMES: its slate's networks, if it's one of
+// the special nights and some network has it; otherwise its weekday's. A
+// special night nobody has, on a weekday nobody has either, is the league's
+// networks' in turn.
+export const nightNetworks = (
+	networks: NationalBroadcast[],
+	night: number | undefined,
+	slate: NationalSlate | undefined,
+): NationalBroadcast[] => {
+	if (slate !== undefined) {
+		const own = networks.filter((n) => n.slate === slate);
+		if (own.length > 0) {
+			return own;
+		}
+	}
+	const weekly = networks.filter(
+		(n) =>
+			n.slate === undefined &&
+			night !== undefined &&
+			n.nights?.includes(NIGHTS[night]!),
+	);
+	if (weekly.length > 0 || slate === undefined) {
+		return weekly;
+	}
+	return networks.filter(
+		(n, i) =>
+			n.slate === undefined &&
+			(n.nights?.length ?? 0) > 0 &&
+			networks.findIndex(
+				(m) =>
+					m.network === n.network &&
+					m.slate === undefined &&
+					(m.nights?.length ?? 0) > 0,
+			) === i,
+	);
+};
+
+// A NIGHT'S NATIONAL GAMES, by gid: the biggest of its games (see
+// biggestGame; in Rivals Week, the division rivals' first), as many as the
+// night has (nationalGamesOn), shared out among its networks
+// (nightNetworks) in their order - the first ones the bigger games.
+export const nationalNight = <
+	T extends { gid: number; tids: [number, number] },
+>(
+	networks: NationalBroadcast[],
+	games: T[],
+	when: {
+		date: string | undefined;
+		night: number | undefined;
+		openingDate: string | undefined;
+	},
+	strength: (tid: number) => number,
+	rivals?: (a: number, b: number) => boolean,
+): Map<number, NationalBroadcast> => {
+	const out = new Map<number, NationalBroadcast>();
+	const slate =
+		when.date !== undefined ? slateOf(when.date, when.openingDate) : undefined;
+	const carriers = nightNetworks(networks, when.night, slate);
+	const count = nationalGamesOn(
+		when.date,
+		when.night,
+		when.openingDate,
+		games.length,
+	);
+	if (carriers.length === 0 || count === 0) {
+		return out;
+	}
+	const rival = (game: T) =>
+		slate === "rivalsWeek" && rivals?.(game.tids[0], game.tids[1]) ? 1 : 0;
+	const score = (game: T) => strength(game.tids[0]) + strength(game.tids[1]);
+	const ranked = [...games].sort(
+		(a, b) =>
+			rival(b) - rival(a) ||
+			(Math.abs(score(b) - score(a)) > 1e-9 ? score(b) - score(a) : 0) ||
+			a.gid - b.gid,
+	);
+	let i = 0;
+	for (const [k, n] of carriers.entries()) {
+		const share = Math.ceil((count - i) / (carriers.length - k));
+		for (let j = 0; j < share && i < count; j++) {
+			out.set(ranked[i]!.gid, n);
+			i += 1;
+		}
+	}
+	return out;
 };
