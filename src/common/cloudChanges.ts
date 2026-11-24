@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 548,
+		n: 549,
 		date: "2026-11-24",
 		text: "When a league mate plays a game live, your header keeps showing the season and the score bar and ticker keep going, instead of \"Live game in progress\". That's only shown to whoever is playing the game or watching it. Leaving a league mate's game you're watching no longer warns that you'll lose the play-by-play; leaving your own live game still does.",
+	},
+	{
+		n: 548,
+		date: "2026-11-24",
+		text: "3D games: each player's picture takes about a quarter less work to make, pixel for pixel the same, so the background helpers keep up with more of them.",
 	},
 	{
 		n: 547,

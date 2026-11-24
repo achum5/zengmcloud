@@ -525,6 +525,59 @@ const turnsOf = (bones: Posed[], H: number) => {
 // into `trunk`, where his trunk alone would carry it (what his arms and
 // neck hold of it, carried as his chest is): where on his torso it is,
 // however his arms pull it (his jersey's edges kept to it).
+// (Each piece at rest as plain numbers - its middle, then its axes - and
+// each piece as posed likewise, after its length and girth: read for every
+// point of him, every picture.)
+const REST_FLAT = new Float64Array(REST_OF.length * 12);
+for (const [i, R] of REST_OF.entries()) {
+	REST_FLAT.set(
+		[
+			R.h.f,
+			R.h.s,
+			R.h.u,
+			R.a.f,
+			R.a.s,
+			R.a.u,
+			R.f.f,
+			R.f.s,
+			R.f.u,
+			R.s.f,
+			R.s.s,
+			R.s.u,
+		],
+		i * 12,
+	);
+}
+let posedFlat = new Float64Array(0);
+// (Where each point his arms and neck hold is at rest, as his chest's - the
+// same whatever he does: worked out once, for the mesh there is.)
+let chestRest: Float64Array | undefined;
+let chestRestOf: Mesh | undefined;
+const chestRestFor = (m: Mesh): Float64Array => {
+	if (chestRest && chestRestOf === m) {
+		return chestRest;
+	}
+	const out = new Float64Array(m.weight.length * 3);
+	for (let j = 0; j < m.weight.length; j++) {
+		const bi = m.bone[j]!;
+		if (TRUNK[bi]) {
+			continue;
+		}
+		const R0 = REST_OF[bi]!;
+		const l0 = m.local[j * 3]!;
+		const l1 = m.local[j * 3 + 1]!;
+		const l2 = m.local[j * 3 + 2]!;
+		const rx = R0.h.f + R0.a.f * l0 + R0.f.f * l1 + R0.s.f * l2 - C0.h.f;
+		const ry = R0.h.s + R0.a.s * l0 + R0.f.s * l1 + R0.s.s * l2 - C0.h.s;
+		const rz = R0.h.u + R0.a.u * l0 + R0.f.u * l1 + R0.s.u * l2 - C0.h.u;
+		out[j * 3] = rx * C0.a.f + ry * C0.a.s + rz * C0.a.u;
+		out[j * 3 + 1] = rx * C0.f.f + ry * C0.f.s + rz * C0.f.u;
+		out[j * 3 + 2] = rx * C0.s.f + ry * C0.s.s + rz * C0.s.u;
+	}
+	chestRest = out;
+	chestRestOf = m;
+	return out;
+};
 export const skinned = (
 	bones: Posed[],
 	H: number,
@@ -533,6 +586,36 @@ export const skinned = (
 ) => {
 	const m = meshOf();
 	turnsOf(bones, H);
+	if (posedFlat.length < bones.length * 14) {
+		posedFlat = new Float64Array(bones.length * 14);
+	}
+	const PF = posedFlat;
+	for (let i = 0; i < bones.length; i++) {
+		const { fr, ax, rad } = bones[i]!;
+		const o = i * 14;
+		PF[o] = ax;
+		PF[o + 1] = rad;
+		PF[o + 2] = fr.h.f;
+		PF[o + 3] = fr.h.s;
+		PF[o + 4] = fr.h.u;
+		PF[o + 5] = fr.a.f;
+		PF[o + 6] = fr.a.s;
+		PF[o + 7] = fr.a.u;
+		PF[o + 8] = fr.f.f;
+		PF[o + 9] = fr.f.s;
+		PF[o + 10] = fr.f.u;
+		PF[o + 11] = fr.s.f;
+		PF[o + 12] = fr.s.s;
+		PF[o + 13] = fr.s.u;
+	}
+	const RF = REST_FLAT;
+	const CR = trunk ? chestRestFor(m) : undefined;
+	const DQ = dq;
+	const START = m.start;
+	const BONE = m.bone;
+	const WEIGHT = m.weight;
+	const LOCAL = m.local;
+	const C = CHEST * 14;
 	for (let i = 0; i < m.n; i++) {
 		// Him at rest, each piece stretched as it is posed - and the turns
 		// that carry him, blended.
@@ -551,66 +634,93 @@ export const skinned = (
 		let ts = 0;
 		let tu = 0;
 		let tw = 0;
-		const j0 = m.start[i]!;
-		const ref = m.bone[j0]! * 8;
-		for (let j = j0; j < m.start[i + 1]!; j++) {
-			const bi = m.bone[j]!;
-			const b = bones[bi]!;
-			const R0 = REST_OF[bi]!;
-			const w = m.weight[j]!;
-			const al = m.local[j * 3]! * b.ax;
-			const fw = m.local[j * 3 + 1]! * b.rad;
-			const sd = m.local[j * 3 + 2]! * b.rad;
-			const px = (R0.h.f + R0.a.f * al + R0.f.f * fw + R0.s.f * sd) * H;
-			const py = (R0.h.s + R0.a.s * al + R0.f.s * fw + R0.s.s * sd) * H;
-			const pz = (R0.h.u + R0.a.u * al + R0.f.u * fw + R0.s.u * sd) * H;
+		const j0 = START[i]!;
+		const ref = BONE[j0]! * 8;
+		const j1 = START[i + 1]!;
+		for (let j = j0; j < j1; j++) {
+			const bi = BONE[j]!;
+			const pb = bi * 14;
+			const rb = bi * 12;
+			const w = WEIGHT[j]!;
+			const al = LOCAL[j * 3]! * PF[pb]!;
+			const fw = LOCAL[j * 3 + 1]! * PF[pb + 1]!;
+			const sd = LOCAL[j * 3 + 2]! * PF[pb + 1]!;
+			const px =
+				(RF[rb]! + RF[rb + 3]! * al + RF[rb + 6]! * fw + RF[rb + 9]! * sd) * H;
+			const py =
+				(RF[rb + 1]! +
+					RF[rb + 4]! * al +
+					RF[rb + 7]! * fw +
+					RF[rb + 10]! * sd) *
+				H;
+			const pz =
+				(RF[rb + 2]! +
+					RF[rb + 5]! * al +
+					RF[rb + 8]! * fw +
+					RF[rb + 11]! * sd) *
+				H;
 			yx += w * px;
 			yy += w * py;
 			yz += w * pz;
 			const o = bi * 8;
 			// (Each turn the short way round from the first's.)
 			const sg =
-				dq[o]! * dq[ref]! +
-					dq[o + 1]! * dq[ref + 1]! +
-					dq[o + 2]! * dq[ref + 2]! +
-					dq[o + 3]! * dq[ref + 3]! <
+				DQ[o]! * DQ[ref]! +
+					DQ[o + 1]! * DQ[ref + 1]! +
+					DQ[o + 2]! * DQ[ref + 2]! +
+					DQ[o + 3]! * DQ[ref + 3]! <
 				0
 					? -w
 					: w;
-			rw += sg * dq[o]!;
-			rx += sg * dq[o + 1]!;
-			ry += sg * dq[o + 2]!;
-			rz += sg * dq[o + 3]!;
-			dw += sg * dq[o + 4]!;
-			dx += sg * dq[o + 5]!;
-			dy += sg * dq[o + 6]!;
-			dz += sg * dq[o + 7]!;
-			if (trunk) {
+			rw += sg * DQ[o]!;
+			rx += sg * DQ[o + 1]!;
+			ry += sg * DQ[o + 2]!;
+			rz += sg * DQ[o + 3]!;
+			dw += sg * DQ[o + 4]!;
+			dx += sg * DQ[o + 5]!;
+			dy += sg * DQ[o + 6]!;
+			dz += sg * DQ[o + 7]!;
+			if (CR) {
 				if (TRUNK[bi]) {
-					const fr = b.fr;
 					const la = al * H;
 					const lf = fw * H;
 					const ls = sd * H;
-					tf += w * (fr.h.f + fr.a.f * la + fr.f.f * lf + fr.s.f * ls);
-					ts += w * (fr.h.s + fr.a.s * la + fr.f.s * lf + fr.s.s * ls);
-					tu += w * (fr.h.u + fr.a.u * la + fr.f.u * lf + fr.s.u * ls);
+					tf +=
+						w *
+						(PF[pb + 2]! +
+							PF[pb + 5]! * la +
+							PF[pb + 8]! * lf +
+							PF[pb + 11]! * ls);
+					ts +=
+						w *
+						(PF[pb + 3]! +
+							PF[pb + 6]! * la +
+							PF[pb + 9]! * lf +
+							PF[pb + 12]! * ls);
+					tu +=
+						w *
+						(PF[pb + 4]! +
+							PF[pb + 7]! * la +
+							PF[pb + 10]! * lf +
+							PF[pb + 13]! * ls);
 				} else {
 					// (Held by his arm, or his neck: where it is at rest, carried
 					// by his chest.)
-					const l0 = m.local[j * 3]!;
-					const l1 = m.local[j * 3 + 1]!;
-					const l2 = m.local[j * 3 + 2]!;
-					const rx = R0.h.f + R0.a.f * l0 + R0.f.f * l1 + R0.s.f * l2 - C0.h.f;
-					const ry = R0.h.s + R0.a.s * l0 + R0.f.s * l1 + R0.s.s * l2 - C0.h.s;
-					const rz = R0.h.u + R0.a.u * l0 + R0.f.u * l1 + R0.s.u * l2 - C0.h.u;
-					const c = bones[CHEST]!;
-					const la = (rx * C0.a.f + ry * C0.a.s + rz * C0.a.u) * H * c.ax;
-					const lf = (rx * C0.f.f + ry * C0.f.s + rz * C0.f.u) * H * c.rad;
-					const ls = (rx * C0.s.f + ry * C0.s.s + rz * C0.s.u) * H * c.rad;
-					const fr = c.fr;
-					tf += w * (fr.h.f + fr.a.f * la + fr.f.f * lf + fr.s.f * ls);
-					ts += w * (fr.h.s + fr.a.s * la + fr.f.s * lf + fr.s.s * ls);
-					tu += w * (fr.h.u + fr.a.u * la + fr.f.u * lf + fr.s.u * ls);
+					const la = CR[j * 3]! * H * PF[C]!;
+					const lf = CR[j * 3 + 1]! * H * PF[C + 1]!;
+					const ls = CR[j * 3 + 2]! * H * PF[C + 1]!;
+					tf +=
+						w *
+						(PF[C + 2]! + PF[C + 5]! * la + PF[C + 8]! * lf + PF[C + 11]! * ls);
+					ts +=
+						w *
+						(PF[C + 3]! + PF[C + 6]! * la + PF[C + 9]! * lf + PF[C + 12]! * ls);
+					tu +=
+						w *
+						(PF[C + 4]! +
+							PF[C + 7]! * la +
+							PF[C + 10]! * lf +
+							PF[C + 13]! * ls);
 				}
 				tw += w;
 			}
@@ -715,6 +825,7 @@ const SHINE_AT = (() => {
 	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
 })();
 const SS = 2;
+const BOX_HAIR = 1e-3;
 let pos = new Float32Array(0);
 let posT = new Float32Array(0);
 let away = new Uint8Array(0);
@@ -832,55 +943,106 @@ export const drawMesh = (
 	ZB.fill(Infinity, 0, W2 * H2);
 	// First where he is - the face of him nearest the camera at each pixel,
 	// and where on it - then each of those painted and lit, once.
+	// (What is read for every face held here, not looked up each time; and
+	// the box round all that is drawn kept, for going down to the sprite's
+	// pixels - nothing of him outside it.)
+	const KIND = me.kind;
+	const HIDDEN = m.hidden;
+	const CUTS = m.cuts;
+	const LIFT = m.lift;
+	let sx0 = W2;
+	let sy0 = H2;
+	let sx1 = -1;
+	let sy1 = -1;
 	for (let t = 0; t < nt; t++) {
-		const kind = me.kind[t]!;
-		if (m.hidden[kind]) {
+		if (AWAY[t]) {
+			continue;
+		}
+		const kind = KIND[t]!;
+		if (HIDDEN[kind]) {
 			continue;
 		}
 		const a = T[t * 3]!;
 		const b = T[t * 3 + 1]!;
 		const c = T[t * 3 + 2]!;
-		if (AWAY[t]) {
-			continue;
-		}
 		const ax = SCR[a * 3]!;
 		const ay = SCR[a * 3 + 1]!;
 		const bx = SCR[b * 3]!;
 		const by = SCR[b * 3 + 1]!;
 		const cx = SCR[c * 3]!;
 		const cy = SCR[c * 3 + 1]!;
-		const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+		// (Each of these as the plain sums they were: the same to the last
+		// bit, worked out once a face or a row rather than at every pixel.)
+		const A0 = by - cy;
+		const B0 = cx - bx;
+		const A1 = cy - ay;
+		const B1 = ax - cx;
+		const den = A0 * B1 + B0 * (ay - cy);
 		if (Math.abs(den) < 1e-9) {
 			continue;
 		}
-		const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
-		const x1 = Math.min(W2 - 1, Math.ceil(Math.max(ax, bx, cx)));
-		const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
-		const y1 = Math.min(H2 - 1, Math.ceil(Math.max(ay, by, cy)));
+		let lox = ax < bx ? ax : bx;
+		let hix = ax > bx ? ax : bx;
+		let loy = ay < by ? ay : by;
+		let hiy = ay > by ? ay : by;
+		if (cx < lox) {
+			lox = cx;
+		}
+		if (cx > hix) {
+			hix = cx;
+		}
+		if (cy < loy) {
+			loy = cy;
+		}
+		if (cy > hiy) {
+			hiy = cy;
+		}
+		// (Only the pixels whose middles are inside its box, give or take a
+		// hair: no pixel further out than that is ever inside it.)
+		const x0 = Math.max(0, Math.ceil(lox - 0.5 - BOX_HAIR));
+		const x1 = Math.min(W2 - 1, Math.floor(hix - 0.5 + BOX_HAIR));
+		const y0 = Math.max(0, Math.ceil(loy - 0.5 - BOX_HAIR));
+		const y1 = Math.min(H2 - 1, Math.floor(hiy - 0.5 + BOX_HAIR));
 		if (x0 > x1 || y0 > y1) {
 			continue;
 		}
-		const cuts = m.cuts[kind];
-		const lift = m.lift[kind]!;
+		if (x0 < sx0) {
+			sx0 = x0;
+		}
+		if (x1 > sx1) {
+			sx1 = x1;
+		}
+		if (y0 < sy0) {
+			sy0 = y0;
+		}
+		if (y1 > sy1) {
+			sy1 = y1;
+		}
+		const cuts = CUTS[kind];
+		const lift = LIFT[kind]!;
 		const az = SCR[a * 3 + 2]! - lift;
 		const bz = SCR[b * 3 + 2]! - lift;
 		const cz = SCR[c * 3 + 2]! - lift;
 		const id = 1 / den;
 		for (let y = y0; y <= y1; y++) {
 			const py = y + 0.5;
+			const dy = py - cy;
+			const r0 = B0 * dy;
+			const r1 = B1 * dy;
+			const row = y * W2;
 			for (let x = x0; x <= x1; x++) {
-				const pxx = x + 0.5;
-				const w0 = ((by - cy) * (pxx - cx) + (cx - bx) * (py - cy)) * id;
+				const dx = x + 0.5 - cx;
+				const w0 = (A0 * dx + r0) * id;
 				if (w0 < 0) {
 					continue;
 				}
-				const w1 = ((cy - ay) * (pxx - cx) + (ax - cx) * (py - cy)) * id;
+				const w1 = (A1 * dx + r1) * id;
 				const w2 = 1 - w0 - w1;
 				if (w1 < 0 || w2 < 0) {
 					continue;
 				}
 				const dz = w0 * az + w1 * bz + w2 * cz;
-				const o = y * W2 + x;
+				const o = row + x;
 				if (dz >= ZB[o]!) {
 					continue;
 				}
@@ -991,8 +1153,11 @@ export const drawMesh = (
 	let bx1 = -1;
 	let by1 = -1;
 	const inv = 1 / (SS * SS);
-	for (let y = 0; y < m.h; y++) {
-		for (let x = 0; x < m.w; x++) {
+	const yTo = Math.min(m.h - 1, Math.floor(sy1 / SS));
+	const xFrom = Math.floor(sx0 / SS);
+	const xTo = Math.min(m.w - 1, Math.floor(sx1 / SS));
+	for (let y = Math.floor(sy0 / SS); y <= yTo; y++) {
+		for (let x = xFrom; x <= xTo; x++) {
 			let cov = 0;
 			let near = Infinity;
 			let at = -1;
