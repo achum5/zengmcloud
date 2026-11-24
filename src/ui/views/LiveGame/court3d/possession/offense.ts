@@ -31,6 +31,10 @@ export type Attacker = {
 	shoots: number;
 	// Plays inside: spaces round the rim, not out on the arc.
 	big: boolean;
+	// With the ball (see handler.ts): his handle, and how quick he is with
+	// it (0 to 1).
+	handle: number;
+	quick: number;
 };
 
 // (Nothing to go by: the man in the middle.)
@@ -66,6 +70,8 @@ export const attackerOf = (
 		iq,
 		shoots: levelOf(r, ["tp"]) ?? MID,
 		big,
+		handle: levelOf(r, ["drb"]) ?? MID,
+		quick: levelOf(r, ["spd"]) ?? MID,
 	};
 };
 

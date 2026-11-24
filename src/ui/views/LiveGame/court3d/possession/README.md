@@ -97,7 +97,12 @@ looks better.
    this folder, and today's defensive patch passes are off under the switch.
 6. Offense off the ball (built). Coming into a catch on the move waits
    for steps 7 and 8, where the catches are laid.
-7. The ball handler.
+7. The ball handler (built).
+   - Then, before 8, natural and smooth (Alex, 2026-11-24): men stand
+     and walk like it away from the play (upright, a plain step or none
+     for a small shift; the deep stance looks wrong), legs that move like
+     a real player's rather than splayed, and nothing that hitches a
+     frame (60 fps for everyone).
 8. The planner's full vocabulary: transition, the playbook, team styles.
 9. Contact: screens hit, bumps, box-outs.
 10. The rest of the packages (shots, finishes, dribble moves, passes).
@@ -306,6 +311,77 @@ way; and, found on the way, the step 5 defense had quietly stopped
 deciding once the offense was stepped in the same loop (a defender only
 guards his man himself where his man has been stepped already) - fixed,
 with a test that both ends decide for themselves (`staged.test.ts`).
+
+## Step 7: the man with the ball
+
+Where it starts (real_11 watched in whole possessions, against 17 real
+games; a touch is from when he has it till it leaves his hands, in the half
+court): stood still with it 62% of the time (real, 19%), and on the dribble
+at 0.8 ft/s (real, 5.5). Of his time with it, the play lays its runs half
+(mostly a dribble somewhere), something it pins him to 37% (facing up 8.5%,
+passing about 10%), and nothing at all the rest: stood on its spot.
+
+What pins the man with the ball: the play's actions with it (a drive,
+coming off a screen, backing in: its runs), his shot (on the play's spot
+exactly: the zone is the engine's), a handoff, and anything of theirs at
+him the play pins (a swipe at the ball, a foul: on the play's spot for it).
+Facing up, a jab or a fake, a move put through where he stands, calling
+the play and his pass he does wherever he is.
+
+Between those, he works his man himself, a step at a time
+(`handler.ts`), within a few steps of the play's spot (Alex's call,
+2026-11-24: the play's passes and shots leave from about where it lays
+them):
+
+- on the dribble he is never stood on it for long: across the floor along
+  the arc to the side with room (on the way he is going, more often than
+  not), a few hard dribbles in at his man by his weak side and back out of
+  it, now and then sizing him up a beat where he is;
+- reads his man: crowded, he gives ground first; given room, he attacks
+  it;
+- stays out of the paint on his own (in there is a drive, the play's) and
+  off his teammates;
+- with it in his hands (picked up, a move put through where he stands,
+  passing it) his feet are where they are: a stride or two to gather,
+  then his pivot, never walking with it; they go round him;
+- is back on the play's spot by the time he stops dribbling when
+  something of the play's comes before he is on it again (his shot, the
+  play taking him on), since he can go nowhere till then;
+- coming into a catch of his own in the front court (one nothing of the
+  play's follows close behind), meets it: a few steps to the ball as it
+  comes, rather than stood where the play has him.
+
+The ball goes with him: going across one way and then the other, he
+takes it over into the hand on the side he heads for (`stepper.ts`
+handsWithHim).
+
+Ratings: ball handling and speed for how often and how hard he attacks his
+man and how quick across; a big works it less and sizes his man up more.
+
+Where it is now (the same measures):
+
+| | Before | Now | Real |
+| --- | --- | --- | --- |
+| Stood still with it (under 1.5 ft/s) | 62% | 45% | 19% |
+| A long touch on the dribble, stood still | 59% | 34% | 18% |
+| On the dribble, pace (median, ft/s) | 0.8 | 2.3 | 5.5 |
+| How far about his spot he works it (median, ft) | 0.7 | 1.4 | 2.4 |
+| Ground covered in a touch (median, ft) | 1.1 | 4.4 | 4.3 |
+| Moving: across, in, back out | 56%, 34%, 10% | 56%, 30%, 14% | 55%, 33%, 12% |
+| Changes of direction a second | 0.05 | 0.20 | 0.16 |
+| First second after the catch (3 in 4 under, ft) | 0.6 | 1.8 | 5.2 |
+| The man guarding the ball stood still | 35% | 23% | 16% |
+
+Still short:
+
+- Most catches are still laid stood by the play: he meets only those that
+  are his own (16% of live catches). Coming into the ball on the move
+  belongs to the planner laying it (step 8).
+- The rest of his standing is the play's: a run it lays slow, and facing
+  up where it has him.
+- Jolts about where they were (teleport flags 14 against 13, lurches 185
+  against 194): now and then a defender lunging the last few feet into a
+  swipe, a foul or a contest the play pins him to.
 
 ## How we know
 

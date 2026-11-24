@@ -1295,6 +1295,10 @@ const probesOf = (
 	held: Spans,
 	team: 0 | 1,
 	crossed: Crossed[][],
+	// (Stood, he works his man his own way: the new sim's man with the
+	// ball - see possession/handler.ts. Only going, his way along his line
+	// here.)
+	stoodHis = false,
 ): Offsets => {
 	const rim = { x: rimX(team), y: 25 };
 	// When he has it on his dribble - not stood through a move.
@@ -1333,7 +1337,14 @@ const probesOf = (
 				const pick = hash01(pid * 7 + n, Math.round(a));
 				const v = goingAt(t);
 				const pace = Math.hypot(v.x, v.y);
-				if (pace < ROUTE_PACE) {
+				if (pace < ROUTE_PACE && stoodHis) {
+					// (On his line, left to him.)
+					if (keys.at(-1)![1].x !== 0 || keys.at(-1)![1].y !== 0) {
+						keys.push([t, { x: 0, y: 0 }]);
+					}
+					t += PROBE_BEAT[0] + (PROBE_BEAT[1] - PROBE_BEAT[0]) * r;
+					stood = false;
+				} else if (pace < ROUTE_PACE) {
 					// Stood: at his man - set where the last move left him till
 					// now, then quick into the next.
 					const u = unitVec(laid.at(t) ?? rim, rim);
@@ -1423,6 +1434,75 @@ const probesOf = (
 	}
 	close(begin + laid.spots.length * STEP_MS);
 	return keyed(stretches);
+};
+
+// THE BALL GOES WITH HIM, HIS OWN WAY. The new sim's man with the ball
+// working his man himself (possession/handler.ts): going across one way and
+// then the other, he takes it across into the hand on the side he heads
+// for (see crossOnCuts).
+// (Across at this pace at least, feet a second, for this long at least,
+// ms: heading that way.)
+const HAND_ACROSS = 3;
+const HAND_SETTLE = 150;
+// (By this long after he sets off that way, ms: halfway, see crossOnCuts.)
+const HAND_BY = 700;
+const handsWithHim = (
+	tl: Stepped,
+	pid: number,
+	samples: readonly Sample[],
+	stretches: readonly (readonly [number, number])[],
+	team: 0 | 1,
+) => {
+	const rim = { x: rimX(team), y: 25 };
+	for (const [a, b] of stretches) {
+		const cuts: Cut[] = [];
+		let side: Hand | undefined;
+		let next: Hand | undefined;
+		let since = a;
+		let lo = 0;
+		let hi = samples.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (samples[mid]!.t < a) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		for (let i = lo; i < samples.length && samples[i]!.t <= b; i++) {
+			const q = samples[i]!;
+			// (His left, square to the rim - (fy, -fx), see bodyPoint.)
+			const L = Math.hypot(rim.x - q.x, rim.y - q.y) || 1;
+			const fx = (rim.x - q.x) / L;
+			const fy = (rim.y - q.y) / L;
+			const left = q.vx * fy - q.vy * fx;
+			const want: Hand | undefined =
+				left > HAND_ACROSS ? "L" : left < -HAND_ACROSS ? "R" : undefined;
+			if (want !== next) {
+				next = want;
+				since = q.t;
+			}
+			if (next !== undefined && next !== side && q.t - since >= HAND_SETTLE) {
+				cuts.push({ t0: since, t1: since + HAND_BY, to: next });
+				side = next;
+			}
+		}
+		if (cuts.length === 0) {
+			continue;
+		}
+		// (Picked up after it, or gone from his hands: whichever hand.)
+		let k = tl.ball.length - 1;
+		while (k >= 0 && tl.ball[k]!.t0 > b + STEP_MS) {
+			k -= 1;
+		}
+		const after = tl.ball[k];
+		const free =
+			!after ||
+			after.kind !== "hold" ||
+			after.pid !== pid ||
+			after.style === "hold";
+		crossOnCuts(tl, pid, a, b + STEP_MS, cuts, undefined, free);
+	}
 };
 
 // BRINGING IT UP. Out past where he works his man (WORK_NEAR), on his way
@@ -2403,6 +2483,7 @@ export const stepTimeline = <T extends Stepped>(
 			held,
 			tr.team,
 			crossedBy.get(tr.pid) ?? crossedBy.set(tr.pid, []).get(tr.pid)!,
+			attacking !== undefined,
 		);
 		const open = attacking
 			? keyed([])
@@ -2657,7 +2738,7 @@ export const stepTimeline = <T extends Stepped>(
 		finish(tr, step(tr, want, seeAt));
 	}
 	if (defending) {
-		const { samples, anims } = defendTogether({
+		const { samples, anims, dribbled } = defendTogether({
 			men,
 			wanted,
 			defending,
@@ -2679,6 +2760,12 @@ export const stepTimeline = <T extends Stepped>(
 		});
 		for (const tr of men) {
 			finish(tr, samples.get(tr.pid) ?? [], anims.get(tr.pid));
+		}
+		for (const [pid, stretches] of dribbled) {
+			const tr = tl.tracks.get(pid);
+			if (tr) {
+				handsWithHim(tl, pid, samples.get(pid) ?? [], stretches, tr.team);
+			}
 		}
 	}
 	for (const tr of men) {

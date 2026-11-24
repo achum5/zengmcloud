@@ -44,13 +44,15 @@ describe("3D possession sim: a game staged by it", () => {
 		);
 	}, 600_000);
 
-	test("both ends decide for themselves: the defense guards its men, the four off the ball work their spots, most of the ball in play", () => {
+	test("both ends decide for themselves: the defense guards its men, the four off the ball work their spots, the man with the ball works his man, most of the ball in play", () => {
 		seen.length = 0;
 		staged("both", 30);
 		let def = 0;
 		let defOwn = 0;
 		let off = 0;
 		let offOwn = 0;
+		let hold = 0;
+		let holdOwn = 0;
 		for (const { x, out } of seen) {
 			for (const tr of x.men) {
 				const anim = out.anims.get(tr.pid);
@@ -65,6 +67,9 @@ describe("3D possession sim: a game staged by it", () => {
 					} else if (x.holderAt(s.t) !== tr.pid) {
 						off += 1;
 						offOwn += mine ? 1 : 0;
+					} else {
+						hold += 1;
+						holdOwn += mine ? 1 : 0;
 					}
 				}
 			}
@@ -72,5 +77,6 @@ describe("3D possession sim: a game staged by it", () => {
 		assert.isAbove(def, 0);
 		assert.isAbove(defOwn / def, 0.5, `defense ${defOwn / def}`);
 		assert.isAbove(offOwn / off, 0.3, `offense ${offOwn / off}`);
+		assert.isAbove(holdOwn / hold, 0.2, `with the ball ${holdOwn / hold}`);
 	}, 600_000);
 });

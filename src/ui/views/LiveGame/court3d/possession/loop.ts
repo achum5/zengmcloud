@@ -38,12 +38,14 @@ import {
 } from "./defense.ts";
 import type { Body } from "./body.ts";
 import { type Mover, STEP_S, stood } from "./movement.ts";
+import { decide as decideHand, type HandMind, handMindOf } from "./handler.ts";
 import {
 	type Attacker,
 	decide as decideOff,
 	goingAtRim,
 	type Mind,
 	mindOf,
+	own01,
 } from "./offense.ts";
 
 const STEP_MS = STEP_S * 1000;
@@ -131,6 +133,32 @@ const LOOSE = new Set<AnimName>([
 	"reach",
 	"bump",
 ]);
+// What the man with the ball does wherever he is, working his man himself
+// (see handler.ts): facing up, a jab or a fake, a move put through where
+// he stands, calling the play, his pass - not his shot (the play's spot is
+// its zone), a move that takes him somewhere (a spin, a step-back), nor
+// his catch.
+const WITH_BALL = new Set<AnimName>([
+	"triple",
+	"jab",
+	"shotFake",
+	"callPlay",
+	"dribbleHesi",
+	"dribbleJab",
+	"dribbleInOutR",
+	"dribbleInOutL",
+	"dribbleShake",
+	"dribbleRocker",
+	"pass",
+	"passBounce",
+	"passOverhead",
+	"passPush",
+	"passBouncePush",
+	"passBehind",
+	"passNoLook",
+	"passSnap",
+	"passBounceSnap",
+]);
 // Handing back to the play with something of his that pins him coming
 // this soon after (ms), he makes for that (as soon as he must: see
 // commitLead).
@@ -151,6 +179,15 @@ const keepIn = (n: Mover): Mover => {
 				vy: y === n.y ? n.vy : 0,
 			};
 };
+// A man of theirs doing something the play pins this near the man with
+// the ball (feet): at him.
+const AT_HIM = 7;
+// Coming to meet a pass: this fast (feet a second) through where the play
+// has him catch it, over the last this long (ms) - not with the man who
+// threw it this near (feet). (Real: caught at 5.8 ft/s, median.)
+const MEET_PACE: [number, number] = [4, 7];
+const MEET_MS = 800;
+const MEET_LEAST = 8;
 // On offense, a long way from something of his that pins him, he sets off
 // as soon as he must for it this long before at the most (ms) - out of a
 // corner across the floor for a catch, say.
@@ -178,6 +215,8 @@ const RUN_LEAST = 1;
 const PASS_ANSWER = 1500;
 
 type Run = { a: number; b: number; agent: boolean };
+// A pass of theirs he comes to meet: when it gets to him, and who threw it.
+type Catch = { at: number; from: number };
 
 // Back to the play from guarding his man himself, off where it has him: on
 // the play's way, shifted over by how far off it he is, the shift let go
@@ -243,6 +282,9 @@ const lastAtOrBefore = <X>(
 export const defendTogether = <M extends Man>(x: Together<M>) => {
 	const samples = new Map<number, Sample[]>();
 	const own = new Map<number, [number, AnimName][]>();
+	// (When each man with the ball dribbled it his own way, from when till
+	// when.)
+	const dribbled = new Map<number, [number, number][]>();
 	const teamOf = new Map<number, 0 | 1>();
 	for (const tr of x.men) {
 		samples.set(tr.pid, []);
@@ -304,6 +346,26 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		const i = lastAtOrBefore(passes, t, (p) => p[0]);
 		return i >= 0 && t < passes[i]![1];
 	};
+	// Each pass to a man, as it gets to him: when, and who threw it.
+	const passesTo = new Map<number, Catch[]>();
+	x.ball.forEach((s, k) => {
+		if (s.kind !== "fly" || s.dead || !("pid" in s.to)) {
+			return;
+		}
+		// (Bounced: off the floor on its way from him.)
+		const p = x.ball[k - 1];
+		const from =
+			"pid" in s.from
+				? s.from.pid
+				: p?.kind === "fly" && "pid" in p.from && !("pid" in p.to)
+					? p.from.pid
+					: undefined;
+		if (from !== undefined && from !== s.to.pid) {
+			const list = passesTo.get(s.to.pid) ?? [];
+			list.push({ at: s.t1, from });
+			passesTo.set(s.to.pid, list);
+		}
+	});
 	// Where the ball is at t (on the floor's plan), if he can tell.
 	const ballAt = (t: number): Pt | undefined => {
 		const i = lastAtOrBefore(x.ball, t, (s) => s.t0);
@@ -349,33 +411,114 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 	// he does wherever he is (see LOOSE) - but not one with something that
 	// pins him coming close behind it (a contest, and the box-out after it):
 	// the play has him from the one into the other.
+	// (And the man with the ball, the same with his own - see WITH_BALL -
+	// but not one with something that pins him coming close behind it
+	// before it leaves his hands: facing up, and his shot.)
+	// (His catch too, in play in the front court, coming to meet it -
+	// unless it is his shot's: caught where the play has him for it.)
 	const strict = new Map<number, Spans>();
 	const loose = new Map<number, Spans>();
 	const looseOf = new Map<number, [number, number][]>();
-	for (const tr of x.men) {
-		const pins = [
-			...tr.acts
-				.filter((a) => !LOOSE.has(a.anim))
-				.map((a) => [a.t0, a.t1] as [number, number]),
-			...x.offFloor(tr),
-		];
-		const starts = pins.map(([a]) => a).sort((a, b) => a - b);
-		const chained = (t1: number) => {
-			const i = starts.findIndex((a) => a >= t1);
-			return i >= 0 && starts[i]! - t1 <= CHAIN_MS;
-		};
-		const free: [number, number][] = [];
-		for (const a of tr.acts) {
-			if (LOOSE.has(a.anim)) {
-				(chained(a.t1) ? pins : free).push([a.t0, a.t1]);
+	const withBall = new Map<number, Spans>();
+	const withBallOf = new Map<number, [number, number][]>();
+	const catches = new Map<number, Catch[]>();
+	// (And the man with the ball, anything of theirs at him that the play
+	// pins - a swipe at the ball, a foul: on the play's spot for it, where
+	// it has them do it.)
+	const atHim = new Map<number, [number, number][]>();
+	if (x.attacking) {
+		for (const tr of x.men) {
+			for (const a of tr.acts) {
+				if (LOOSE.has(a.anim)) {
+					continue;
+				}
+				const h = x.holderAt(a.t0);
+				const H = h === undefined ? undefined : x.laid.get(h)?.at(a.t0);
+				const P = x.laid.get(tr.pid)?.at(a.t0);
+				if (
+					h !== undefined &&
+					teamOf.get(h) !== tr.team &&
+					H &&
+					P &&
+					Math.hypot(H.x - P.x, H.y - P.y) <= AT_HIM
+				) {
+					const list = atHim.get(h) ?? [];
+					list.push([a.t0, a.t1]);
+					atHim.set(h, list);
+				}
 			}
 		}
+	}
+	for (const tr of x.men) {
+		const his = (a: M["acts"][number]) =>
+			x.attacking !== undefined &&
+			WITH_BALL.has(a.anim) &&
+			x.holderAt(a.t0) === tr.pid;
+		const caught = (a: M["acts"][number]): Catch | undefined => {
+			if (!x.attacking || a.anim !== "catch") {
+				return undefined;
+			}
+			const p = (passesTo.get(tr.pid) ?? []).find(
+				(q) => q.at >= a.t0 && q.at <= a.t1,
+			);
+			const P = p && x.laid.get(tr.pid)?.at(p.at);
+			const O = teamOf.get(tr.pid)!;
+			return p &&
+				P &&
+				x.live.hit(p.at, p.at + 1) &&
+				(P.x - COURT_W / 2) * (rimX(O) - COURT_W / 2) > 0
+				? p
+				: undefined;
+		};
+		const pins = [
+			...tr.acts
+				.filter((a) => !LOOSE.has(a.anim) && !his(a) && !caught(a))
+				.map((a) => [a.t0, a.t1] as [number, number]),
+			...x.offFloor(tr),
+			...(atHim.get(tr.pid) ?? []),
+		];
+		const starts = pins.map(([a]) => a).sort((a, b) => a - b);
+		const chained = (t1: number, holding = false) => {
+			const i = starts.findIndex((a) => a >= t1);
+			return (
+				i >= 0 &&
+				starts[i]! - t1 <= CHAIN_MS &&
+				(!holding || x.holderAt(starts[i]!) === tr.pid)
+			);
+		};
+		const free: [number, number][] = [];
+		const mine: [number, number][] = [];
+		const met: Catch[] = [];
+		for (const a of tr.acts) {
+			const c = caught(a);
+			if (LOOSE.has(a.anim)) {
+				(chained(a.t1) ? pins : free).push([a.t0, a.t1]);
+			} else if (his(a) || c) {
+				if (chained(a.t1, true)) {
+					pins.push([a.t0, a.t1]);
+				} else {
+					mine.push([a.t0, a.t1]);
+					if (c) {
+						met.push(c);
+					}
+				}
+			}
+		}
+		catches.set(
+			tr.pid,
+			met.sort((a, b) => a.at - b.at),
+		);
 		free.sort((a, b) => a[0] - b[0]);
 		looseOf.set(tr.pid, free);
 		loose.set(tr.pid, x.spans(free));
+		mine.sort((a, b) => a[0] - b[0]);
+		withBallOf.set(tr.pid, mine);
+		withBall.set(tr.pid, x.spans(mine));
 		strict.set(
 			tr.pid,
-			free.length === 0 ? x.helds.get(tr.pid)! : x.spans(pins),
+			free.length === 0 && mine.length === 0 && !atHim.has(tr.pid)
+				? x.helds.get(tr.pid)!
+				: x.spans(pins),
 		);
 	}
 	const committing = (pid: number, t: number): boolean => {
@@ -502,6 +645,85 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			(B.x - COURT_W / 2) * half > 0
 		);
 	};
+	// Whether the man with the ball works his man himself at t: in play in
+	// the front court, nothing of the play's that pins him coming, none of
+	// its runs on (its actions: a drive, coming off a screen, backing in).
+	const ownWithBall = (pid: number, t: number, O: 0 | 1): boolean => {
+		if (
+			!x.attacking ||
+			teamOf.get(pid) !== O ||
+			x.holderAt(t) !== pid ||
+			strict.get(pid)!.hit(t - STEP_MS, t + ACT_LEAD) ||
+			runsOf.get(pid)!.hit(t - STEP_MS, t + STEP_MS) ||
+			x.cut.hit(t - STEP_MS, t + STEP_MS) ||
+			x.sharp.hit(t, t + 1) ||
+			x.ft.hit(t, t + 1) ||
+			x.skipAt(t) ||
+			!x.live.hit(t, t + 1)
+		) {
+			return false;
+		}
+		const P = x.laid.get(pid)?.at(t);
+		return P !== undefined && (P.x - COURT_W / 2) * (rimX(O) - COURT_W / 2) > 0;
+	};
+	// Whether he has the ball on his dribble at t - not in his hands,
+	// not a move put through where he stands, not passing it.
+	const dribblingAt = (pid: number, t: number): boolean => {
+		const s = x.ball[lastAtOrBefore(x.ball, t, (q) => q.t0)];
+		return (
+			s?.kind === "hold" &&
+			s.pid === pid &&
+			s.style !== "hold" &&
+			!s.still &&
+			!withBall.get(pid)!.hit(t, t + 1)
+		);
+	};
+	// When he next stops dribbling from t on (picks it up, or puts a move
+	// through where he stands), and when he is next on it again after that
+	// - or it leaves his hands.
+	const pickUpFor = (
+		pid: number,
+		t: number,
+	): { up: number | undefined; again: number } => {
+		// (His dribbling changes only as the ball's stretches with him begin
+		// and his moves with it begin and end.)
+		const turns: number[] = [];
+		let k = lastAtOrBefore(x.ball, t, (q) => q.t0);
+		for (k += 1; k < x.ball.length; k++) {
+			const s = x.ball[k]!;
+			if (s.kind !== "hold" || s.pid !== pid) {
+				break;
+			}
+			turns.push(s.t0);
+		}
+		const gone = x.ball[k]?.t0 ?? Infinity;
+		const acts = withBallOf.get(pid)!;
+		for (
+			let i = Math.max(
+				0,
+				lastAtOrBefore(acts, t, (q) => q[0]),
+			);
+			i < acts.length && acts[i]![0] < gone;
+			i++
+		) {
+			for (const u of acts[i]!) {
+				if (u > t && u < gone) {
+					turns.push(u);
+				}
+			}
+		}
+		turns.sort((a, b) => a - b);
+		let up: number | undefined;
+		for (const u of turns) {
+			const on = dribblingAt(pid, u);
+			if (up === undefined && !on) {
+				up = u;
+			} else if (up !== undefined && on) {
+				return { up, again: u };
+			}
+		}
+		return { up, again: gone };
+	};
 	// Each man's stretches on the floor from `lo` till `hi`, on his own beat
 	// (as stepper.ts steps them).
 	const ticksOf = (tr: M, lo: number, hi: number): [number, number][] => {
@@ -534,8 +756,10 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		type Who = {
 			tr: M;
 			off: boolean;
-			// (On offense: what he keeps between his picks of where next.)
+			// (On offense: what he keeps between his picks of where next - off
+			// the ball, and with it.)
 			mind?: Mind;
+			hand?: HandMind;
 			runs: Run[];
 			k: number;
 			t: number;
@@ -544,6 +768,8 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			man?: number;
 			// (What of his he has set off for, by when it is due.)
 			sure?: number;
+			// (When he last stepped with the ball himself.)
+			ballT?: number;
 		};
 		const who: Who[] = [];
 		let first = Infinity;
@@ -564,7 +790,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 					// him coming: on his own way to it, man or no man, till the
 					// play takes him in to it.)
 					const agent = off
-						? ownOnOffense(tr.pid, t, O)
+						? ownOnOffense(tr.pid, t, O) || ownWithBall(tr.pid, t, O)
 						: agentAt(tr.pid, t, O, there) ||
 							(here.at(-1)?.agent === true && committing(tr.pid, t));
 					const r = here.at(-1);
@@ -616,7 +842,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 				who.push({
 					tr,
 					off,
-					...(off ? { mind: mindOf() } : {}),
+					...(off ? { mind: mindOf(), hand: handMindOf() } : {}),
 					runs,
 					k: 0,
 					t: runs[0]!.a,
@@ -750,9 +976,162 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			S.push({ t, x: n.x, y: n.y, vx: n.vx, vy: n.vy });
 			own.get(pid)!.push([t, anim]);
 		};
+		// The man with the ball working his man himself, a step.
+		const tickHand = (w: Who, r: Run, t: number, mine: Wanted, S: Sample[]) => {
+			const pid = w.tr.pid;
+			const me = x.attacking!.attacker(pid);
+			const see = t - me.react;
+			const rim = { x: rimX(O), y: COURT_H / 2 };
+			const face = (P: Pt) => Math.atan2(rim.y - P.y, rim.x - P.x);
+			if (w.ballT !== t - STEP_MS) {
+				// (A new touch of his: what he was about the last is over.)
+				w.hand = { ...handMindOf(), n: w.hand!.n };
+			}
+			let m: Mover | undefined;
+			const last = S.at(-1);
+			if (w.m && w.mt === t - STEP_MS) {
+				m = w.m;
+			} else if (last && t - last.t <= STEP_MS + 1) {
+				const pace = Math.hypot(last.vx, last.vy);
+				m = {
+					x: last.x,
+					y: last.y,
+					vx: last.vx,
+					vy: last.vy,
+					ax: 0,
+					ay: 0,
+					yaw: pace > 0.5 ? Math.atan2(last.vy, last.vx) : face(last),
+				};
+			} else {
+				const P = mine.want(t) ?? x.laid.get(pid)!.at(t);
+				if (!P) {
+					return;
+				}
+				m = stood(P, face(P));
+			}
+			// (Handing back to the play as his stretch ends - its run, his
+			// shot: on his way to where it has him by then; with something
+			// that pins him coming soon after, straight to it, as soon as his
+			// legs say he must.)
+			const end = r.b + STEP_MS;
+			const due = strict.get(pid)!.next(end);
+			const commit = due - end <= COMMIT_AFTER;
+			const f = commit ? due : end;
+			let handTo: Guarding["handTo"];
+			const A = mine.want(f);
+			if (A) {
+				const gap = Math.hypot(A.x - m.x, A.y - m.y);
+				const lead = !commit
+					? handLead(gap, me)
+					: w.sure === f
+						? Infinity
+						: f - t <= COMMIT_MOST
+							? commitLead(m, A, me)
+							: 0;
+				if (commit && f - t <= lead) {
+					w.sure = f;
+				}
+				const B = mine.want(f + STEP_MS);
+				if (f - t <= lead) {
+					handTo = {
+						at: A,
+						v: B
+							? { x: (B.x - A.x) / STEP_S, y: (B.y - A.y) / STEP_S }
+							: { x: 0, y: 0 },
+						until: f - t,
+						lead: Math.min(lead, COMMIT_MOST),
+						commit,
+					};
+				}
+			}
+			// (Back where the play has him by the time he stops dribbling -
+			// picks it up, or puts a move through where he stands - with
+			// something of the play's to come before he is on it again: his
+			// shot, or the play taking him on: he can go nowhere till then.)
+			const { up, again } = pickUpFor(pid, t);
+			const H =
+				up !== undefined &&
+				up < f &&
+				(strict.get(pid)!.next(up) < again || end < again)
+					? mine.want(up)
+					: undefined;
+			const mates: Pt[] = [];
+			let man: Seen | undefined;
+			for (const o of x.men) {
+				if (o.pid === pid) {
+					continue;
+				}
+				const q = at(o.pid, see);
+				if (!q) {
+					continue;
+				}
+				if (o.team === O) {
+					mates.push(q);
+				} else if (guardAt(o.pid, see) === pid) {
+					man = q;
+				}
+			}
+			const dribbling = dribblingAt(pid, t);
+			const { goal, anim } = decideHand(
+				m,
+				{
+					t,
+					set: setAt(w.tr, t) ?? { x: m.x, y: m.y },
+					rim,
+					dribbling,
+					man,
+					mates,
+					handTo,
+					home: H && up !== undefined ? { at: H, in: up - t } : undefined,
+				},
+				me,
+				w.hand!,
+				pid,
+			);
+			const others: Other[] = [];
+			for (const o of x.men) {
+				if (o.pid !== pid) {
+					const q = at(o.pid, t);
+					if (q) {
+						others.push(q);
+					}
+				}
+			}
+			// (With it in his hands, he holds his ground: they go round him.)
+			const n = keepIn(
+				moveOn(
+					m,
+					goal,
+					me,
+					others,
+					!dribbling ||
+						(handTo?.commit === true &&
+							Math.hypot(handTo.at.x - m.x, handTo.at.y - m.y) < KEEP_NEAR),
+				),
+			);
+			w.m = n;
+			w.mt = t;
+			w.ballT = t;
+			if (dribbling) {
+				const list = dribbled.get(pid) ?? [];
+				const d = list.at(-1);
+				if (d && t - d[1] <= STEP_MS + 1) {
+					d[1] = t;
+				} else {
+					list.push([t, t]);
+				}
+				dribbled.set(pid, list);
+			}
+			S.push({ t, x: n.x, y: n.y, vx: n.vx, vy: n.vy });
+			own.get(pid)!.push([t, anim]);
+		};
 		// A man on offense working his spot himself, a step.
 		const tickOff = (w: Who, r: Run, t: number, mine: Wanted, S: Sample[]) => {
 			const pid = w.tr.pid;
+			if (x.holderAt(t) === pid) {
+				tickHand(w, r, t, mine, S);
+				return;
+			}
 			const me = x.attacking!.attacker(pid);
 			const see = t - me.react;
 			const ball = ballAt(see);
@@ -760,7 +1139,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			// the play's left him.)
 			let m: Mover | undefined;
 			const last = S.at(-1);
-			if (!(w.m && w.mt === t - STEP_MS)) {
+			if (!(w.m && w.mt === t - STEP_MS) || w.ballT === t - STEP_MS) {
 				// (A new stretch of his own: what he was about the last time is
 				// over - but not his draws, nor the pass he answered.)
 				w.mind = { ...mindOf(), n: w.mind!.n, passKey: w.mind!.passKey };
@@ -791,10 +1170,12 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			// (Handing back to the play as his stretch ends - its run, his
 			// catch, his screen: on his way to where it has him by then; with
 			// something of his that pins him coming soon after, straight to
-			// it, as soon as his legs say he must.)
+			// it, as soon as his legs say he must. And a pass to him he comes
+			// to meet, in his stretch: there as it gets there.)
 			const end = r.b + STEP_MS;
-			const due = x.helds.get(pid)!.next(end);
-			const commit = due - end <= COMMIT_AFTER;
+			const meet = catches.get(pid)!.find((c) => c.at > t && c.at <= end);
+			const due = meet ? meet.at : x.helds.get(pid)!.next(end);
+			const commit = meet !== undefined || due - end <= COMMIT_AFTER;
 			const f = commit ? due : end;
 			let handTo: Guarding["handTo"];
 			const A = mine.want(f);
@@ -822,6 +1203,24 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 						lead: Math.min(lead, OFF_COMMIT_MOST),
 						commit,
 					};
+					// (Coming to meet it: on through its spot as it gets there,
+					// at the man who threw it - a spot coming at it that fast,
+					// the last of the way.)
+					const F =
+						meet && (at(meet.from, see) ?? x.laid.get(meet.from)?.at(t));
+					const L = F ? Math.hypot(F.x - A.x, F.y - A.y) : 0;
+					if (F && L > MEET_LEAST) {
+						const pace =
+							MEET_PACE[0] +
+							(MEET_PACE[1] - MEET_PACE[0]) * own01(pid, Math.round(f));
+						const v = {
+							x: ((F.x - A.x) / L) * pace,
+							y: ((F.y - A.y) / L) * pace,
+						};
+						const k = Math.min(f - t, MEET_MS) / 1000;
+						handTo.at = { x: A.x - v.x * k, y: A.y - v.y * k };
+						handTo.v = f - t <= MEET_MS ? v : { x: 0, y: 0 };
+					}
 				}
 			}
 			// (The man with the ball - or, with it in the air to a man of
@@ -1069,5 +1468,5 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			return q && t - q[0] <= STEP_MS ? { anim: q[1] } : undefined;
 		});
 	}
-	return { samples, anims };
+	return { samples, anims, dribbled };
 };

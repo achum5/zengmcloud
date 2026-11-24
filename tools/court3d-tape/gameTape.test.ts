@@ -9,7 +9,9 @@
 //   TAPE_GAMES=/dir/real_11.json,lane-a TAPE_DIR=/out npx vitest run \
 //     --project basketball tools/court3d-tape/gameTape.test.ts
 //
-// (TAPE_POSSESSION=1: the real games staged by the new possession sim.)
+// (TAPE_POSSESSION=1: the real games staged by the new possession sim.
+// TAPE_WHOLE=1: watched as a device watching whole possessions does - the
+// ball brought up and the set got going at real speed, not run through.)
 //
 // A game is a file from realGames.test.ts next to this one (the real sim)
 // or a test-game seed.
@@ -24,6 +26,7 @@ import {
 	evalBall,
 	evalPlayer,
 	fastAt,
+	showWhole,
 } from "../../src/ui/views/LiveGame/court3d/evaluate.ts";
 import {
 	COURT_H,
@@ -70,6 +73,7 @@ const load = (game: string) => {
 test.skipIf(!process.env.TAPE_GAMES)(
 	"3D game tape",
 	() => {
+		showWhole(!!process.env.TAPE_WHOLE);
 		for (const game of process.env.TAPE_GAMES!.split(",")) {
 			const tl = load(game);
 			const tracks = [...tl.tracks.values()].filter((t) => t.pid >= 0);
