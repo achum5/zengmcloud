@@ -45,7 +45,9 @@ test.skipIf(!env.CAD_LEAGUE)(
 			).length;
 		const before = await trades();
 		log(
-			`season ${season}, a moment every ${marketSettings.vanillaGamesBetween} games a team`,
+			g.get("nbaCalendar")
+				? `season ${season}, on the NBA calendar`
+				: `season ${season}, a moment every ${marketSettings.vanillaGamesBetween} games a team`,
 		);
 		const start = performance.now();
 		let moments = 0;

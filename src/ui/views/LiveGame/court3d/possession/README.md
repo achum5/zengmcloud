@@ -110,8 +110,8 @@ looks better.
    packages): the play becomes something the ten run, not something they
    are dragged through.
    - 8a, checkpoints as windows: catches, passes, contests, rebounds,
-     reaches and shots met at a pace a body allows (catches and passes
-     built: see below).
+     reaches and shots met at a pace a body allows (catches, passes,
+     pull-ups and closeouts built: see below).
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor.
@@ -436,6 +436,13 @@ The man with the ball makes for the spot of his pick-up going as the play
 has him going then (`handler.ts` home): a pass off the dribble leaves on
 the move, the stride or two of his gather under it.
 
+A jumper off the dribble, a pull-up, is gathered into the same way
+(`throughPullUps`): still going as he picks it up, stopped on his spot as
+he goes up. A hop into it the way he was going is one run with the run in.
+Before, he stood from 0.7 s before it left his hands; now 2.9 ft/s 0.6 s
+before, 1.6 at 0.5, stopped by 0.4 (real: 5.7 at 0.6 s, 4.8 at 0.4, 2.7 as
+it leaves his hands).
+
 | Measure (real_11, whole possessions) | Before | Now | Real |
 | --- | --- | --- | --- |
 | Pace at the catch (median, ft/s) | 0.5 | 3.6 | 5.6 |
@@ -454,11 +461,61 @@ Still short:
   holds it now (how long he holds it is 8c's).
 - A catch-and-shoot comes to a stop a few tenths sooner than a real one
   (stopped 0.2 s after the catch, real 0.6).
-- Closeouts: the nearest defender as a jumper leaves the shooter's hands
-  is going 2.4 ft/s (real 6.5); off a quick catch he is 8.6 ft off (real
-  5.1) - he goes out once his man has it, not on the pass, and sets his
-  feet on the play's spot. Pull-ups: the shooter stood 0.6 s before it
-  leaves his hands (real 5.7 ft/s). Both next.
+- Real pull-up shooters go up still going and drift in the air; the play's
+  jump goes up from a stand, so he is stopped 0.4 s before it leaves his
+  hands. That is the shot's own (how it is laid), later.
+
+## Closeouts (8a)
+
+Real defenders are still coming as a jumper leaves the shooter's hands:
+the nearest one going about 6 to 6.5 ft/s whether he is 2 ft off him or 6
+(how near he is hardly changes it), still about 5.5 four tenths later,
+and coming no nearer him than about 2 ft (the 17 games). The play laid
+every closeout as a run that ended on the spot giving the shooter the
+room it means him to have, stood there - often half a second and more
+before the shot - and the contest's jump straight up from it.
+
+`through.ts` (`throughContests`), on the play's runs before they are
+stepped: the run in to a contest (his choppy steps and all, back as far as
+it goes the one way) is laid on through it.
+
+- On the play's spot as it leaves the shooter's hands, as before: the room
+  the play gives him (`ROOM_FT`, leaning made or missed as the league's
+  tracking has it) is the same.
+- Still coming: as fast as his way in allows, 8 ft/s at the most, up into
+  the air at that pace and on at it in the air, braking once he is down
+  (15 ft/s a second) - or, off to the boards straight after, on into that.
+- Never nearer the shooter than 2 ft: coming straight at him, he bends by
+  him as he goes up (no more of a change than 4 ft/s), on the side he is
+  off to. He comes down inside the lines, stopped by anything of his that
+  wants him stood (a box-out), and the play's next run of his from there
+  is no harder than it was.
+- Only a closeout the play has him make: not a hand up after it is long
+  gone (going up more than 0.15 s after it leaves the shooter's hands -
+  he is still on his way then already).
+
+The new sim's defender, guarding his man, commits to the play's spot for
+the contest ahead of it (see `loop.ts`) and, the box-out or the boards
+coming straight after, is the play's through it.
+
+| Measure (real_11, whole possessions, jumpers 10-30 ft) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Nearest defender's pace as it leaves his hands (median, ft/s) | 2.6 | 3.4 | 6.5 |
+| ... the slowest quarter of them, at most | 0.1 | 1.7 | 4.0 |
+| ... on a man who had it 2 s and more | 1.6 | 2.7 | 5.6 |
+| How far off him then (median, ft) | 4.2 | 4.3 | 4.7 |
+| Sudden starts and stops (lurch flags) | 163 | 162 | |
+| Jumps from one spot to another (teleport flags) | 10 | 10 | |
+
+Still short:
+
+- A defender the play has on his spot long before the shot (a man who
+  holds it a while) comes in slowly through it, as fast as his way in
+  allows; real defenders guard a man holding it live, on the move - 8c.
+- The defenders the new sim's guarding has nowhere near the play's spot
+  for the contest (it is done where he is) close out as they guard: often
+  stood. And off a quick catch the nearest defender is 8.6 ft off (real
+  5.1): how open a quick catch is, is the play's room for it.
 
 ## Natural and smooth (before step 8)
 
