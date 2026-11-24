@@ -604,7 +604,7 @@ const HEM_FIXED = 0.2;
 // (Today's shorts as made are baggy - nearly twice his thigh round at the
 // hem: their legs this much of that, a fitted pair's - but never tighter
 // than the shortest's, which his thigh fills.)
-const SHORTS_FIT = 0.8;
+const SHORTS_FIT = 0.9;
 const SHORTS_TIGHTEST = 0.82;
 const locals = new Map<string, Float32Array>();
 let localsOf: Mesh | undefined;
@@ -617,9 +617,6 @@ const localFor = (m: Mesh, hem: number, flare: number): Float32Array => {
 	const h = Math.round(hem * 100) / 100;
 	const fl =
 		Math.round(Math.max(SHORTS_TIGHTEST, flare * SHORTS_FIT) * 100) / 100;
-	if (h === HEM_TODAY && fl === 1) {
-		return m.local;
-	}
 	const key = `${h} ${fl}`;
 	const had = locals.get(key);
 	if (had) {
@@ -716,8 +713,114 @@ const localFor = (m: Mesh, hem: number, flare: number): Float32Array => {
 			}
 		}
 	}
+	hangJersey(m, rest, local);
 	locals.set(key, local);
 	return local;
+};
+
+// HIS JERSEY, HANGING: the mesh is one skin, his jersey only painted on it -
+// so it would cling to every muscle of his stomach and the narrow of his
+// waist. A jersey hangs from his chest and his shoulder blades straight
+// down to his shorts, tucked in at their waistband: each point of his
+// trunk from there up to under his arms is let out to where the jersey
+// hangs - as far out round him, every way, as his chest is (a little less
+// toward his waist), never in.
+// (Up him from the floor, for a man 1 foot tall: the top of his shorts'
+// waistband, where the jersey hangs straight from, and how far up that it
+// is gathered in.)
+const HANG_TUCK = 0.505;
+const HANG_FROM = [0.6, 0.67] as const;
+const HANG_GATHER = 0.022;
+// (How much narrower it is at his waist than at his chest, and the most it
+// stands off him anywhere.)
+const HANG_TAPER = 0.02;
+const HANG_MOST = 0.03;
+const HANG_BINS = 48;
+const hangJersey = (m: Mesh, rest: Float64Array, local: Float32Array) => {
+	const torso = MESH_KINDS.indexOf("torso");
+	if (torso < 0) {
+		return;
+	}
+	const onTorso = new Uint8Array(m.n);
+	for (let t = 0; t < m.kind.length; t++) {
+		if (m.kind[t] === torso) {
+			for (let c = 0; c < 3; c++) {
+				onTorso[m.tris[t * 3 + c]!] = 1;
+			}
+		}
+	}
+	// How far out his chest is, every way round him (from his spine).
+	const bin = (f: number, s: number) =>
+		((Math.atan2(s, f) / (2 * Math.PI)) * HANG_BINS + HANG_BINS) % HANG_BINS;
+	const chest = new Float64Array(HANG_BINS);
+	for (let i = 0; i < m.n; i++) {
+		const u = rest[i * 3 + 2]!;
+		if (
+			!onTorso[i] ||
+			m.arm[i]! >= 128 ||
+			u < HANG_FROM[0] ||
+			u > HANG_FROM[1]
+		) {
+			continue;
+		}
+		const f = rest[i * 3]!;
+		const s = rest[i * 3 + 1]!;
+		const b = Math.floor(bin(f, s));
+		chest[b] = Math.max(chest[b]!, Math.hypot(f, s));
+	}
+	// (Smoothed round him, and no gaps where the mesh is sparse.)
+	const env = new Float64Array(HANG_BINS);
+	for (let b = 0; b < HANG_BINS; b++) {
+		let most = 0;
+		for (let d = -2; d <= 2; d++) {
+			most = Math.max(most, chest[(b + d + HANG_BINS) % HANG_BINS]!);
+		}
+		env[b] = most;
+	}
+	const smooth = (a: number, b: number, x: number) => {
+		const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+		return t * t * (3 - 2 * t);
+	};
+	for (let i = 0; i < m.n; i++) {
+		const u = rest[i * 3 + 2]!;
+		if (!onTorso[i] || u <= HANG_TUCK || u >= HANG_FROM[1]) {
+			continue;
+		}
+		const f = rest[i * 3]!;
+		const s = rest[i * 3 + 1]!;
+		const r = Math.hypot(f, s);
+		if (r === 0) {
+			continue;
+		}
+		const x = bin(f, s);
+		const b0 = Math.floor(x);
+		const e = env[b0]! + (env[(b0 + 1) % HANG_BINS]! - env[b0]!) * (x - b0);
+		const down = Math.min(
+			1,
+			Math.max(0, (HANG_FROM[0] - u) / (HANG_FROM[0] - HANG_TUCK)),
+		);
+		// (Gathered in at the waistband; from under his arms, his own.)
+		const w =
+			smooth(HANG_TUCK, HANG_TUCK + HANG_GATHER, u) *
+			(1 - smooth(HANG_FROM[0], HANG_FROM[1], u)) *
+			(1 - m.arm[i]! / 255);
+		const out = Math.min(
+			HANG_MOST,
+			Math.max(0, e * (1 - HANG_TAPER * down) - r),
+		);
+		if (out * w <= 0) {
+			continue;
+		}
+		const k = (r + out * w) / r;
+		const at = v3(f * k, s * k, u);
+		for (let j = m.start[i]!; j < m.start[i + 1]!; j++) {
+			const R = REST_OF[m.bone[j]!]!;
+			const d = sub(at, R.h);
+			local[j * 3] = dot(d, R.a);
+			local[j * 3 + 1] = dot(d, R.f);
+			local[j * 3 + 2] = dot(d, R.s);
+		}
+	}
 };
 
 // (Where each point his arms and neck hold is at rest, as his chest's - the
