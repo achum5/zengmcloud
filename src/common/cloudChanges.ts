@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 575,
+		date: "2026-11-24",
+		text: "Watching a game in 3D, a pregame show plays while the game loads. The lights go down and the building opens with fire, colored lights or a spotlight on the logo, then the starters are called out, each home starter up close as he slaps hands down the line. Cards show the matchup, the starting lineups and the key matchup before the lights come up for the tip. Skip it once the game is ready.",
+	},
+	{
 		n: 574,
 		date: "2026-11-24",
 		text: "Any two teams have a page of their own: who leads the all-time regular season series, every time they met in the playoffs, the record season by season, their totals side by side and their latest games. Tap a team on a Head-to-Head page, or All-time on a playoff series page.",

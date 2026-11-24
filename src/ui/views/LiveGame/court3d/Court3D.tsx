@@ -59,7 +59,7 @@ import {
 	gameClockAt,
 	shotClockAt,
 } from "./clock.ts";
-import { clipDipAt, type CourtTimeline } from "./director.ts";
+import { clipDipAt, compileCourt, type CourtTimeline } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
 import {
 	headColors,
@@ -110,7 +110,7 @@ import {
 	useKitArts,
 	useViewSize,
 } from "./broadcast.ts";
-import { spawnCourtWorker, stageCourt } from "./stageCourt.ts";
+import { spawnCourtWorker, stageCourt, stepHere } from "./stageCourt.ts";
 import {
 	stageWarmup,
 	WARMUP_MS,
@@ -167,7 +167,26 @@ import { seriesLine } from "../gamecast/seriesLine.ts";
 import { bugShown, useBugRefs, writeBug } from "./bugWriter.ts";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import type { Authored } from "./authored.ts";
-import { callAt } from "./intro.ts";
+import { callAt, darkAt } from "./intro.ts";
+import {
+	cardAt,
+	planShow,
+	showAim,
+	showEndsAt,
+	showEvents,
+	showFxAt,
+	showTlAt,
+	TITLE_MS,
+	type ShowCardKind,
+	type ShowClock,
+	type ShowPlan,
+} from "./pregameShow.ts";
+import {
+	ShowCards,
+	type ShowCardsInfo,
+	type ShowLeader,
+} from "./ShowCards.tsx";
+import type { GameLeader } from "../../../../worker/views/liveGameInfo.ts";
 import {
 	aimFor,
 	arenaAim,
@@ -337,7 +356,7 @@ const Court3D = ({
 	onFail,
 	onLost,
 	preview = false,
-	authored,
+	authored: authoredProp,
 	replayAsk,
 	onShots,
 	onStaged,
@@ -386,7 +405,7 @@ const Court3D = ({
 	const introKind = introKindOf(boxScore?.playoffs);
 	// The game staged, off the page's thread (see stageCourt.ts and the
 	// engine's useStaged) - the court on the warm-ups until it is.
-	const { timeline } = useStaged(
+	const { timeline: stagedTl } = useStaged(
 		events,
 		roster,
 		`${gid}|${gender}|${introKind}|${JSON.stringify(stakes ?? null)}`,
@@ -410,13 +429,152 @@ const Court3D = ({
 			onStagedRef.current?.(gid);
 		},
 	);
+
+	// THE PREGAME SHOW (see pregameShow.ts), in place of the warm-ups while
+	// the game is staged: for a game watched from its start - not a clip, not
+	// a look at the court or a scene of its own, not a league-mate's game
+	// already under way. Decided once a game.
+	const showFor = useRef<{ gid: number | undefined; wanted: boolean }>(
+		undefined,
+	);
+	if (showFor.current?.gid !== gid) {
+		showFor.current = {
+			gid,
+			wanted:
+				!preview &&
+				!authoredProp &&
+				until === undefined &&
+				!along &&
+				gid !== undefined &&
+				cursor === 0,
+		};
+	}
+	const showWanted = showFor.current.wanted;
+	const [showPlan, setShowPlan] = useState<ShowPlan | undefined>();
+	// (Over or skipped - or not to be had: no tip in the play-by-play, or it
+	// would not stage.)
+	const [showOver, setShowOver] = useState(false);
+	const eventsRef = useRef(events);
+	eventsRef.current = events;
+	const hasEvents = !!events && events.length > 0;
+	const playoffGame = !!boxScore?.playoffs;
+	// Each team's leading scorer going in, road first (see leadersOf).
+	const leaders = useMemo(() => {
+		const ls: GameLeader[] | undefined = boxScore?.gamecast?.leaders;
+		const bt = boxScore?.teams;
+		const road = ls?.find((l) => l.tid === bt?.[1]?.tid);
+		const homeL = ls?.find((l) => l.tid === bt?.[0]?.tid);
+		return road && homeL ? ([road, homeL] as const) : undefined;
+	}, [boxScore?.gamecast, boxScore?.teams]);
+	const leadersRef = useRef(false);
+	leadersRef.current = !!leaders;
+	useEffect(() => {
+		setShowPlan(undefined);
+		setShowOver(false);
+		if (!showWanted || !hasEvents) {
+			return;
+		}
+		const evs = eventsRef.current;
+		const opening =
+			evs && eventsMatchRoster(evs, roster) ? showEvents(evs) : undefined;
+		if (!opening) {
+			setShowOver(true);
+			return;
+		}
+		let alive = true;
+		// The opening tip alone, the lineups called first: a moment's work on
+		// the page's own thread, not the whole game's.
+		const id = setTimeout(() => {
+			let plan: ShowPlan | undefined;
+			try {
+				plan = planShow(
+					compileCourt({
+						events: opening,
+						players: roster,
+						gid,
+						gender,
+						intro: playoffGame ? "playoffs" : "regular",
+						step: stepHere(),
+					}),
+					gid ?? 0,
+				);
+			} catch (error) {
+				console.error("3D pregame show failed to stage", error);
+			}
+			if (alive) {
+				if (plan) {
+					setShowPlan(plan);
+				} else {
+					setShowOver(true);
+				}
+			}
+		}, 0);
+		return () => {
+			alive = false;
+			clearTimeout(id);
+		};
+	}, [gid, roster, showWanted, hasEvents, gender, playoffGame]);
+	const showOn = showWanted && !showOver;
+	// The game, once the show is over: till then, as if still staging.
+	const timeline = showOn ? undefined : stagedTl;
+	const readyRef = useRef(false);
+	readyRef.current = !!stagedTl;
+	const [showCard, setShowCard] = useState<
+		{ kind: ShowCardKind; k: number } | undefined
+	>();
+	const showScene = useMemo((): Authored | undefined => {
+		if (!showPlan) {
+			return undefined;
+		}
+		const plan = showPlan;
+		const clock: ShowClock = {};
+		const tlAt = (t: number) => showTlAt(plan, clock, t, readyRef.current);
+		let cardK = -2;
+		return {
+			show: { tl: plan.tl, parts: [] },
+			get ms() {
+				return showEndsAt(plan, clock);
+			},
+			// (In their warm-up tops, as they are called out.)
+			moment: (t, bodyFor) => ({
+				...momentAt(plan.tl, tlAt(t), roster, bodyFor),
+				warm: true,
+			}),
+			aim: (t, narrow, m) =>
+				showAim(plan, t, m.t, m, narrow, leadersRef.current),
+			onTick: (t) => {
+				const c = cardAt(plan, t, tlAt(t), leadersRef.current);
+				const k = c ? c.k : -1;
+				if (k !== cardK) {
+					cardK = k;
+					setShowCard(c);
+				}
+			},
+			onEnd: () => setShowOver(true),
+			run: 1,
+		};
+	}, [showPlan, roster]);
+	const authored = authoredProp ?? (showOn ? showScene : undefined);
+	// Watching along with a league-mate's game: once it is staged here, on
+	// to wherever theirs has got to.
+	useEffect(() => {
+		if (showOn && stagedTl && (along || (follower && cursor > 0))) {
+			setShowOver(true);
+		}
+	}, [showOn, stagedTl, along, follower, cursor]);
 	// While it is: the two teams out warming up at their baskets - not a
 	// black screen. (Staged here: it takes no time at all.) Or a scene of its
 	// own (see authored.ts).
 	const authoredShow = authored?.show;
+	const showComing = showOn && !showPlan;
 	const pregame = useMemo((): Warmup | undefined => {
 		if (authoredShow) {
 			return authoredShow;
+		}
+		// (The show staging: black for that moment, not a glimpse of the
+		// warm-ups.)
+		if (showComing) {
+			return undefined;
 		}
 		if (
 			!preview &&
@@ -429,7 +587,7 @@ const Court3D = ({
 		} catch {
 			return undefined;
 		}
-	}, [events, roster, gid, preview, authoredShow]);
+	}, [events, roster, gid, preview, authoredShow, showComing]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -1245,6 +1403,7 @@ const Court3D = ({
 		eventsLength: events?.length ?? 0,
 		preview,
 		authored,
+		show: showOn ? showPlan : undefined,
 	});
 	live.current = {
 		cursor,
@@ -1284,6 +1443,7 @@ const Court3D = ({
 		eventsLength: events?.length ?? 0,
 		preview,
 		authored,
+		show: showOn ? showPlan : undefined,
 	};
 
 	// A highlight tapped: that play again, the game held while it shows -
@@ -1387,6 +1547,7 @@ const Court3D = ({
 				staging,
 				now,
 				Date.now(),
+				p.authored ? Infinity : undefined,
 			);
 			if (!staging && tl.clips && onCutRef.current) {
 				const k = tl.clips.findLastIndex((c) => c <= s.t);
@@ -1458,12 +1619,19 @@ const Court3D = ({
 				: staging && p.authored
 					? p.authored.aim(s.t, p.narrow, moment)
 					: (arenaView ?? closeView ?? introAim(tl, moment, p.narrow));
-			const on = !!tl.intro && s.t >= tl.intro.t0 && s.t < tl.intro.t1;
-			const called = callAt(tl.intro, s.t);
+			// (The timeline's time: a scene of its own keeps its own clock -
+			// see pregameShow's.)
+			const tNow = staging && p.authored ? moment.t : s.t;
+			const on = !!tl.intro && tNow >= tl.intro.t0 && tNow < tl.intro.t1;
+			const called = callAt(tl.intro, tNow);
 			const k = called ? tl.intro!.calls.indexOf(called) : -1;
-			// The title, as the lights go down.
+			// The title, just before the first name.
+			const firstCall = tl.intro?.calls[0]?.t0 ?? 0;
 			const title =
-				on && s.t < (tl.intro!.calls[0]?.t0 ?? 0) && s.t - tl.intro!.t0 > 250;
+				on &&
+				tNow < firstCall &&
+				tNow > firstCall - TITLE_MS &&
+				tNow - tl.intro!.t0 > 250;
 			if (on !== s.introOn || k !== s.introCall || title !== s.introTitle) {
 				s.introOn = on;
 				s.introCall = k;
@@ -1713,7 +1881,10 @@ const Court3D = ({
 				textScale: Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				tagClear: s.covers,
 				away: !!view || !!replay,
-				...(closeView ? { soft: CLOSE_SOFT } : {}),
+				...(closeView ||
+				(staging && p.authored && (view as { close?: boolean })?.close)
+					? { soft: CLOSE_SOFT }
+					: {}),
 				crew: [
 					...working.states,
 					...(staging && p.authored?.castAt ? p.authored.castAt(moment.t) : []),
@@ -1726,6 +1897,16 @@ const Court3D = ({
 					? [...working.flashes, ...p.authored.flashes(moment.t)]
 					: working.flashes,
 				teamColors: p.teamColors,
+				...(staging && p.authored && p.show && tl.intro
+					? {
+							showFx: showFxAt(
+								p.show,
+								moment.t,
+								darkAt(tl.intro, moment.t),
+								p.teamColors[1] ?? ["#ffffff", "#ffffff"],
+							),
+						}
+					: {}),
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
 			if (
@@ -1810,7 +1991,10 @@ const Court3D = ({
 	// The starting lineups: the card for the man being called, and the way
 	// past them.
 	const introCard = useMemo(() => {
-		const c = intro.call >= 0 ? timeline?.intro?.calls[intro.call] : undefined;
+		const c =
+			intro.call >= 0
+				? (timeline ?? showPlan?.tl)?.intro?.calls[intro.call]
+				: undefined;
 		if (!c) {
 			return undefined;
 		}
@@ -1828,7 +2012,64 @@ const Court3D = ({
 			abbrev: team?.abbrev,
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [intro.call, timeline, roster, facesVersion]);
+	}, [intro.call, timeline, showPlan, roster, facesVersion]);
+	// The broadcast's cards at the end of the show (see ShowCards).
+	const showInfo = useMemo((): ShowCardsInfo | undefined => {
+		if (!showPlan) {
+			return undefined;
+		}
+		const fives: ShowCardsInfo["starters"] = [[], []];
+		for (const c of showPlan.intro.calls) {
+			const p = roster.find((r) => r.pid === c.pid);
+			const f = faces.current.get(c.pid) ?? undefined;
+			fives[c.team].push({
+				pid: c.pid,
+				name: p?.name ?? "",
+				jerseyNumber: f?.jerseyNumber ?? p?.jerseyNumber,
+				pos: p?.pos,
+			});
+		}
+		const bt = boxScore?.teams;
+		return {
+			teams: [
+				bugTeamOf(
+					away,
+					0,
+					bt?.[1],
+					standingOf(boxScore?.gamecast, bt?.[1]?.tid),
+				),
+				bugTeamOf(
+					home,
+					0,
+					bt?.[0],
+					standingOf(boxScore?.gamecast, bt?.[0]?.tid),
+				),
+			],
+			starters: fives,
+			...(leaders
+				? {
+						leaders: leaders.map((l) => {
+							const p = roster.find((r) => r.pid === l.pid);
+							const f = faces.current.get(l.pid) ?? undefined;
+							return {
+								name: p?.name ?? l.name,
+								jerseyNumber: f?.jerseyNumber ?? p?.jerseyNumber,
+								pos: p?.pos,
+								pts: l.pts,
+								trb: l.trb,
+								ast: l.ast,
+							};
+						}) as [ShowLeader, ShowLeader],
+					}
+				: {}),
+			...(boxScore?.playoffs && bt?.[0] && bt?.[1]
+				? {
+						series: seriesLine(boxScore.gamecast, true, [bt[1], bt[0]]),
+					}
+				: {}),
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [showPlan, roster, away, home, leaders, facesVersion]);
 	const skipIntro = useCallback(() => {
 		const s = play.current;
 		const end = timeline?.intro?.t1;
@@ -1888,19 +2129,48 @@ const Court3D = ({
 				replayRef={replayRef}
 				teams={[away, home]}
 				logos={[awayLogo, homeLogo]}
-				// (Still being staged - see stageCourt.ts: not stuck.)
-				staging={!timeline && !!events && events.length > 0}
+				// (Still being staged - see stageCourt.ts: not stuck. The pregame
+				// show is what it is staged behind.)
+				staging={
+					!timeline && !(showOn && showPlan) && !!events && events.length > 0
+				}
 			/>
-			{authored ? (
-				authored.card && intro.call >= 0 ? (
-					<IntroCard info={authored.card} callKey={intro.call} />
+			{authoredProp ? (
+				authoredProp.card && intro.call >= 0 ? (
+					<IntroCard info={authoredProp.card} callKey={intro.call} />
 				) : null
 			) : introCard ? (
 				<IntroCard info={introCard} callKey={intro.call} />
 			) : null}
 			{authored?.overlay}
-			{intro.title && !authored ? (
-				<IntroTitle playoffs={!!timeline?.intro?.big} />
+			{intro.title && (!authored || showOn) ? (
+				<IntroTitle playoffs={!!(timeline ?? showPlan?.tl)?.intro?.big} />
+			) : null}
+			{showOn && showInfo ? (
+				<ShowCards card={showCard} info={showInfo} />
+			) : null}
+			{showOn && showPlan && stagedTl && !follower && !along ? (
+				<button
+					type="button"
+					onClick={() => setShowOver(true)}
+					style={{
+						position: "absolute",
+						right: "2cqw",
+						bottom: "2cqw",
+						padding: "0.4em 0.9em",
+						fontFamily:
+							"system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+						fontWeight: 700,
+						fontSize: "clamp(11px, 1.6cqw, 14px)",
+						color: "#fff",
+						background: "rgba(10, 10, 14, 0.7)",
+						border: "1px solid rgba(255, 255, 255, 0.35)",
+						borderRadius: 999,
+						cursor: "pointer",
+					}}
+				>
+					Skip ›
+				</button>
 			) : null}
 			{intro.on && !follower && !along && !authored ? (
 				<button

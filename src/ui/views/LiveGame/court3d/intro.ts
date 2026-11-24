@@ -1,13 +1,15 @@
 import { benchX, type Pt, type Side } from "./geometry.ts";
 
-// THE STARTING LINEUPS, before the opening tip of a whole game (never a
-// highlight reel): the lights go down and each side's starters are called
-// out one at a time - the road team's first, quickly, then the home team's,
-// each with longer and more noise - every one running out from in front of
-// his bench, under a spotlight, to his place in his team's line across the
-// middle of the floor, slapping hands with the man called before him and
-// turning to face the cameras. Once all ten are out the lights come back up
-// and they walk out for the tip. A playoff game makes more of all of it.
+// THE STARTING LINEUPS, before the opening tip of a whole game, in the
+// pregame show (see pregameShow.ts; never a highlight reel): the lights go
+// down and each side's starters are called out one at a time - the road
+// team's first, quickly, then the home team's, each with longer and more
+// noise - every one running out from in front of his bench, under a
+// spotlight, to his place in his team's line across the middle of the
+// floor, slapping hands with the man called before him and turning to face
+// the cameras. Once all ten are out they stand in their lines a while, then
+// the lights come back up and they walk out for the tip. A playoff game
+// makes more of all of it.
 
 export type IntroCall = {
 	pid: number;
@@ -28,15 +30,19 @@ export type Intro = {
 // How long the lights take to go down, and to come back up (ms).
 export const INTRO_DARK = 1100;
 export const INTRO_LIGHT = 900;
-// The first name called, after the lights start down; each one after it, by
-// team (road, home); and all ten out before the lights come up -
+// They are called out in the pregame show, while the game itself is still
+// being staged (see pregameShow.ts) - so there is time to make something of
+// it, the way the broadcasts do. The building's own opening, in the dark,
+// before the first name; each name after it, by team (road, home: each home
+// starter in close, as he gets to his place); and all ten out, stood in
+// their lines while the broadcast's cards go up, before the lights come up -
 // [regular season, playoffs].
-export const INTRO_FIRST: [number, number] = [1300, 2600];
+export const INTRO_FIRST: [number, number] = [8500, 11000];
 export const INTRO_CALL: Record<Side, [number, number]> = {
-	0: [1400, 1700],
-	1: [1900, 2400],
+	0: [1500, 1800],
+	1: [3400, 3900],
 };
-export const INTRO_HOLD: [number, number] = [1100, 2000];
+export const INTRO_HOLD: [number, number] = [14500, 16500];
 
 // The order they are called in: forwards, then the center, then the guards -
 // the way the arena announcer does it.

@@ -106,6 +106,20 @@ export type GamecastInfo = {
 	recent: { tid: number; games: RecentGame[] }[];
 	// The over/under at the tip (see totalAsOf) - a live game's only.
 	total?: number;
+	// Each team's leading scorer going in (see leadersOf) - a live game's
+	// only. Box score order: home first.
+	leaders?: [GameLeader, GameLeader];
+};
+
+// A team's leading scorer going into a game, and his averages then.
+export type GameLeader = {
+	tid: number;
+	pid: number;
+	name: string;
+	pts: number;
+	trb: number;
+	ast: number;
+	gp: number;
 };
 
 type Played = Pick<Game, "gid" | "day" | "playoffs" | "teams">;
@@ -354,6 +368,89 @@ export const recentOf = (
 			};
 		});
 
+// EACH TEAM'S LEADING SCORER GOING IN, for the key matchup in the pregame
+// show: of the men in its box score, the one scoring the most a game in the
+// season's games before this one (wherever he played them), of those who
+// had played at least half as many as the most of them. A playoff game, in
+// the playoffs - or the season's, if either team had played none yet. None
+// for the first night (or a team none of whose men had played).
+export const leadersOf = (
+	game: Played,
+	played: readonly Played[],
+): [GameLeader, GameLeader] | undefined => {
+	const ours = new Set<number>();
+	for (const t of game.teams) {
+		for (const p of t.players ?? []) {
+			ours.add(p.pid);
+		}
+	}
+	const sums = (playoffs: boolean) => {
+		const out = new Map<
+			number,
+			{ pts: number; trb: number; ast: number; gp: number }
+		>();
+		for (const gm of played) {
+			if (
+				gm.gid === game.gid ||
+				!!gm.playoffs !== playoffs ||
+				!before(gm, game)
+			) {
+				continue;
+			}
+			for (const t of gm.teams) {
+				for (const p of t.players ?? []) {
+					if (!ours.has(p.pid) || !((p.min ?? 0) > 0)) {
+						continue;
+					}
+					const s = out.get(p.pid) ?? { pts: 0, trb: 0, ast: 0, gp: 0 };
+					s.pts += p.pts ?? 0;
+					s.trb += (p.orb ?? 0) + (p.drb ?? 0);
+					s.ast += p.ast ?? 0;
+					s.gp += 1;
+					out.set(p.pid, s);
+				}
+			}
+		}
+		return out;
+	};
+	const pick = (
+		stats: ReturnType<typeof sums>,
+	): [GameLeader, GameLeader] | undefined => {
+		const out: GameLeader[] = [];
+		for (const t of game.teams) {
+			const men = (t.players ?? []).flatMap((p) => {
+				const s = stats.get(p.pid);
+				return s && s.gp > 0 ? [{ p, s }] : [];
+			});
+			const most = Math.max(0, ...men.map((m) => m.s.gp));
+			let best: (typeof men)[number] | undefined;
+			for (const m of men) {
+				if (
+					m.s.gp * 2 >= most &&
+					(!best || m.s.pts / m.s.gp > best.s.pts / best.s.gp)
+				) {
+					best = m;
+				}
+			}
+			if (!best) {
+				return undefined;
+			}
+			const { p, s } = best;
+			out.push({
+				tid: t.tid,
+				pid: p.pid,
+				name: p.name ?? "",
+				pts: s.pts / s.gp,
+				trb: s.trb / s.gp,
+				ast: s.ast / s.gp,
+				gp: s.gp,
+			});
+		}
+		return out.length === 2 ? [out[0]!, out[1]!] : undefined;
+	};
+	return (game.playoffs ? pick(sums(true)) : undefined) ?? pick(sums(false));
+};
+
 // The bracket as it stood (see BracketRound), from the playoff series and
 // the season's games: each series' wins counted from the games themselves,
 // so an old game's page, or a live one, shows that night's - not today's.
@@ -558,6 +655,7 @@ export const gamecastInfo = async (
 		) as [number, number];
 		total = totalAsOf(game, played, gpAtTip, await getTotalsPrior(game.season));
 	}
+	const leaders = final ? undefined : leadersOf(game, played);
 
 	return {
 		series,
@@ -566,6 +664,7 @@ export const gamecastInfo = async (
 		...(bracket ? { bracket } : {}),
 		...(playIn ? { playIn } : {}),
 		...(total !== undefined ? { total } : {}),
+		...(leaders ? { leaders } : {}),
 	};
 };
 
