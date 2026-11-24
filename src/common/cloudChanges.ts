@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 576,
+		date: "2026-11-24",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders close out like real ones. The man contesting a jumper is still coming at the shooter as the shot goes up, carries on in the air and comes down going, past him or on to the boards, instead of getting there early and standing still. How open each shot is hasn't changed. Pull-up jumpers off the dribble are taken in stride too, instead of from a dead stop.",
+	},
+	{
 		n: 575,
 		date: "2026-11-24",
 		text: "Watching a game in 3D, a pregame show plays while the game loads. The lights go down and the building opens with fire, colored lights or a spotlight on the logo, then the starters are called out, each home starter up close as he slaps hands down the line. Cards show the matchup, the starting lineups and the key matchup before the lights come up for the tip. Skip it once the game is ready.",
