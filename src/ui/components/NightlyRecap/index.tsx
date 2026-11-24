@@ -32,6 +32,14 @@ import {
 import { toWorker } from "../../util/toWorker.ts";
 import { helpers } from "../../util/helpers.ts";
 import {
+	FULL_SIZE,
+	FullSizeButton,
+	NARROW_W,
+	useControlsUp,
+	useFullSize,
+	useFullSizeWidth,
+} from "../pictureControls.tsx";
+import {
 	FinalCard,
 	GameRecapCard,
 	OPEN_MS,
@@ -47,13 +55,9 @@ import {
 // no recap plays (see core/game/saveRecapReels.ts).
 
 const CARD_MS = 4500;
-// How long the controls stay up over the picture after a touch.
-const CONTROLS_MS = 2500;
 const FINAL_MS = 5500;
 // About how long a play runs, for the running times.
 const PLAY_S = 7;
-// Below this wide, the 3D court's picture is 4:3 (see court3d/broadcast.ts).
-const NARROW_W = 560;
 
 const LENGTH_KEY = "nightlyRecapLength";
 const readLength = (): RecapLength => {
@@ -337,26 +341,6 @@ const minutes = (night: RecapNight, length: RecapLength, speed: number) => {
 	return Math.max(1, Math.round(s / 60));
 };
 
-// Full size: the picture as big as the screen takes it.
-const BigIcon = ({ big }: { big: boolean }) => (
-	<svg
-		aria-hidden
-		viewBox="0 0 16 16"
-		width="12"
-		height="12"
-		fill="none"
-		stroke="currentColor"
-		strokeWidth="2"
-		style={{ display: "block" }}
-	>
-		{big ? (
-			<path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
-		) : (
-			<path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5" />
-		)}
-	</svg>
-);
-
 const NightlyRecap = ({
 	season,
 	day,
@@ -483,7 +467,9 @@ const NightlyRecap = ({
 	};
 	// (Held, as well as paused - but not full size, where nothing else is
 	// on the screen.)
-	const [big, setBig] = useState(false);
+	const rootRef = useRef<HTMLDivElement | null>(null);
+	const { big, open: openBig, close: closeBig } = useFullSize(rootRef);
+	const bigWidth = useFullSizeWidth(big);
 	const stopped = paused || (hold && !big);
 	useHold(segment?.kind === "open", OPEN_MS, stopped, () => go(1));
 
@@ -510,64 +496,13 @@ const NightlyRecap = ({
 		}
 	}, [night]);
 
-	// Full size: the page's own full screen where there is one (not on an
-	// iPhone), and over the whole page either way.
-	const rootRef = useRef<HTMLDivElement | null>(null);
-	const openBig = () => {
-		setBig(true);
-		const el = rootRef.current;
-		if (el && document.fullscreenEnabled && !document.fullscreenElement) {
-			el.requestFullscreen?.().catch(() => {});
-		}
-	};
-	const closeBig = () => {
-		setBig(false);
-		if (document.fullscreenElement) {
-			document.exitFullscreen?.().catch(() => {});
-		}
-	};
-	useEffect(() => {
-		if (!big) {
-			return;
-		}
-		const onChange = () => {
-			if (!document.fullscreenElement) {
-				setBig(false);
-			}
-		};
-		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				setBig(false);
-			}
-		};
-		const had = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		document.addEventListener("fullscreenchange", onChange);
-		window.addEventListener("keydown", onKey);
-		return () => {
-			document.body.style.overflow = had;
-			document.removeEventListener("fullscreenchange", onChange);
-			window.removeEventListener("keydown", onKey);
-		};
-	}, [big]);
-
 	// The controls over the picture: up while it is paused or not yet
 	// playing, and for a moment after a touch or the mouse moves over it.
-	const [awake, setAwake] = useState(false);
-	const sleepRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-	const wake = () => {
-		setAwake(true);
-		clearTimeout(sleepRef.current);
-		sleepRef.current = setTimeout(() => {
-			setAwake(false);
-		}, CONTROLS_MS);
-	};
-	useEffect(() => () => clearTimeout(sleepRef.current), []);
+	const shown = useControlsUp(paused || at === undefined);
 
 	if (!night || night.games.length === 0) {
 		return null;
 	}
-	const controlsUp = awake || paused || at === undefined;
 
 	// A new length: the same game over at it.
 	const setLength = (next: RecapLength) => {
@@ -605,36 +540,15 @@ const NightlyRecap = ({
 	const key = `${at}|${length}|${take}`;
 
 	return (
-		<div
-			ref={rootRef}
-			style={
-				big
-					? {
-							position: "fixed",
-							inset: 0,
-							zIndex: 1070,
-							background: "#000",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
-						}
-					: undefined
-			}
-		>
+		<div ref={rootRef} style={big ? FULL_SIZE : undefined}>
 			<div
 				ref={wrapRef}
 				className={
 					big ? "position-relative nightly-recap-big" : "position-relative"
 				}
-				style={
-					big
-						? {
-								width: `min(100vw, calc(100dvh * ${narrow ? "4 / 3" : "16 / 9"}))`,
-							}
-						: undefined
-				}
-				onPointerMove={wake}
-				onPointerDown={wake}
+				style={big ? { width: bigWidth } : undefined}
+				onPointerMove={shown.wake}
+				onPointerDown={shown.wake}
 			>
 				{segment?.kind === "open" ? (
 					<Frame narrow={narrow}>
@@ -700,13 +614,9 @@ const NightlyRecap = ({
 					/>
 				) : null}
 				<div
+					{...shown.controls}
 					className="gamecast-controls d-flex align-items-center gap-1"
-					style={{
-						zIndex: 7,
-						...(controlsUp
-							? undefined
-							: { opacity: 0, pointerEvents: "none" as const }),
-					}}
+					style={{ zIndex: 7, ...shown.hidden }}
 				>
 					{at !== undefined ? (
 						<>
@@ -773,20 +683,7 @@ const NightlyRecap = ({
 							</option>
 						))}
 					</select>
-					<button
-						type="button"
-						className="btn btn-sm btn-light-bordered"
-						title={big ? "Exit full size" : "Full size"}
-						aria-label={big ? "Exit full size" : "Full size"}
-						onClick={big ? closeBig : openBig}
-						style={{
-							alignSelf: "stretch",
-							display: "flex",
-							alignItems: "center",
-						}}
-					>
-						<BigIcon big={big} />
-					</button>
+					<FullSizeButton big={big} open={openBig} close={closeBig} />
 				</div>
 			</div>
 		</div>

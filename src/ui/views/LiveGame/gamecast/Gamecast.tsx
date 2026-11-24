@@ -46,6 +46,7 @@ import { playSentence } from "./sentence.ts";
 import { ShotChart } from "./ShotChart.tsx";
 import { HighlightClip, type ClipGame } from "./HighlightClip.tsx";
 import type { ShotSpot } from "./shots.ts";
+import { CourtFrame } from "./CourtFrame.tsx";
 import {
 	DOCK_ICONS,
 	foldSections,
@@ -1411,6 +1412,8 @@ export const LiveGamecast = ({
 	entries,
 	court,
 	controls,
+	paused,
+	fullSize,
 	boxScoreTab,
 	header,
 	onReplay,
@@ -1429,9 +1432,13 @@ export const LiveGamecast = ({
 	// table), and the quarter picker for the menu at the foot.
 	periodBox?: any;
 	quarter?: ReactNode;
-	// The 3D court, and the play / pause / speed controls laid over it.
+	// The 3D court, and the play / pause / speed controls laid over it -
+	// out of sight till it is hovered or touched, but while it is paused
+	// (see CourtFrame), and with a full size button where it can be.
 	court: ReactNode;
 	controls: ReactNode;
+	paused?: boolean;
+	fullSize?: boolean;
 	// The full box score, for its tab.
 	boxScoreTab: ReactNode;
 	// Anything over the court (the replay label).
@@ -1780,10 +1787,12 @@ export const LiveGamecast = ({
 						{header}
 						<div className="row g-3">
 							<div className="col-lg-8">
-								<div className="gamecast-court">
-									{court}
-									<div className="gamecast-controls">{controls}</div>
-								</div>
+								<CourtFrame
+									court={court}
+									controls={controls}
+									paused={paused}
+									fullSize={fullSize}
+								/>
 								<div className="gamecast-latest">
 									{latest ? (
 										<PlayRow
@@ -1828,10 +1837,12 @@ export const LiveGamecast = ({
 					{header}
 					<div className="row g-3">
 						<div className="col-lg-8">
-							<div className="gamecast-court">
-								{court}
-								<div className="gamecast-controls">{controls}</div>
-							</div>
+							<CourtFrame
+								court={court}
+								controls={controls}
+								paused={paused}
+								fullSize={fullSize}
+							/>
 							<div className="gamecast-latest">
 								{latest ? (
 									<PlayRow

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 547,
+		date: "2026-11-24",
+		text: "Live games and replays: the buttons over the 3D court (pause, skip, speed, settings) now stay out of the way like the Nightly Recap's, and show when you hover over or tap the court. A new full size button beside them fills the screen with the game.",
+	},
+	{
 		n: 546,
 		date: "2026-11-24",
 		text: "Score bugs from a team looks file, and the National TV bug, now look the same on a phone as on a big screen. On small screens the scores and other lettering could sit a little high, and thin lines like the ring around a logo came out too thick.",
