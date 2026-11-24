@@ -166,26 +166,44 @@ export const PlayerNameLabels = (props: Props) => {
 		props.season,
 		localState.lid,
 	);
-	const faceEl =
+	// (The face goes to the player too, wherever the name does. The name stays
+	// the link a keyboard or a screen reader gets.)
+	const playerHref =
+		!props.disableNameLink && props.pid !== undefined
+			? helpers.leagueUrl(["player", props.pid])
+			: undefined;
+	const faceStyle = {
+		height: "2em",
+		width: "1.33em",
+		marginRight: 5,
+		verticalAlign: "middle",
+	};
+	const facePicture =
 		faceData && (faceData.face || faceData.imgURL) ? (
-			<span
-				className="d-inline-block"
-				style={{
-					height: "2em",
-					width: "1.33em",
-					marginRight: 5,
-					verticalAlign: "middle",
-				}}
-			>
-				<PlayerPicture
-					face={faceData.face}
-					imgURL={faceData.imgURL}
-					colors={faceData.colors}
-					jersey={faceData.jersey}
-					lazy
-				/>
-			</span>
+			<PlayerPicture
+				face={faceData.face}
+				imgURL={faceData.imgURL}
+				colors={faceData.colors}
+				jersey={faceData.jersey}
+				lazy
+			/>
 		) : null;
+	const faceEl =
+		facePicture === null ? null : playerHref !== undefined ? (
+			<a
+				href={playerHref}
+				className="d-inline-block"
+				style={faceStyle}
+				tabIndex={-1}
+				aria-hidden="true"
+			>
+				{facePicture}
+			</a>
+		) : (
+			<span className="d-inline-block" style={faceStyle}>
+				{facePicture}
+			</span>
+		);
 
 	const {
 		abbrev,
@@ -291,11 +309,7 @@ export const PlayerNameLabels = (props: Props) => {
 				</span>
 			) : null}
 			{typeof pos === "string" ? `${pos} ` : null}
-			{!disableNameLink && pid !== undefined ? (
-				<a href={helpers.leagueUrl(["player", pid])}>{name}</a>
-			) : (
-				name
-			)}
+			{playerHref !== undefined ? <a href={playerHref}>{name}</a> : name}
 			<InjuryIcon injury={injury} />
 			<SkillsBlock
 				skills={skills}

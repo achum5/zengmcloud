@@ -161,13 +161,13 @@ const Leader = ({ p, season }: { p: any; season: number }) => {
 	const last = space > 0 ? name.slice(space + 1) : name;
 	return (
 		<div className="lh-gc-leader">
-			<Face pid={p.pid} season={season} />
-			<a
-				className="lh-gc-leader-name"
-				href={helpers.leagueUrl(["player", p.pid])}
-			>
-				<span className="lh-gc-first">{first}</span>
-				<span className="lh-gc-last">{last}</span>
+			{/* (The face and the name one link to the player.) */}
+			<a className="lh-gc-player" href={helpers.leagueUrl(["player", p.pid])}>
+				<Face pid={p.pid} season={season} />
+				<span className="lh-gc-leader-name">
+					<span className="lh-gc-first">{first}</span>
+					<span className="lh-gc-last">{last}</span>
+				</span>
 			</a>
 			<div className="lh-gc-stats">
 				{statColumns(p).map(([value, label]) => (

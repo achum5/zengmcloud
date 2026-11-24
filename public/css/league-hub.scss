@@ -360,6 +360,14 @@
 	font-weight: 800;
 	color: var(--bs-secondary-color);
 }
+.lh-face-link {
+	flex: 0 0 auto;
+	display: block;
+}
+// (The face is a way to the player too: the name lights with it.)
+.lh-perf:has(.lh-face-link:hover) .lh-perf-name a {
+	color: var(--bs-link-hover-color);
+}
 .lh-face {
 	flex: 0 0 auto;
 	width: 2.6rem;
@@ -879,6 +887,26 @@
 		height: 100%;
 	}
 }
+// The face and the name, one link to the player: on hover a faint wash
+// behind them, never an underline.
+.lh-gc-player {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+	margin: -0.15rem -0.35rem;
+	padding: 0.15rem 0.35rem;
+	border-radius: 0.4rem;
+	color: var(--bs-emphasis-color);
+	text-decoration: none;
+	transition: background-color 0.12s ease;
+	&:hover {
+		color: var(--bs-emphasis-color);
+		text-decoration: none;
+		background-color: rgba(var(--bs-emphasis-color-rgb), 0.08);
+	}
+}
 .lh-gc-leader-name {
 	flex: none;
 	width: 6.5rem;
@@ -886,11 +914,6 @@
 	display: flex;
 	flex-direction: column;
 	line-height: 1.15;
-	color: var(--bs-emphasis-color);
-	text-decoration: none;
-	&:hover .lh-gc-last {
-		text-decoration: underline;
-	}
 }
 .lh-gc-first {
 	font-size: 0.6rem;

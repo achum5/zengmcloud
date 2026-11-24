@@ -2828,15 +2828,18 @@ $score-box-national-width: 56px;
 	}
 }
 
-// A recap sentence that resolved to one game: hover underlines the whole
-// sentence (links inside included, which set their own text-decoration and
-// would otherwise opt out) and the click goes to that game's box score.
+// A recap sentence that resolved to one game: hover lays a faint wash behind
+// the whole sentence (no underline - its player names never underline) and
+// the click goes to that game's box score.
 .recap-sentence {
 	cursor: pointer;
+	border-radius: 0.2rem;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+	transition: background-color 0.12s ease;
 
-	&:hover,
-	&:hover a {
-		text-decoration: underline;
+	&:hover {
+		background-color: rgba(var(--bs-emphasis-color-rgb), 0.08);
 	}
 }
 
@@ -4829,8 +4832,7 @@ $league-ticker-toggle-width: 26px;
 
 		&:hover {
 			color: var(--ticker-hover-fg);
-			text-decoration: underline;
-			text-underline-offset: 2px;
+			text-decoration: none;
 		}
 	}
 }
@@ -5423,8 +5425,11 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		color: inherit;
 		text-decoration: none;
 	}
+	// (A name in the banner fades a touch on hover, never underlines.)
 	a:hover {
-		text-decoration: underline;
+		color: inherit;
+		text-decoration: none;
+		opacity: 0.8;
 	}
 }
 .tb,
@@ -6845,3 +6850,13 @@ a.rsb-half {
 		}
 	}
 }
+
+// PLAYER NAMES never underline on hover, anywhere: tables, cards, banners,
+// news and recap text. A link's hover color is the cue. (Last in the file so
+// it wins over any earlier "a:hover" underline. The production purge can't
+// see "/player/" in the built code, so the rule is kept out of it.)
+/* purgecss start ignore */
+a[href*="/player/"]:hover {
+	text-decoration: none;
+}
+/* purgecss end ignore */

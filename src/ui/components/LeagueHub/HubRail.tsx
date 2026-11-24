@@ -124,13 +124,23 @@ const PerformerRow = ({
 	const opp = useTeam(p.oppTid);
 	const ot =
 		p.overtimes === 0 ? "" : p.overtimes === 1 ? " OT" : ` ${p.overtimes}OT`;
+	const playerUrl = helpers.leagueUrl(["player", p.pid]);
 	return (
 		<li className="lh-perf">
 			<span className="lh-perf-rank">{rank}</span>
-			<Face pid={p.pid} season={season} />
+			{/* (The face goes to the player too; the name is the link a
+			    keyboard or a screen reader gets.) */}
+			<a
+				className="lh-face-link"
+				href={playerUrl}
+				tabIndex={-1}
+				aria-hidden="true"
+			>
+				<Face pid={p.pid} season={season} />
+			</a>
 			<div className="lh-perf-main">
 				<div className="lh-perf-name">
-					<a href={helpers.leagueUrl(["player", p.pid])}>{p.name}</a>
+					<a href={playerUrl}>{p.name}</a>
 				</div>
 				<div className="lh-perf-team">
 					<Logo tid={p.tid} size={16} /> {t?.abbrev}{" "}

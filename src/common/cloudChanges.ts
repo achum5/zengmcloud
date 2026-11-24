@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 525,
+		date: "2026-11-24",
+		text: "Player names no longer underline when you hover them, anywhere: tables, Daily Schedule game cards, top performers, the news feed and recaps (a recap sentence gets a faint shade instead). A player's face now opens the player page too, wherever it sits next to the name.",
+	},
+	{
 		n: 524,
 		date: "2026-11-24",
 		text: "Daily Schedule on a phone: the Scores tab now comes first, before Recap and Standings. Live game: the line, total and season series above the court no longer run over the team names. When they don't fit beside the names, they drop to a line underneath.",

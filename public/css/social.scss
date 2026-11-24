@@ -463,8 +463,8 @@ $social-pink: #f91880;
 	flex-shrink: 1;
 
 	&:hover {
-		text-decoration: underline;
 		color: var(--social-text);
+		text-decoration: none;
 	}
 }
 
@@ -493,13 +493,10 @@ a.social-handle:hover {
 	line-height: 20px;
 	color: var(--social-muted);
 
-	a {
+	a,
+	a:hover {
 		color: $social-blue;
 		text-decoration: none;
-
-		&:hover {
-			text-decoration: underline;
-		}
 	}
 }
 
@@ -511,13 +508,14 @@ a.social-handle:hover {
 	margin-top: 2px;
 }
 
+// (Names, handles and tags in a post: blue, never underlined.)
 .social-link {
 	color: $social-blue;
 	text-decoration: none;
 
 	&:hover {
-		text-decoration: underline;
 		color: $social-blue;
+		text-decoration: none;
 	}
 }
 
