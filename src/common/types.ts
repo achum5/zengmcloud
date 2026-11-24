@@ -12,6 +12,11 @@ import type {
 import type { GameFlow } from "./gameFlow.ts";
 import type { HomeCity } from "./teamLocation.ts";
 import * as z from "zod";
+import {
+	realCourtSchema,
+	realJerseySkinsSchema,
+	realScoreBugSchema,
+} from "./realTeamLooks.ts";
 import type { IsExact } from "conditional-type-checks";
 import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
@@ -1778,6 +1783,9 @@ export type LocalStateUI = {
 	// Today on the league's calendar ("YYYY-MM-DD"), for the top bar: the
 	// night of the next games, on an NBA calendar. See getCalendarDate.
 	calendarDate: string | undefined;
+	// The season's opening night on the calendar, where the scores bar
+	// starts. See getOpeningNight.
+	calendarOpeningNight: string | undefined;
 	// Realistic front offices' contract rules (CBA-lite, free agency in
 	// stages) are on in this league: the Contract Rules page and the cap status
 	// on the money pages.
@@ -4224,6 +4232,10 @@ export const individualRealTeamInfoSchema = z.object({
 	imgURL: z.string().exactOptional(),
 	imgURLSmall: z.string().exactOptional(),
 	jersey: z.string().exactOptional(),
+	// Its look in the 3D game (see common/realTeamLooks.ts).
+	jerseySkins: realJerseySkinsSchema.exactOptional(),
+	court: realCourtSchema.exactOptional(),
+	scoreBug: realScoreBugSchema.exactOptional(),
 });
 export type IndividualRealTeamInfo = z.infer<
 	typeof individualRealTeamInfoSchema

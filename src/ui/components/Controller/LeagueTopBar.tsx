@@ -23,15 +23,20 @@ import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
 //
 // On the NBA calendar it's the team's calendar in one row instead, kept to
 // the classic bar's ways: every day of the season so far through the team's
-// next game, bye days too, each with the team's game that day if it has one
-// (TopBarDay.tsx), opening on its right end with the same two buttons there.
+// next game, from opening night (the team playing or not), bye days too,
+// each with the team's game that day if it has one (TopBarDay.tsx), opening
+// on its right end with the same two buttons there.
 
 type BarGame = LocalStateUI["games"][number];
 
-// Every day from the first game to the last one shown (the next game, as on
-// the classic bar), with the team's game on each - through today, while a
-// game is still to come.
-const nightsOf = (games: BarGame[], today: string | undefined) => {
+// Every day from opening night (or the first game, if earlier) to the last
+// game shown (the next one, as on the classic bar), with the team's game on
+// each - through today, while a game is still to come.
+const nightsOf = (
+	games: BarGame[],
+	today: string | undefined,
+	openingNight: string | undefined,
+) => {
 	const byDate = new Map<string, BarGame>();
 	let first: string | undefined;
 	let last: string | undefined;
@@ -53,6 +58,9 @@ const nightsOf = (games: BarGame[], today: string | undefined) => {
 	}
 	if (first === undefined || last === undefined) {
 		return [];
+	}
+	if (openingNight !== undefined && openingNight < first) {
+		first = openingNight;
 	}
 	if (upcoming && today !== undefined && today > last) {
 		last = today;
@@ -89,6 +97,7 @@ const DayButtons = ({ height }: { height: number }) => (
 export const LeagueTopBar = memo(() => {
 	const {
 		calendarDate,
+		calendarOpeningNight,
 		games,
 		lid,
 		liveGameInProgress,
@@ -97,6 +106,7 @@ export const LeagueTopBar = memo(() => {
 		userTid,
 	} = useLocal([
 		"calendarDate",
+		"calendarOpeningNight",
 		"games",
 		"lid",
 		"liveGameInProgress",
@@ -236,7 +246,7 @@ export const LeagueTopBar = memo(() => {
 		);
 	}
 
-	const nights = nightsOf(games2, calendarDate);
+	const nights = nightsOf(games2, calendarDate, calendarOpeningNight);
 
 	return (
 		<div

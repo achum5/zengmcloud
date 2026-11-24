@@ -22,6 +22,8 @@ import { last } from "../../../common/utils.ts";
 import { sortScheduledEvents } from "../../../common/scheduledEvents.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
+import { realTeamLooks } from "../../../common/realTeamLooks.ts";
+import { applyRealTeamLooks } from "../../util/courtPictures.ts";
 import { formatList } from "../../../common/formatList.ts";
 import { getTeamInfoCache } from "../team/getTeamInfoCache.ts";
 import { getMetaAttribute } from "../../db/metaAttributes.ts";
@@ -64,6 +66,7 @@ const processTeamInfo = async (
 		name: t.name,
 		imgURL: t.imgURL,
 		imgURLSmall: t.imgURLSmall,
+		srID: t.srID,
 	};
 	Object.assign(t, info);
 
@@ -85,6 +88,13 @@ const processTeamInfo = async (
 	}
 
 	await idb.cache.teams.put(t);
+
+	// A team that has become another (a relocation) wears that one's real
+	// look, as last listed (see realTeamLooks) - the new season's own was put
+	// on before it was the other team.
+	if (realTeamInfo && info.srID !== undefined && info.srID !== old.srID) {
+		await applyRealTeamLooks(t, realTeamLooks(realTeamInfo, t.srID, season));
+	}
 
 	const teamSeason = isSeasonCompleted(phase)
 		? undefined

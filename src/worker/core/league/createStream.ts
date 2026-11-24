@@ -83,6 +83,8 @@ import {
 } from "../../db/connectLeague.ts";
 import { getNumPlayersTradedAwayNormalized } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
+import { realTeamLooks } from "../../../common/realTeamLooks.ts";
+import { applyRealTeamLooks } from "../../util/courtPictures.ts";
 import { last } from "../../../common/utils.ts";
 import { newLeagueGodModeLimits } from "../../util/newLeagueGodModeLimits.ts";
 import { choice, shuffle } from "../../../common/random.ts";
@@ -1669,6 +1671,7 @@ const afterDBStream = async ({
 	noStartingInjuries,
 	randomization,
 	realPlayerPhotos,
+	realTeamInfo,
 	repeatSeason,
 	scoutingLevel,
 	shuffleRosters,
@@ -1692,6 +1695,7 @@ const afterDBStream = async ({
 		| "activeTids"
 		| "db"
 		| "gameAttributes"
+		| "realTeamInfo"
 		| "repeatSeason"
 		| "scoutingLevel"
 		| "teamInfos"
@@ -1990,6 +1994,17 @@ const afterDBStream = async ({
 		skipDraftGenPicks: true,
 	});
 
+	// A new real players league's teams in their real looks for the season
+	// (see realTeamLooks) - not a league file's, which come as they were.
+	if (realTeamInfo && getLeagueOptions) {
+		for (const t of await idb.cache.teams.getAll()) {
+			await applyRealTeamLooks(
+				t,
+				realTeamLooks(realTeamInfo, t.srID, gameAttributes.season),
+			);
+		}
+	}
+
 	await finalizeActivePlayers({
 		fileHasPlayers,
 		legacyReleasedPlayers: extraFromStream.legacyReleasedPlayers,
@@ -2256,6 +2271,7 @@ export const createStream = async (
 			noStartingInjuries,
 			randomization: settings.randomization,
 			realPlayerPhotos,
+			realTeamInfo,
 			repeatSeason,
 			scoutingLevel,
 			shuffleRosters,

@@ -55,7 +55,13 @@ describe("simulateFutures", () => {
 	});
 
 	test("a solid 3rd-best team keeps real title equity (never 99-1 territory)", () => {
-		const r = run();
+		// Enough runs that a 0.3% chance isn't a handful of hits.
+		const r = simulateFutures({
+			teams: LEAGUE,
+			numGamesPlayoffSeries: [7, 7, 7],
+			iterations: 20000,
+			seed: 42,
+		});
 		// tid 2 is the clear 3rd-best team. Rating uncertainty must leave it with
 		// genuine long-shot equity, not a probability that collapses to ~0.
 		const p = r.titleProb.get(2)!;
@@ -618,6 +624,36 @@ describe("schedule-aware season sim", () => {
 		const hard = sim.winTotals.get(1)!.line;
 		// Phi(10/13) - Phi(-10/13) = 0.56 extra wins a game, ~11 over 20.
 		assert.ok(soft - hard > 7, `soft slate ${soft}, hard slate ${hard}`);
+	});
+
+	test("no schedule yet (the preseason): priced like a balanced one", () => {
+		// Ten teams far apart; every team hosts every other one four times.
+		const teams = Array.from({ length: 10 }, (_, i) => flat(i, 72, 14 - 3 * i));
+		const schedule = teams.flatMap((a) =>
+			teams
+				.filter((b) => b.tid !== a.tid)
+				.flatMap((b) =>
+					Array.from({ length: 4 }, () => ({ homeTid: a.tid, awayTid: b.tid })),
+				),
+		);
+		const opts = {
+			teams,
+			numGamesPlayoffSeries: [7],
+			iterations: 4000,
+			seed: 11,
+			ratingUncertainty: 1,
+			hcaPoints: 2,
+			sigma: 13.6,
+		};
+		const slate = simulateFutures({ ...opts, schedule });
+		const none = simulateFutures(opts);
+		for (const t of teams) {
+			const a = slate.winTotals.get(t.tid)!.line;
+			const b = none.winTotals.get(t.tid)!.line;
+			// (The old shortcut, the average opponent, put the best team 3 wins
+			// over its slate here.)
+			assert.ok(Math.abs(a - b) <= 1, `tid ${t.tid}: slate ${a}, none ${b}`);
+		}
 	});
 
 	test("win totals carry the spread and slope the pricing layer charges on", () => {

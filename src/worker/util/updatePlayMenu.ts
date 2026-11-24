@@ -388,6 +388,7 @@ const updatePlayMenu = async () => {
 			// Today's date for the top bar changes when the play menu does: after
 			// each day, at each phase, on load.
 			calendarDate: await season.getCalendarDate(),
+			calendarOpeningNight: await season.getOpeningNight(),
 			playMenuOptions: someOptions,
 		},
 	]);

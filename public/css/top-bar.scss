@@ -16,13 +16,18 @@
 	}
 }
 
+// The days and the buttons as tall as a day, top to top - not stretched to
+// the bar's room for its scrollbar (the track's edge ran on below the days,
+// the buttons sat lower than them).
 .tbd-track {
+	align-self: flex-start;
 	border-left: 1px solid var(--bs-border-color);
 }
 
 // The yesterday/today buttons stay at the window's right edge while the
 // days scroll under them.
 .tbd-buttons {
+	align-self: flex-start;
 	position: sticky;
 	right: 0;
 	z-index: 1;

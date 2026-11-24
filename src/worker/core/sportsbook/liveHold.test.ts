@@ -6,7 +6,6 @@ import { offBoardWhileLive, walletBeforeLiveGames } from "./liveHold.ts";
 const ml = (gid: number, pickTid = 1): SportsbookMarket => ({
 	type: "gameMoneyline",
 	gid,
-	season: 2025,
 	pickTid,
 	homeTid: 1,
 	awayTid: 2,
@@ -84,7 +83,7 @@ test("a parlay: back to open at its full price, unless a finished leg sank it", 
 		settledAt: 5,
 	});
 	const out = walletBeforeLiveGames(
-		{ balance: 100, bets: [], history: [paid, sunk] },
+		{ balance: 100, bets: [] as SportsbookBet[], history: [paid, sunk] },
 		new Set([7]),
 	);
 	assert.strictEqual(out.balance, 80);

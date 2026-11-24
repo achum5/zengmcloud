@@ -1000,7 +1000,10 @@ const Court3D = ({
 	const size = useViewSize(wrapRef);
 	const narrow = size.w < NARROW_W;
 
-	// The home floor as a picture, made from the 2D court's drawing of it.
+	// The home floor as a picture, made from the 2D court's drawing of it -
+	// at 20 pixels a foot, a whole-floor picture's own (see courtTemplate):
+	// at 10 its planks ran together, the floor coarser than the frame round
+	// it at the finest.
 	const floorRef = useRef<HTMLDivElement | null>(null);
 	const courtPicture = useRef<HTMLCanvasElement | undefined>(undefined);
 	// A floor picture's edge color, the floor carried on out in it.
@@ -1013,7 +1016,7 @@ const Court3D = ({
 			return;
 		}
 		let alive = true;
-		void courtTexture(svg, 10).then((canvas) => {
+		void courtTexture(svg, 20).then((canvas) => {
 			if (alive) {
 				courtPicture.current = canvas;
 				floorEdge.current =

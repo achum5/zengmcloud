@@ -12,6 +12,36 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 536,
+		date: "2026-11-24",
+		text: "Sportsbook: preseason win totals are no longer too far apart. Before the schedule comes out, the best teams' lines ran up to 3 wins too high and the worst teams' up to 3 too low, so a favourite's over hardly ever hit. They now match the lines opening night shows.",
+	},
+	{
+		n: 535,
+		date: "2026-11-24",
+		text: "Box score banner (refreshed look): the city name now links to the team page like the logo and team name. A game that was on national TV shows the network's logo next to FINAL.",
+	},
+	{
+		n: 534,
+		date: "2026-11-24",
+		text: "NBA calendar: the scores bar starts on opening night, even when your team was off that night.",
+	},
+	{
+		n: 533,
+		date: "2026-11-24",
+		text: "3D game: the court floor is drawn at twice the detail, so wood planks, paint and floor pictures look sharper. Real players leagues: Real Team Info (Global Settings) can now also set each team's 3D jerseys, court and score bug season by season, put on automatically each new season.",
+	},
+	{
+		n: 532,
+		date: "2026-11-24",
+		text: "Team colors show again in shared leagues. Opening a league while it was still reconnecting left them off for the whole visit, so home games on the scores bar were black. The scores bar's days and arrows also line up now, with no stray line under them.",
+	},
+	{
+		n: 531,
+		date: "2026-11-24",
+		text: "National TV score bug: the scores, team names, clock and records now sit right in the middle of their bars.",
+	},
+	{
 		n: 530,
 		date: "2026-11-24",
 		text: "Fixes from BBGM: dropdown menus are readable again in dark mode on the newest Chrome, pausing and playing a live game can no longer count its result twice in the standings, the top bar shows your next game right after the trade deadline, and undoing a trade gives players back their playing time settings.",

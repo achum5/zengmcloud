@@ -43,6 +43,8 @@ import { collegeSigningDay } from "../college/recruiting.ts";
 import { genCollegeRecruits } from "../college/offseason.ts";
 import { getTeamInfoCache } from "../team/getTeamInfoCache.ts";
 import { getMetaAttribute } from "../../db/metaAttributes.ts";
+import { realTeamLooks } from "../../../common/realTeamLooks.ts";
+import { applyRealTeamLooks } from "../../util/courtPictures.ts";
 import {
 	addContract,
 	createContract,
@@ -281,6 +283,18 @@ const newPhasePreseason = async (
 					});
 				}
 			}
+
+			// Its real look (see realTeamLooks): what is listed for this very
+			// season - or, a team wearing nothing of its own yet (a league that
+			// had begun before the looks were added, an expansion team), what
+			// was last listed.
+			await applyRealTeamLooks(
+				t,
+				realTeamLooks(realTeamInfo, t.srID, newSeason, { exactSeason: true }) ??
+					(t.court || t.jerseySkins || t.scoreBug
+						? undefined
+						: realTeamLooks(realTeamInfo, t.srID, newSeason)),
+			);
 		}
 
 		if (t.disabled) {
