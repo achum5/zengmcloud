@@ -1,5 +1,6 @@
 import { runsOf, type RecapRuns } from "./recapRuns.ts";
 import {
+	careerOnFile,
 	draftSlotOf,
 	formerTeamOf,
 	newTeamOf,
@@ -493,6 +494,110 @@ export const regularSeasonRecordAsOf = (
 	return { won, lost };
 };
 
+// The streak a team is on through a day, regular season only: "Winning:
+// Pelicans 6" in the night's Streaks.
+export const regularSeasonStreakAsOf = (
+	tid: number,
+	upToDay: number,
+	games: RecapGameRow[],
+): { won: boolean; count: number } | undefined => {
+	const mine = games
+		.filter(
+			(g) =>
+				!g.playoffs &&
+				!!g.won &&
+				!!g.lost &&
+				(g.day ?? 0) <= upToDay &&
+				(g.teams[0]?.tid === tid || g.teams[1]?.tid === tid) &&
+				!(
+					g.won.pts !== undefined &&
+					g.won.pts === g.lost.pts &&
+					g.won.sPts === undefined
+				),
+		)
+		.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.gid - a.gid);
+	if (mine.length === 0) {
+		return undefined;
+	}
+	const won = mine[0]!.won!.tid === tid;
+	let count = 0;
+	for (const g of mine) {
+		if ((g.won!.tid === tid) !== won) {
+			break;
+		}
+		count += 1;
+	}
+	return { won, count };
+};
+
+// The next day of the schedule after `day`, regular season: the games
+// already played on it and the ones still to come.
+export const nextSlateAfter = (
+	day: number,
+	games: RecapGameRow[],
+	schedule: readonly ContextScheduleRow[],
+): RecapNextSlate | undefined => {
+	const later: { day: number; homeTid: number; awayTid: number }[] = [];
+	for (const g of games) {
+		const home = g.teams[0]?.tid;
+		const away = g.teams[1]?.tid;
+		if (
+			!g.playoffs &&
+			(g.day ?? 0) > day &&
+			home !== undefined &&
+			away !== undefined &&
+			home >= 0 &&
+			away >= 0
+		) {
+			later.push({ day: g.day ?? 0, homeTid: home, awayTid: away });
+		}
+	}
+	for (const r of schedule) {
+		if (r.day > day && r.homeTid >= 0 && r.awayTid >= 0) {
+			later.push({ day: r.day, homeTid: r.homeTid, awayTid: r.awayTid });
+		}
+	}
+	if (later.length === 0) {
+		return undefined;
+	}
+	const next = Math.min(...later.map((x) => x.day));
+	const seen = new Set<string>();
+	const out: RecapNextSlate["games"] = [];
+	for (const x of later) {
+		const key = `${x.homeTid}-${x.awayTid}`;
+		if (x.day === next && !seen.has(key)) {
+			seen.add(key);
+			out.push({ homeTid: x.homeTid, awayTid: x.awayTid });
+		}
+	}
+	return { day: next, games: out };
+};
+
+// Who is seeded together, and how many spots each group has: the play-in
+// takes in the last two spots and the two below.
+export const raceRulesFor = async (
+	season: number,
+): Promise<{ byConf: boolean; direct: number; reach: number } | undefined> => {
+	try {
+		const byConf = await getPlayoffsByConf(season);
+		const { numPlayoffTeams, numPlayInTeams } =
+			await getNumPlayoffTeams(season);
+		const groups = byConf || 1;
+		const perGroup = numPlayoffTeams / groups;
+		const playIn = numPlayInTeams / groups;
+		if (!Number.isInteger(perGroup) || !Number.isInteger(playIn)) {
+			return undefined;
+		}
+		return {
+			byConf: !!byConf,
+			direct: playIn > 0 ? perGroup - playIn : perGroup,
+			reach: perGroup + playIn,
+		};
+	} catch {
+		return undefined;
+	}
+};
+
 type Totals = Record<(typeof STAT_KEYS)[number], number> & { gp: number };
 
 const aggregate = (rows: any[]): Totals => {
@@ -730,6 +835,12 @@ export type RecapDayStandings = {
 	// How many teams from each conference make the playoffs, so a race
 	// sentence can name the cut line rather than guess at it.
 	playoffSpots?: number;
+	// The season's length and the race's lines, for the night's "The race":
+	// the spots that go straight to the playoffs and the ones that reach at
+	// least the play-in, per conference when the playoffs are seeded by
+	// conference.
+	numGames?: number;
+	race?: { byConf: boolean; direct: number; reach: number };
 	confs: {
 		name: string;
 		teams: {
@@ -741,8 +852,17 @@ export type RecapDayStandings = {
 			won: number;
 			lost: number;
 			gb: number; // games back of the conference leader
+			// The streak it is on, and where it stood the day before.
+			streak?: { won: boolean; count: number };
+			rankBefore?: number;
 		}[];
 	}[];
+};
+
+// The next day of the schedule after a night: who plays whom.
+export type RecapNextSlate = {
+	day: number;
+	games: { homeTid: number; awayTid: number }[];
 };
 
 // Which completed games one recap run covers: every completed game this season
@@ -1680,7 +1800,10 @@ const createAutoRecapContext = async (season: number) => {
 			let totals: CareerTotals | undefined;
 			try {
 				const p = await idb.cache.players.get(pid);
-				totals = p ? pastSeasonTotals(p, season) : undefined;
+				totals =
+					p && careerOnFile(p, season, g.get("startingSeason"))
+						? pastSeasonTotals(p, season)
+						: undefined;
 			} catch {
 				totals = undefined;
 			}
@@ -1709,27 +1832,7 @@ const createAutoRecapContext = async (season: number) => {
 		| Promise<{ byConf: boolean; direct: number; reach: number } | undefined>
 		| undefined;
 	const raceRulesOf = () => {
-		raceRules ??= (async () => {
-			try {
-				const byConf = await getPlayoffsByConf(season);
-				const { numPlayoffTeams, numPlayInTeams } =
-					await getNumPlayoffTeams(season);
-				const groups = byConf || 1;
-				const perGroup = numPlayoffTeams / groups;
-				const playIn = numPlayInTeams / groups;
-				if (!Number.isInteger(perGroup) || !Number.isInteger(playIn)) {
-					return undefined;
-				}
-				// The play-in takes in the last two spots and the two below.
-				return {
-					byConf: !!byConf,
-					direct: playIn > 0 ? perGroup - playIn : perGroup,
-					reach: perGroup + playIn,
-				};
-			} catch {
-				return undefined;
-			}
-		})();
+		raceRules ??= raceRulesFor(season);
 		return raceRules;
 	};
 	const raceGroups = async (day: number): Promise<RaceRow[][]> => {
@@ -2114,7 +2217,7 @@ const createAutoRecapContext = async (season: number) => {
 		};
 	};
 
-	return { allGames, buildRecapGame };
+	return { allGames, buildRecapGame, scheduleRows };
 };
 
 // The full standings, split by conference, AS OF a given day - the league context
@@ -2147,6 +2250,7 @@ export const computeStandingsAsOf = async (
 				.filter((t) => t.cid === conf.cid)
 				.map((t) => {
 					const rec = regularSeasonRecordAsOf(t.tid, day, allGames);
+					const streak = regularSeasonStreakAsOf(t.tid, day, allGames);
 					return {
 						tid: t.tid,
 						abbrev: t.abbrev,
@@ -2154,6 +2258,7 @@ export const computeStandingsAsOf = async (
 						name: t.name,
 						won: rec.won,
 						lost: rec.lost,
+						...(streak ? { streak } : {}),
 					};
 				})
 				.sort((a, b) => {
@@ -2173,9 +2278,43 @@ export const computeStandingsAsOf = async (
 					won: t.won,
 					lost: t.lost,
 					gb: leader ? (leader.won - t.won + (t.lost - leader.lost)) / 2 : 0,
+					...(t.streak ? { streak: t.streak } : {}),
 				})),
 			};
 		}),
+	};
+};
+
+// The standings after a night, with what the night's closing sections need:
+// each team's place the day before, the season's length and the race's
+// lines.
+export const nightStandings = async (
+	season: number,
+	day: number,
+	allGames: Game[],
+): Promise<RecapDayStandings> => {
+	const after = await computeStandingsAsOf(season, day, allGames);
+	const before = await computeStandingsAsOf(season, day - 1, allGames);
+	const rankBefore = new Map<number, number>();
+	for (const conf of before.confs) {
+		for (const t of conf.teams) {
+			if (t.tid !== undefined && t.won + t.lost > 0) {
+				rankBefore.set(t.tid, t.rank);
+			}
+		}
+	}
+	const race = await raceRulesFor(season);
+	return {
+		...after,
+		numGames: g.get("numGames", season),
+		...(race ? { race } : {}),
+		confs: after.confs.map((conf) => ({
+			...conf,
+			teams: conf.teams.map((t) => {
+				const r = t.tid === undefined ? undefined : rankBefore.get(t.tid);
+				return r === undefined ? t : { ...t, rankBefore: r };
+			}),
+		})),
 	};
 };
 
@@ -2225,7 +2364,13 @@ export const getAutoRecapsForDay = async ({
 	if (__SPORT !== "basketball") {
 		return { notes: {}, dayRecap: "", games: [] };
 	}
-	const games = await recapGamesForDay({ season, day });
+	const ctx = await createAutoRecapContext(season);
+	const games: RecapGame[] = [];
+	for (const game of ctx.allGames
+		.filter((game) => (game.day ?? 0) === day && game.won && game.lost)
+		.sort((a, b) => a.gid - b.gid)) {
+		games.push(await ctx.buildRecapGame(game, day));
+	}
 	if (games.length === 0) {
 		return { notes: {}, dayRecap: "", games };
 	}
@@ -2246,12 +2391,22 @@ export const getAutoRecapsForDay = async ({
 	const playoffs = games.some((game) => game.playoffs);
 	const standings = playoffs
 		? undefined
-		: await computeStandingsAsOf(
-				season,
+		: await nightStandings(season, day, ctx.allGames);
+	const next = playoffs
+		? undefined
+		: nextSlateAfter(
 				day,
-				await idb.merged.games.getAll({ season }),
+				ctx.allGames,
+				g.get("phase") === PHASE.REGULAR_SEASON ? ctx.scheduleRows : [],
 			);
-	const dayRecap = getAutoDayRecap({ season, day, playoffs, games, standings });
+	const dayRecap = getAutoDayRecap({
+		season,
+		day,
+		playoffs,
+		games,
+		standings,
+		...(next ? { next } : {}),
+	});
 
 	return { notes, dayRecap, games, standings };
 };

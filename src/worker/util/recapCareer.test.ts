@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	careerOnFile,
 	clinchedTop,
 	draftSlotOf,
 	eliminatedFrom,
@@ -96,6 +97,28 @@ describe("his career before tonight", () => {
 			1,
 		);
 		assert.strictEqual(past?.gp, 120);
+	});
+});
+
+describe("a career on file", () => {
+	test("from the league's start, or from his first season", () => {
+		// Came into a new league a veteran: none of it is here.
+		assert.isFalse(
+			careerOnFile({ draft: { year: 2015 }, stats: [] }, 2026, 2026),
+		);
+		// Drafted into it.
+		assert.isTrue(
+			careerOnFile({ draft: { year: 2025 }, stats: [] }, 2026, 2026),
+		);
+		// An old league that holds his rookie season.
+		assert.isTrue(
+			careerOnFile(
+				{ draft: { year: 2009 }, stats: [row(2010, 3), row(2011, 3)] },
+				2026,
+				2000,
+			),
+		);
+		assert.isFalse(careerOnFile({ stats: [row(2025, 3)] }, 2026, 2000));
 	});
 });
 

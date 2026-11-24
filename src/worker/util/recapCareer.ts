@@ -70,6 +70,31 @@ const before = (l: { day: number; gid: number }, gid: number, day: number) =>
 // only when it starts inside the league's history (drafted the summer before
 // its first season or later) or every season of it is on file, each with its
 // bests and its double-doubles.
+// Whether a man's whole career is on file: it started inside the league's
+// history, or its first season is here. A veteran who came into a new league
+// has none of his years before it, and "went past 1,000 career points" from
+// him would be false.
+export const careerOnFile = (
+	player: { stats?: any[]; draft?: { year?: number } },
+	season: number,
+	startingSeason: number,
+): boolean => {
+	const draftYear = player.draft?.year;
+	if (typeof draftYear !== "number") {
+		return false;
+	}
+	if (draftYear >= startingSeason - 1) {
+		return true;
+	}
+	const rows = (player.stats ?? []).filter(
+		(r) => r && !r.playoffs && r.season < season && (r.gp ?? 0) > 0,
+	);
+	return (
+		rows.length > 0 &&
+		Math.min(...rows.map((r) => r.season as number)) <= draftYear + 1
+	);
+};
+
 export const playerPast = (
 	player: {
 		stats?: any[];
