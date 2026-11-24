@@ -243,6 +243,13 @@ export const ownArm = (l: Limb, upper: number, fore: number): Limb => {
 	const mid = addV(root, addV(scale(u, along), scale(side, h)));
 	return { ...l, root, mid };
 };
+// HIS NECK UNDER HIS HEAD (the court's own head, drawn over him - see
+// figure.ts drawHead): up into it, so far short of its middle (head radii),
+// not stopping under his jaw - side on, his head sits on it rather than
+// perched on the end of it - and so much thicker than the mesh's own, under
+// a head drawn as big as his is.
+const NECK_UNDER = 0.2;
+const NECK_GIRTH = 1.2;
 export const poseBones = (
 	sk: Skeleton,
 	body: Body,
@@ -279,9 +286,10 @@ export const poseBones = (
 	const neck = swungFrom(REST.chest!, chest, REST.neck!, sk.chest, sk.head);
 	const neckAx = Math.max(
 		0.6,
-		(len(sub(sk.head, sk.chest)) - body.headR * 0.55) /
+		(len(sub(sk.head, sk.chest)) - body.headR * NECK_UNDER) /
 			(restLen("chest", "head") * H),
 	);
+	const neckG = girth * NECK_GIRTH;
 	const fr: Record<string, Posed> = {
 		pelvis: torso(pelvis),
 		spine1: torso(between(pelvis, chest, 0.25)),
@@ -292,10 +300,10 @@ export const poseBones = (
 		neck1: {
 			fr: between(carried(REST.neck!, sk.chest), neck, 0.5),
 			ax: neckAx,
-			rad: girth,
+			rad: neckG,
 		},
-		neck2: { fr: neck, ax: neckAx, rad: girth },
-		head: { fr: neck, ax: neckAx, rad: girth },
+		neck2: { fr: neck, ax: neckAx, rad: neckG },
+		head: { fr: neck, ax: neckAx, rad: neckG },
 	};
 	const limb = (
 		l: Limb,
@@ -835,16 +843,25 @@ let scr = new Float32Array(0);
 let zb = new Float32Array(0);
 let tb = new Int32Array(0);
 let wb = new Float32Array(0);
-// Him drawn into the sheet `d` (w x h, RGBA): `z` takes how far each pixel
-// of him is from the camera (Infinity where he isn't), `owner` its group.
-export const drawMesh = (
+// Each point of him as posed (`pos`; `posT` as his trunk alone carries
+// it - see skinned), where it lands on the sprite at SS times its pixels
+// and how far from the camera (`scr`), his normal there in the camera's
+// frame (`nrm`) - and which of his faces are turned away (`away`). Held
+// here until the next of him: drawn here (see drawMesh), or on the card
+// (see sculptGl.ts).
+export type MeshPoints = {
+	pos: Float32Array;
+	posT: Float32Array;
+	nrm: Float32Array;
+	scr: Float32Array;
+	away: Uint8Array;
+};
+export const MESH_SS = SS;
+export const meshPoints = (
 	bones: Posed[],
 	H: number,
-	m: MeshDraw,
-	d: Uint8ClampedArray,
-	z: Float32Array,
-	owner?: Int8Array,
-): { x0: number; y0: number; x1: number; y1: number } => {
+	m: Pick<MeshDraw, "see" | "lens" | "rt" | "dn" | "toward">,
+): MeshPoints => {
 	const me = meshOf();
 	const n = me.n;
 	if (pos.length < n * 3) {
@@ -864,7 +881,6 @@ export const drawMesh = (
 	// (Each buffer as a constant of its own here: read in the loops below,
 	// thousands of times a picture.)
 	const POS = pos;
-	const POST = posT;
 	const NRM = nrm;
 	const SCR = scr;
 	const AWAY = away;
@@ -897,8 +913,6 @@ export const drawMesh = (
 	}
 	// Onto the sprite (at SS times its pixels), and the normals into the
 	// camera's frame.
-	const W2 = m.w * SS;
-	const H2 = m.h * SS;
 	const L = m.lens;
 	for (let i = 0; i < n; i++) {
 		const pf = POS[i * 3]!;
@@ -932,6 +946,30 @@ export const drawMesh = (
 		NRM[i * 3 + 1] = y / l;
 		NRM[i * 3 + 2] = zz / l;
 	}
+	return { pos, posT, nrm, scr, away };
+};
+// Him drawn into the sheet `d` (w x h, RGBA): `z` takes how far each pixel
+// of him is from the camera (Infinity where he isn't), `owner` its group.
+export const drawMesh = (
+	bones: Posed[],
+	H: number,
+	m: MeshDraw,
+	d: Uint8ClampedArray,
+	z: Float32Array,
+	owner?: Int8Array,
+): { x0: number; y0: number; x1: number; y1: number } => {
+	const me = meshOf();
+	const T = me.tris;
+	const nt = T.length / 3;
+	const {
+		pos: POS,
+		posT: POST,
+		nrm: NRM,
+		scr: SCR,
+		away: AWAY,
+	} = meshPoints(bones, H, m);
+	const W2 = m.w * SS;
+	const H2 = m.h * SS;
 	if (zb.length < W2 * H2) {
 		zb = new Float32Array(W2 * H2);
 		tb = new Int32Array(W2 * H2);

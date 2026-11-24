@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 552,
+		date: "2026-11-24",
+		text: "3D games: players' heads sit on their necks instead of looking stuck on the end of a thin stalk, and defenders off the ball keep their hands loose at their sides instead of holding them out in front of them.",
+	},
+	{
 		n: 551,
 		date: "2026-11-24",
 		text: "3D Key Plays: the reel always shows the last few seconds of the game up to the final horn, even when a team is just dribbling it out, instead of cutting from the last big play straight to the final.",

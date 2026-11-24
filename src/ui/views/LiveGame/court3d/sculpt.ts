@@ -37,6 +37,7 @@ import {
 	MESH_KINDS,
 	meshReady,
 	poseBones,
+	type Posed,
 	restJoint,
 } from "./meshBody.ts";
 import {
@@ -59,12 +60,12 @@ import {
 // (His own hands, if the mesh has them: the court's otherwise.)
 const MESH_HANDS = MESH_KINDS.some((k) => k.startsWith("hand"));
 // (His kit painted onto him, if the mesh has no clothes of its own.)
-const MESH_PAINTED = !MESH_KINDS.some((k) => k === "jersey");
-const MESH_KEEPS = new Set<number>(
+export const MESH_PAINTED = !MESH_KINDS.some((k) => k === "jersey");
+export const MESH_KEEPS = new Set<number>(
 	MESH_HANDS ? [9, 10, 11, 12] : [4, 9, 10, 11, 12, 13],
 );
 // (Which of the mesh's kinds of face are what he wears over him.)
-const MESH_SHELLS = MESH_KINDS.map((k) =>
+export const MESH_SHELLS = MESH_KINDS.map((k) =>
 	k === "shortsR" || k === "shortsL"
 		? "shorts"
 		: k === "shortsTorso"
@@ -80,9 +81,9 @@ const MESH_SHELLS = MESH_KINDS.map((k) =>
 const TYPICAL_BODY = bodyOf(undefined, undefined, MESH_BUILD);
 // (A mesh in layers - a bare foot in a shoe, a leg in shorts - or one skin,
 // his kit only painted on: nothing under it to cut it away to.)
-const MESH_LAYERED = MESH_KINDS.some((k) => k.startsWith("foot"));
-const MESH_HIDDEN = MESH_SHELLS.map((sh) => sh === "foot");
-const MESH_CUTS = MESH_SHELLS.map(
+export const MESH_LAYERED = MESH_KINDS.some((k) => k.startsWith("foot"));
+export const MESH_HIDDEN = MESH_SHELLS.map((sh) => sh === "foot");
+export const MESH_CUTS = MESH_SHELLS.map(
 	(sh) =>
 		MESH_LAYERED &&
 		(sh === "shorts" || sh === "shortsTop" || sh === "shoe" || sh === "jersey"),
@@ -92,10 +93,12 @@ const MESH_CUTS = MESH_SHELLS.map(
 const MESH_HEM = 0.92;
 const MESH_UNDER_HEM = 0.8;
 // (His shorts over him wherever the two come within an inch or so.)
-const MESH_LIFT = MESH_SHELLS.map((sh) =>
+export const MESH_LIFT = MESH_SHELLS.map((sh) =>
 	MESH_LAYERED && (sh === "shorts" || sh === "shortsTop") ? 0.06 : 0,
 );
-const MESH_FACED = MESH_KINDS.map((name) => name === "head" || name === "neck");
+export const MESH_FACED = MESH_KINDS.map(
+	(name) => name === "head" || name === "neck",
+);
 
 // A pinstripe (feet): how far apart, how wide - and the fewest sprite
 // pixels apart they are drawn at all.
@@ -3187,6 +3190,134 @@ export const shade = (
 	return { x0: bx0, y0: by0, x1: bx1, y1: by1 };
 };
 
+// HIS BODY FROM THE MESH OF A MAN, ready to be drawn - here (see sculpt), or
+// on the graphics card (see sculptGl.ts): his pieces posed, which way is
+// toward the camera, and what each kind of the mesh's faces is painted as.
+export type MeshRig = {
+	posed: Posed[];
+	toward: V3;
+	mk: Mass[];
+	mkShorts: Mass[];
+	restShoes: Mass[];
+	feet: number[];
+};
+export const meshRig = (b: Built, st: PlayerState, body: Body): MeshRig => {
+	const sk = b.sk;
+	const mk = MESH_KINDS.map((name) => {
+		const side = name.endsWith("L") ? 1 : 0;
+		const leg = side ? sk.legL : sk.legR;
+		const arm = side ? sk.armL : sk.armR;
+		const tip = leg.tip ?? leg.end;
+		const m = (kind: number, group: number, A: V3, B: V3) =>
+			({ kind, group, side, A, B }) as unknown as Mass;
+		if (name.startsWith("upper")) {
+			return m(UPPER, G_ARM + side, arm.root, arm.mid);
+		}
+		if (name.startsWith("fore")) {
+			return m(FORE, G_ARM + side, arm.mid, arm.end);
+		}
+		if (name.startsWith("thigh")) {
+			return m(THIGH, G_LEG + side, leg.root, leg.mid);
+		}
+		if (name.startsWith("hand")) {
+			return { ...m(NECK, G_HAND + side, arm.end, arm.tip ?? arm.end) };
+		}
+		if (name.startsWith("shin")) {
+			return m(SHIN, G_LEG + side, leg.mid, leg.end);
+		}
+		if (name === "shortsR" || name === "shortsL") {
+			return m(
+				SHORTS,
+				G_SHORTS + side,
+				lerpV(leg.root, leg.mid, 0.16),
+				lerpV(leg.root, leg.mid, MESH_HEM),
+			);
+		}
+		if (name.startsWith("foot") || name.startsWith("shoe")) {
+			return m(
+				SHOE,
+				G_SHOE + side,
+				lerpV(leg.end, tip, -0.32),
+				lerpV(leg.end, tip, 1.02),
+			);
+		}
+		// (His neck painted as his torso is: the collar of his jersey round
+		// it where it comes, not where the mesh's parts meet.)
+		// (His own skin, under his jersey: only ever seen where the jersey
+		// is not - at his neck, through his armholes.)
+		if (
+			name === "head" ||
+			(!MESH_PAINTED && (name === "neck" || name === "torso"))
+		) {
+			return {
+				...m(NECK, name === "neck" ? G_NECK : G_TORSO, sk.chest, sk.head),
+				side: 0,
+			};
+		}
+		return { ...m(TORSO, G_TORSO, sk.pelvis, sk.chest), side: 0 };
+	});
+	// (His shorts, painted down his thighs to their hem.)
+	const mkShorts = MESH_KINDS.map((name) => {
+		const side = name.endsWith("L") ? 1 : 0;
+		const leg = side ? sk.legL : sk.legR;
+		return {
+			kind: SHORTS,
+			group: G_SHORTS + side,
+			side,
+			A: lerpV(leg.root, leg.mid, 0.16),
+			B: lerpV(leg.root, leg.mid, MESH_UNDER_HEM),
+		} as unknown as Mass;
+	});
+	const fr = b.frame;
+	const toward = unit(v3(fr.tw.f, fr.tw.s, fr.tw.u + fr.kap));
+	const posed = poseBones(sk, body, TYPICAL_BODY, b);
+	// His head turned on his neck to see the ball (as the court's drawn
+	// head is - see figure.ts drawHeadAt): all of it at his head, half of
+	// it up his neck - if the mesh has a head (the court's own drawn on
+	// him otherwise, turning itself).
+	if (st.look && MESH_KINDS.includes("head")) {
+		for (const [name, share] of [
+			["head", 1],
+			["neck2", 0.5],
+		] as const) {
+			const i = boneIndex(name);
+			const bone = posed[i];
+			if (i < 0 || !bone) {
+				continue;
+			}
+			const th = ((st.look * Math.PI) / 180) * share;
+			const c = Math.cos(th);
+			const sn = Math.sin(th);
+			const { f, s: l } = bone.fr;
+			posed[i] = {
+				...bone,
+				fr: {
+					...bone.fr,
+					f: v3(f.f * c + l.f * sn, f.s * c + l.s * sn, f.u * c + l.u * sn),
+					s: v3(l.f * c - f.f * sn, l.s * c - f.s * sn, l.u * c - f.u * sn),
+				},
+			};
+		}
+	}
+	// His shoes painted where each point is on the shoe - stood flat, as
+	// the mesh was made - however his foot is pointed, not by how high
+	// off the floor it is (one skin: see MESH_LAYERED).
+	const restShoes = [0, 1].map((side) => {
+		const s = side ? "L" : "R";
+		const ankle = restJoint(`ankle${s}`, body.H);
+		const toe = restJoint(`toe${s}`, body.H);
+		return {
+			kind: SHOE,
+			group: G_SHOE + side,
+			side,
+			A: lerpV(ankle, toe, -0.32),
+			B: lerpV(ankle, toe, 1.02),
+		} as unknown as Mass;
+	});
+	const feet = [boneIndex("footR"), boneIndex("footL")];
+	return { posed, toward, mk, mkShorts, restShoes, feet };
+};
+
 // His sprite, w x h of its pixels, each px screen pixels, its top left at
 // (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
 // from a picture also marks which of the picture's pixels show on him: 1
@@ -3755,71 +3886,11 @@ export const sculpt = (
 		// HIS BODY A MAN'S (see meshBody.ts): drawn first; then his hands,
 		// and whatever is in them, over it where they are nearer.
 		const sk = b.sk;
-		const mk = MESH_KINDS.map((name) => {
-			const side = name.endsWith("L") ? 1 : 0;
-			const leg = side ? sk.legL : sk.legR;
-			const arm = side ? sk.armL : sk.armR;
-			const tip = leg.tip ?? leg.end;
-			const m = (kind: number, group: number, A: V3, B: V3) =>
-				({ kind, group, side, A, B }) as unknown as Mass;
-			if (name.startsWith("upper")) {
-				return m(UPPER, G_ARM + side, arm.root, arm.mid);
-			}
-			if (name.startsWith("fore")) {
-				return m(FORE, G_ARM + side, arm.mid, arm.end);
-			}
-			if (name.startsWith("thigh")) {
-				return m(THIGH, G_LEG + side, leg.root, leg.mid);
-			}
-			if (name.startsWith("hand")) {
-				return { ...m(NECK, G_HAND + side, arm.end, arm.tip ?? arm.end) };
-			}
-			if (name.startsWith("shin")) {
-				return m(SHIN, G_LEG + side, leg.mid, leg.end);
-			}
-			if (name === "shortsR" || name === "shortsL") {
-				return m(
-					SHORTS,
-					G_SHORTS + side,
-					lerpV(leg.root, leg.mid, 0.16),
-					lerpV(leg.root, leg.mid, MESH_HEM),
-				);
-			}
-			if (name.startsWith("foot") || name.startsWith("shoe")) {
-				return m(
-					SHOE,
-					G_SHOE + side,
-					lerpV(leg.end, tip, -0.32),
-					lerpV(leg.end, tip, 1.02),
-				);
-			}
-			// (His neck painted as his torso is: the collar of his jersey round
-			// it where it comes, not where the mesh's parts meet.)
-			// (His own skin, under his jersey: only ever seen where the jersey
-			// is not - at his neck, through his armholes.)
-			if (
-				name === "head" ||
-				(!MESH_PAINTED && (name === "neck" || name === "torso"))
-			) {
-				return {
-					...m(NECK, name === "neck" ? G_NECK : G_TORSO, sk.chest, sk.head),
-					side: 0,
-				};
-			}
-			return { ...m(TORSO, G_TORSO, sk.pelvis, sk.chest), side: 0 };
-		});
-		// (His shorts, painted down his thighs to their hem.)
-		const mkShorts = MESH_KINDS.map((name) => {
-			const side = name.endsWith("L") ? 1 : 0;
-			const leg = side ? sk.legL : sk.legR;
-			return {
-				kind: SHORTS,
-				group: G_SHORTS + side,
-				side,
-				A: lerpV(leg.root, leg.mid, 0.16),
-				B: lerpV(leg.root, leg.mid, MESH_UNDER_HEM),
-			} as unknown as Mass;
-		});
+		const { posed, toward, mk, mkShorts, restShoes, feet } = meshRig(
+			b,
+			st,
+			body,
+		);
 		const headKind = MESH_KINDS.indexOf("head");
 		const torsoMass = mk[MESH_KINDS.indexOf("torso")] ?? mk[0]!;
 		const upperR = mk[MESH_KINDS.indexOf("upperR")] ?? torsoMass;
@@ -4012,52 +4083,6 @@ export const sculpt = (
 		};
 		const under = new Float32Array(w * h).fill(Infinity);
 		const fr = b.frame;
-		const toward = unit(v3(fr.tw.f, fr.tw.s, fr.tw.u + fr.kap));
-		const posed = poseBones(sk, body, TYPICAL_BODY, b);
-		// His head turned on his neck to see the ball (as the court's drawn
-		// head is - see figure.ts drawHeadAt): all of it at his head, half of
-		// it up his neck - if the mesh has a head (the court's own drawn on
-		// him otherwise, turning itself).
-		if (st.look && MESH_KINDS.includes("head")) {
-			for (const [name, share] of [
-				["head", 1],
-				["neck2", 0.5],
-			] as const) {
-				const i = boneIndex(name);
-				const bone = posed[i];
-				if (i < 0 || !bone) {
-					continue;
-				}
-				const th = ((st.look * Math.PI) / 180) * share;
-				const c = Math.cos(th);
-				const sn = Math.sin(th);
-				const { f, s: l } = bone.fr;
-				posed[i] = {
-					...bone,
-					fr: {
-						...bone.fr,
-						f: v3(f.f * c + l.f * sn, f.s * c + l.s * sn, f.u * c + l.u * sn),
-						s: v3(l.f * c - f.f * sn, l.s * c - f.s * sn, l.u * c - f.u * sn),
-					},
-				};
-			}
-		}
-		// His shoes painted where each point is on the shoe - stood flat, as
-		// the mesh was made - however his foot is pointed, not by how high
-		// off the floor it is (one skin: see MESH_LAYERED).
-		const restShoes = [0, 1].map((side) => {
-			const s = side ? "L" : "R";
-			const ankle = restJoint(`ankle${s}`, body.H);
-			const toe = restJoint(`toe${s}`, body.H);
-			return {
-				kind: SHOE,
-				group: G_SHOE + side,
-				side,
-				A: lerpV(ankle, toe, -0.32),
-				B: lerpV(ankle, toe, 1.02),
-			} as unknown as Mass;
-		});
-		const feet = [boneIndex("footR"), boneIndex("footL")];
 		const shoeAt = (k: number, Pf: number, Ps: number, Pu: number) => {
 			const side = MESH_KINDS[k]!.endsWith("L") ? 1 : 0;
 			const p = atRest(posed, feet[side]!, body.H, Pf, Ps, Pu);

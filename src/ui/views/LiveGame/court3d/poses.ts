@@ -651,12 +651,12 @@ const P = {
 		hipF: 11,
 		kneeF: 19,
 		lean: 7,
-		shN: 12,
-		elN: 24,
-		shF: 15,
-		elF: 30,
-		abN: 18,
-		abF: 21,
+		shN: 7,
+		elN: 20,
+		shF: 9,
+		elF: 24,
+		abN: 13,
+		abF: 15,
 		wide: 0.32,
 	}),
 	// Stood easy, the ball dead - a whistle, a free throw: up straight, his
@@ -1695,8 +1695,9 @@ const stride = (ph: number, mode: RunMode): Pose => {
 	if (mode === "sideStep") {
 		// Off the ball, sliding along the arc with his eyes on it: the same
 		// push step and close as a defensive slide - each foot still on the
-		// floor while the other moves - but up out of a stance, a shooter's
-		// hands up ready for it.
+		// floor while the other moves - but up out of a stance, his hands
+		// loose and a little out in front of him (up, held out at his chest,
+		// he looks to be pushing something along).
 		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
 		const knee = 36 - 14 * spread * spread;
 		return pose({
@@ -1705,14 +1706,14 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			kneeN: knee,
 			kneeF: knee + 2,
 			lean: 8,
-			shN: 40 + 4 * spread,
-			elN: 60,
-			abN: 16 + 4 * spread,
-			wrN: 20,
-			shF: 38 + 4 * spread,
-			elF: 62,
-			abF: 16 + 4 * spread,
-			wrF: 20,
+			shN: 8 + 3 * spread,
+			elN: 24,
+			abN: 13 + 3 * spread,
+			wrN: 6,
+			shF: 10 + 3 * spread,
+			elF: 26,
+			abF: 13 + 3 * spread,
+			wrF: 6,
 			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
 		});
 	}
@@ -3191,9 +3192,9 @@ const HELP_SWAY: Pose[] = [
 		kneeF: 24,
 		tilt: -2,
 		twist: 4,
-		shN: 16,
-		elN: 30,
-		abN: 22,
+		shN: 10,
+		elN: 26,
+		abN: 16,
 	},
 	{ ...P.help, kneeN: 18, kneeF: 20, lean: 8 },
 	{
@@ -3203,9 +3204,9 @@ const HELP_SWAY: Pose[] = [
 		kneeF: 14,
 		tilt: 2,
 		twist: -4,
-		shF: 19,
-		elF: 36,
-		abF: 25,
+		shF: 12,
+		elF: 30,
+		abF: 18,
 	},
 ];
 
