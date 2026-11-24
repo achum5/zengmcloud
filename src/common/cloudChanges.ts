@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 509,
+		date: "2026-11-24",
+		text: 'Shared leagues: the "Reconnecting to the shared league" warning shows once and fades, instead of stacking up several at a time.',
+	},
+	{
 		n: 508,
 		date: "2026-11-24",
 		text: "NBA calendar leagues: Pause Sim On Days has one-tap Dec 15, Jan 15 and Trade deadline, and a month and day picker for any other date.",

@@ -23,6 +23,7 @@ import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
 import { stillSyncOwner } from "./core/sync/instanceOwner.ts";
+import type { Conditions } from "../common/types.ts";
 import { getLeaguePosition } from "./core/sync/leaguePosition.ts";
 import {
 	beginOwnLiveSimRequest,
@@ -287,6 +288,24 @@ const SIM_CONFLICT_GATED = new Set([
 	"offerExtension",
 ]);
 
+// A refusal's message (the guard below): not a saved event - logEvent throws
+// for want of pids or tids before anything shows, and the person who pressed
+// the button sees nothing at all - and the same one once in half a minute: a
+// reconnect turns away every call the screen makes on its own, several at
+// once.
+const refusalShownAt = new Map<string, number>();
+const showRefusal = (
+	event: { type: "error" | "info"; text: string; persistent: boolean },
+	conditions: Conditions,
+) => {
+	const now = Date.now();
+	if (now - (refusalShownAt.get(event.text) ?? -Infinity) < 30_000) {
+		return;
+	}
+	refusalShownAt.set(event.text, now);
+	void util.logEvent({ ...event, saveToDb: false }, conditions);
+};
+
 // API functions should have at most 2 arguments. First argument is passed here from toWorker. If you need to pass multiple variables, use an object/array. Second argument is Conditions.
 const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 	[type, name, param]: any,
@@ -330,9 +349,6 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 		syncDebugLog("api:sim-call", { type, name });
 	}
 
-	// (Each refusal below is a message, not a saved event: saveToDb false, or
-	// logEvent throws for want of pids or tids before anything shows - and the
-	// person who pressed the button sees nothing at all.)
 	if (needsConnection) {
 		// Another copy of the game on this device has taken over syncing (see
 		// core/sync/instanceOwner.ts): nothing from this one goes to the room.
@@ -355,9 +371,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						typeof param === "number" ? param : undefined,
 					);
 				} else {
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: "error",
 							text: `${mateLive.byName} is simming this game live. Watch it with them instead.`,
 							persistent: true,
@@ -385,9 +400,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						name,
 						step: "own-game",
 					});
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: "error",
 							text: decision.reason,
 							persistent: true,
@@ -411,9 +425,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					holderName === undefined || holderName === "You"
 						? "Another device"
 						: holderName;
-				util.logEvent(
+				showRefusal(
 					{
-						saveToDb: false,
 						type: "error",
 						text: `${holder} is in charge of simming. Go to Multiplayer Sync to sim here.`,
 						persistent: true,
@@ -431,9 +444,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				const holding = liveGameHoldingDay();
 				if (holding !== undefined) {
 					syncDebugLog("api:guard-refused", { type, name, step: "live-game" });
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: "error",
 							text: `${holding} is still being played. The league waits for its final.`,
 							persistent: true,
@@ -448,9 +460,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			// phase change): not run here alongside it (stepClaim.ts).
 			if (syncEngine.stepClaimedElsewhere()) {
 				syncDebugLog("api:guard-refused", { type, name, step: "step-claimed" });
-				util.logEvent(
+				showRefusal(
 					{
-						saveToDb: false,
 						type: "error",
 						text: "A league mate's device is running the next step. Try again when it's done.",
 						persistent: true,
@@ -462,9 +473,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 
 			if (!syncEngine.isCaughtUp()) {
 				syncDebugLog("api:guard-refused", { type, name, step: "caught-up" });
-				util.logEvent(
+				showRefusal(
 					{
-						saveToDb: false,
 						type: "error",
 						text: `Still catching up to the cloud, so this wasn't done. Try again in a moment.`,
 						persistent: true,
@@ -492,9 +502,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					step: "ensure-ready",
 					error: String(error),
 				});
-				util.logEvent(
+				showRefusal(
 					{
-						saveToDb: false,
 						type: "error",
 						text: `Cloud sync is not ready right now, so this wasn't done. Check your connection and try again.`,
 						persistent: true,
@@ -522,9 +531,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			const live = await syncEngine.verifyConnection();
 			if (!live) {
 				syncDebugLog("api:guard-refused", { type, name, step: "verify" });
-				util.logEvent(
+				showRefusal(
 					{
-						saveToDb: false,
 						type: "error",
 						text: `Not connected to the cloud right now, so this wasn't done — it wouldn't reach your league-mates. Check your connection and try again in a moment.`,
 						persistent: true,
@@ -562,9 +570,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						step: "advance-catchup",
 						drained,
 					});
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: "error",
 							text: `Still catching up to the cloud, so this wasn't done. Try again in a moment.`,
 							persistent: true,
@@ -601,9 +608,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						step: "sim-safety",
 						reason: safety.reason,
 					});
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: "error",
 							text: `This wasn't done: ${safety.reason}`,
 							persistent: true,
@@ -617,12 +623,12 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			// Meant to be synced but not connected (reconnecting after a refresh,
 			// or offline). Pause so this device can't advance while offline and
 			// diverge from everyone else.
-			util.logEvent(
+			showRefusal(
 				{
-					saveToDb: false,
 					type: "error",
 					text: `Reconnecting to the shared league — paused until you're back online. To play offline instead, disconnect on the Multiplayer Sync page.`,
-					persistent: true,
+					// It clears itself as the connection comes back.
+					persistent: false,
 				},
 				conditions,
 			);
@@ -646,9 +652,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				// A step a league mate's device is running (stepClaim.ts).
 				syncEngine.stepClaimedElsewhere())
 		) {
-			util.logEvent(
+			showRefusal(
 				{
-					saveToDb: false,
 					type: "error",
 					text: `The league is simming right now, so this wasn't done — it would collide with the sim. Try again in a moment.`,
 					persistent: true,
@@ -756,9 +761,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					// and calling it one sends people looking for a connection
 					// problem that isn't there.
 					const held = getSyncEngine()?.isHeldForSim() ?? false;
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: held ? "info" : "error",
 							text: held
 								? `The league is simming, so this will go to the room as soon as the sim finishes.`
@@ -785,9 +789,8 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						name,
 						error: String(error),
 					});
-					util.logEvent(
+					showRefusal(
 						{
-							saveToDb: false,
 							type: "error",
 							text: `That didn't finish: ${
 								error instanceof Error ? error.message : String(error)
