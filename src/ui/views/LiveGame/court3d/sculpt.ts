@@ -21,6 +21,7 @@ import {
 	type PlayerState,
 } from "./evaluate.ts";
 import { CAMERA_BODY, CAMERA_LENS, type Look } from "./figure.ts";
+import { HEM_TODAY, shortsFlareFor } from "./shortsEra.ts";
 import {
 	ballSurface,
 	type BallSurface,
@@ -89,9 +90,14 @@ export const MESH_CUTS = MESH_SHELLS.map(
 		(sh === "shorts" || sh === "shortsTop" || sh === "shoe" || sh === "jersey"),
 );
 // (Where his shorts come down to: of the way from his hip to his knee - and
-// where they are painted on him under them, short of that.)
+// where they are painted on him under them, short of that - with today's
+// shorts; his season's that much shorter or longer: see hemOf.)
 const MESH_HEM = 0.92;
 const MESH_UNDER_HEM = 0.8;
+// How far down his thighs his shorts come (see shortsEra.ts) - in his
+// warm-up top too; none in trousers.
+export const hemOf = (look: Look) =>
+	look.outfit?.trousers ? HEM_TODAY : (look.hem ?? HEM_TODAY);
 // (His shorts over him wherever the two come within an inch or so.)
 export const MESH_LIFT = MESH_SHELLS.map((sh) =>
 	MESH_LAYERED && (sh === "shorts" || sh === "shortsTop") ? 0.06 : 0,
@@ -268,8 +274,11 @@ const tuckOf = (body: Body) => body.torso * 0.2 + body.H * 0.016;
 const shouldersOf = (body: Body) => body.torso + body.depth * 0.4;
 
 // How a uniform's picture wraps round his jersey and his shorts (see
-// kitArt.ts) - the shorts down to their hems, a little above his knees.
-export const wrapsFor = (body: Body): { jersey: ArtWrap; shorts: ArtWrap } => ({
+// kitArt.ts) - the shorts down to their hems, wherever his season's are.
+export const wrapsFor = (
+	body: Body,
+	hem = HEM_TODAY,
+): { jersey: ArtWrap; shorts: ArtWrap } => ({
 	jersey: artWrap(
 		body.shoulderW * 1.1,
 		body.depth * 0.5,
@@ -281,7 +290,7 @@ export const wrapsFor = (body: Body): { jersey: ArtWrap; shorts: ArtWrap } => ({
 		body.hipW + body.thighR * 1.15,
 		body.depth * 0.5,
 		tuckOf(body),
-		-body.thigh * 0.84,
+		-body.thigh * hem,
 		ART_SHORTS,
 	),
 });
@@ -2256,6 +2265,8 @@ export const build = (
 	// the thigh his shorts' leg - loose, flaring a little, cut square above
 	// the knee (or his trousers, down to his shoes).
 	const trousers = look.outfit?.trousers === true;
+	const hem = hemOf(look);
+	const flare = shortsFlareFor(hem);
 	const leg = (limb: Limb, side: 0 | 1) => {
 		const gl = G_LEG + side;
 		legMasses(
@@ -2309,10 +2320,10 @@ export const build = (
 				}
 				add(
 					lerpV(limb.root, limb.mid, 0.16),
-					lerpV(limb.root, limb.mid, 0.84),
+					lerpV(limb.root, limb.mid, hem),
 					[
 						[0, body.thighR * 1.22],
-						[1, body.thighR * 1.4],
+						[1, body.thighR * 1.4 * flare],
 					],
 					SHORTS,
 					G_SHORTS + side,
@@ -2326,11 +2337,15 @@ export const build = (
 				if (level > SAG_FROM) {
 					const sag = v3(0, 0, -body.thighR * SAG * (level - SAG_FROM));
 					add(
-						addV(lerpV(limb.root, limb.mid, 0.4), sag, 0.5),
-						addV(lerpV(limb.root, limb.mid, 0.82), sag, 1),
+						addV(
+							lerpV(limb.root, limb.mid, Math.min(0.4, hem - 0.3)),
+							sag,
+							0.5,
+						),
+						addV(lerpV(limb.root, limb.mid, hem - 0.02), sag, 1),
 						[
 							[0, body.thighR * 1.1],
-							[1, body.thighR * 1.26],
+							[1, body.thighR * 1.26 * flare],
 						],
 						SHORTS,
 						G_SHORTS + side,
@@ -2514,7 +2529,9 @@ export const build = (
 		...(noSheet
 			? {}
 			: { sheet: jerseySheet(look, body, kMid * 1.2, cut.waist) }),
-		...(look.kitArt && !look.outfit ? { wraps: wrapsFor(body) } : {}),
+		...(look.kitArt && !look.outfit
+			? { wraps: wrapsFor(body, hemOf(look)) }
+			: {}),
 		late,
 		headDepth: headC.depth - body.headR * 0.4,
 		pn,
@@ -3201,7 +3218,13 @@ export type MeshRig = {
 	restShoes: Mass[];
 	feet: number[];
 };
-export const meshRig = (b: Built, st: PlayerState, body: Body): MeshRig => {
+// (`hem`: how far down his thighs his shorts come - see hemOf.)
+export const meshRig = (
+	b: Built,
+	st: PlayerState,
+	body: Body,
+	hem = HEM_TODAY,
+): MeshRig => {
 	const sk = b.sk;
 	const mk = MESH_KINDS.map((name) => {
 		const side = name.endsWith("L") ? 1 : 0;
@@ -3230,7 +3253,7 @@ export const meshRig = (b: Built, st: PlayerState, body: Body): MeshRig => {
 				SHORTS,
 				G_SHORTS + side,
 				lerpV(leg.root, leg.mid, 0.16),
-				lerpV(leg.root, leg.mid, MESH_HEM),
+				lerpV(leg.root, leg.mid, MESH_HEM + hem - HEM_TODAY),
 			);
 		}
 		if (name.startsWith("foot") || name.startsWith("shoe")) {
@@ -3265,7 +3288,7 @@ export const meshRig = (b: Built, st: PlayerState, body: Body): MeshRig => {
 			group: G_SHORTS + side,
 			side,
 			A: lerpV(leg.root, leg.mid, 0.16),
-			B: lerpV(leg.root, leg.mid, MESH_UNDER_HEM),
+			B: lerpV(leg.root, leg.mid, MESH_UNDER_HEM + hem - HEM_TODAY),
 		} as unknown as Mass;
 	});
 	const fr = b.frame;
@@ -3337,6 +3360,8 @@ export const sculpt = (
 	const b = build(cam, st, body, look, px, ox, oy);
 	const pal = paletteOf(look);
 	const trousers = look.outfit?.trousers === true;
+	const shortsHem = hemOf(look);
+	const shortsFlare = shortsFlareFor(shortsHem);
 	// A pinstriped jacket's stripes: this far apart round him (in pitches),
 	// each so much of the way across - only close enough to tell apart.
 	const pinShare =
@@ -3683,7 +3708,7 @@ export const sculpt = (
 					const out = side === 0 ? -1 : 1;
 					c = artOver(
 						wraps.shorts,
-						-(0.16 + 0.68 * (t + along)) * body.thigh,
+						-(0.16 + (shortsHem - 0.16) * (t + along)) * body.thigh,
 						out * body.hipW + across,
 						ahead,
 						// The inside of his leg faces the other one, not
@@ -3890,6 +3915,7 @@ export const sculpt = (
 			b,
 			st,
 			body,
+			shortsHem,
 		);
 		const headKind = MESH_KINDS.indexOf("head");
 		const torsoMass = mk[MESH_KINDS.indexOf("torso")] ?? mk[0]!;
@@ -4143,6 +4169,8 @@ export const sculpt = (
 				},
 				faced: MESH_FACED,
 				faceAt,
+				hem: shortsHem,
+				flare: shortsFlare,
 				hidden: MESH_HIDDEN,
 				cuts: MESH_CUTS,
 				lift: MESH_LIFT,

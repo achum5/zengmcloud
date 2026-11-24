@@ -1,5 +1,6 @@
 import { BODY_META } from "./bodyMesh.meta.ts";
 import type { Body, Limb, Skeleton, V3 } from "./poses.ts";
+import { HEM_TODAY } from "./shortsEra.ts";
 
 // HIS BODY AS ONE SKIN - a mesh of him (the court's own player built in
 // Blender: see tools/court3d-body), not masses laid along his bones.
@@ -557,12 +558,137 @@ for (const [i, R] of REST_OF.entries()) {
 	);
 }
 let posedFlat = new Float64Array(0);
+
+// HIS SHORTS AS LONG AS HIS SEASON'S (see shortsEra.ts): the mesh is made
+// with today's, so the legs of them are drawn up his thighs or let down to
+// his knees - the shorts' every ring of points slid along his thigh to fit
+// between his hips and the new hem, the step in under the hem kept as
+// sharp as it was, and his bare thigh below it his thigh's own shape, as
+// thick there as a thigh is (thicker up toward his hip). `hem` is of the
+// way from his hip to his knee, today's HEM_TODAY; `flare`, how loose
+// round his thigh the hem is (1: as made).
+// (From his hip down, how much of his shorts is never moved: where they
+// meet his hips.)
+const HEM_FIXED = 0.2;
+const locals = new Map<string, Float32Array>();
+let localsOf: Mesh | undefined;
+const localFor = (m: Mesh, hem: number, flare: number): Float32Array => {
+	if (localsOf !== m) {
+		locals.clear();
+		localsOf = m;
+	}
+	// (A step of a hundredth: one length per era, not one per season.)
+	const h = Math.round(hem * 100) / 100;
+	const fl = Math.round(flare * 100) / 100;
+	if (h === HEM_TODAY && fl === 1) {
+		return m.local;
+	}
+	const key = `${h} ${fl}`;
+	const had = locals.get(key);
+	if (had) {
+		return had;
+	}
+	// Each point at rest.
+	const rest = new Float64Array(m.n * 3);
+	for (let i = 0; i < m.n; i++) {
+		let f = 0;
+		let s = 0;
+		let u = 0;
+		for (let j = m.start[i]!; j < m.start[i + 1]!; j++) {
+			const R = REST_OF[m.bone[j]!]!;
+			const w = m.weight[j]!;
+			const l0 = m.local[j * 3]!;
+			const l1 = m.local[j * 3 + 1]!;
+			const l2 = m.local[j * 3 + 2]!;
+			f += w * (R.h.f + R.a.f * l0 + R.f.f * l1 + R.s.f * l2);
+			s += w * (R.h.s + R.a.s * l0 + R.f.s * l1 + R.s.s * l2);
+			u += w * (R.h.u + R.a.u * l0 + R.f.u * l1 + R.s.u * l2);
+		}
+		rest[i * 3] = f;
+		rest[i * 3 + 1] = s;
+		rest[i * 3 + 2] = u;
+	}
+	const local = new Float32Array(m.local);
+	for (const side of ["R", "L"] as const) {
+		const thigh = boneIndex(`thigh${side}`);
+		const hip = jt(`hip${side}`);
+		const ax = unit(sub(jt(`knee${side}`), hip), v3(0, 0, -1));
+		const L = restLen(`hip${side}`, `knee${side}`);
+		// Each point of this leg (held by its thigh): how far down it
+		// (hip 0, knee 1) and out from it (thigh lengths).
+		const pts: { i: number; a: number; r: number; o: V3 }[] = [];
+		for (let i = 0; i < m.n; i++) {
+			let held = false;
+			for (let j = m.start[i]!; j < m.start[i + 1]!; j++) {
+				held ||= m.bone[j] === thigh;
+			}
+			const p = v3(rest[i * 3]!, rest[i * 3 + 1]!, rest[i * 3 + 2]!);
+			if (!held || (side === "R" ? p.s > 0 : p.s < 0)) {
+				continue;
+			}
+			const d = sub(p, hip);
+			const a = dot(d, ax) / L;
+			const o = ortho(d, ax);
+			const r = len(o) / L;
+			if (a >= HEM_FIXED && a <= 1 && r < 0.5) {
+				pts.push({ i, a, r, o });
+			}
+		}
+		// Where the shorts end as made (the last of their wide rings) and
+		// his thigh begins under them.
+		let g0 = 0;
+		for (const p of pts) {
+			if (p.r > 0.25 && p.a > g0) {
+				g0 = p.a;
+			}
+		}
+		let g1 = 1;
+		for (const p of pts) {
+			if (p.r < 0.2 && p.a > g0 && p.a < g1) {
+				g1 = p.a;
+			}
+		}
+		if (g0 <= HEM_FIXED || g1 <= g0) {
+			continue;
+		}
+		const to = g0 + (h - HEM_TODAY);
+		const step = Math.min(g1 - g0, Math.max(0.01, (0.98 - to) / 2));
+		// (A thigh's girth down it: thicker up toward his hip.)
+		const girth = (a: number) => 1 + 0.6 * (1 - a);
+		for (const p of pts) {
+			let a = p.a;
+			let k = 1;
+			if (p.a <= g0) {
+				const q = (p.a - HEM_FIXED) / (g0 - HEM_FIXED);
+				a = HEM_FIXED + q * (to - HEM_FIXED);
+				k = 1 + (fl - 1) * q;
+			} else if (p.a <= g1) {
+				a = to + ((p.a - g0) / (g1 - g0)) * step;
+				k = fl;
+			} else {
+				a = to + step + ((p.a - g1) / (1 - g1)) * (1 - to - step);
+				k = girth(a) / girth(p.a);
+			}
+			const at = addV(addV(hip, scale(ax, a * L)), scale(p.o, k));
+			for (let j = m.start[p.i]!; j < m.start[p.i + 1]!; j++) {
+				const R = REST_OF[m.bone[j]!]!;
+				const d = sub(at, R.h);
+				local[j * 3] = dot(d, R.a);
+				local[j * 3 + 1] = dot(d, R.f);
+				local[j * 3 + 2] = dot(d, R.s);
+			}
+		}
+	}
+	locals.set(key, local);
+	return local;
+};
+
 // (Where each point his arms and neck hold is at rest, as his chest's - the
-// same whatever he does: worked out once, for the mesh there is.)
+// same whatever he does: worked out once, for each shape of him.)
 let chestRest: Float64Array | undefined;
-let chestRestOf: Mesh | undefined;
-const chestRestFor = (m: Mesh): Float64Array => {
-	if (chestRest && chestRestOf === m) {
+let chestRestOf: Float32Array | undefined;
+const chestRestFor = (m: Mesh, LOCAL: Float32Array): Float64Array => {
+	if (chestRest && chestRestOf === LOCAL) {
 		return chestRest;
 	}
 	const out = new Float64Array(m.weight.length * 3);
@@ -572,9 +698,9 @@ const chestRestFor = (m: Mesh): Float64Array => {
 			continue;
 		}
 		const R0 = REST_OF[bi]!;
-		const l0 = m.local[j * 3]!;
-		const l1 = m.local[j * 3 + 1]!;
-		const l2 = m.local[j * 3 + 2]!;
+		const l0 = LOCAL[j * 3]!;
+		const l1 = LOCAL[j * 3 + 1]!;
+		const l2 = LOCAL[j * 3 + 2]!;
 		const rx = R0.h.f + R0.a.f * l0 + R0.f.f * l1 + R0.s.f * l2 - C0.h.f;
 		const ry = R0.h.s + R0.a.s * l0 + R0.f.s * l1 + R0.s.s * l2 - C0.h.s;
 		const rz = R0.h.u + R0.a.u * l0 + R0.f.u * l1 + R0.s.u * l2 - C0.h.u;
@@ -583,7 +709,7 @@ const chestRestFor = (m: Mesh): Float64Array => {
 		out[j * 3 + 2] = rx * C0.s.f + ry * C0.s.s + rz * C0.s.u;
 	}
 	chestRest = out;
-	chestRestOf = m;
+	chestRestOf = LOCAL;
 	return out;
 };
 export const skinned = (
@@ -591,6 +717,8 @@ export const skinned = (
 	H: number,
 	out: Float32Array,
 	trunk?: Float32Array,
+	hem = HEM_TODAY,
+	flare = 1,
 ) => {
 	const m = meshOf();
 	turnsOf(bones, H);
@@ -617,12 +745,12 @@ export const skinned = (
 		PF[o + 13] = fr.s.u;
 	}
 	const RF = REST_FLAT;
-	const CR = trunk ? chestRestFor(m) : undefined;
+	const LOCAL = localFor(m, hem, flare);
+	const CR = trunk ? chestRestFor(m, LOCAL) : undefined;
 	const DQ = dq;
 	const START = m.start;
 	const BONE = m.bone;
 	const WEIGHT = m.weight;
-	const LOCAL = m.local;
 	const C = CHEST * 14;
 	for (let i = 0; i < m.n; i++) {
 		// Him at rest, each piece stretched as it is posed - and the turns
@@ -815,6 +943,10 @@ export type MeshDraw = {
 	faced: readonly boolean[];
 	faceAt: Float32Array;
 	ink: { r: number; g: number; b: number; cloth: boolean; tone?: number };
+	// How far down his thighs his shorts come, and how loose at the hem
+	// (see localFor): today's, if unsaid.
+	hem?: number;
+	flare?: number;
 };
 // The light (as sculpt.ts's), and how it falls on him.
 const LIGHT = (() => {
@@ -860,7 +992,7 @@ export const MESH_SS = SS;
 export const meshPoints = (
 	bones: Posed[],
 	H: number,
-	m: Pick<MeshDraw, "see" | "lens" | "rt" | "dn" | "toward">,
+	m: Pick<MeshDraw, "see" | "lens" | "rt" | "dn" | "toward" | "hem" | "flare">,
 ): MeshPoints => {
 	const me = meshOf();
 	const n = me.n;
@@ -870,7 +1002,7 @@ export const meshPoints = (
 		nrm = new Float32Array(n * 3);
 		scr = new Float32Array(n * 3);
 	}
-	skinned(bones, H, pos, posT);
+	skinned(bones, H, pos, posT, m.hem, m.flare);
 	// Normals, from his faces as they are now.
 	nrm.fill(0, 0, n * 3);
 	const T = me.tris;

@@ -128,6 +128,9 @@ export type Look = {
 	street?: true;
 	// A team's cap on his head (see cap.ts): a draft pick's.
 	cap?: Cap;
+	// Where his shorts come down to, of the way from his hip to his knee:
+	// his season's (see shortsEra.ts) - today's, if unsaid.
+	hem?: number;
 };
 
 type P2 = { x: number; y: number };

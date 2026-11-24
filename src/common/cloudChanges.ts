@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 553,
+		date: "2026-11-24",
+		text: "3D games: players' shorts are as long as they were worn in the season being played. Mid-thigh in the 1940s to 60s, short and tight from the 70s through the late 80s, longer through the 90s, baggy down to the knee in the 2000s, and today's length since. Uniform pictures stretch or shrink to fit.",
+	},
+	{
 		n: 552,
 		date: "2026-11-24",
 		text: "3D games: players' heads sit on their necks instead of looking stuck on the end of a thin stalk, and defenders off the ball keep their hands loose at their sides instead of holding them out in front of them.",

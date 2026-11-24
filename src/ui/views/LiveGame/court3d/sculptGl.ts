@@ -38,6 +38,7 @@ import {
 	GROUPS,
 	HAND,
 	heldSurface,
+	hemOf,
 	LIGHT,
 	NAIL,
 	NECK,
@@ -112,7 +113,7 @@ const names = [
 	"CUT2",
 	// hipStripe, open, his torso's length, his thigh's
 	"CUT3",
-	// hipW, ankleR, where a quarter-zip's zip stops, -
+	// hipW, ankleR, where a quarter-zip's zip stops, his shorts' hem
 	"BODY",
 	"PEL",
 	"SPINE",
@@ -611,7 +612,7 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 			float outS = side == 0 ? -1.0 : 1.0;
 			c = artOver(
 				WS0,
-				-(0.16 + 0.68 * (t + along)) * uP[CUT3].w,
+				-(0.16 + (uP[BODY].w - 0.16) * (t + along)) * uP[CUT3].w,
 				outS * uP[BODY].x + across,
 				ahead,
 				across * outS < 0.0,
@@ -1306,7 +1307,7 @@ export const glSculpt = (
 	set(U.CUT1, cut.top, cut.pit, cut.neckIn, cut.vAt);
 	set(U.CUT2, cut.backAt, cut.trim, cut.sockTop, cut.sole);
 	set(U.CUT3, cut.hipStripe, cut.open, body.torso, body.thigh);
-	set(U.BODY, body.hipW, body.ankleR, cut.top - T_ZIP * cut.top);
+	set(U.BODY, body.hipW, body.ankleR, cut.top - T_ZIP * cut.top, hemOf(look));
 	set(U.PEL, b.pel.f, b.pel.s, b.pel.u);
 	set(U.SPINE, b.spine.f, b.spine.s, b.spine.u);
 	set(U.FW, b.fwd.f, b.fwd.s, b.fwd.u);

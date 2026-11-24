@@ -122,4 +122,68 @@ describe("mesh bodies", () => {
 			expect(gaps, anim).toBe(0);
 		}
 	});
+
+	test("his shorts as long as his season's", () => {
+		const body = bodyOf(78, 210, MESH_BUILD);
+		const typical = bodyOf(undefined, undefined, MESH_BUILD);
+		const W = 240;
+		const Hh = 520;
+		const k = Hh / (body.H * 1.2);
+		// The lowest row of him painted as his shorts, from in front.
+		const hemRow = (hem?: number, flare?: number) => {
+			const sk = skeleton(body, poseAt("easy", 0));
+			const d = new Uint8ClampedArray(W * Hh * 4);
+			const z = new Float32Array(W * Hh).fill(Infinity);
+			const ink = { r: 0, g: 0, b: 0, cloth: false, tone: 0 };
+			drawMesh(
+				poseBones(sk, body, typical),
+				body.H,
+				{
+					see: (v: V3) => ({
+						x: W / 2 - v.s * k,
+						y: Hh - 20 - v.u * k,
+						depth: -v.f,
+					}),
+					rt: { f: 0, s: -1, u: 0 },
+					dn: { f: 0, s: 0, u: -1 },
+					toward: { f: 1, s: 0, u: 0 },
+					w: W,
+					h: Hh,
+					paint: (kind) => {
+						const shorts = MESH_KINDS[kind]!.startsWith("shorts");
+						ink.r = shorts ? 0 : 255;
+						ink.g = 0;
+						ink.b = shorts ? 255 : 0;
+						return 0;
+					},
+					hidden: MESH_KINDS.map(() => false),
+					cuts: MESH_KINDS.map(() => false),
+					keep: () => true,
+					lift: MESH_KINDS.map(() => 0),
+					faced: MESH_KINDS.map(() => false),
+					faceAt: new Float32Array(4),
+					ink,
+					...(hem === undefined ? {} : { hem, flare }),
+				},
+				d,
+				z,
+			);
+			let low = 0;
+			for (let y = 0; y < Hh; y++) {
+				for (let x = 0; x < W; x++) {
+					const o = (y * W + x) * 4;
+					if (d[o + 3]! > 200 && d[o + 2]! > 200 && d[o]! < 60) {
+						low = y;
+					}
+				}
+			}
+			return low;
+		};
+		const today = hemRow();
+		expect(hemRow(0.84, 1)).toBe(today);
+		const thigh = (body.H * 0.21 * k) / 1;
+		// The eighties' well up his thigh; the two-thousands' down to his knee.
+		expect(hemRow(0.42, 0.82)).toBeLessThan(today - thigh * 0.3);
+		expect(hemRow(0.96, 1.12)).toBeGreaterThan(today + thigh * 0.06);
+	});
 });

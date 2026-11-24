@@ -46,6 +46,7 @@ import {
 } from "./resolution.ts";
 import { FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
+import { shortsHemFor } from "./shortsEra.ts";
 import {
 	glReady,
 	makeScratch,
@@ -797,6 +798,8 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [real, facesVersion]);
 	const dress = authored?.dress;
+	// His season's shorts (see shortsEra.ts).
+	const hem = shortsHemFor(season);
 	const appearance = useMemo(() => {
 		const looks = new Map<number, Look>();
 		const bodies = new Map<number, Body>();
@@ -826,6 +829,7 @@ const Court3D = ({
 				p.out,
 				p.ratings,
 				dress,
+				hem,
 			];
 			const was = kept.current.get(p.pid);
 			if (was && was.made.every((x, i) => x === made[i])) {
@@ -866,6 +870,8 @@ const Court3D = ({
 					"",
 				head: head?.sprite,
 				...(man ? { real: true as const } : {}),
+				// His shorts as long as they were worn that season.
+				hem,
 			});
 			// Out hurt: in his street clothes - nothing of the uniform on him.
 			if (p.out) {
@@ -902,7 +908,17 @@ const Court3D = ({
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, dressed, arts, crests, facesVersion, dress, real, texVersion]);
+	}, [
+		roster,
+		dressed,
+		arts,
+		crests,
+		facesVersion,
+		dress,
+		real,
+		texVersion,
+		hem,
+	]);
 	// The officials, the coaches and the photographers, picked once a game,
 	// and their heads drawn from their faces as they come.
 	// (And a scene's own people - see authored.ts.)
