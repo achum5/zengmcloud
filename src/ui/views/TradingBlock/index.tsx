@@ -170,6 +170,7 @@ const TradingBlock = ({
 		phase,
 		salaryCap,
 		salaryCapType,
+		searchProgress,
 		spectator,
 		teamInfoCache,
 		tradesAfterDeadline,
@@ -181,6 +182,7 @@ const TradingBlock = ({
 		"phase",
 		"salaryCap",
 		"salaryCapType",
+		"searchProgress",
 		"spectator",
 		"teamInfoCache",
 		"tradesAfterDeadline",
@@ -452,6 +454,7 @@ const TradingBlock = ({
 			<div className="trading-block-buttons">
 				<ActionButton
 					processing={state.asking}
+					progress={searchProgress}
 					onClick={handleClickAsk}
 					size="lg"
 					variant="primary"

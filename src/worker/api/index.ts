@@ -261,6 +261,7 @@ import getWinner from "../../common/getWinner.ts";
 import formatScoreWithShootout from "../../common/formatScoreWithShootout.ts";
 import { getStats } from "../../common/advancedPlayerSearch.ts";
 import type { LookingFor } from "../core/trade/makeItWork.ts";
+import { searchProgress, type SearchProgress } from "../util/searchProgress.ts";
 import type { LookingForState } from "../../ui/views/TradingBlock/useLookingForState.ts";
 import {
 	isWanted,
@@ -3711,6 +3712,7 @@ const getOffers = async (
 	userPids: number[],
 	userDpids: number[],
 	lookingFor: LookingFor,
+	progress?: SearchProgress,
 ) => {
 	const teams = await idb.cache.teams.getAll();
 	const tids = orderBy(
@@ -3721,12 +3723,18 @@ const getOffers = async (
 
 	// The smart CPU: each CPU team's own real offer (smartCpu/screens.ts).
 	if (smartCpuOn()) {
-		return smartTradingBlock(g.get("userTid"), userPids, userDpids, lookingFor);
+		return smartTradingBlock(
+			g.get("userTid"),
+			userPids,
+			userDpids,
+			lookingFor,
+			progress,
+		);
 	}
 	// The smart CPU on vanilla's rules: only what the team would take by its
 	// own read too (smartCpu/humanTrades.ts).
 	const valueChangeCalculator = smartVanillaOn()
-		? await ownReadValuer(await tradeValueCalculator())
+		? await ownReadValuer(await tradeValueCalculator(), progress?.setup)
 		: await tradeValueCalculator();
 	// Vanilla+ and the smart CPU on vanilla's rules: CPU teams only - not a
 	// league-mate's team, priced as if CPU.
@@ -3735,7 +3743,8 @@ const getOffers = async (
 			? g.get("userTids")
 			: [g.get("userTid")];
 
-	for (const tid of tids) {
+	for (const [i, tid] of tids.entries()) {
+		progress?.step(i, tids.length);
 		const teams: TradeTeams = [
 			{
 				tid: g.get("userTid"),
@@ -3832,25 +3841,37 @@ const toConciseLookingFor = (lookingForState: LookingForState) => {
 	return output;
 };
 
-const getTradingBlockOffers = async ({
-	pids,
-	dpids,
-	lookingFor,
-}: {
-	pids: number[];
-	dpids: number[];
-	lookingFor: LookingForState;
-}) => {
+const getTradingBlockOffers = async (
+	{
+		pids,
+		dpids,
+		lookingFor,
+	}: {
+		pids: number[];
+		dpids: number[];
+		lookingFor: LookingForState;
+	},
+	conditions: Conditions,
+) => {
+	// The button fills as each team answers (util/searchProgress.ts).
+	const progress = searchProgress(conditions);
+	progress.step(0, 1);
 	// Realistic front offices: each CPU team's own offer
 	// (realisticFrontOffice/proposals.ts).
-	let offers = realisticTradesOn()
-		? await tradingBlockTeams(
-				g.get("userTid"),
-				pids,
-				dpids,
-				toConciseLookingFor(lookingFor),
-			)
-		: await getOffers(pids, dpids, toConciseLookingFor(lookingFor));
+	let offers;
+	try {
+		offers = realisticTradesOn()
+			? await tradingBlockTeams(
+					g.get("userTid"),
+					pids,
+					dpids,
+					toConciseLookingFor(lookingFor),
+					progress,
+				)
+			: await getOffers(pids, dpids, toConciseLookingFor(lookingFor), progress);
+	} finally {
+		progress.end();
+	}
 
 	let saveLookingFor;
 	let positionAndNotDraftPicks = false;

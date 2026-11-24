@@ -37,6 +37,7 @@ export const ActionButton = ({
 	onClick,
 	processing,
 	processingText,
+	progress,
 	ref,
 	size,
 	type,
@@ -49,10 +50,18 @@ export const ActionButton = ({
 	onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
 	processing: boolean;
 	processingText?: string;
+	// While processing, a percent done: shown after the text and as a bar
+	// along the button's bottom edge.
+	progress?: number;
 	ref?: Ref<HTMLButtonElement>;
 	size?: "lg";
 	variant?: "primary" | "secondary" | "god-mode" | "danger" | "light-bordered";
 } & Pick<ButtonHTMLAttributes<HTMLButtonElement>, "form" | "type">) => {
+	const showProgress = processing && progress !== undefined;
+	const text = showProgress
+		? `${processingText ?? "Processing"} ${progress}%`
+		: processingText;
+
 	// maintainWidth d-inline-grid stuff is from https://x.com/wesbos/status/1834242925401694490
 	return (
 		<button
@@ -62,6 +71,7 @@ export const ActionButton = ({
 				`btn btn-${variant}`,
 				size ? `btn-${size}` : undefined,
 				maintainWidth ? "d-inline-grid" : undefined,
+				showProgress ? "position-relative overflow-hidden" : undefined,
 				className,
 			)}
 			disabled={disabled || processing}
@@ -80,14 +90,26 @@ export const ActionButton = ({
 						style={styleGrid11}
 						className={processing ? "opacity-100" : "opacity-0"}
 					>
-						<ProcessingSpinner text={processingText} />
+						<ProcessingSpinner text={text} />
 					</span>
 				</>
 			) : processing ? (
-				<ProcessingSpinner text={processingText} />
+				<ProcessingSpinner text={text} />
 			) : (
 				children
 			)}
+			{showProgress ? (
+				<span
+					className="position-absolute bottom-0 start-0"
+					style={{
+						height: 4,
+						width: `${progress}%`,
+						backgroundColor: "currentColor",
+						opacity: 0.85,
+						transition: "width 0.2s",
+					}}
+				/>
+			) : null}
 		</button>
 	);
 };

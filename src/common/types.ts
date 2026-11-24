@@ -1890,6 +1890,9 @@ export type LocalStateUI = {
 	// (entries applied / total to apply). Undefined when caught up or the gap is
 	// trivial. Drives the header "catching up …%" progress indicator.
 	mpCatchUp: { done: number; total: number } | undefined;
+	// How far a long search this tab asked for has got, in percent (the
+	// trading block's teams answered). Undefined when none is running.
+	searchProgress: number | undefined;
 	// The live-sim broadcast this device is part of (simming to the room, or
 	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
 	mpLiveBroadcast: MpLiveBroadcast | undefined;

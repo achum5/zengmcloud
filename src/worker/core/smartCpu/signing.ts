@@ -6,6 +6,8 @@ import {
 	ensureRetention,
 	type LeagueOutlook,
 } from "../realisticFrontOffice/outlook.ts";
+import type { SearchStep } from "../../util/searchProgress.ts";
+import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { timed, timedSync } from "./clock.ts";
 import { SmartView, type Holdings } from "./worth.ts";
 
@@ -40,6 +42,16 @@ export const viewFor = (outlook: LeagueOutlook) => {
 		// Who is human now (a league's user teams can change).
 		view.humans = new Set(humanTids());
 	}
+	return view;
+};
+
+// The view of the league as it now stands, every team read and the draft
+// classes priced. With a step: the outlook half of it, the classes the rest.
+export const primedView = async (setup?: SearchStep) => {
+	const view = viewFor(await currentOutlook());
+	setup?.(1, 2);
+	await view.prime(setup && ((done, total) => setup(1 + done / total, 2)));
+	setup?.(2, 2);
 	return view;
 };
 

@@ -11,11 +11,11 @@ import {
 } from "../trade/lookingForPlayer.ts";
 import type { LookingFor } from "../trade/makeItWork.ts";
 import summary from "../trade/summary.ts";
-import { currentOutlook } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { salaryRulesAllow } from "./tradeRules.ts";
-import { viewFor } from "./signing.ts";
+import { primedView } from "./signing.ts";
+import type { SearchProgress } from "../../util/searchProgress.ts";
 import type { Holdings, OfferAsk, SmartView } from "./worth.ts";
 
 // THE TRADE SCREENS ON THE GM (docs/smart-cpu.md, layer 4): the trading
@@ -52,11 +52,7 @@ const teamsOf = (
 // For probes: each step of what would make this work.
 export const smartScreensDebug: { log?: (line: string) => void } = {};
 
-const ready = async () => {
-	const view = viewFor(await currentOutlook());
-	await view.prime();
-	return view;
-};
+const ready = primedView;
 
 const cpuTeams = async (view: SmartView, but: number) =>
 	(await idb.cache.teams.getAll())
@@ -141,12 +137,15 @@ export const smartTradingBlock = async (
 	pids: number[],
 	dpids: number[],
 	lookingFor?: LookingFor,
+	progress?: SearchProgress,
 ) => {
-	const view = await ready();
+	const view = await ready(progress?.setup);
 	const out = await view.assetsOf({ pids, dpids });
 	const ask = askOf(lookingFor);
 	const offers: TradeTeams[] = [];
-	for (const tid of await cpuTeams(view, user)) {
+	const tids = await cpuTeams(view, user);
+	for (const [i, tid] of tids.entries()) {
+		progress?.step(i, tids.length);
 		const made = await view.offerFrom(tid, user, out, ask);
 		if (made) {
 			offers.push(teamsOf(user, out, tid, made.offer));

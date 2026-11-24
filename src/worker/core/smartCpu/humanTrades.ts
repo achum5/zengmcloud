@@ -12,7 +12,8 @@ import {
 } from "../realisticFrontOffice/outlook.ts";
 import type { TradeValuer } from "../trade/makeItWork.ts";
 import { timed } from "./clock.ts";
-import { viewFor } from "./signing.ts";
+import { primedView, viewFor } from "./signing.ts";
+import type { SearchStep } from "../../util/searchProgress.ts";
 import type { Assets, Holdings } from "./worth.ts";
 
 // A HUMAN'S OFFER, BY THE GM'S WORTH (docs/smart-cpu.md, layer 2). A CPU
@@ -267,13 +268,12 @@ export const guardWith = async (
 // of those it would pick.
 export const ownReadValuer = async (
 	base: TradeValuer,
+	setup?: SearchStep,
 ): Promise<TradeValuer> => {
 	if (!ownReadOn()) {
 		return base;
 	}
-	const outlook = await currentOutlook();
-	const view = viewFor(outlook);
-	await view.prime();
+	const view = await primedView(setup);
 	return {
 		evaluatePiece: (s) => base.evaluate(s),
 		async evaluate(s) {

@@ -5,6 +5,7 @@ import { g, helpers } from "../../util/index.ts";
 import { contractOf, draftedAs } from "../realisticFrontOffice/contractOf.ts";
 import summary from "../trade/summary.ts";
 import { lap, mark, valueCount } from "./clock.ts";
+import type { SearchStep } from "../../util/searchProgress.ts";
 import { smartTradable, salaryRulesAllow } from "./tradeRules.ts";
 import { marginOf, tradedAwayOf } from "../realisticFrontOffice/market.ts";
 import { SMART_ON_COURT_ERROR } from "../realisticFrontOffice/margin.ts";
@@ -837,18 +838,19 @@ export class SmartView {
 	// Every team's holdings read and the draft classes priced, for the work
 	// done without waiting (the `...Now` methods: free agency prices
 	// signings in one go). Read again before each such batch.
-	async prime() {
+	// With a step, each draft class priced (the time it takes).
+	async prime(step?: SearchStep) {
 		for (const tid of this.outlook.teams.keys()) {
 			await this.holdingsOf(tid);
 		}
-		await this.classPrices();
+		await this.classPrices(step);
 	}
 
 	// Each coming draft's prospects priced as rookies on the deal of the slot
 	// they would go at (by value), best first - what a pick there fetches as
 	// the player it becomes (picksAsRookies), by the whole league's bids.
 	// Kept while the classes are the same.
-	async classPrices() {
+	async classPrices(step?: SearchStep) {
 		if (!smartSettings.picksAsRookies) {
 			return;
 		}
@@ -873,13 +875,15 @@ export class SmartView {
 		const n = this.outlook.numTeams;
 		const numPicks = n * g.get("numDraftRounds");
 		const salary = pickSalaries();
-		for (const season of new Set(prospects.map((p) => p.draft.year))) {
-			if (
-				season < this.nextDraft() - (g.get("phase") >= PHASE.DRAFT ? 1 : 0) ||
-				(smartSettings.laterPicksByNextClass && season > this.nextDraft())
-			) {
-				continue;
-			}
+		const seasons = [...new Set(prospects.map((p) => p.draft.year))].filter(
+			(season) =>
+				!(
+					season < this.nextDraft() - (g.get("phase") >= PHASE.DRAFT ? 1 : 0) ||
+					(smartSettings.laterPicksByNextClass && season > this.nextDraft())
+				),
+		);
+		for (const [k, season] of seasons.entries()) {
+			step?.(k, seasons.length);
 			const rookies = prospects
 				.filter((p) => p.draft.year === season)
 				.sort((a, b) => b.value - a.value || a.pid - b.pid)

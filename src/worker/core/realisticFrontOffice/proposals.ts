@@ -4,6 +4,7 @@ import type {
 	TradeTeams,
 } from "../../../common/types.ts";
 import { g } from "../../util/index.ts";
+import type { SearchProgress } from "../../util/searchProgress.ts";
 import { getFuzz, applyFuzz } from "../player/fuzzRating.ts";
 import type { LookingFor } from "../trade/makeItWork.ts";
 import summary from "../trade/summary.ts";
@@ -157,8 +158,10 @@ export const tradingBlockTeams = async (
 	pids: number[],
 	dpids: number[],
 	lookingFor: LookingFor,
+	progress?: SearchProgress,
 ): Promise<TradeTeams[]> => {
 	const valuer = await frontOfficeValuer();
+	progress?.setup(1, 1);
 	const teamInfo = g.get("teamInfoCache");
 	const cpuTids = (await aiTids()).sort((a, b) =>
 		`${teamInfo[a]?.region} ${teamInfo[a]?.name}`.localeCompare(
@@ -166,7 +169,8 @@ export const tradingBlockTeams = async (
 		),
 	);
 	const offers: TradeTeams[] = [];
-	for (const tid of cpuTids) {
+	for (const [i, tid] of cpuTids.entries()) {
+		progress?.step(i, cpuTids.length);
 		const states: TradeTeams[] = [];
 		await makeItWorkSmart([{ ...empty(userTid), pids, dpids }, empty(tid)], {
 			holdUserConstant: true,
