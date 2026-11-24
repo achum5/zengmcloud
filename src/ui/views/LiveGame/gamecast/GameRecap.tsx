@@ -60,6 +60,7 @@ import { unpackShots, type ShotSpot } from "./shots.ts";
 import { GAME_S, winProb } from "../winProb.ts";
 import { seriesLine } from "./seriesLine.ts";
 import { MatchupBanner, matchupVars } from "../../../components/TeamBanner.tsx";
+import { NationalTag } from "../../../components/NationalTag.tsx";
 import {
 	DOCK_ICONS,
 	foldSections,
@@ -695,6 +696,14 @@ const RecapHeader = ({
 						}
 						status={
 							<>
+								{/* (A national game: its network, as on the broadcast's own
+								    final.) */}
+								{boxScore.national ? (
+									<NationalTag
+										className="mb-national"
+										tag={boxScore.national}
+									/>
+								) : null}
 								{finalText(boxScore)}
 								{/* (Its replay, if it has one, by it.) */}
 								{!boxScore.exhibition && boxScore.gid >= 0 ? (

@@ -121,7 +121,7 @@ export const MatchupBanner = ({
 							)}
 						</div>
 						<div className="mb-words">
-							<div className="tb-kicker">{t.region}</div>
+							<div className="tb-kicker">{link(hrefs?.[i], t.region)}</div>
 							<div className="mb-name">
 								{link(
 									hrefs?.[i],

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 535,
+		date: "2026-11-24",
+		text: "Box score banner (refreshed look): the city name now links to the team page like the logo and team name. A game that was on national TV shows the network's logo next to FINAL.",
+	},
+	{
 		n: 534,
 		date: "2026-11-24",
 		text: "NBA calendar: the scores bar starts on opening night, even when your team was off that night.",

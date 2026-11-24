@@ -1,5 +1,6 @@
 import { idb } from "../db/index.ts";
 import { gamecastInfo } from "./liveGameInfo.ts";
+import { nationalBroadcastOf, nationalTag } from "./nationalBroadcast.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import { g, helpers } from "../util/index.ts";
 import type { AllStars, CourtStyle, Game } from "../../common/types.ts";
@@ -333,6 +334,14 @@ const boxScore = async (gid: number) => {
 		} catch {
 			// The cards just don't show.
 		}
+		// The national network it was on, if any, for the banner's final (the
+		// same pick as the live game's header - see nationalBroadcastOf).
+		try {
+			const national = await nationalBroadcastOf(game);
+			if (national) {
+				(game2 as any).national = await nationalTag(national);
+			}
+		} catch {}
 	}
 
 	return game2;
