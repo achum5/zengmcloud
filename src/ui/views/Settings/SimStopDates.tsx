@@ -1,26 +1,49 @@
 import { useState } from "react";
-import { PHASE } from "../../../common/constants.ts";
 import {
 	formatSimStopDays,
 	formatStopDate,
 	parseSimStopDays,
+	type SimStopDate,
 	type SimStopDays,
 } from "../../../common/simStopDays.ts";
-import { useLocal } from "../../util/local.ts";
 
-// "Pause Sim On Days" on the NBA calendar: dates picked off a calendar, the
-// same each season (common/simStopDays.ts). The setting is still the one
-// string, so a league switching the calendar off keeps what it can read.
+// "Pause Sim On Days" on the NBA calendar: dates, the same each season
+// (common/simStopDays.ts) - presets for the days a league pauses on, or a
+// month and day of its own. No year: a phone's date picker opens on today's
+// real date, nowhere near the league's. The setting is still the one string,
+// so a league switching the calendar off keeps what it can read.
 
-// The season whose dates the picker shows: the one being played, or in the
-// offseason the one coming (named, like the game's seasons, for the year it
-// ends in).
-const useSeasonYears = () => {
-	const { phase, season } = useLocal(["phase", "season"]);
-	const end = phase > PHASE.PLAYOFFS ? season + 1 : season;
-	return { from: `${end - 1}-10-01`, to: `${end}-06-30` };
-};
+// The season's months, in its order.
+const MONTHS: { month: number; name: string; days: number }[] = [
+	{ month: 10, name: "Oct", days: 31 },
+	{ month: 11, name: "Nov", days: 30 },
+	{ month: 12, name: "Dec", days: 31 },
+	{ month: 1, name: "Jan", days: 31 },
+	{ month: 2, name: "Feb", days: 29 },
+	{ month: 3, name: "Mar", days: 31 },
+	{ month: 4, name: "Apr", days: 30 },
+	{ month: 5, name: "May", days: 31 },
+	{ month: 6, name: "Jun", days: 30 },
+];
 
+// Summer signings can be traded (game/tradableOn.ts), then re-signings.
+const PRESET_DATES: SimStopDate[] = [
+	{ month: 12, day: 15 },
+	{ month: 1, day: 15 },
+];
+
+const withDate = (stops: SimStopDays, date: SimStopDate) =>
+	// Through the parser: in order, and once.
+	formatSimStopDays(
+		parseSimStopDays(
+			formatSimStopDays({ ...stops, dates: [...stops.dates, date] }),
+		),
+	);
+
+const hasDate = (stops: SimStopDays, date: SimStopDate) =>
+	stops.dates.some((d) => d.month === date.month && d.day === date.day);
+
+// A month and a day of the league's own.
 export const SimStopDatePicker = ({
 	disabled,
 	id,
@@ -32,48 +55,61 @@ export const SimStopDatePicker = ({
 	value: string;
 	onChange: (value: string) => void;
 }) => {
-	const [picked, setPicked] = useState("");
-	const { from, to } = useSeasonYears();
-
-	const add = () => {
-		const month = Number(picked.slice(5, 7));
-		const day = Number(picked.slice(8, 10));
-		if (!month || !day) {
-			return;
-		}
-		const stops = parseSimStopDays(value);
-		onChange(
-			formatSimStopDays(
-				parseSimStopDays(
-					formatSimStopDays({
-						...stops,
-						dates: [...stops.dates, { month, day }],
-					}),
-				),
-			),
-		);
-		setPicked("");
-	};
+	const [month, setMonth] = useState("");
+	const [day, setDay] = useState("");
+	const days = MONTHS.find((m) => String(m.month) === month)?.days ?? 31;
 
 	return (
-		<div className="d-flex gap-1" style={{ maxWidth: 200 }}>
-			<input
-				type="date"
-				className="form-control"
+		<div className="d-flex gap-1">
+			<select
+				className="form-select"
 				id={id}
+				aria-label="Month"
 				disabled={disabled}
-				min={from}
-				max={to}
-				value={picked}
+				style={{ width: 84 }}
+				value={month}
 				onChange={(event) => {
-					setPicked(event.target.value);
+					setMonth(event.target.value);
 				}}
-			/>
+			>
+				<option value="">Month</option>
+				{MONTHS.map((m) => (
+					<option key={m.month} value={m.month}>
+						{m.name}
+					</option>
+				))}
+			</select>
+			<select
+				className="form-select"
+				aria-label="Day"
+				disabled={disabled}
+				style={{ width: 72 }}
+				value={day}
+				onChange={(event) => {
+					setDay(event.target.value);
+				}}
+			>
+				<option value="">Day</option>
+				{Array.from({ length: days }, (_, i) => (
+					<option key={i + 1} value={i + 1}>
+						{i + 1}
+					</option>
+				))}
+			</select>
 			<button
 				type="button"
 				className="btn btn-secondary"
-				disabled={disabled || picked === ""}
-				onClick={add}
+				disabled={disabled || month === "" || day === "" || Number(day) > days}
+				onClick={() => {
+					onChange(
+						withDate(parseSimStopDays(value), {
+							month: Number(month),
+							day: Number(day),
+						}),
+					);
+					setMonth("");
+					setDay("");
+				}}
 			>
 				Add
 			</button>
@@ -81,7 +117,7 @@ export const SimStopDatePicker = ({
 	);
 };
 
-// The stops as chips, each one removable, and the trade deadline.
+// The stops as chips, each one removable, and the presets not yet in.
 export const SimStopChips = ({
 	disabled,
 	value,
@@ -124,8 +160,29 @@ export const SimStopChips = ({
 			: []),
 	];
 
+	const presets = [
+		...PRESET_DATES.filter((date) => !hasDate(stops, date)).map((date) => ({
+			key: `date-${date.month}-${date.day}`,
+			label: formatStopDate(date),
+			add: () => {
+				onChange(withDate(stops, date));
+			},
+		})),
+		...(!stops.deadline
+			? [
+					{
+						key: "deadline",
+						label: "Trade deadline",
+						add: () => {
+							set({ ...stops, deadline: true });
+						},
+					},
+				]
+			: []),
+	];
+
 	return (
-		<div className="d-flex flex-wrap gap-1 mt-2">
+		<div className="d-flex flex-wrap align-items-center gap-1 mt-2">
 			{chips.map((chip) => (
 				<span
 					key={chip.key}
@@ -143,18 +200,18 @@ export const SimStopChips = ({
 					/>
 				</span>
 			))}
-			{!stops.deadline ? (
+			{presets.map((preset) => (
 				<button
+					key={preset.key}
 					type="button"
-					className="btn btn-sm btn-link p-0 text-decoration-none"
+					className="btn btn-sm btn-outline-secondary rounded-pill py-0"
+					style={{ fontSize: "0.875rem" }}
 					disabled={disabled}
-					onClick={() => {
-						set({ ...stops, deadline: true });
-					}}
+					onClick={preset.add}
 				>
-					+ Trade deadline
+					+ {preset.label}
 				</button>
-			) : null}
+			))}
 		</div>
 	);
 };

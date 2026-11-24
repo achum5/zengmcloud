@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 508,
+		date: "2026-11-24",
+		text: "NBA calendar leagues: Pause Sim On Days has one-tap Dec 15, Jan 15 and Trade deadline, and a month and day picker for any other date.",
+	},
+	{
 		n: 507,
 		date: "2026-11-24",
 		text: "Shared leagues: when your device isn't in charge of simming and you try something only that device can do, it now tells you who is, instead of doing nothing. The Danger Zone's Smart CPU button also offers Sim here, and in the preseason it now runs a last round of free-agent signings before the trades.",
@@ -19,7 +24,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 506,
 		date: "2026-11-24",
-		text: "NBA calendar leagues: Pause Sim On Days now takes dates you pick from a calendar, like Dec 15. Each one pauses the sim every season, before the first night with games on or after it.",
+		text: "NBA calendar leagues: Pause Sim On Days now takes dates, like Dec 15. Each one pauses the sim every season, before the first night with games on or after it.",
 	},
 	{
 		n: 505,
