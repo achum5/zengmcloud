@@ -19,6 +19,18 @@ import {
 	type ArtWrap,
 	type KitArt,
 } from "./kitArt.ts";
+import { MESH_KINDS, MESH_SS, meshReady } from "./meshBody.ts";
+import {
+	MESH_COL_UNIT,
+	MESH_LAY,
+	MESH_MAIN,
+	MESH_VERT,
+	meshDraw,
+	type MeshDrawn,
+	type MeshGl,
+	meshGlOk,
+	meshGlStart,
+} from "./meshGl.ts";
 import type { Body } from "./poses.ts";
 import {
 	BACK_LIGHT,
@@ -40,6 +52,7 @@ import {
 	heldSurface,
 	hemOf,
 	LIGHT,
+	MESH_KEEPS,
 	NAIL,
 	NECK,
 	paletteOf,
@@ -75,8 +88,9 @@ import {
 // pass lays the dark rim round him (see sprite.ts rim) - his body on the
 // left of the sheet, and beside it whatever goes over his head.
 //
-// Nothing is read back: the sheet is a canvas, and his picture is drawn
-// from it straight into the one kept (see sprite.ts glKeep).
+// Just the pixels round what is drawn of him are read back (a small sheet
+// of them, top row first) and finished as the page's own picture of him is
+// (see sprite.ts glShape) - his head drawn on him there.
 //
 // The page's own sculptor stays the word on what he looks like: this is
 // held to it (see glAgrees), and is not used where it can't be - no WebGL2,
@@ -204,8 +218,10 @@ void main() {
 	gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-// shade and paint (see sculpt.ts), a pixel of him at a time.
-const FRAG = `#version 300 es
+// (What both of the card's sculptors are told - his masses' table, the
+// sheets he is painted from, the numbers above - and the paint they share:
+// see meshGl.ts for the other.)
+const FRAG_HEAD = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -217,10 +233,9 @@ uniform sampler2D uPrint;
 uniform vec4 uP[${NP}];
 uniform vec3 uT[${(TURN_STEPS + 1) * 3}];
 uniform int uN;
-layout(location = 0) out vec4 oCol;
-layout(location = 1) out vec4 oLate;
-
-const float PI = 3.141592653589793;
+precision highp usampler2D;
+`;
+const FRAG_COMMON = `const float PI = 3.141592653589793;
 const float ZT = 0.9;
 const vec3 LIGHT = ${v3(LIGHT)};
 
@@ -733,8 +748,65 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 	}
 }
 
+`;
+// shade and paint (see sculpt.ts), a pixel of him at a time.
+const FRAG = `${FRAG_HEAD}layout(location = 0) out vec4 oCol;
+layout(location = 1) out vec4 oLate;
+// His body from the mesh of a man, if he is drawn as one (see meshGl.ts):
+// its colors and depths at ${MESH_SS} x ${MESH_SS} the sprite's pixels; the nearest and
+// furthest of him there.
+uniform int uMesh;
+uniform sampler2D uMC;
+uniform highp usampler2D uMZ;
+// Where his hands are (and what is in them): none of the masses is
+// anywhere else.
+uniform vec4 uHand;
+
+${FRAG_COMMON}// Up in front of his face: an arm, or the ball.
+bool lateOf(int g) {
+	bool right = g == ${G_ARM} || g == ${G_HAND}
+		|| (g >= ${G_FINGER} && g < ${G_FINGER + 5});
+	bool left = g == ${G_ARM + 1} || g == ${G_HAND + 1}
+		|| (g >= ${G_FINGER + 5} && g < ${G_FINGER + 10});
+	return (right && uP[LATE].x > 0.5)
+		|| (left && uP[LATE].y > 0.5)
+		|| (g == ${G_BALL} && uP[LATE].z > 0.5);
+}
+// The pixel of his body from the mesh (see meshGl.ts): its color, how much
+// of the pixel he covers, how near, which part of him.
+float meshA = 0.0;
+float meshZ = 1e30;
+vec3 meshC = vec3(0.0);
+int meshG = -1;
+void meshAt(vec2 p) {
+	ivec2 q = ivec2(p);
+	vec4 c = texelFetch(uMC, q, 0);
+	if (c.a > 0.0) {
+		uvec4 z = texelFetch(uMZ, q, 0);
+		meshA = c.a;
+		meshC = c.rgb * 255.0;
+		meshZ = uintBitsToFloat(z.x);
+		meshG = int(z.y);
+	}
+}
+// Just his body there, if it is (nothing over it).
+void meshOnly() {
+	if (meshA <= 0.0) {
+		discard;
+	}
+	oCol = vec4(meshC / 255.0, meshA);
+	oLate = vec4(lateOf(meshG) ? 1.0 : 0.0, 0.0, 0.0, 1.0);
+}
+
 void main() {
 	vec2 p = gl_FragCoord.xy;
+	if (uMesh == 1) {
+		meshAt(p);
+		if (p.x < uHand.x || p.y < uHand.y || p.x > uHand.z || p.y > uHand.w) {
+			meshOnly();
+			return;
+		}
+	}
 	float zs = uP[MISC].x;
 	float lineW = uP[MISC].y;
 	float margin = uP[MISC].z;
@@ -766,7 +838,8 @@ void main() {
 		}
 	}
 	if (least < 0 || leastS > 0.5 + margin) {
-		discard;
+		meshOnly();
+		return;
 	}
 	int f = best >= 0 ? best : least;
 	Hit hf = hl;
@@ -774,6 +847,11 @@ void main() {
 	if (best >= 0) {
 		hf = hb;
 		mf = mb;
+	}
+	// (Behind his body: not there.)
+	if (meshZ <= hf.z) {
+		meshOnly();
+		return;
 	}
 	int gf = int(mf.y + 0.5);
 	float S = hf.s;
@@ -824,7 +902,8 @@ void main() {
 	}
 	float cover = 0.5 - S;
 	if (cover <= 0.0) {
-		discard;
+		meshOnly();
+		return;
 	}
 	float nl = length(nrm);
 	vec3 sn = nrm / (nl == 0.0 ? 1.0 : nl);
@@ -885,20 +964,18 @@ void main() {
 		c += (ink * 0.38 - c) * min(1.0, (S + lineW) / lineW);
 	}
 	float a = min(1.0, cover);
-	oCol = vec4(clamp(c / 255.0, 0.0, 1.0) * a, a);
-	// Up in front of his face: an arm, or the ball.
-	bool right = gf == ${G_ARM} || gf == ${G_HAND}
-		|| (gf >= ${G_FINGER} && gf < ${G_FINGER + 5});
-	bool left = gf == ${G_ARM + 1} || gf == ${G_HAND + 1}
-		|| (gf >= ${G_FINGER + 5} && gf < ${G_FINGER + 10});
-	bool late = (right && uP[LATE].x > 0.5)
-		|| (left && uP[LATE].y > 0.5)
-		|| (gf == ${G_BALL} && uP[LATE].z > 0.5);
-	oLate = vec4(late ? 1.0 : 0.0, 0.0, 0.0, 1.0);
+	if (meshA > 0.0 && cover < 1.0) {
+		// (Over his body: blended into it at its soft edge.)
+		c = meshC + (c - meshC) * cover;
+		a = max(meshA, cover);
+	}
+	oCol = vec4(clamp(c / 255.0, 0.0, 1.0), a);
+	oLate = vec4(lateOf(gf) ? 1.0 : 0.0, 0.0, 0.0, 1.0);
 }`;
 
 // The dark rim (see sprite.ts rim) - round all of him, or round just what
-// goes over his head - onto the sheet, the right way up.
+// goes over his head - onto the sheet read back: his body at its left,
+// what goes over his head beside it.
 const SOLID = 140;
 const RIM: RGB = [22, 15, 13];
 const FRAG_RIM = `#version 300 es
@@ -906,8 +983,7 @@ precision highp float;
 uniform sampler2D uC;
 uniform sampler2D uL;
 uniform int uOver;
-// The sprite's size; where its left edge is on the sheet, and the sheet's
-// height.
+// The sprite's size; where its left edge is on the sheet.
 uniform vec4 uBox;
 out vec4 o;
 vec4 at(ivec2 p) {
@@ -922,13 +998,13 @@ vec4 at(ivec2 p) {
 }
 bool solid(ivec2 p) { return at(p).a * 255.0 >= ${f1(SOLID - 0.5)}; }
 void main() {
-	ivec2 p = ivec2(int(gl_FragCoord.x - uBox.z), int(uBox.w - gl_FragCoord.y));
+	ivec2 p = ivec2(int(gl_FragCoord.x - uBox.z), int(gl_FragCoord.y));
 	vec4 c = at(p);
 	if (c.a * 255.0 < ${f1(SOLID - 0.5)} && (
 		solid(p + ivec2(-1, 0)) || solid(p + ivec2(1, 0)) ||
 		solid(p + ivec2(0, -1)) || solid(p + ivec2(0, 1))
 	)) {
-		c = vec4(c.rgb + ${v3(RIM.map((v) => v / 255))} * (1.0 - c.a), 1.0);
+		c = vec4(c.rgb * c.a + ${v3(RIM.map((v) => v / 255))} * (1.0 - c.a), 1.0);
 	}
 	o = c;
 }`;
@@ -937,7 +1013,7 @@ void main() {
 
 type Gl = {
 	gl: WebGL2RenderingContext;
-	canvas: HTMLCanvasElement;
+	canvas: HTMLCanvasElement | OffscreenCanvas;
 	shade: WebGLProgram;
 	rim: WebGLProgram;
 	uP: WebGLUniformLocation | null;
@@ -945,11 +1021,20 @@ type Gl = {
 	uN: WebGLUniformLocation | null;
 	uOver: WebGLUniformLocation | null;
 	uBox: WebGLUniformLocation | null;
+	uMesh: WebGLUniformLocation | null;
+	uHand: WebGLUniformLocation | null;
+	// What draws his body from the mesh of a man (see meshGl.ts): made the
+	// first time one is drawn; null, if it can't be.
+	mesh?: MeshGl | null;
 	masses: WebGLTexture;
 	blank: WebGLTexture;
 	fbo: WebGLFramebuffer;
 	col: WebGLTexture;
 	late: WebGLTexture;
+	// The sheet read back (twice fw x fh): his body rimmed, and beside it
+	// what goes over his head.
+	outFbo: WebGLFramebuffer;
+	out: WebGLTexture;
 	// The size of the two pictures he is shaded into.
 	fw: number;
 	fh: number;
@@ -973,13 +1058,23 @@ let off = false;
 
 // What the browser was told (for whoever looks into a device that draws
 // him wrong): "0" never, "1" whatever the card is.
-const asked = (): string | null => {
+// (A hand off the page has no storage of its own: it is told what the page
+// was - see farm.ts.)
+let told: string | null | undefined;
+export const glTold = (v: string | null) => {
+	told = v;
+};
+export const glAsked = (): string | null => {
+	if (told !== undefined) {
+		return told;
+	}
 	try {
 		return globalThis.localStorage?.getItem("court3dGl") ?? null;
 	} catch {
 		return null;
 	}
 };
+const asked = glAsked;
 export const glForced = () => asked() === "1";
 
 const compile = (
@@ -1024,13 +1119,18 @@ const texture = (gl: WebGL2RenderingContext, filter: number): WebGLTexture => {
 // log (see glReport): why there is no card, or why it was given up.
 let why = "";
 const start = (): Gl | null => {
-	if (typeof document === "undefined" || asked() === "0") {
-		why = asked() === "0" ? "turned off" : "no page";
+	const page = typeof document !== "undefined";
+	if ((!page && typeof OffscreenCanvas === "undefined") || asked() === "0") {
+		why = asked() === "0" ? "turned off" : "no canvas";
 		return null;
 	}
-	const canvas = document.createElement("canvas");
-	canvas.width = GROW * 2;
-	canvas.height = GROW;
+	// (Only for the context: nothing is drawn on it - see glSculpt's read.
+	// Off the page, in a hand - see farm.ts - one of its own.)
+	const canvas = page
+		? document.createElement("canvas")
+		: new OffscreenCanvas(1, 1);
+	canvas.width = 1;
+	canvas.height = 1;
 	const gl = canvas.getContext("webgl2", {
 		alpha: true,
 		premultipliedAlpha: true,
@@ -1086,6 +1186,9 @@ const start = (): Gl | null => {
 	for (const [i, name] of ["uM", "uSheet", "uArt", "uPrint"].entries()) {
 		gl.uniform1i(gl.getUniformLocation(shade, name), i);
 	}
+	// (Past the mesh's own - see meshGl.ts.)
+	gl.uniform1i(gl.getUniformLocation(shade, "uMC"), MESH_COL_UNIT);
+	gl.uniform1i(gl.getUniformLocation(shade, "uMZ"), MESH_COL_UNIT + 1);
 	gl.useProgram(rim);
 	gl.uniform1i(gl.getUniformLocation(rim, "uC"), 0);
 	gl.uniform1i(gl.getUniformLocation(rim, "uL"), 1);
@@ -1099,11 +1202,15 @@ const start = (): Gl | null => {
 		uN: gl.getUniformLocation(shade, "uN"),
 		uOver: gl.getUniformLocation(rim, "uOver"),
 		uBox: gl.getUniformLocation(rim, "uBox"),
+		uMesh: gl.getUniformLocation(shade, "uMesh"),
+		uHand: gl.getUniformLocation(shade, "uHand"),
 		masses,
 		blank,
 		fbo: gl.createFramebuffer(),
 		col: texture(gl, gl.NEAREST),
 		late: texture(gl, gl.NEAREST),
+		outFbo: gl.createFramebuffer(),
+		out: texture(gl, gl.NEAREST),
 		fw: 0,
 		fh: 0,
 		sheets: new WeakMap(),
@@ -1134,15 +1241,26 @@ export const glOff = (reason = "given up") => {
 	why = reason;
 };
 
+// What draws his body from the mesh of a man (see meshGl.ts), once the mesh
+// is there: made the first time it is wanted.
+const MESH_HEAD = MESH_KINDS.includes("head");
+const meshOf = (g: Gl): MeshGl | undefined => {
+	if (g.mesh === undefined) {
+		const lay = compile(g.gl, MESH_VERT, MESH_LAY);
+		const shade = compile(g.gl, VERT, `${FRAG_HEAD}${FRAG_COMMON}${MESH_MAIN}`);
+		g.mesh = (lay && shade && meshGlStart(g.gl, lay, shade)) || null;
+		if (!g.mesh && glForced()) {
+			console.warn("court3d gl: no mesh");
+		}
+	}
+	return g.mesh ?? undefined;
+};
+
 // Room on the sheet for a sprite w x h and what goes over his head beside
 // it, and on the pictures he is shaded into.
 const roomFor = (g: Gl, w: number, h: number) => {
-	const { gl, canvas } = g;
+	const { gl } = g;
 	const up = (n: number) => Math.ceil(n / GROW) * GROW;
-	if (canvas.width < w * 2 || canvas.height < h) {
-		canvas.width = Math.max(canvas.width, up(w * 2));
-		canvas.height = Math.max(canvas.height, up(h));
-	}
 	if (g.fw < w || g.fh < h) {
 		g.fw = Math.max(g.fw, up(w));
 		g.fh = Math.max(g.fh, up(h));
@@ -1169,6 +1287,26 @@ const roomFor = (g: Gl, w: number, h: number) => {
 			);
 		}
 		gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+		gl.bindTexture(gl.TEXTURE_2D, g.out);
+		gl.texImage2D(
+			gl.TEXTURE_2D,
+			0,
+			gl.RGBA8,
+			g.fw * 2,
+			g.fh,
+			0,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			null,
+		);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, g.outFbo);
+		gl.framebufferTexture2D(
+			gl.FRAMEBUFFER,
+			gl.COLOR_ATTACHMENT0,
+			gl.TEXTURE_2D,
+			g.out,
+			0,
+		);
 	}
 };
 
@@ -1192,9 +1330,16 @@ const wrap = (i: number, w: ArtWrap) => {
 };
 
 export type GlSculpted = {
-	// The sheet: his body at its top left, w x h; what goes over his head,
-	// if anything does, to the right of it.
-	canvas: HTMLCanvasElement;
+	// His picture read back from the card: x, y to x + w, y + h of it, top
+	// row first, as an ImageData (sculpt.ts's colors, rimmed) - his body, or
+	// what goes over his head (if anything does: `over`).
+	read: (
+		x: number,
+		y: number,
+		w: number,
+		h: number,
+		over?: boolean,
+	) => ImageData | undefined;
 	over: boolean;
 	head: { x: number; y: number; r: number };
 	// A box round everything drawn (sprite pixels, ends included) - no
@@ -1225,8 +1370,20 @@ export const glSculpt = (
 		why = "context lost";
 		return undefined;
 	}
+	// (Drawn as a man - see sculpt.ts: his body from the mesh, here too, if
+	// it can be; his hands, and what is in them, sculpted over it.)
+	const real = look.real === true && meshReady();
+	const mesh = real && meshGlOk() ? meshOf(g) : undefined;
+	if (real && (!mesh || w * MESH_SS > MAX_SIDE || h * MESH_SS > MAX_SIDE)) {
+		return undefined;
+	}
 	const b = build(cam, st, body, look, px, ox, oy, true);
-	const masses = b.masses;
+	// (Drawn as a man whose head is in the mesh, his head is drawn with the
+	// rest of him: nothing goes over it - see sculpt.ts.)
+	const late = !(real && MESH_HEAD);
+	const masses = real
+		? b.masses.filter((c) => MESH_KEEPS.has(c.kind))
+		: b.masses;
 	const n = masses.length;
 	if (n > MAX_MASSES || b.joins.length > MAX_JOINS) {
 		return undefined;
@@ -1328,7 +1485,12 @@ export const glSculpt = (
 		on(sheet),
 		on(b.untwist),
 	);
-	set(U.LATE, on(b.late[0]), on(b.late[1]), on(b.late[2]));
+	set(
+		U.LATE,
+		on(late && b.late[0]),
+		on(late && b.late[1]),
+		on(late && b.late[2]),
+	);
 	set(
 		U.SAME0,
 		same(pal.stripes, pal.jersey),
@@ -1502,20 +1664,14 @@ export const glSculpt = (
 		x1: Math.min(w - 1, Math.ceil(x1 + margin)),
 		y1: Math.min(h - 1, Math.ceil(y1 + margin)),
 	};
-	if (box.x1 < box.x0 || box.y1 < box.y0) {
+	if (!mesh && (box.x1 < box.x0 || box.y1 < box.y0)) {
 		return undefined;
 	}
+	// (Drawn as a man, the masses are just his hands: what of him is not
+	// near them is his body from the mesh alone.)
+	const hand = { ...box };
 
 	roomFor(g, w, h);
-	// Shaded.
-	gl.bindFramebuffer(gl.FRAMEBUFFER, g.fbo);
-	gl.viewport(0, 0, w, h);
-	gl.enable(gl.SCISSOR_TEST);
-	gl.scissor(0, 0, w, h);
-	gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
-	gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
-	gl.scissor(box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1);
-	gl.useProgram(g.shade);
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindTexture(gl.TEXTURE_2D, g.masses);
 	gl.texSubImage2D(
@@ -1535,58 +1691,109 @@ export const glSculpt = (
 	gl.bindTexture(gl.TEXTURE_2D, artTex);
 	gl.activeTexture(gl.TEXTURE3);
 	gl.bindTexture(gl.TEXTURE_2D, printTex);
+	// His body from the mesh, first.
+	let drawn: MeshDrawn | undefined;
+	if (mesh) {
+		drawn = meshDraw(
+			gl,
+			mesh,
+			b,
+			cam,
+			st,
+			body,
+			look,
+			px,
+			ox,
+			oy,
+			w,
+			h,
+			params,
+			twists,
+		);
+		if (drawn) {
+			box.x0 = Math.min(box.x0, drawn.box.x0);
+			box.y0 = Math.min(box.y0, drawn.box.y0);
+			box.x1 = Math.max(box.x1, drawn.box.x1);
+			box.y1 = Math.max(box.y1, drawn.box.y1);
+		}
+		if (box.x1 < box.x0 || box.y1 < box.y0) {
+			return undefined;
+		}
+	}
+	// Shaded.
+	gl.bindFramebuffer(gl.FRAMEBUFFER, g.fbo);
+	gl.viewport(0, 0, w, h);
+	gl.enable(gl.SCISSOR_TEST);
+	gl.scissor(0, 0, w, h);
+	gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+	gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
+	gl.scissor(box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1);
+	gl.useProgram(g.shade);
+	if (mesh && drawn) {
+		gl.activeTexture(gl.TEXTURE0 + MESH_COL_UNIT);
+		gl.bindTexture(gl.TEXTURE_2D, mesh.col);
+		gl.activeTexture(gl.TEXTURE0 + MESH_COL_UNIT + 1);
+		gl.bindTexture(gl.TEXTURE_2D, mesh.z);
+		gl.uniform1i(g.uMesh, 1);
+		gl.uniform4f(g.uHand, hand.x0, hand.y0, hand.x1 + 1, hand.y1 + 1);
+	} else {
+		gl.uniform1i(g.uMesh, 0);
+	}
 	gl.uniform4fv(g.uP, params);
 	gl.uniform3fv(g.uT, twists);
 	gl.uniform1i(g.uN, n);
 	gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-	// Rimmed, onto the sheet: all of him, then what goes over his head.
-	const over = b.late.some(Boolean);
-	const H = g.canvas.height;
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	// Rimmed, onto the sheet read back: all of him, then what goes over his
+	// head (just round what is drawn: nothing else is read).
+	const over = late && b.late.some(Boolean);
+	gl.bindFramebuffer(gl.FRAMEBUFFER, g.outFbo);
 	gl.useProgram(g.rim);
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindTexture(gl.TEXTURE_2D, g.col);
 	gl.activeTexture(gl.TEXTURE1);
 	gl.bindTexture(gl.TEXTURE_2D, g.late);
+	const rx0 = Math.max(0, box.x0 - 1);
+	const ry0 = Math.max(0, box.y0 - 1);
+	const rx1 = Math.min(w, box.x1 + 2);
+	const ry1 = Math.min(h, box.y1 + 2);
 	for (const part of over ? [0, 1] : [0]) {
-		gl.viewport(part * w, H - h, w, h);
-		gl.scissor(part * w, H - h, w, h);
+		gl.viewport(part * w, 0, w, h);
+		gl.scissor(part * w + rx0, ry0, rx1 - rx0, ry1 - ry0);
 		gl.uniform1i(g.uOver, part);
-		gl.uniform4f(g.uBox, w, h, part * w, H);
+		gl.uniform4f(g.uBox, w, h, part * w, 0);
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 	}
 	gl.disable(gl.SCISSOR_TEST);
-	// (While the card is being timed - see glTook - its work is waited for,
-	// so the time is the card's and not just the asking's.)
-	if (glTimed()) {
-		gl.finish();
-	}
 	if (gl.isContextLost()) {
 		off = true;
 		why = "context lost";
 		return undefined;
 	}
 
-	return { canvas: g.canvas, over, head: b.head, box };
-};
-
-// The sheet's pixels, w x h from its top left, top row first (for holding
-// the card to the page's own sculptor - see sprite.ts glAgrees).
-export const glPixels = (w: number, h: number): Uint8Array | undefined => {
-	const g = glCard();
-	if (!g) {
-		return undefined;
-	}
-	const { gl } = g;
-	const up = new Uint8Array(w * h * 4);
-	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	gl.readPixels(0, g.canvas.height - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, up);
-	const out = new Uint8Array(w * h * 4);
-	for (let y = 0; y < h; y++) {
-		out.set(up.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-	}
-	return out;
+	const sw = w;
+	return {
+		read: (x, y, rw, rh, late = false) => {
+			if (rw <= 0 || rh <= 0 || gl.isContextLost()) {
+				return undefined;
+			}
+			const img = new ImageData(rw, rh);
+			gl.bindFramebuffer(gl.FRAMEBUFFER, g.outFbo);
+			gl.readPixels(
+				x + (late ? sw : 0),
+				y,
+				rw,
+				rh,
+				gl.RGBA,
+				gl.UNSIGNED_BYTE,
+				new Uint8Array(img.data.buffer),
+			);
+			return img;
+		},
+		over,
+		head: b.head,
+		box,
+	};
 };
 
 // ---- whether it is any quicker ------------------------------------------------
@@ -1614,10 +1821,6 @@ export const glReport = (): string =>
 				? `, timing (${took.n})`
 				: ""
 	}${asked() === null ? "" : `, asked ${asked()}`}`;
-// Whether the card is still being timed: its work is waited for then,
-// here and in the picture kept (see sprite.ts glKeep) - a card only looks
-// quick if what it is asked is not waited for.
-export const glTimed = () => took.n >= 0 && !glForced();
 export const glTook = (ms: number, page: () => number) => {
 	if (took.n < 0 || glForced()) {
 		return;

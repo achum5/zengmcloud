@@ -1,10 +1,11 @@
 import type { Look } from "./figure.ts";
 import type { KitArt } from "./kitArt.ts";
 import { loadMesh, meshReady } from "./meshBody.ts";
+import { glAsked, glTold } from "./sculptGl.ts";
 import {
 	finishedOff,
 	makeScratch,
-	shape,
+	shapeCut,
 	type Done,
 	type Farm,
 	type Job,
@@ -95,7 +96,9 @@ type SentLook = { rest: object; art?: number; pics?: Record<string, number> };
 // The page to a hand: each job in its lane (one a man - see makeFarmOf)...
 type JobMsg<J> = { job: number; look: number; work: J; lane: string };
 export type ToHandOf<J> =
-	| { hello: true }
+	// (And whether the page was told to use the graphics card, or not to -
+	// see sculptGl.ts.)
+	| { hello: true; gl?: string | null }
 	| { asset: number; art: KitArt }
 	| { asset: number; pic: ImageData }
 	| { look: number; value: SentLook }
@@ -282,7 +285,9 @@ export const makeFarmOf = <L extends object, J, Sh, Sent, W>(
 			event.preventDefault();
 			lose(hand);
 		};
-		worker.postMessage({ farm: { hello: true } satisfies ToHandOf<J> });
+		worker.postMessage({
+			farm: { hello: true, gl: glAsked() } satisfies ToHandOf<J>,
+		});
 		all.push(hand);
 	}
 
@@ -420,6 +425,7 @@ export const farmHandOf = <L extends object, J, Sh, Sent>(
 	};
 	return (msg: ToHandOf<J>) => {
 		if ("hello" in msg) {
+			glTold(msg.gl ?? null);
 			// (No canvas to be had off the page - an older browser's worker -
 			// for his lettering, and it can do nothing.)
 			let ready = false;
@@ -520,7 +526,7 @@ const COURT: FarmCodec<Look, Job, Done, SentDone> = {
 	},
 	shape: (job, look) => {
 		sheet ??= makeScratch();
-		const done = finishedOff(shape(job, look, true), job, look, sheet);
+		const done = finishedOff(shapeCut(job, look), job, look, sheet);
 		return done && asBitmap(done);
 	},
 	// (Not to be had - offline, say: drawn as the court's own, not waited

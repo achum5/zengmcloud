@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 556,
+		date: "2026-11-24",
+		text: "3D games: players can be drawn on your device's graphics chip, taking work off the game so it runs smoother. Each device checks for itself which way is quicker and uses that. And an arm raised in front of a player's face is now drawn over his head instead of behind it.",
+	},
+	{
 		n: 555,
 		date: "2026-11-24",
 		text: "Shared leagues: tapping something just as a league mate's change is arriving (a press conference's play button, a signing, a roster move) no longer says \"Still catching up to the cloud\". The press conference plays right away, and anything that changes the league waits a moment for your device to catch up, then goes through.",

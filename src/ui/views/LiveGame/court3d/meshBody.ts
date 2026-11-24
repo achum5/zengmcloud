@@ -27,7 +27,7 @@ const unpack = <T>(b64: string, make: (buf: ArrayBuffer) => T): T => {
 	}
 	return make(buf);
 };
-type Mesh = {
+export type Mesh = {
 	n: number;
 	start: Uint32Array;
 	counts: Uint8Array;
@@ -87,12 +87,14 @@ const meshOf = (): Mesh => {
 	}
 	return mesh;
 };
+// (The mesh as it is, for the card to be handed once - see meshGl.ts.)
+export const meshData = (): Mesh | undefined => mesh;
 export const MESH_KINDS: readonly string[] = BODY_META.kinds;
 export type MeshKind = (typeof BODY_META.kinds)[number];
 
 // ---- frames --------------------------------------------------------------------
 
-type F3 = { h: V3; a: V3; f: V3; s: V3 };
+export type F3 = { h: V3; a: V3; f: V3; s: V3 };
 const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
 const sub = (a: V3, b: V3) => v3(a.f - b.f, a.s - b.s, a.u - b.u);
 const dot = (a: V3, b: V3) => a.f * b.f + a.s * b.s + a.u * b.u;
@@ -447,6 +449,9 @@ export const atRest = (
 		(R.h.u + R.a.u * l0 + R.f.u * l1 + R.s.u * l2) * H,
 	);
 };
+// A piece of him at rest (feet, for a man 1 foot tall): where it starts,
+// and which way along it, forward and to his side are (see atRest).
+export const restOf = (i: number): F3 => REST_OF[i]!;
 const CHEST = BODY_META.bones.indexOf("chest");
 const C0 = REST_OF[CHEST]!;
 // Each piece's turn and move from rest to posed, as a dual quaternion
@@ -964,6 +969,8 @@ const SHINE_AT = (() => {
 	const n = Math.hypot(l[0]!, l[1]!, l[2]!);
 	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
 })();
+// (The light, as drawMesh has it - for the card's drawing of him too.)
+export const MESH_LIGHTS = { LIGHT, BACK_LIGHT, SHINE_AT } as const;
 const SS = 2;
 const BOX_HAIR = 1e-3;
 let pos = new Float32Array(0);

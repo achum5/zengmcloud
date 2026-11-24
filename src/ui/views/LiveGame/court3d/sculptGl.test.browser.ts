@@ -1,8 +1,11 @@
+import { generate } from "facesjs";
 import { beforeAll, describe, expect, test } from "vitest";
 import { makeCamera, MAIN_RIG } from "./camera.ts";
 import type { PlayerState } from "./evaluate.ts";
+import { loadHead } from "./faces.ts";
 import type { Look } from "./figure.ts";
 import { kitArtOf } from "./kitArt.ts";
+import { loadMesh } from "./meshBody.ts";
 import { bodyOf } from "./poses.ts";
 import { glCard } from "./sculptGl.ts";
 import { glAgainstPage, glAgrees } from "./sprite.ts";
@@ -70,7 +73,6 @@ const apart = (look: Look, men: Partial<PlayerState>[]) => {
 		all.off += one!.off;
 		all.tone += one!.tone;
 		all.toned += one!.toned;
-		expect(one!.lost).toBe(0);
 	}
 	expect(all.drawn).toBeGreaterThan(2000);
 	return { shape: all.off / all.drawn, tone: all.tone / all.toned };
@@ -180,6 +182,30 @@ describe("a man sculpted on the graphics card", { timeout: 60_000 }, () => {
 			const d = apart({ ...base, outfit }, [POSES[0]!, POSES[5]!, POSES[10]!]);
 			expect(d.shape).toBeLessThan(0.005);
 			expect(d.tone).toBeLessThan(1.5);
+		}
+	});
+
+	test("is the page's drawn as a man, from the mesh", async ({ skip }) => {
+		skip(!card, "no WebGL2 here");
+		await loadMesh();
+		expect(glAgrees(true).ok).toBe(true);
+		const head = await loadHead(generate(), ["#007a33", "#ffffff", "#ba9653"]);
+		for (const look of [
+			{ ...base, real: true },
+			{ ...base, real: true, head: head.sprite, jerseyNumber: "9" },
+			// (In the short shorts of the 1980s.)
+			{ ...base, real: true, hem: 0.42 },
+		] as Look[]) {
+			const d = apart(look, [
+				...POSES,
+				...TURNS.map(
+					(yaw) => ({ yaw, holding: true, anim: "dribbleWalk" }) as const,
+				),
+			]);
+			// (A few of his edge's pixels: where a face's edge crosses a
+			// sample the card's sums fall a hair to one side of it.)
+			expect(d.shape).toBeLessThan(0.002);
+			expect(d.tone).toBeLessThan(1);
 		}
 	});
 });

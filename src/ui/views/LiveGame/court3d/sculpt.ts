@@ -3376,9 +3376,13 @@ export const sculpt = (
 	const heldSin = Math.sin(heldTurn);
 	const img = new ImageData(w, h);
 	const d = img.data;
-	// (Drawn as a man, his head is in the picture with the rest of him, in
-	// front of or behind his arms as it is: nothing need go over it after.)
-	const lateAny = !look.real && b.late.some(Boolean);
+	// (Drawn as a man whose head is in the mesh, his head is in the picture
+	// with the rest of him, in front of or behind his arms as it is: nothing
+	// need go over it after. The court's own head on him is drawn after his
+	// body - his arms up in front of it go over it again.)
+	const lateAny =
+		!(look.real && meshReady() && MESH_KINDS.includes("head")) &&
+		b.late.some(Boolean);
 	const owner = lateAny ? new Int8Array(w * h).fill(-1) : undefined;
 
 	const { rt, dn, tw: tw3 } = b.frame;
