@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 514,
+		date: "2026-11-24",
+		text: "Daily Schedule's row of days: each day shows how many games it has, on your team's color when your team plays.",
+	},
+	{
+		n: 513,
+		date: "2026-11-24",
+		text: "NBA calendar scores bar: hovering or tapping a day keeps its color and no longer underlines everything, it just lights up a little.",
+	},
+	{
 		n: 512,
 		date: "2026-11-24",
 		text: 'Shared leagues: no more "Reconnecting to the shared league" pop-up. While your device reconnects, the header still shows it.',

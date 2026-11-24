@@ -131,33 +131,40 @@
 			background: var(--bs-tertiary-bg);
 		}
 	}
-	// Room for tonight's dot under every date, so they all line up.
-	&::after {
-		content: "";
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
-	}
 	// The night shown, filled in.
 	&.selected,
 	&.selected:hover {
 		color: var(--bs-body-bg);
 		background: var(--bs-emphasis-color);
-		.lh-week-top {
+		.lh-week-top,
+		.lh-week-games:not(.lh-week-mine) {
 			color: inherit;
 			opacity: 0.75;
 		}
 	}
-	// Tonight: the weekday red, and a red dot.
-	&.today {
-		.lh-week-top {
-			color: var(--bs-danger);
-			opacity: 1;
-		}
-		&::after {
-			background: var(--bs-danger);
-		}
+	// Tonight: the weekday red.
+	&.today .lh-week-top {
+		color: var(--bs-danger);
+		opacity: 1;
 	}
+}
+// How many games, under the date - on the user's team's color the nights
+// it plays.
+.lh-week-games {
+	min-height: 1rem;
+	margin-top: 0.1rem;
+	padding: 0 0.4rem;
+	font-size: 0.62rem;
+	font-weight: 600;
+	line-height: 1rem;
+	white-space: nowrap;
+	color: var(--bs-secondary-color);
+	border-radius: 999px;
+}
+.lh-week-mine {
+	font-weight: 700;
+	color: var(--lh-mine-fg);
+	background: var(--lh-mine-bg);
 }
 .lh-week-off {
 	opacity: 0.35;
@@ -584,6 +591,10 @@
 	}
 	.lh-week-num {
 		font-size: 1.2rem;
+	}
+	.lh-week-games {
+		padding: 0 0.25rem;
+		font-size: 0.56rem;
 	}
 }
 

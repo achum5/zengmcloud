@@ -42,13 +42,24 @@
 	}
 }
 
+// Hover or tap: the day stays as it is, no underline, only a little lighter
+// (on a phone a tap would leave hover lit, so there it's the press only).
 a.tbd:hover,
-a.tbd:focus-visible {
+a.tbd:focus,
+a.tbd:active {
 	color: var(--bs-body-color);
+	text-decoration: none;
+}
 
-	.tbd-body {
+@media (hover: hover) {
+	a.tbd:not(.tbd-home):hover .tbd-body {
 		background: rgba(var(--bs-emphasis-color-rgb), 0.06);
 	}
+}
+
+a.tbd:not(.tbd-home):focus-visible .tbd-body,
+a.tbd:not(.tbd-home):active .tbd-body {
+	background: rgba(var(--bs-emphasis-color-rgb), 0.06);
 }
 
 .tbd-head {
@@ -214,8 +225,14 @@ a.tbd:focus-visible {
 	}
 }
 
-a.tbd-home:hover .tbd-body,
-a.tbd-home:focus-visible .tbd-body {
+@media (hover: hover) {
+	a.tbd-home:hover .tbd-body {
+		filter: brightness(1.12);
+	}
+}
+
+a.tbd-home:focus-visible .tbd-body,
+a.tbd-home:active .tbd-body {
 	filter: brightness(1.12);
 }
 

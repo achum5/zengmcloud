@@ -493,15 +493,33 @@ export default defineView({
 					);
 				}
 
-				// Every night of the season, for the week strip.
+				// Every night of the season, for the week strip, and the user's
+				// team's game in it.
+				const userTid = g.get("userTid");
 				const nights = Array.from(daysAndPlayoffs.entries())
-					.map(([nightDay, playoffs]) => ({
-						day: nightDay,
-						date: dateByDay.get(nightDay),
-						numGames: gamesByDay.get(nightDay)?.length ?? 0,
-						playoffs,
-						deadline: deadlineDays.has(nightDay),
-					}))
+					.map(([nightDay, playoffs]) => {
+						const mine = gamesByDay
+							.get(nightDay)
+							?.find(
+								(game) => game.homeTid === userTid || game.awayTid === userTid,
+							);
+						return {
+							day: nightDay,
+							date: dateByDay.get(nightDay),
+							numGames: gamesByDay.get(nightDay)?.length ?? 0,
+							playoffs,
+							deadline: deadlineDays.has(nightDay),
+							...(mine
+								? {
+										mine: {
+											home: mine.homeTid === userTid,
+											opp:
+												mine.homeTid === userTid ? mine.awayTid : mine.homeTid,
+										},
+									}
+								: {}),
+						};
+					})
 					.sort((a, b) => a.day - b.day);
 
 				// The next night with games, for "Coming up", with each team's
