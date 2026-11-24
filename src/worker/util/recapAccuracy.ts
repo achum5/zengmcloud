@@ -1,9 +1,11 @@
 import type {
+	RecapDayStandings,
 	RecapGame,
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import { finishScores, withSettledLead } from "./recapFinish.ts";
+import { analyzeShape, comebackSize } from "./getAutoRecap.ts";
 import { clockLeft } from "../../common/gameFlow.ts";
 import { expandSecondReferences, surnameOf } from "./recapNames.ts";
 
@@ -285,6 +287,18 @@ export const verifyRecap = (
 				if (/\bthe (?:next|last)\s*$/.test(before)) {
 					continue;
 				}
+				// "came back from 17 points down" is the deficit, held to the
+				// game's own.
+				if (
+					word === "points" &&
+					/^ down\b/.test(sentence.slice(m.index + m[0].length))
+				) {
+					const deficit = comebackSize(analyzeShape(game));
+					if (n !== deficit) {
+						add("deficit", `said ${n} down, real ${deficit}`, sentence);
+					}
+					continue;
+				}
 				// "7 points the wrong side of the line", "favored by 6" - a
 				// margin against the pregame line, not anything in the box score.
 				if (SPREAD_TALK.test(sentence)) {
@@ -374,7 +388,7 @@ export const verifyRecap = (
 		}
 		// "4-of-7", and "hitting 4 of 7 threes".
 		for (const m of sentence.matchAll(
-			/(?<![\d.])(\d+)(?:-of-| of (?=\d+ (?:threes|three-pointers|free throws|shots)\b))(\d+)/g,
+			/(?<![\d.])(\d+)(?:-of-| of (?=\d+ (?:threes|three-pointers|free throws|shots|shooting)\b))(\d+)/g,
 		)) {
 			if (!splits.has(`${m[1]}-${m[2]}`)) {
 				add("shooting split", `${m[1]}-of-${m[2]} matches nothing`, sentence);
@@ -775,7 +789,7 @@ export const verifyRecap = (
 		};
 		claim(/(\d+) lead changes/g, (n) => n === flow.leadChanges, "lead changes");
 		claim(
-			/changed hands (\d+) times/g,
+			/(?:changed hands|traded the lead) (\d+) times/g,
 			(n) => n === flow.leadChanges,
 			"lead changes",
 		);
@@ -837,10 +851,17 @@ export const verifyRecap = (
 		)) {
 			const a = Number(m[1]);
 			const b = Number(m[2]);
-			const r = logRuns.find((x) => x.pts === a && x.opp === b);
+			// A game can hold two runs of one score: either will do.
 			const who = byName.get(m[4]!.trim());
-			const said = m[3] === "all" ? r?.pts : wordToNumber(m[3]!);
-			if (!r || !who || r.top?.pid !== who.pid || r.top?.pts !== said) {
+			const fits = logRuns.some(
+				(r) =>
+					r.pts === a &&
+					r.opp === b &&
+					who !== undefined &&
+					r.top?.pid === who.pid &&
+					r.top?.pts === (m[3] === "all" ? r.pts : wordToNumber(m[3]!)),
+			);
+			if (!fits) {
 				add("run scorer", `said ${m[3]} of ${a}-${b} from ${m[4]}`, m[0]);
 			}
 		}
@@ -1989,5 +2010,125 @@ export const verifyRecap = (
 		);
 	}
 
+	return out;
+};
+
+// THE NIGHT, read back the same way. Each item of "Around the league" is
+// held against its own game, as a recap of it under its final; the night's
+// figures, streaks and records against the games and the standings they came
+// from.
+export const verifyNight = (
+	written: string,
+	games: RecapGame[],
+	standings?: RecapDayStandings,
+): RecapViolation[] => {
+	const out: RecapViolation[] = [];
+	const add = (kind: string, detail: string, sentence: string) => {
+		out.push({ kind, detail, sentence });
+	};
+	const nickOf = (t: RecapTeam) => t.name || t.region;
+	const headerOf = (g: RecapGame) => {
+		const [home, away] = g.teams;
+		const W = g.winnerTid === home.tid ? home : away;
+		const L = W === home ? away : home;
+		return `${nickOf(W)} ${W.pts}, ${nickOf(L)} ${L.pts}`;
+	};
+	const rows = new Map<
+		string,
+		{ won: number; lost: number; streak?: { won: boolean; count: number } }
+	>();
+	for (const c of standings?.confs ?? []) {
+		for (const t of c.teams) {
+			rows.set(t.name, t);
+		}
+	}
+	const blocks = written.split("\n\n");
+	for (const block of blocks) {
+		const title = /^### (.+)/.exec(block)?.[1];
+		const lines = block.split("\n").slice(title ? 1 : 0);
+		if (title === "Around the league") {
+			for (const line of lines) {
+				const m = /^- \*\*(.+?):\*\* (.+)$/.exec(line);
+				const game = m
+					? games.find((g) => m[1]!.startsWith(headerOf(g)))
+					: undefined;
+				if (m && game) {
+					for (const v of verifyRecap(`**${m[1]}**\n\n${m[2]}`, game)) {
+						out.push(v);
+					}
+				}
+			}
+		} else if (title === "Streaks") {
+			for (const line of lines) {
+				const m = /^- \*\*(Winning|Losing):\*\* (.+)$/.exec(line);
+				for (const part of m?.[2]!.split(", ") ?? []) {
+					const pm = /^(.+) (\d+)$/.exec(part);
+					const row = pm ? rows.get(pm[1]!) : undefined;
+					if (
+						pm &&
+						(!row?.streak ||
+							row.streak.count !== Number(pm[2]) ||
+							row.streak.won !== (m![1] === "Winning"))
+					) {
+						add("streak", `said ${part}`, line);
+					}
+				}
+			}
+		} else if (title === "By the numbers") {
+			const quarters = new Set<string>();
+			const figures = new Set<string>();
+			for (const g of games) {
+				const [a, b] = g.teams;
+				for (let q = 0; q < (a.ptsQtrs?.length ?? 0); q++) {
+					quarters.add(`${a.ptsQtrs![q]}-${b.ptsQtrs?.[q]}`);
+					quarters.add(`${b.ptsQtrs?.[q]}-${a.ptsQtrs![q]}`);
+				}
+				for (const r of g.runs?.runs ?? []) {
+					quarters.add(`${r.pts}-${r.opp}`);
+				}
+				for (const t of g.teams) {
+					figures.add(String(t.pts));
+					for (const p of t.players) {
+						figures.add(`${p.fg} of ${p.fga}`);
+						figures.add(`${p.tp} of ${p.tpa}`);
+						figures.add(`${p.ft} of ${p.fta}`);
+						for (const n of [p.pts, p.reb, p.ast, p.blk, p.stl, p.tp]) {
+							figures.add(String(n));
+						}
+					}
+				}
+				figures.add(String(g.flow?.leadChanges ?? -1));
+			}
+			for (const line of lines) {
+				const fig = /^- \*\*(.+?):\*\*/.exec(line)?.[1];
+				if (!fig) {
+					continue;
+				}
+				const isPair = /^\d+-\d+$/.test(fig);
+				if (
+					isPair
+						? !quarters.has(fig)
+						: !figures.has(fig) && !/deficit/.test(line)
+				) {
+					add("figure", `no ${fig} in the night's games`, line);
+				}
+			}
+		}
+		// A record in parentheses after a club's name is its record.
+		if (title === "The race" || title === "Worth watching") {
+			for (const m of block.matchAll(
+				/(?:the |\*\*|at )([A-Z][\w ]*?) \((\d+)-(\d+)\)/g,
+			)) {
+				const row = rows.get(m[1]!);
+				if (row && (row.won !== Number(m[2]) || row.lost !== Number(m[3]))) {
+					add(
+						"record",
+						`said ${m[1]} ${m[2]}-${m[3]}, real ${row.won}-${row.lost}`,
+						block,
+					);
+				}
+			}
+		}
+	}
 	return out;
 };

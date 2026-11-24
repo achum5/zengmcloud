@@ -12,6 +12,56 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 575,
+		date: "2026-11-24",
+		text: "Watching a game in 3D, a pregame show plays while the game loads. The lights go down and the building opens with fire, colored lights or a spotlight on the logo, then the starters are called out, each home starter up close as he slaps hands down the line. Cards show the matchup, the starting lineups and the key matchup before the lights come up for the tip. Skip it once the game is ready.",
+	},
+	{
+		n: 574,
+		date: "2026-11-24",
+		text: "Any two teams have a page of their own: who leads the all-time regular season series, every time they met in the playoffs, the record season by season, their totals side by side and their latest games. Tap a team on a Head-to-Head page, or All-time on a playoff series page.",
+	},
+	{
+		n: 573,
+		date: "2026-11-24",
+		text: "Draft History redrafts every class that has played at least two seasons, by career win shares: the first round done again, with each pick's team, who it would take now and where that player really went, plus a Redraft column in the table.",
+	},
+	{
+		n: 572,
+		date: "2026-11-24",
+		text: "NBA calendar: the separate Calendar page is gone, since a team's Schedule page has the same month calendar. The menu and team pages no longer list it, and the dashboard's Full Calendar link and any old Calendar links now open Schedule.",
+	},
+	{
+		n: 571,
+		date: "2026-11-24",
+		text: "New page, Stats > Milestone Watch: the active players climbing the league's all-time lists in points, rebounds, assists, steals, blocks and 3-pointers and how many it takes to pass the next man up, the ones a few games from a round number like 20,000 points, and anyone on pace for one of the best seasons the league has seen. A player's page shows his part of it.",
+	},
+	{
+		n: 570,
+		date: "2026-11-24",
+		text: "Game and night recaps repeat themselves less. Their most common lines now come in several wordings. The race only brings up a magic number or a cut line on a night that moved it, so a team moving into or out of a playoff spot is never crowded out, and Worth watching says how far ahead a conference leader is.",
+	},
+	{
+		n: 569,
+		date: "2026-11-24",
+		text: "The game-by-game strip on Schedule pages is now Game Results: green bars up for wins and red bars down for losses, as tall as the margin, with gray blocks for the games still to play. With the NBA Calendar on, every date gets a slot and the games are grouped by month. Hover a bar for the game, tap it for the box score.",
+	},
+	{
+		n: 568,
+		date: "2026-11-24",
+		text: "The night's recap on the Daily Schedule is built out. Under the headline is a line of the night's other stories, and each game in Around the league says what the result meant: a streak, first place, a clinch, the end of a road trip, who got hurt. New sections follow, each only on a night that has one: By the numbers (like a 20-1 closing run or 12-of-13 shooting), Streaks, The race (clinches, the top of each conference, who moved into or out of the playoff and play-in spots, how close the cut lines are, magic numbers late in the season), Milestones and firsts, Moves (a traded or signed player's first game for his new team, or against his old one) and Worth watching (the next day's best game and why). Game recaps no longer give career totals for players whose earlier seasons came before the league began.",
+	},
+	{
+		n: 567,
+		date: "2026-11-24",
+		text: "A team's Schedule page opens with its season game by game: a bar for every game, up for a win and down for a loss, as tall as the margin, in the team's color. The longest winning streak is shaded and the playoffs follow a line. Tap a bar for its box score.",
+	},
+	{
+		n: 566,
+		date: "2026-11-24",
+		text: "Every playoff series has its own page. Tap the games won on the Playoffs bracket, or the series score on a box score: it shows where the series stands, every game with its recap and the games still to come, the series leaders, both teams' stats side by side, their regular season meetings and every other time they met in the playoffs.",
+	},
+	{
 		n: 565,
 		date: "2026-11-24",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players catch and throw passes on the move. A man running to a pass no longer pulls up and waits on his spot for it. He catches it in stride and gathers into his shot, his dribble or his next pass, and the man with the ball passes off the dribble instead of stopping first.",

@@ -65,6 +65,7 @@ const Team = ({
 	won,
 	lost,
 	gid,
+	seriesUrl,
 }: {
 	editing?: Editing;
 	expandTeamName: boolean;
@@ -77,6 +78,8 @@ const Team = ({
 	won: boolean;
 	lost: boolean;
 	gid?: number;
+	// The series page, for the games won.
+	seriesUrl?: string;
 }) => {
 	// Before any early return, because it is a hook.
 	const { college } = useLocal(["college"]);
@@ -134,19 +137,22 @@ const Team = ({
 	}
 
 	const wonPtsLink = (value: ReactNode) => {
-		if (gid === undefined) {
+		if (gid === undefined && seriesUrl === undefined) {
 			return <div className="ms-auto pe-2">{value}</div>;
 		}
 
 		return (
 			<a
 				className="ms-auto pe-2 h-100 d-flex align-items-center"
-				href={helpers.leagueUrl([
-					"game_log",
-					`${team.abbrev}_${team.tid}`,
-					season,
-					gid,
-				])}
+				href={
+					seriesUrl ??
+					helpers.leagueUrl([
+						"game_log",
+						`${team.abbrev}_${team.tid}`,
+						season,
+						gid!,
+					])
+				}
 			>
 				{value}
 			</a>
@@ -237,6 +243,7 @@ export const PlayoffMatchup = ({
 	numGamesToWinSeries = 7,
 	season,
 	series,
+	seriesLinks,
 	userTid,
 }: {
 	bannerForWinner?: boolean;
@@ -250,6 +257,8 @@ export const PlayoffMatchup = ({
 		home: SeriesTeam;
 		gids?: number[];
 	};
+	// The games won open the series page (a bracket of series really played).
+	seriesLinks?: boolean;
 	userTid: number;
 }) => {
 	if (
@@ -271,6 +280,16 @@ export const PlayoffMatchup = ({
 
 	const gid =
 		series.gids && series.gids.length > 0 ? series.gids.at(-1) : undefined;
+
+	const seriesUrl =
+		seriesLinks && showWon && series.away && !series.away.pendingPlayIn
+			? helpers.leagueUrl([
+					"playoff_series",
+					season,
+					`${series.home.abbrev}_${series.home.tid}`,
+					`${series.away.abbrev}_${series.away.tid}`,
+				])
+			: undefined;
 
 	const bannerTeam = bannerForWinner
 		? homeWon
@@ -294,6 +313,7 @@ export const PlayoffMatchup = ({
 					won={homeWon}
 					lost={awayWon}
 					gid={gid}
+					seriesUrl={seriesUrl}
 					editing={editing}
 				/>
 				<Team
@@ -307,6 +327,7 @@ export const PlayoffMatchup = ({
 					won={awayWon}
 					lost={homeWon}
 					gid={gid}
+					seriesUrl={seriesUrl}
 					editing={editing}
 				/>
 			</ul>

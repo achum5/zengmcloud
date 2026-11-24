@@ -2,6 +2,7 @@ import { clockLeft, type GameFlowSide } from "../../common/gameFlow.ts";
 import type {
 	RecapAverages,
 	RecapDayStandings,
+	RecapNextSlate,
 	RecapGame,
 	RecapInjuryOut,
 	RecapPlayer,
@@ -4430,6 +4431,8 @@ export type AutoDayRecapInput = {
 	playoffs: boolean;
 	games: RecapGame[];
 	standings?: RecapDayStandings;
+	// The next day of the schedule, for Worth watching.
+	next?: RecapNextSlate;
 };
 
 // One player's line pulled up to league level, with team/opponent context, so the

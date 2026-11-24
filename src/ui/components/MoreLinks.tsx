@@ -79,16 +79,9 @@ const MoreLinksShown = (
 	const {
 		college,
 		godMode,
-		nbaCalendar,
 		rotationPlans,
 		season: currentSeason,
-	} = useLocal([
-		"college",
-		"godMode",
-		"nbaCalendar",
-		"rotationPlans",
-		"season",
-	]);
+	} = useLocal(["college", "godMode", "rotationPlans", "season"]);
 
 	let links: {
 		url: string | Readonly<LeagueUrlParts>;
@@ -152,13 +145,6 @@ const MoreLinksShown = (
 			links.splice(links.findIndex((link) => link.name === "Game Log") + 1, 0, {
 				url: ["lineups", team, season],
 				name: "Lineups",
-			});
-		}
-
-		if (__SPORT === "basketball" && nbaCalendar) {
-			links.splice(links.findIndex((link) => link.name === "Schedule") + 1, 0, {
-				url: ["calendar", team, season ?? currentSeason],
-				name: "Calendar",
 			});
 		}
 
@@ -385,12 +371,7 @@ const MoreLinksShown = (
 			{ url: ["export_league"], name: "Export League" },
 		];
 	} else if (props.type === "schedule") {
-		links = [
-			{ url: ["schedule"], name: "Team Schedule" },
-			...(__SPORT === "basketball" && nbaCalendar
-				? [{ url: ["calendar", "all"] as const, name: "Calendar" }]
-				: []),
-		];
+		links = [{ url: ["schedule"], name: "Team Schedule" }];
 	} else if (props.type === "globalSettings") {
 		links = [
 			{ url: "/settings", name: "Global Settings" },

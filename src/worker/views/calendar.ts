@@ -16,9 +16,10 @@ import { getLiveGate, nightShown } from "../util/liveGameGate.ts";
 import { getPlannedPlayoffGames } from "../util/plannedPlayoffGames.ts";
 import { nationalTags } from "./nationalBroadcast.ts";
 
-// THE CALENDAR PAGE: a season's nights, month by month, for a team or the
-// whole league. The same month calendar sits on Daily Schedule, Schedule and
-// the dashboard, from getCalendarData.
+// A SEASON'S NIGHTS, month by month, for a team or the whole league: the
+// month calendar on Daily Schedule, Schedule and the dashboard, from
+// getCalendarData. The view itself serves the team page's Schedule section
+// (any season); its old page address only forwards to Schedule.
 
 const processInputs = (params: RouteParams<"calendar">) => ({
 	season: validateSeason(params.season),

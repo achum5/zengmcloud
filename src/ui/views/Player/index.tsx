@@ -29,6 +29,7 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
+import Milestones from "./Milestones.tsx";
 import {
 	ContractHistory,
 	ContractSummary,
@@ -195,6 +196,10 @@ const Player2 = ({
 				teamURL={teamURL}
 				willingToSign={willingToSign}
 			/>
+
+			{__SPORT === "basketball" && !retired ? (
+				<Milestones pid={player.pid} />
+			) : null}
 
 			{statTables.map(({ key, name, onlyShowIf, stats, superCols }, i) => (
 				<StatsTable

@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	bracketAsOf,
+	leadersOf,
 	playInOf,
 	recentOf,
 	seriesOf,
@@ -285,5 +286,163 @@ describe("the over/under at the tip", () => {
 			totalAsOf(first, [first], [0, 0], { total: 212.2, games: 150 }),
 			212.5,
 		);
+	});
+});
+
+describe("each team's leading scorer going in", () => {
+	// A game with box lines: [pid, pts, min] for each man.
+	const box = (
+		gid: number,
+		day: number,
+		home: [number, [number, number, number][]],
+		away: [number, [number, number, number][]],
+		playoffs = false,
+	) =>
+		({
+			gid,
+			day,
+			playoffs,
+			teams: [home, away].map(([tid, men]) => ({
+				tid,
+				pts: 0,
+				players: men.map(([pid, pts, min]) => ({
+					pid,
+					name: `P${pid}`,
+					pts,
+					min,
+					orb: 1,
+					drb: 4,
+					ast: 3,
+				})),
+			})),
+		}) as any;
+
+	test("the season before the tip only: not this game, not later ones", () => {
+		const watched = box(
+			30,
+			10,
+			[
+				1,
+				[
+					[11, 50, 30],
+					[12, 0, 30],
+				],
+			],
+			[2, [[21, 0, 30]]],
+		);
+		const played = [
+			box(
+				5,
+				2,
+				[
+					1,
+					[
+						[11, 10, 30],
+						[12, 20, 30],
+					],
+				],
+				[3, [[31, 99, 30]]],
+			),
+			box(
+				6,
+				3,
+				[2, [[21, 30, 30]]],
+				[
+					1,
+					[
+						[11, 12, 30],
+						[12, 22, 30],
+					],
+				],
+			),
+			watched,
+			box(
+				40,
+				12,
+				[
+					1,
+					[
+						[11, 90, 30],
+						[12, 0, 30],
+					],
+				],
+				[2, [[21, 0, 30]]],
+			),
+		];
+		const leaders = leadersOf(watched, played)!;
+		assert.strictEqual(leaders[0].pid, 12);
+		assert.strictEqual(leaders[0].tid, 1);
+		assert.strictEqual(leaders[0].pts, 21);
+		assert.strictEqual(leaders[0].trb, 5);
+		assert.strictEqual(leaders[0].gp, 2);
+		assert.strictEqual(leaders[1].pid, 21);
+		assert.strictEqual(leaders[1].pts, 30);
+	});
+
+	test("one big night in a few games doesn't make the leader", () => {
+		const watched = box(
+			30,
+			10,
+			[
+				1,
+				[
+					[11, 0, 30],
+					[12, 0, 30],
+				],
+			],
+			[2, [[21, 0, 30]]],
+		);
+		const played = [
+			box(
+				1,
+				1,
+				[
+					1,
+					[
+						[11, 15, 30],
+						[12, 40, 30],
+					],
+				],
+				[2, [[21, 9, 30]]],
+			),
+			box(
+				2,
+				2,
+				[
+					1,
+					[
+						[11, 15, 30],
+						[12, 0, 0],
+					],
+				],
+				[2, [[21, 9, 30]]],
+			),
+			box(
+				3,
+				3,
+				[
+					1,
+					[
+						[11, 15, 30],
+						[12, 0, 0],
+					],
+				],
+				[2, [[21, 9, 30]]],
+			),
+		];
+		assert.strictEqual(leadersOf(watched, played)![0].pid, 11);
+	});
+
+	test("none on the first night; a playoff opener goes by the season", () => {
+		const opener = box(1, 1, [1, [[11, 0, 30]]], [2, [[21, 0, 30]]]);
+		assert.isUndefined(leadersOf(opener, [opener]));
+		const regular = box(1, 1, [1, [[11, 20, 30]]], [2, [[21, 10, 30]]]);
+		const g1 = box(50, 90, [1, [[11, 0, 30]]], [2, [[21, 0, 30]]], true);
+		assert.strictEqual(leadersOf(g1, [regular, g1])![0].pts, 20);
+		const p1 = box(50, 90, [1, [[11, 40, 30]]], [2, [[21, 2, 30]]], true);
+		const g2 = box(51, 92, [1, [[11, 0, 30]]], [2, [[21, 0, 30]]], true);
+		const l = leadersOf(g2, [regular, p1, g2])!;
+		assert.strictEqual(l[0].pts, 40);
+		assert.strictEqual(l[1].pts, 2);
 	});
 });

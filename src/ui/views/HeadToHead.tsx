@@ -34,7 +34,7 @@ const HeadToHead = ({
 			view: "headToHead",
 		},
 	});
-	const { userTid } = useLocal(["userTid"]);
+	const { teamInfoCache, userTid } = useLocal(["teamInfoCache", "userTid"]);
 
 	const cols = getCols([
 		"Team",
@@ -83,11 +83,12 @@ const HeadToHead = ({
 		];
 	};
 
+	// Each opponent goes to the two teams' page.
 	const rows = teams.map((t) => {
 		const urlParts: LeagueUrlParts = [
-			"roster",
+			"rivalry",
+			`${teamInfoCache[tid]?.abbrev ?? ""}_${tid}`,
 			`${t.seasonAttrs.abbrev}_${t.tid}`,
-			season === "all" ? undefined : season,
 		];
 
 		return {

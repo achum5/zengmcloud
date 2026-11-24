@@ -1108,7 +1108,14 @@ export const PlayoffRecord = ({
 	}
 
 	const record = (
-		<a href={helpers.leagueUrl(["playoffs", season])}>
+		<a
+			href={helpers.leagueUrl([
+				"playoff_series",
+				season,
+				`${t0.abbrev}_${t0.tid}`,
+				`${t1.abbrev}_${t1.tid}`,
+			])}
+		>
 			{winning.playoffs.won}-{losing.playoffs.won}
 		</a>
 	);

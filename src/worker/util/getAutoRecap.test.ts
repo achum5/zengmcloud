@@ -1559,8 +1559,11 @@ describe("getAutoDayRecap", () => {
 		// and the 46-point night, each a clause.
 		assert.ok(head.includes(";"), recap);
 		assert.ok(/Wallace/.test(head) && /Arenas/.test(head), recap);
-		// Each is told below it, in a paragraph of its own.
-		const paras = recap.split("\n\n").slice(1);
+		// Each is told below it (and the deck), in a paragraph of its own.
+		const paras = recap
+			.split("\n\n")
+			.slice(1)
+			.filter((p) => !/^\*[^*]/.test(p));
 		assert.ok(/Gerald Wallace/.test(paras[0] ?? ""), recap);
 		assert.ok(/Gilbert Arenas/.test(paras[1] ?? ""), recap);
 	});
@@ -5800,12 +5803,17 @@ describe("the standings sentence", () => {
 				standings: { day: 30, confs: [withTid] },
 			});
 		};
-		assert.ok(!night(true, 1).includes("Eastern Conference"), night(true, 1));
-		assert.ok(night(false, 1).includes("Eastern Conference"), night(false, 1));
-		assert.ok(night(true, 2).includes("Eastern Conference"), night(true, 2));
+		// (In The race, or in the game's own lines: "moved into first place
+		// in the Eastern Conference".)
+		const east = /\bthe East\b|Eastern Conference/;
+		assert.ok(!east.test(night(true, 1)), night(true, 1));
+		assert.ok(east.test(night(false, 1)), night(false, 1));
+		assert.ok(east.test(night(true, 2)), night(true, 2));
 	});
 
-	test("both conferences are not described in identical words", () => {
+	// The race is a list: each conference's top is a line of its own, under
+	// its heading, never two conferences run into one sentence.
+	test("each conference's top is a line of its own in The race", () => {
 		const games = [
 			mkGame(
 				6100,
@@ -5828,59 +5836,26 @@ describe("the standings sentence", () => {
 				player({ name: "Mike Bibby", pts: 20, ast: 7 }),
 			),
 		];
-		let sawBoth = 0;
-		for (let day = 20; day < 44; day += 1) {
-			const recap = getAutoDayRecap({
-				season: 2009,
-				day,
-				playoffs: false,
-				games,
-				standings: {
-					day,
-					confs: [
-						conf("Eastern Conference", ["Heat", 30, 12], ["Celtics", 27, 15]),
-						conf("Western Conference", ["Lakers", 32, 10], ["Spurs", 29, 13]),
-					],
-				},
-			});
-			// Whitespace normalized first: the recap has paragraph breaks, and
-			// splitting on "end-of-sentence + single space" runs two paragraphs
-			// together into one "sentence".
-			const line = recap
-				.replaceAll(/\s+/g, " ")
-				.split(/(?<=[!.?]) /)
-				.find((s) => s.includes("Eastern Conference"));
-			if (!line || !line.includes("Western Conference")) {
-				continue;
-			}
-			sawBoth += 1;
-			// Drop the rotating opener ("In the standings, ", "The bigger
-			// picture: "); it sits on the first half only and would make two
-			// identical clauses compare unequal.
-			// Defaulted, not narrowed: assert.ok is untyped here (node:assert has no
-			// types in this project), so it cannot narrow string | undefined.
-			const [east = "", west = ""] = line
-				.replace(/^[^,:]+[,:] /, "")
-				.split(" and ");
-			assert.ok(east !== "" && west !== "", line);
-			// Strip the names and records; what's left is the frame. The trailing
-			// period has to go too - it is only on the second half, and left in it
-			// makes two identical frames compare unequal.
-			const frame = (s: string) =>
-				s
-					.replace(/the [A-Z][\w ]+|\(\d+-\d+\)|\d+/g, "")
-					.replace(/[\s.]+$/, "")
-					.trim();
-			assert.notEqual(
-				frame(east),
-				frame(west),
-				`both conferences use the same frame: ${line}`,
-			);
-		}
-		assert.ok(
-			sawBoth > 0,
-			"the standings sentence never named both conferences",
-		);
+		const recap = getAutoDayRecap({
+			season: 2009,
+			day: 30,
+			playoffs: false,
+			games,
+			standings: {
+				day: 30,
+				confs: [
+					conf("Eastern Conference", ["Heat", 30, 12], ["Celtics", 27, 15]),
+					conf("Western Conference", ["Lakers", 32, 10], ["Spurs", 29, 13]),
+				],
+			},
+		});
+		const race = recap.split("\n\n").find((p) => p.startsWith("### The race"));
+		assert.ok(race, recap);
+		const lines = race!.split("\n").slice(1);
+		const east = lines.find((l) => /\bthe East\b/.test(l));
+		const west = lines.find((l) => /\bthe West\b/.test(l));
+		assert.ok(east && west && east !== west, race);
+		assert.ok(!/\bthe West\b/.test(east!), race);
 	});
 });
 
