@@ -1,4 +1,4 @@
-import type { CourtStyle } from "../../../../common/types.ts";
+import type { CourtStyle, ScoreBugStyle } from "../../../../common/types.ts";
 import { adsFor } from "./arenaAds.ts";
 import {
 	useCallback,
@@ -265,6 +265,9 @@ type Props = {
 	// How many of those the page has shown.
 	cursor: number;
 	boxScore: any;
+	// The broadcast picked to watch it on (see LocalBroadcasts): its score
+	// bug, in place of the game's own (null, the default bug).
+	scoreBug?: ScoreBugStyle | null;
 	caption: ReactNode;
 	// The box score team (0 home, 1 away) the caption's play belongs to, if any.
 	captionT?: 0 | 1;
@@ -319,6 +322,7 @@ const Court3D = ({
 	events,
 	cursor,
 	boxScore,
+	scoreBug,
 	caption,
 	captionT,
 	paused,
@@ -1923,7 +1927,7 @@ const Court3D = ({
 			) : null}
 			<GameBug
 				bugRef={bugRef}
-				own={boxScore?.scoreBug}
+				own={scoreBug === undefined ? boxScore?.scoreBug : scoreBug}
 				hidden={intro.on || preview || !!authored}
 				away={bugTeamOf(
 					away,

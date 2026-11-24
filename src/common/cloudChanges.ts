@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 554,
+		n: 555,
 		date: "2026-11-24",
 		text: "Shared leagues: tapping something just as a league mate's change is arriving (a press conference's play button, a signing, a roster move) no longer says \"Still catching up to the cloud\". The press conference plays right away, and anything that changes the league waits a moment for your device to catch up, then goes through.",
+	},
+	{
+		n: 554,
+		date: "2026-11-24",
+		text: "3D game settings (the gear) are tidier. In a game on the teams' own local broadcasts, you can pick which team's broadcast to watch, and its score bug, right there. The list of play types to put in Key Plays is gone: every kind of big play is always in the reel.",
 	},
 	{
 		n: 553,

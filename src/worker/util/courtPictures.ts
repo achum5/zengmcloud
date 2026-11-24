@@ -13,9 +13,11 @@ import type {
 import { mapCourtURLs } from "../../common/courtFile.ts";
 import type { RealTeamLooks } from "../../common/realTeamLooks.ts";
 import {
+	localBroadcasts,
 	mapScoreBugURLs,
 	scoreBugForGame,
 	scoreBugPictureIds,
+	type LocalBroadcasts,
 } from "../../common/scoreBug.ts";
 import { STADIUM_PICTURE_KEYS } from "../../common/stadiumLook.ts";
 import { nationalPictureIds } from "../../common/nationalBroadcasts.ts";
@@ -332,12 +334,35 @@ export const resolveScoreBug = async (
 
 // The bug a game carries (see scoreBugForGame), its pictures not yet filled
 // in. `teams`: the game's, home first.
-export const scoreBugOfGame = async (teams: { tid: number }[]) => {
+export const scoreBugOfGame = async (teams: { tid: number }[]) =>
+	scoreBugForGame(g.get("scoreBug"), await teamBugs(teams), g.get("userTid"));
+
+const teamBugs = async (teams: { tid: number }[]) => {
 	const looked = [];
 	for (const { tid } of teams) {
 		looked.push({ tid, scoreBug: (await idb.cache.teams.get(tid))?.scoreBug });
 	}
-	return scoreBugForGame(g.get("scoreBug"), looked, g.get("userTid"));
+	return looked;
+};
+
+// A game on its teams' own broadcasts (see localBroadcasts), their pictures
+// filled in - for the viewer to pick one to watch it on.
+export const localBroadcastsOfGame = async (
+	teams: { tid: number }[],
+): Promise<LocalBroadcasts | undefined> => {
+	const local = localBroadcasts(
+		g.get("scoreBug"),
+		await teamBugs(teams),
+		g.get("userTid"),
+	);
+	if (!local) {
+		return undefined;
+	}
+	const bugs = [];
+	for (const { tid, scoreBug } of local.bugs) {
+		bugs.push({ tid, scoreBug: await resolveScoreBug(scoreBug) });
+	}
+	return { tid: local.tid, bugs };
 };
 
 // A court - or a football stadium's field - with the game's decals laid on

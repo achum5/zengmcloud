@@ -19,7 +19,8 @@ import {
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import { useHideTitleBar } from "../../components/TeamBanner.tsx";
 import { MatchupLine } from "./MatchupLine.tsx";
-import KeyPlaysSettings from "./KeyPlaysSettings.tsx";
+import KeyPlaysSettings, { type BroadcastPick } from "./KeyPlaysSettings.tsx";
+import type { LocalBroadcasts } from "../../../common/scoreBug.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
@@ -1739,6 +1740,36 @@ export const LiveGame = (props: View<"liveGame">) => {
 		}),
 		[keyPlays, mineIndex],
 	);
+	// A game on its teams' own broadcasts (see LocalBroadcasts): whose this
+	// device watches it on, picked under the gear - for this game only.
+	const [bugPick, setBugPick] = useState<{ gid: number; tid: number }>();
+	const localBugs: LocalBroadcasts | undefined =
+		__SPORT === "basketball" ? boxScore.current?.localBroadcasts : undefined;
+	const localGid: number | undefined = boxScore.current?.gid;
+	const bugTid =
+		bugPick && bugPick.gid === localGid ? bugPick.tid : localBugs?.tid;
+	const pickedBug =
+		localBugs && bugTid !== localBugs.tid
+			? localBugs.bugs.find((b) => b.tid === bugTid)?.scoreBug
+			: undefined;
+	const broadcastPick: BroadcastPick | undefined =
+		localBugs && localGid !== undefined && bugTid !== undefined
+			? {
+					// (Visitors first, as the bug has them.)
+					teams: [...localBugs.bugs].reverse().map(({ tid }) => {
+						const t = boxScore.current.teams?.find(
+							(bt: any) => bt?.tid === tid,
+						);
+						return {
+							tid,
+							abbrev: t?.abbrev ?? "",
+							name: t ? `${t.region} ${t.name}` : "",
+						};
+					}),
+					tid: bugTid,
+					onChange: (tid) => setBugPick({ gid: localGid, tid }),
+				}
+			: undefined;
 	const followerRef = useRef(isFollower);
 	followerRef.current = isFollower;
 	// Following in 3D a device that says where its court is: this one plays
@@ -3279,6 +3310,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									initialEventCount.current - (events.current?.length ?? 0)
 								}
 								boxScore={boxScore.current}
+								scoreBug={pickedBug}
 								caption={
 									gamecast ? undefined : playByPlayEntries.current[0]?.text
 								}
@@ -3330,7 +3362,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 			{__SPORT === "basketball" || __SPORT === "football" ? (
 				<>
 					<KeyPlaysPicker value={keyPlays} onChange={setKeyPlaysState} />
-					<KeyPlaysSettings value={keyPlays} onChange={setKeyPlaysState} />
+					<KeyPlaysSettings
+						value={keyPlays}
+						broadcast={broadcastPick}
+						onChange={setKeyPlaysState}
+					/>
 				</>
 			) : null}
 		</>
@@ -3359,6 +3395,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			/>
 			<KeyPlaysSettings
 				value={keyPlays}
+				broadcast={broadcastPick}
 				onChange={setKeyPlaysState}
 				picker={<KeyPlaysPicker value={keyPlays} onChange={setKeyPlaysState} />}
 				label={
@@ -3655,6 +3692,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 																	/>
 																	<KeyPlaysSettings
 																		value={keyPlays}
+																		broadcast={broadcastPick}
 																		onChange={setKeyPlaysState}
 																	/>
 																</>
@@ -3784,6 +3822,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 															/>
 															<KeyPlaysSettings
 																value={keyPlays}
+																broadcast={broadcastPick}
 																onChange={setKeyPlaysState}
 															/>
 														</>
