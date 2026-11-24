@@ -84,7 +84,10 @@ const SPREAD: Record<StepMode, number> = {
 	back: 0.42,
 	slide: 0.85,
 };
-const STANCE_SPREAD = 1.25;
+// (In his stance, wider - a defender's stance up on the man with the ball,
+// held through a possession: about as wide as his shoulders and a little
+// more, not a drill's.)
+const STANCE_SPREAD = 0.95;
 // How much of a stride each foot is down (see poses.ts GAITS: a walk over
 // half - a foot always down - a run under it), going slow to quick.
 const DUTY: Record<Exclude<StepMode, "stand">, [number, number]> = {
@@ -143,10 +146,11 @@ const REACH_MOST = 2.3;
 const TRAIL = 2;
 const FLIGHT_MOST = 160;
 const OUTRUN_LOOK = 2000;
-// Running, under him a little before halfway through its time down (a
-// share of it): he comes down on it a touch less out in front than he
-// leaves it behind.
-const RUN_UNDER = 0.42;
+// Walking or running, under him a little before halfway through its time
+// down (a share of it): he comes down on it a touch less out in front than
+// he leaves it behind (walking, half a step out in front as it comes down,
+// and up off it as the other has been down a moment).
+const UNDER = 0.42;
 // (His weight this high, as a share of his height: what he leans on.)
 const HIPS = 0.55;
 // Going, he steps the way he goes; under this pace (feet a second), the way
@@ -170,7 +174,10 @@ export type FootPlanner = {
 	through: (t: number) => void;
 };
 // (Planned on this far past where it is wanted, ms: no later step changes
-// one this far back.)
+// one this far back. Kept that far ahead as it is wanted - a step or so at a
+// time, as the game plays - rather than a whole stretch of it at once each
+// time it runs out: a frame here and there that took that much longer to
+// draw.)
 const SETTLED = 2500;
 
 // Every step of a whole stretch.
@@ -314,7 +321,8 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	// halfway through it, out to its side, and leaned off how hard his going
 	// changes over it.
 	const spotFor = (foot: 0 | 1, t0: number, t1: number, mode: StepMode): Pt => {
-		const mid = t0 + (t1 - t0) * (mode === "run" ? RUN_UNDER : 0.5);
+		const mid =
+			t0 + (t1 - t0) * (mode === "run" || mode === "walk" ? UNDER : 0.5);
 		const c = posAt(mid);
 		let ax = 0;
 		let ay = 0;
@@ -485,7 +493,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	};
 	let upTo = from;
 	const through = (want: number) => {
-		if (done || want <= upTo) {
+		if (done || want + SETTLED <= upTo) {
 			return;
 		}
 		upTo = Math.min(to, want + SETTLED);

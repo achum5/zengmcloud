@@ -5,6 +5,7 @@ import {
 	evalPlayer,
 	fastAt,
 	poseOf,
+	stepInchesOf,
 	withBody,
 } from "../evaluate.ts";
 import { bodyOf, skeleton } from "../poses.ts";
@@ -14,7 +15,7 @@ import { stepsPerSecond } from "./gait.ts";
 // A game staged by the new possession sim, each man getting about his own
 // way (see gait.ts): his feet, as they are drawn.
 describe("3D possession sim: his own stride", () => {
-	test("running, his feet come down as often as a man his height's do at the pace", () => {
+	test("running, his feet come down as often as a man with his legs' do at the pace", () => {
 		const { events, players } = fakeGame("strides", 16);
 		// (Each with ratings, so each gets about his own way: point guards
 		// small and quick, centers big and slow.)
@@ -70,7 +71,10 @@ describe("3D possession sim: his own stride", () => {
 					const v = (Math.hypot(st.x - prev.x, st.y - prev.y) * 1000) / DT;
 					if (v >= 9 && v <= 20) {
 						got += down.filter((d, i) => d && !prev!.down[i]).length;
-						want += (stepsPerSecond("run", v, own.inches, own.sig) * DT) / 1000;
+						want +=
+							(stepsPerSecond("run", v, stepInchesOf(own.inches), own.sig) *
+								DT) /
+							1000;
 					}
 				}
 				prev = { x: st.x, y: st.y, down };

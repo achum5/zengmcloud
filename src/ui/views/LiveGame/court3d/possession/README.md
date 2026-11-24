@@ -98,10 +98,10 @@ looks better.
 6. Offense off the ball (built). Coming into a catch on the move waits
    for steps 7 and 8, where the catches are laid.
 7. The ball handler (built).
-   - Then, before 8, natural and smooth (Alex, 2026-11-24): men stand
-     and walk like it away from the play (upright, a plain step or none
-     for a small shift; the deep stance looks wrong), legs that move like
-     a real player's rather than splayed, and nothing that hitches a
+   - Then, before 8, natural and smooth (Alex, 2026-11-24; built): men
+     stand and walk like it away from the play (upright, a plain step or
+     none for a small shift; the deep stance looks wrong), legs that move
+     like a real player's rather than splayed, and nothing that hitches a
      frame (60 fps for everyone).
 8. The planner's full vocabulary: transition, the playbook, team styles.
 9. Contact: screens hit, bumps, box-outs.
@@ -382,6 +382,80 @@ Still short:
 - Jolts about where they were (teleport flags 14 against 13, lurches 185
   against 194): now and then a defender lunging the last few feet into a
   swipe, a foul or a contest the play pins him to.
+
+## Natural and smooth (before step 8)
+
+Alex, on film of step 7: slightly choppy; men who should be easy about it
+sliding their feet hard; stood in their stance it looks unrealistic, and
+their legs have a spider look - they don't look natural moving about.
+
+What it was, measured over a whole game (real_11):
+
+- Every defender drawn in his stance whatever he was doing: off the ball,
+  81% of the time stood, 89% moving slowly, 43% moving - the deep crouch,
+  feet 2.5 ft apart, arms out. Real defenders off the ball are up on their
+  feet, watching.
+- Steps too long for the figure's legs. The figure's legs are 45% of his
+  height, a real man's 53%: stepped as a real man his height steps, his
+  feet were planted out past where his legs reach, his hips sank to get to
+  them, his thighs split wide - running, as far apart as 119 degrees (a
+  real runner's 70-80), sprinting 141 (90-100).
+- A swinging foot carried on a line under him, lifted: the thigh flung
+  forward.
+- His steps planned 2.5 s at a time, all at once when they ran out: now
+  and then a frame that took that much longer.
+
+What changed:
+
+1. Up on his feet unless it is on him (`defense.ts`): in his stance only on
+   the ball, helping, planted for a charge, committed to a pin, or within
+   12 ft of a drive. Otherwise walking, stood up ("help": weight shifting,
+   hands loose), walking backward upright (`backWalk`), side-stepping. His
+   stance, when he is in it, 62% of the full crouch (one held through a
+   possession, not a drill's), feet a little nearer.
+2. Steps that fit his legs (`evaluate.ts` stepInchesOf): planned as a real
+   man's whose legs are as long as the figure's - a little quicker, each a
+   little shorter at the pace.
+3. Up over his toes (`poses.ts` reachFeet): his heel up from about halfway
+   through a walking step, his ankle up and forward over his toes, the toes
+   staying put; a foot behind him past his reach rolls further up onto
+   them rather than his hips sinking.
+4. A swinging leg as a runner's (`evaluate.ts` ownSwing): mid-swing, his
+   stride's own (fit to motion capture: heel folded up behind him, knee
+   driven through), from where it left the floor and back to where it
+   comes down.
+5. Walking, a foot down half a step out in front of him, as running.
+6. His steps kept 2.5 s ahead a step at a time, as the game plays.
+
+| Measure (whole game, new sim) | Before | Now | Old sim | Real |
+| --- | --- | --- | --- | --- |
+| Defender off the ball in his stance: stood | 81% | 10% | - | up on his feet |
+| ... moving slowly | 89% | 18% | - | |
+| ... moving | 43% | 12% | - | |
+| Thighs apart at most (p90, deg): walking 4-7 ft/s | 93 | 67 | 53 | 40-45 |
+| ... jogging 7-11 ft/s | 97 | 60 | 61 | 55-65 |
+| ... running 11-16 ft/s | 119 | 77 | 71 | 70-80 |
+| ... sprinting | 141 | 94 | 99 | 90-100 |
+| Hips at their lowest running (p10, of stood) | 0.56 | 0.65 | 0.74 | about 0.9 |
+
+A frame's work with the new sim on is the old one's: as many new player
+pictures a frame (0.80 a man, against 0.84), and its own part (his steps,
+his legs to them) about 1% of the frame. Most of any frame, on or off, is
+making the players' pictures.
+
+Still short:
+
+- Sudden starts and stops: 185 a game (a change of 8 ft/s or more in a
+  tenth of a second) against the old sim's 16. They come where the play
+  pins a man to a spot at a moment he can't reach smoothly: into a catch
+  (38), a contest (38), a hack, a box-out or a screen (34), and 44 with
+  nothing pinned close. The planner laying those (step 8) is where they go.
+- Walking, the back leg still trails further than a real man's at starts
+  and stops.
+
+(The legs measured off his skeleton as drawn, every tenth of a second,
+by pace; the stances off the tape's anims; a frame's work with Chrome's
+profiler on the live page.)
 
 ## How we know
 

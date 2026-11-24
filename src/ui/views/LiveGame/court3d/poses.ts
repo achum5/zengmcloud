@@ -641,6 +641,24 @@ const P = {
 		lean: 18,
 		wide: 0.85,
 	}),
+	// Off the ball on defense, with the ball live somewhere else (the new
+	// possession sim's men): up on his feet, knees soft, weight on the balls
+	// of his feet, hands loose and a little out from his sides - not sat
+	// down in a stance he holds only up on the ball.
+	help: pose({
+		hipN: 5,
+		kneeN: 16,
+		hipF: 11,
+		kneeF: 19,
+		lean: 7,
+		shN: 12,
+		elN: 24,
+		shF: 15,
+		elF: 30,
+		abN: 18,
+		abF: 21,
+		wide: 0.32,
+	}),
 	// Stood easy, the ball dead - a whistle, a free throw: up straight, his
 	// knees all but locked, feet under his hips, arms hanging loose at his
 	// sides.
@@ -1056,7 +1074,8 @@ type RunMode =
 	| "drift"
 	| "shuffle"
 	| "sideStep"
-	| "closeout";
+	| "closeout"
+	| "backWalk";
 // A defensive slide: how far he goes each step-and-close (feet), and how
 // far apart his feet are, closed up (see "shuffle").
 const SLIDE_STRIDE = 1.8;
@@ -1123,9 +1142,12 @@ type GaitMode =
 	| "carry"
 	| "drift"
 	| "backpedal"
+	| "backWalk"
 	| "chop";
 // Giving ground in his stance (see "back"): feet a stride.
 const BACKPEDAL_STRIDE = 3.8;
+// Walking backward up on his feet (see "backWalk"): feet a stride.
+const BACK_WALK_STRIDE = 3.4;
 const GAITS: Record<GaitMode, Gait> = {
 	// (As people run - fit to motion capture, nine strides at 11-14 ft/s
 	// (CMU subjects 9 and 16; tools/court3d-mocap): off the floor on a
@@ -1388,6 +1410,33 @@ const GAITS: Record<GaitMode, Gait> = {
 		pump: 0,
 		twist: 0,
 		wide: 0.72,
+	},
+	// Walking backward, up on his feet - easing off from the ball while he
+	// watches it, a defender off the ball sinking back toward the rim: not
+	// down in a backpedal. Short steps, the foot picked up in front of him
+	// and set down behind (see "backpedal"), his arms easy at his sides.
+	backWalk: {
+		stride: BACK_WALK_STRIDE,
+		duty: 0.62,
+		ahead: 0.36,
+		hips: 2.84,
+		bob: -0.05,
+		flat: 0.5,
+		roll: 22,
+		swing: [
+			[0.12, 2, 14],
+			[0.36, 12, 46],
+			[0.66, 26, 42],
+			[0.88, 28, 24],
+		],
+		lean: 5,
+		armFwd: 6,
+		armBack: 6,
+		elbow: 20,
+		pump: 4,
+		twist: 2,
+		wide: 0.08,
+		ab: 12,
 	},
 	// Closing out on a shooter: short, choppy steps, sat down in his legs.
 	chop: {
@@ -1682,6 +1731,9 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			elF: 18,
 			abF: 16,
 		};
+	}
+	if (mode === "backWalk") {
+		return gaitPose("backWalk", -ph);
 	}
 	if (isGait(mode)) {
 		const q = gaitPose(mode, ph);
@@ -3128,6 +3180,34 @@ const EASY_SWAY: Pose[] = [
 		shF: 4,
 	},
 ];
+// (Off the ball on defense: his weight eased from foot to foot, a hand
+// coming up a little and down - live, but easy.)
+const HELP_SWAY: Pose[] = [
+	P.help,
+	{
+		...P.help,
+		kneeN: 12,
+		hipF: 14,
+		kneeF: 24,
+		tilt: -2,
+		twist: 4,
+		shN: 16,
+		elN: 30,
+		abN: 22,
+	},
+	{ ...P.help, kneeN: 18, kneeF: 20, lean: 8 },
+	{
+		...P.help,
+		hipN: 8,
+		kneeN: 23,
+		kneeF: 14,
+		tilt: 2,
+		twist: -4,
+		shF: 19,
+		elF: 36,
+		abF: 25,
+	},
+];
 
 // ---- DRAFT NIGHT (see draftStage.ts) ----------------------------------------
 // HOW HE TAKES HIS NAME BEING READ - the ways the men in the green room take
@@ -3301,6 +3381,14 @@ export const ANIMS = {
 		n: 4,
 		fps: 1.9,
 		pose: (i) => READY_SWAY[i]!,
+	},
+	// Off the ball on defense, up on his feet (see P.help): round in about
+	// four seconds.
+	help: {
+		kind: "loop",
+		n: 4,
+		fps: 1,
+		pose: (i) => HELP_SWAY[i]!,
 	},
 	// Live in his stance: hands working - one up into the lane, then the
 	// other - and his weight sinking into his heels and back up onto his toes.
@@ -4352,6 +4440,13 @@ export const ANIMS = {
 		n: 6,
 		stride: BACKPEDAL_STRIDE,
 		pose: (i) => runPose(i / 6, "back"),
+	},
+	// Walking backward up on his feet, eyes on the ball.
+	backWalk: {
+		kind: "cycle",
+		n: 6,
+		stride: BACK_WALK_STRIDE,
+		pose: (i) => runPose(i / 6, "backWalk"),
 	},
 	// A defender sliding with his man: the same low steps, eyes on the ball,
 	// stepping up (giving ground, he backpedals - see stepsOf).
@@ -14032,6 +14127,9 @@ export type Posed = Pose & { feetAt?: readonly [FootAt, FootAt] };
 // (Sunk at the hips no further than this, feet, to reach a foot planned
 // further out than his legs go.)
 const SINK_MOST = 0.7;
+// (Up on its toes no further than this, degrees, to reach a foot down
+// behind him.)
+const ROLL_REACH = 65;
 // Each leg from his hip to where its foot is planned: the knee bent as much
 // as that takes, out over the way the foot points - and his hips let down,
 // if they must be, to get to a foot down on the floor (one swinging through
@@ -14044,14 +14142,41 @@ const reachFeet = (
 	const rad = Math.PI / 180;
 	const most = (b.thigh + b.shin) * 0.995;
 	// (Part the way from where his pose has each, as he eases over to them.)
+	const toe = b.foot * 0.72;
+	// (A foot rolling up onto its toes rolls over them: they stay where they
+	// are on the floor, his ankle coming up and forward over them - and on
+	// from there as it comes up off the floor. Up as far as he has it
+	// (degrees) - and a foot down behind him, further back than his leg
+	// reaches, on up over its toes as far as that takes (to ROLL_REACH): his
+	// heel comes up as he pushes off it, his hips not sunk to get to it.)
+	const rolls = feet.map((p) => Math.min(1, p.roll) * POINT);
 	const at = feet.map((p, i) => {
 		const o = legs[i]!.end;
+		const R = legs[i]!.root;
 		const w = Math.min(1, Math.max(0, p.w));
-		return v3(
-			o.f + (p.f - o.f) * w,
-			o.s + (p.s - o.s) * w,
-			p.air ? o.u : o.u + (b.ankleH + p.lift - o.u) * w,
-		);
+		const place = (deg: number): V3 => {
+			const a = p.air ? 0 : deg * rad;
+			const over = toe * (1 - Math.cos(a)) + b.ankleH * Math.sin(a);
+			const up = toe * Math.sin(a) + b.ankleH * (Math.cos(a) - 1);
+			const f = p.f + over * Math.cos(p.yaw);
+			const s = p.s + over * Math.sin(p.yaw);
+			return v3(
+				o.f + (f - o.f) * w,
+				o.s + (s - o.s) * w,
+				p.air ? o.u : o.u + (b.ankleH + p.lift + up - o.u) * w,
+			);
+		};
+		let E = place(rolls[i]!);
+		if (p.down && w >= 1 && E.f < R.f) {
+			while (
+				rolls[i]! < ROLL_REACH &&
+				Math.hypot(E.f - R.f, E.s - R.s, E.u - R.u) > most
+			) {
+				rolls[i] = Math.min(ROLL_REACH, rolls[i]! + 5);
+				E = place(rolls[i]!);
+			}
+		}
+		return E;
 	});
 	let sink = 0;
 	legs.forEach((l, i) => {
@@ -14066,7 +14191,6 @@ const reachFeet = (
 		}
 	});
 	sink = Math.min(SINK_MOST, Math.max(0, sink));
-	const toe = b.foot * 0.72;
 	legs.forEach((l, i) => {
 		const p = feet[i]!;
 		const w = Math.min(1, Math.max(0, p.w));
@@ -14121,7 +14245,7 @@ const reachFeet = (
 		);
 		// Flat on the floor - or up on its toes as it rolls off, and hanging
 		// as it swings.
-		const point = Math.min(1, p.roll) * POINT * rad;
+		const point = rolls[i]! * rad;
 		const flat = Math.max(b.ankleR, E.u - b.ankleH * 0.55);
 		const tip = v3(
 			E.f + toe * Math.cos(point) * df,
@@ -15149,6 +15273,9 @@ export type RunStyle = {
 	hands: number;
 	// Walking, his own way of that instead, where it differs from his run.
 	walk?: Partial<Pick<RunStyle, "swing" | "elbow" | "carry" | "lean" | "roll">>;
+	// How far down into his stance he goes, of the way from up on his feet
+	// to the full of it (0 to 1; unsaid, all of it).
+	depth?: number;
 };
 const styleUnit = (pid: number, k: number) => {
 	const x = Math.sin(pid * 12.9898 + k * 78.233) * 43758.5453;
@@ -15189,6 +15316,21 @@ const LOW_KNEE = 7;
 const LOW_HIP = 4;
 const LOW_WIDE = 0.08;
 const LOW_LEAN = 2.5;
+// (Up on his feet, as his depth has it: knees and hips this far bent
+// (degrees), feet this far apart, this much lean - see P.help.)
+const UP_KNEE = 18;
+const UP_HIP = 8;
+const UP_WIDE = 0.32;
+const UP_LEAN = 7;
+const upTo = (q: Pose, depth: number): Pose => ({
+	...q,
+	kneeN: UP_KNEE + (q.kneeN - UP_KNEE) * depth,
+	kneeF: UP_KNEE + (q.kneeF - UP_KNEE) * depth,
+	hipN: UP_HIP + (q.hipN - UP_HIP) * depth,
+	hipF: UP_HIP + (q.hipF - UP_HIP) * depth,
+	wide: UP_WIDE + (q.wide - UP_WIDE) * depth,
+	lean: UP_LEAN + (q.lean - UP_LEAN) * depth,
+});
 // (And closing out on a shooter, some come at him with both hands high,
 // not the one up and the other down at the drive: this many - whoever has
 // the highest of `low`'s draws, those who play it tallest.)
@@ -15205,7 +15347,8 @@ const CLOSE_TWO = {
 	wrF: 0,
 };
 export const styledStance = (q0: Pose, anim: AnimName, s: RunStyle): Pose => {
-	const q = readyOwn(guardHandsOwn(q0, anim, s), anim, s);
+	const q1 = readyOwn(guardHandsOwn(q0, anim, s), anim, s);
+	const q = s.depth !== undefined && STANCES.has(anim) ? upTo(q1, s.depth) : q1;
 	return STANCES.has(anim)
 		? {
 				...q,

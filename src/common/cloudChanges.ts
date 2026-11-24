@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 528,
+		date: "2026-11-24",
+		text: "3D Game Sim (Global Settings): players look more natural. Defenders away from the ball stand and walk upright instead of crouching in a stance, and the man guarding the ball sits in a lighter stance. Running and walking strides fit the players' legs now, so no more wide, spidery splits.",
+	},
+	{
 		n: 527,
 		date: "2026-11-24",
 		text: "NBA calendar: the scores bar at the top no longer gets its bottom row cut off when a scrollbar shows.",

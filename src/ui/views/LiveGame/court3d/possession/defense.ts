@@ -238,6 +238,12 @@ const CLOSE_PACE = 4;
 // Moving away from the ball, this far round from it (cosine), he drops -
 // a slide; across it, a shuffle.
 const DROP = -0.55;
+// Down in his stance only when it is on him: up on the man with the ball,
+// stepping up into a drive (or one coming within this many feet of him),
+// into something of his the play pins him to. Off the ball otherwise, as
+// real defenders are, he is up on his feet: walking his spot, eyes on the
+// ball, running when it takes running.
+const ENGAGE_DRIVE = 12;
 // Never nearer anybody than this (feet, middle to middle): a step aside.
 const APART = 2;
 // (Stepping aside, no quicker than this, feet a second.)
@@ -511,9 +517,18 @@ export const decide = (
 			: { to, toV, effort, face, most: d.slide };
 	// What it looks like.
 	const v = Math.hypot(m.vx, m.vy);
+	const engaged =
+		g.on ||
+		g.help !== undefined ||
+		g.planted === true ||
+		g.handTo?.commit === true ||
+		(g.drive !== undefined &&
+			Math.hypot(g.drive.x - m.x, g.drive.y - m.y) < ENGAGE_DRIVE);
 	let anim: AnimName;
 	if (run && v > d.slide - 0.5) {
 		anim = "run";
+	} else if (!engaged) {
+		anim = "walk";
 	} else if (g.on && gap > CLOSE_FAR && v > CLOSE_PACE && !beaten) {
 		const tx = g.man.x - m.x;
 		const ty = g.man.y - m.y;

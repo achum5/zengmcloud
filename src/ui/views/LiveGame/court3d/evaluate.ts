@@ -16,6 +16,7 @@ import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import { floorRollAt } from "./floorRoll.ts";
 import {
+	LEG_SHARE,
 	type OwnGait,
 	type StepKind,
 	stepsPerSecond,
@@ -964,11 +965,12 @@ const groundSpeed = (tr: Track, run: Run): number => {
 	return v;
 };
 // HIS OWN STRIDE, where he has one (the new possession sim's men - see
-// possession/gait.ts): his steps go round as quickly as a man of his height
-// and his own way of running takes them at the pace, so each is as long as
-// that makes it - and he shows the slowest gait that takes strides that
-// long (see poses.ts lenMost): a jog, on toward a run as his strides
-// lengthen to a run's; a run, on toward a sprint; then a sprint.
+// possession/gait.ts): his steps go round as quickly as a man with legs as
+// long as his (see stepInchesOf) and his own way of running takes them at
+// the pace, so each is as long as that makes it - and he shows the slowest
+// gait that takes strides that long (see poses.ts lenMost): a jog, on
+// toward a run as his strides lengthen to a run's; a run, on toward a
+// sprint; then a sprint.
 const STEP_KINDS: Partial<Record<AnimName, StepKind>> = {
 	walk: "walk",
 	dribbleWalk: "walk",
@@ -990,7 +992,8 @@ const ownBeat = (
 	const how = STEP_KINDS[anim];
 	return how === undefined
 		? undefined
-		: (v: number) => stepsPerSecond(how, v, own.inches, own.sig) / 2;
+		: (v: number) =>
+				stepsPerSecond(how, v, stepInchesOf(own.inches), own.sig) / 2;
 };
 const ownLen = (own: OwnGait, anim: AnimName, v: number): number =>
 	v / (ownBeat(own, anim)!(v) * strideOf(anim));
@@ -2274,7 +2277,7 @@ const spinTurned = (u: number) => 1 - (1 - u ** 1.15) ** 2.5;
 // for it or claps for it; a defender works his hands into the lane, or
 // points out his man. Which, and when, comes from who he is and when he
 // stopped - the same every viewing.
-const OFF_BALL: Record<"ready" | "stance", [AnimName, number][]> = {
+const OFF_BALL: Record<"ready" | "stance" | "help", [AnimName, number][]> = {
 	ready: [
 		["spotUp", 1500],
 		["callBall", 1100],
@@ -2291,7 +2294,13 @@ const OFF_BALL: Record<"ready" | "stance", [AnimName, number][]> = {
 		["floorSlap", 900],
 		["stanceWide", 1500],
 	],
+	// (Up on his feet off the ball: now and then pointing out his man, or
+	// where a screen is coming - see LIFE_HELP.)
+	help: [["direct", 1000]],
 };
+// (Up on his feet, a beat of standing has a moment of his only this much of
+// the time.)
+const LIFE_HELP = 0.25;
 // HIS OWN RHYTHM. A loop of his - bouncing in his stance, swaying where he
 // stands - goes at its own pace for him, a little quicker or slower than
 // the next man's (up to LOOP_OWN either way), and drifts a little over
@@ -2319,7 +2328,7 @@ const offBall = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
-	base: "ready" | "stance",
+	base: "ready" | "stance" | "help",
 ): { anim: AnimName; phase: number } | undefined => {
 	// Only with the ball in play: in a man's hands, or on its way between
 	// two - not at a free throw.
@@ -2344,7 +2353,7 @@ const offBall = (
 		return undefined;
 	}
 	const h = hash01(tr.pid, since / 1000 + k);
-	if (h < 0.4) {
+	if (h < (base === "help" ? 1 - LIFE_HELP : 0.4)) {
 		return undefined;
 	}
 	const list = OFF_BALL[base];
@@ -3053,7 +3062,11 @@ const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 			anim === "drift") &&
 		backward(tl, tr, run)
 	) {
-		return "back";
+		// (The new possession sim's men, at a walk: up on their feet,
+		// walking backward - down in a backpedal only in their stance.)
+		return (anim === "walk" || anim === "drift") && tl.gaits?.has(tr.pid)
+			? "backWalk"
+			: "back";
 	}
 	return anim;
 };
@@ -3462,7 +3475,9 @@ const doingNow = (
 				man !== undefined &&
 				man.team !== tr.team &&
 				dist2(spotAt(man, t), here) < 7 * 7;
-			anim = on ? "guard" : "stance";
+			// (The new possession sim's men: up on his feet off the ball -
+			// down in his stance only up on the man with it.)
+			anim = on ? "guard" : tl.gaits?.has(pid) ? "help" : "stance";
 		}
 		const a = ANIMS[anim];
 		const fps = a.kind === "loop" ? a.fps : 2;
@@ -3475,7 +3490,7 @@ const doingNow = (
 			| { anim: AnimName; phase: number; mirror?: boolean }
 			| undefined = jumpBallAt(tl, t)
 			? undefined
-			: anim === "ready" || anim === "stance"
+			: anim === "ready" || anim === "stance" || anim === "help"
 				? offBall(tl, tr, t, anim)
 				: anim === "guard" && seg?.kind === "hold"
 					? swipeAt(tl, tr, t, seg.pid)
@@ -3483,14 +3498,16 @@ const doingNow = (
 		if (
 			(anim === "ready" ||
 				anim === "stance" ||
+				anim === "help" ||
 				anim === "guard" ||
 				STOOD.has(anim)) &&
 			steppingAt(tr, t)
 		) {
-			// Eased aside off a man: he steps over, not slides.
+			// Eased aside off a man: he steps over, not slides (up on his
+			// feet, a step across).
 			asideAt(tr, t);
-			anim = "shuffle";
-			phase = asideD / strideOf("shuffle");
+			anim = anim === "help" ? "sideStep" : "shuffle";
+			phase = asideD / strideOf(anim);
 			aside = true;
 		} else if (life) {
 			anim = life.anim;
@@ -4411,6 +4428,9 @@ const RIDE_FROM = new Set<AnimName>([
 	"shuffle",
 	"slide",
 	"back",
+	"backWalk",
+	"walk",
+	"help",
 	"run",
 	"jog",
 	"sprint",
@@ -4929,6 +4949,12 @@ export const evalPlayer = (
 			if (striding) {
 				st = {
 					...st,
+					// (A foot swinging through, mid-swing, his stride's own.)
+					feet: st.feet!.map((f) =>
+						f.swing === undefined || f.air
+							? f
+							: { ...f, w: f.w * (1 - ownSwing(f.swing)) },
+					) as [FootHere, FootHere],
 					phase: feet.phase ?? st.phase,
 					z:
 						feet.phase === undefined
@@ -4967,6 +4993,8 @@ export type FootHere = {
 	// Up off the floor with him in his jump: as high as his move has it -
 	// only where it is over the floor is the plan's.
 	air?: boolean;
+	// Swinging through from one step to the next: how far through (0 to 1).
+	swing?: number;
 };
 // (A stretch's edges: what his legs are doing on the other side - up in a
 // jump, so they go over to it once he is off the floor, and come down out
@@ -5095,6 +5123,23 @@ const aloftFoot = (p: FootHere): FootHere => ({
 // round the way he faces. (A loop - a screen held, his triple threat - as it
 // starts: it only breathes from there.)
 const ownBodies = new Map<number, Body>();
+const ownBody = (inches: number): Body => {
+	let b = ownBodies.get(inches);
+	if (!b) {
+		b = bodyOf(inches);
+		ownBodies.set(inches, b);
+	}
+	return b;
+};
+// HIS STEPS FIT HIS LEGS. The figure's legs are shorter for his height than
+// a real man's (see poses.ts ATHLETE: under half of him, against over a
+// half): stepped as a real man his height steps, every step would be too
+// long for them - his feet planted out past where his legs reach, his hips
+// sunk to get to them, his legs splayed. So his steps are planned as a real
+// man's whose legs are as long as his are (inches): a shorter man's, a
+// little quicker and each a little shorter at the pace.
+export const stepInchesOf = (inches: number): number =>
+	(ownBody(inches).hipH * 12) / LEG_SHARE;
 const ownFeetAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -5111,13 +5156,8 @@ const ownFeetAt = (
 	}
 	const anim = actAnimOf(tl, tr.pid, act);
 	const q = poseNow(anim, ANIMS[anim].kind === "act" ? u : 0);
-	let b = ownBodies.get(inches);
-	if (!b) {
-		b = bodyOf(inches);
-		ownBodies.set(inches, b);
-	}
 	const sk = skeleton(
-		b,
+		ownBody(inches),
 		act.mirror === true || act.oneHand === "L" ? mirror(q) : q,
 	);
 	const p = spotAt(tr, t, false);
@@ -5143,13 +5183,12 @@ const STANCE_FEET = new Set<AnimName>([
 	"stancePoint",
 ]);
 // Rolling up onto its toes over the last of its time down (ms, at most
-// this share of it).
-const ROLL_MS = 140;
-const ROLL_SHARE = 0.45;
-// (Up on its toes, his ankle this far up off where it sits flat - feet: the
-// length of his foot a lever that keeps his leg reaching back as he pushes
-// off.)
-const ROLL_LIFT = 0.28;
+// this share of it) - his heel coming up off the floor from about halfway
+// through a walking step, his ankle up and forward over his toes (see
+// poses.ts reachFeet): the length of his foot a lever that keeps his leg
+// reaching back as he pushes off.
+const ROLL_MS = 320;
+const ROLL_SHARE = 0.5;
 const footPlanOf = (tl: CourtTimeline, tr: Track): FootPlan | undefined => {
 	const own = tl.gaits?.get(tr.pid);
 	if (!own || tr.moves.length === 0) {
@@ -5222,6 +5261,7 @@ const stepsIn = (
 		const own = tl.gaits!.get(tr.pid)!;
 		const { t0: from, t1: to, into } = plan.spans[k]!;
 		const moveAt = (at: number) => tr.moves[Math.max(0, lastT0(tr.moves, at))];
+		const legs = stepInchesOf(own.inches);
 		planner = footPlanner({
 			from,
 			to,
@@ -5238,10 +5278,10 @@ const stepsIn = (
 				stepsPerSecond(
 					mode === "walk" ? "walk" : mode === "back" ? "backpedal" : "run",
 					v,
-					own.inches,
+					legs,
 					own.sig,
 				),
-			height: own.inches / 12,
+			height: legs / 12,
 		});
 		plan.plans[k] = planner;
 	}
@@ -5251,6 +5291,15 @@ const stepsIn = (
 // (Coming up off the floor and down onto it over this share of its swing,
 // each.)
 const SWING_ENDS = 0.25;
+// Striding, a foot swinging through goes as his stride's own picture has it
+// (fit to how people run and walk: the heel folded up behind him, the knee
+// driven through) - its leg over to that from where it came up off the
+// floor, over so much of its swing, and back to where it comes down over
+// the last so much.
+const SWING_INTO = 0.3;
+const SWING_OUT_OF = 0.35;
+const ownSwing = (u: number): number =>
+	smooth01(u / SWING_INTO) * smooth01((1 - u) / SWING_OUT_OF);
 // How high a foot swings (feet): higher the quicker it goes through.
 const swingHigh = (d: number, ms: number): number => {
 	const v = d / Math.max(0.05, ms / 1000);
@@ -5273,7 +5322,7 @@ const footOn = (
 		return {
 			x: s.x,
 			y: s.y,
-			lift: ROLL_LIFT * roll,
+			lift: 0,
 			yaw: s.yaw,
 			roll,
 			w: 1,
@@ -5306,11 +5355,12 @@ const footOn = (
 	return {
 		x: at("x"),
 		y: at("y"),
-		lift: ROLL_LIFT * (1 - u) + high * Math.sin(Math.PI * u ** 0.75),
+		lift: high * Math.sin(Math.PI * u ** 0.75),
 		yaw: s.yaw + wrapAngle(n.yaw - s.yaw) * p,
 		roll: Math.max(0, 1 - 2.5 * u),
 		w: 1,
 		down: false,
+		swing: u,
 	};
 };
 // His feet up in his jump, `w` of the way to where the k'th stretch has
@@ -5409,6 +5459,10 @@ const feetAt = (
 // third of how far apart runStyleOf sets men), so two men with the same
 // package are not one man twice.
 const OWN_SPREAD = 0.35;
+// (And down in his stance - up on the man with the ball - only this much of
+// the way from up on his feet to the full crouch of it: a stance a real
+// defender holds through a possession, not a drill's.)
+const OWN_DEPTH = 0.62;
 const ownStyles = new WeakMap<CourtTimeline, Map<number, RunStyle>>();
 const ownStyleOf = (tl: CourtTimeline, pid: number): RunStyle | undefined => {
 	const own = tl.gaits?.get(pid);
@@ -5445,6 +5499,7 @@ const ownStyleOf = (tl: CourtTimeline, pid: number): RunStyle | undefined => {
 			lean: of(run, "lean"),
 			roll: of(run, "roll"),
 			low: Math.min(1, Math.max(-1, (stance?.low ?? 0) + jit("low"))),
+			depth: OWN_DEPTH,
 			hands: d.hands,
 			walk: {
 				swing: of(walk, "swing"),
@@ -5750,11 +5805,13 @@ const TUCKS = new Set<AnimName>([
 	"shuffle",
 	"slide",
 	"back",
+	"backWalk",
 	"drift",
 	"stance",
 	"stanceHands",
 	"guard",
 	"ready",
+	"help",
 	"easy",
 	"crouch",
 ]);
@@ -6015,6 +6072,7 @@ const FREE_HEAD = new Set<AnimName>([
 	"walk",
 	"drift",
 	"ready",
+	"help",
 	"stance",
 	"guard",
 	"easy",
@@ -6025,6 +6083,7 @@ const FREE_HEAD = new Set<AnimName>([
 	"boxOutHigh",
 	"boxOutWide",
 	"back",
+	"backWalk",
 	"slide",
 	"shuffle",
 	"sideStep",
@@ -6581,7 +6640,7 @@ const legsOf = (
 	const run = here.run;
 	// (Backpedalling, his legs go back the way he goes; closing out, his
 	// chop steps go the way he goes.)
-	const back = anim === "back";
+	const back = anim === "back" || anim === "backWalk";
 	if (
 		!here.moving ||
 		!run ||
@@ -7489,6 +7548,7 @@ const SETTLE_FROM = new Set<AnimName>([
 	"dribble",
 	"dribbleWalk",
 	"back",
+	"backWalk",
 	"slide",
 	"shuffle",
 	"sideStep",
@@ -7519,7 +7579,13 @@ const startsOff = (from: AnimName, to: AnimName) =>
 // off into only from all but a standstill, under STEP_OFF_PACE feet a
 // second: going, both feet stepped over in a fifth of a second fling his
 // legs.)
-const SIDEWAYS = new Set<AnimName>(["back", "shuffle", "slide", "sideStep"]);
+const SIDEWAYS = new Set<AnimName>([
+	"back",
+	"backWalk",
+	"shuffle",
+	"slide",
+	"sideStep",
+]);
 const crossesOver = (from: AnimName, to: AnimName) =>
 	(FORWARD.has(from) && SIDEWAYS.has(to)) ||
 	(SIDEWAYS.has(from) && FORWARD.has(to));

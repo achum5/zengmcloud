@@ -19,6 +19,8 @@ import type { Signature } from "./signature.ts";
 // sqrt(leg) slower. His legs are his height's share of a real man's (a
 // leg as long as the runners' on a man 5 ft 9 in tall).
 const REF_INCHES = 69.3;
+// (So a real man's legs, floor to hip, are this share of his height.)
+export const LEG_SHARE = 0.93 / 0.0254 / REF_INCHES;
 const RUN: readonly [number, number][] = [
 	[0, 2.4],
 	[7, 2.5],
