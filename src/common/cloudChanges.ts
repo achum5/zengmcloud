@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 538,
+		date: "2026-11-24",
+		text: "Daily Schedule: a national TV game's network logo now sits in the same spot on every upcoming game, at the end of the team names next to Watch/Sim, instead of floating mid-card or running into the buttons.",
+	},
+	{
 		n: 537,
 		date: "2026-11-24",
 		text: "National TV: a game you watch live is on the same network the Daily Schedule showed for it. Watching your game before the rest of its night was played could put it on national TV by mistake.",

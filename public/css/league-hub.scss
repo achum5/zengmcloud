@@ -573,6 +573,12 @@
 			flex: 1 1 0;
 			min-width: 0;
 		}
+		// (A national game's network at the end of the teams' column, which
+		// now runs to the buttons, in every game alike.)
+		.score-box-national {
+			left: auto;
+			right: 4px;
+		}
 	}
 }
 
