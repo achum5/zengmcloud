@@ -1,4 +1,4 @@
-import { PLAYER } from "../../common/constants.ts";
+import { PHASE, PLAYER } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { PlayerAward } from "../../common/types.ts";
@@ -212,8 +212,43 @@ export default defineView({
 
 		const teamsByTid = await getDraftTeamsByTid(inputs.season);
 
+		// THE REDRAFT: the class again in order of career value, once it has
+		// two seasons behind it - and only when its careers are on file from
+		// the start, which a class from before a random league began isn't.
+		const seasonsPlayed =
+			g.get("season") -
+			inputs.season -
+			(g.get("phase") > PHASE.PLAYOFFS ? 0 : 1);
+		const onFile =
+			inputs.season >= g.get("startingSeason") - 1 ||
+			playersRaw.some((p) =>
+				p.stats.some((row) => row.season === inputs.season + 1),
+			);
+		// (Ties go to the earlier pick, and anyone undrafted after them all.)
+		const pickOrder = (draft: { round: number; pick: number }) =>
+			draft.round >= 1 ? draft.round * 1000 + draft.pick : Infinity;
+		const redraftByPid = new Map<number, number>();
+		if (seasonsPlayed >= 2 && onFile) {
+			const value = (p: (typeof players)[number]) =>
+				(p.careerStats[summaryStat] as number | undefined) ?? -Infinity;
+			players
+				.filter((p) => (p.careerStats.gp ?? 0) > 0)
+				.sort(
+					(a, b) =>
+						value(b) - value(a) || pickOrder(a.draft) - pickOrder(b.draft),
+				)
+				.forEach((p, i) => {
+					redraftByPid.set(p.pid, i + 1);
+				});
+		}
+
 		return {
-			players: addFirstNameShort(players),
+			players: addFirstNameShort(
+				players.map((p) => ({
+					...p,
+					redraft: redraftByPid.get(p.pid),
+				})),
+			),
 			season: inputs.season,
 			stats,
 			summaryStat,

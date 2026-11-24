@@ -25,6 +25,7 @@ import { SeasonNoteButton } from "../components/SeasonNoteButton.tsx";
 import { splitPlayerNote } from "../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../util/linkifyRecap.ts";
 import { DraftWalkButton } from "../components/DraftWalkButton.tsx";
+import { Redraft } from "../components/Redraft.tsx";
 
 const Summary = ({
 	players,
@@ -265,10 +266,12 @@ const DraftHistory = ({
 		},
 	});
 
+	const redraft = players.some((p) => p.redraft !== undefined);
+
 	const superCols = [
 		{
 			title: "",
-			colspan: 3,
+			colspan: redraft ? 4 : 3,
 		},
 		{
 			title: noDraft ? "As Prospect" : "At Draft",
@@ -290,6 +293,7 @@ const DraftHistory = ({
 
 	const cols = getCols([
 		"Pick",
+		...(redraft ? ["Redraft"] : []),
 		"Name",
 		"Pos",
 		"Team",
@@ -401,6 +405,34 @@ const DraftHistory = ({
 					sortValue:
 						p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : null,
 				},
+				...(redraft
+					? [
+							{
+								value:
+									p.redraft === undefined ? null : (
+										<>
+											{p.redraft}
+											{p.draft.round === 1 && p.draft.pick !== p.redraft ? (
+												<span
+													className={
+														p.draft.pick > p.redraft
+															? "rd-cell rd-up"
+															: "rd-cell rd-down"
+													}
+												>
+													<span className="rd-arrow">
+														{p.draft.pick > p.redraft ? "▲" : "▼"}
+														{Math.abs(p.draft.pick - p.redraft)}
+													</span>
+												</span>
+											) : null}
+										</>
+									),
+								sortValue: p.redraft ?? null,
+								searchValue: p.redraft === undefined ? "" : String(p.redraft),
+							},
+						]
+					: []),
 				nameCell,
 				p.pos,
 				wrappedDraftAbbrev(
@@ -474,6 +506,13 @@ const DraftHistory = ({
 			) : null}
 
 			<Summary key={season} players={players} summaryStat={summaryStat} />
+
+			<Redraft
+				players={players}
+				season={season}
+				summaryStat={summaryStat}
+				teamsByTid={teamsByTid}
+			/>
 
 			<p>
 				Players drafted by your team are{" "}
