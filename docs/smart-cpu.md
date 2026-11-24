@@ -2871,8 +2871,9 @@ on vanilla alone, the trading block 0.06 s a team against 0.01 s.
 A player who signs can't be traded for a while (`player/sign.ts`,
 `trade/isUntradable.ts`): 14 games in a classic league. On the NBA calendar
 it now goes by the NBA's dates (`game/tradableOn.ts`, the owner's pick): the
-summer's signings December 15, a re-signing for over 20% more on Bird rights
-over the cap January 15, a preseason signing (training camp, October 1)
+summer's signings December 15, every re-signing January 15 (the NBA's is
+for a raise over 20% over the cap; the owner: "just simplify and make all
+re-signs Jan 15", this summer's too), a preseason signing (training camp, October 1)
 January 1, a signing in season three months on. The engine still counts
 classic days (`gamesUntilTradable`); the date is kept with the player
 (`tradableOn`) and turned into the classic days to it once the season's

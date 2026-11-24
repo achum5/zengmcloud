@@ -17,11 +17,12 @@ import { getInjuryClock, seasonStartClock } from "./classicDays.ts";
 // THE NBA'S TRADE DATES, on the NBA calendar (owner, 2026-11-24: "research
 // what the actual NBA rule on this is"). A player who signs can't be traded
 // until (the CBA, as Hoops Rumors sets it out each summer):
-//  - signed in the offseason, re-signings too: December 15, or three months
-//    after he signed if that is later (a signing after September 15) - so a
-//    preseason signing, at training camp (October 1), January 1;
-//  - re-signed for a raise over 20%, above the minimum, on Bird rights with
-//    his team over the cap: January 15;
+//  - signed in the offseason: December 15, or three months after he signed
+//    if that is later (a signing after September 15) - so a preseason
+//    signing, at training camp (October 1), January 1;
+//  - re-signed: January 15 (the NBA's is for a raise over 20% with his team
+//    over the cap; the owner, 2026-11-24: "just simplify and make all
+//    re-signs Jan 15");
 //  - signed during the season: three months on.
 // A classic league keeps the game's 14 games. The engine still counts the
 // wait in classic days (gamesUntilTradable), so it plays the same on every
@@ -53,19 +54,19 @@ const openingNightGuess = (year: number) => makeDate(year, 10, 21);
 export const signedTradableOn = ({
 	phase,
 	signedOn,
-	bigRaise,
+	resigned,
 }: {
 	phase: number;
 	// In season: the night he signed before (the next to be played).
 	signedOn?: string;
-	// Re-signed for over 20% more, on Bird rights, over the cap.
-	bigRaise: boolean;
+	// Re-signed by his own team.
+	resigned: boolean;
 }) => {
 	const year = startYear(phase);
 	if (phase >= PHASE.REGULAR_SEASON && phase <= PHASE.PLAYOFFS) {
 		return threeMonthsAfter(signedOn ?? openingNightGuess(year));
 	}
-	if (bigRaise) {
+	if (resigned) {
 		return makeDate(year + 1, 1, 15);
 	}
 	if (phase === PHASE.PRESEASON) {
@@ -113,10 +114,10 @@ export const classicDaysTo = (
 // days to it, else the game's 14 games.
 export const coolOffForSigning = async ({
 	phase,
-	bigRaise,
+	resigned,
 }: {
 	phase: number;
-	bigRaise: boolean;
+	resigned: boolean;
 }): Promise<{ games: number; on?: string }> => {
 	if (!nbaCalendarLeague()) {
 		return { games: classicCoolOff() };
@@ -134,15 +135,16 @@ export const coolOffForSigning = async ({
 			.sort()[0];
 		signedOn = next ?? (now.lastNight ? addDays(now.lastNight, 1) : undefined);
 	}
-	const on = signedTradableOn({ phase, signedOn, bigRaise });
+	const on = signedTradableOn({ phase, signedOn, resigned });
 	return { games: Math.max(1, await ticksTo(on)), on };
 };
 
 // As a season's schedule is made: each wait to a date, the classic days to
 // it on this season's own dates. A wait from before the NBA's dates (a
 // classic count, no date): one that hasn't started, the summer's, to
-// December 15; one left over from last season, over - its three months ran
-// out in the summer. Off the calendar, the dates go.
+// December 15, or a re-signing's to January 15; one left over from last
+// season, over - its three months ran out in the summer. Off the calendar,
+// the dates go.
 export const tradableOnForNewSeason = async (calendar: boolean) => {
 	const players = await idb.cache.players.indexGetAll("playersByTid", [
 		0,
@@ -150,7 +152,14 @@ export const tradableOnForNewSeason = async (calendar: boolean) => {
 	]);
 	const now = calendar ? await getInjuryClock(PHASE.REGULAR_SEASON) : undefined;
 	const full = classicCoolOff();
-	const december15 = makeDate(g.get("season") - 1, 12, 15);
+	const season = g.get("season");
+	const december15 = makeDate(season - 1, 12, 15);
+	const january15 = makeDate(season, 1, 15);
+	// Re-signed this summer: his deal, a re-signing's, starts this season.
+	const resigned = (p: Player) => {
+		const contract = p.contracts.at(-1);
+		return contract?.type === "reSign" && contract.start === season;
+	};
 	const changed: Player[] = [];
 	for (const p of players) {
 		if (!now) {
@@ -164,7 +173,12 @@ export const tradableOnForNewSeason = async (calendar: boolean) => {
 			continue;
 		}
 		const on =
-			p.tradableOn ?? (p.gamesUntilTradable >= full ? december15 : undefined);
+			p.tradableOn ??
+			(p.gamesUntilTradable >= full
+				? resigned(p)
+					? january15
+					: december15
+				: undefined);
 		const games =
 			on === undefined
 				? 0

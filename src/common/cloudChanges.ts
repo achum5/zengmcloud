@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 504,
+		date: "2026-11-24",
+		text: "NBA calendar leagues: every re-signed player can't be traded until January 15, this summer's included. Free agents signed in the summer still open up December 15.",
+	},
+	{
 		n: 503,
 		date: "2026-11-24",
 		text: "NBA calendar: the trade deadline now falls when the NBA's does, on the Thursday about 10 days before the All-Star Game (early February). It starts with next season's schedule. A league with its own Trade Deadline setting keeps it.",
@@ -24,7 +29,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 501,
 		date: "2026-11-24",
-		text: "NBA calendar leagues: a player who signs now can't be traded until the NBA's real dates. That's December 15 for summer signings (it was 14 games, around mid-November), January 15 for a re-signing with a raise over 20% while over the cap, and three months after signing for anyone signed in the preseason or during the season. This summer's signings move to December 15 when the season starts. Classic leagues keep 14 games.",
+		text: "NBA calendar leagues: a player who signs now can't be traded until the NBA's real dates. That's December 15 for summer signings (it was 14 games, around mid-November), January 15 for every re-signing, and three months after signing for anyone signed in the preseason or during the season. This summer's signings move to those dates when the season starts. Classic leagues keep 14 games.",
 	},
 	{
 		n: 500,

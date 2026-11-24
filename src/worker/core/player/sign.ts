@@ -15,10 +15,9 @@ import { coarsenRating } from "../../../common/coarsenRating.ts";
 import { collegeFinalSeason } from "../../../common/college.ts";
 import { revertBefore } from "./revertSnapshot.ts";
 import { addContract, createContract } from "../contract/index.ts";
-import { daysOut, nbaCalendarLeague } from "../game/calendarTicks.ts";
+import { daysOut } from "../game/calendarTicks.ts";
 import { currentDayClock } from "../game/classicDays.ts";
 import { coolOffForSigning } from "../game/tradableOn.ts";
-import getPayroll from "../team/getPayroll.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -91,28 +90,10 @@ const sign = async (
 		p.draft.year === g.get("season") &&
 		p.draft.tid === tid;
 
-	// A re-signing for over 20% more, above the minimum, that leaves his team
-	// over the cap (on Bird rights): on the NBA calendar, tradable a month
-	// later than the rest (game/tradableOn.ts).
-	const bigRaise = async () => {
-		// (A CPU team's re-signing has no negotiation: he is its own already.)
-		const resigning = negotiation?.resigning || revert.before.tid === tid;
-		if (!resigning || !nbaCalendarLeague()) {
-			return false;
-		}
-		const was = revert.before.contract;
-		if (
-			!(contractInput.amount > 1.2 * was.amount) ||
-			!(contractInput.amount > g.get("minContract"))
-		) {
-			return false;
-		}
-		// (His old deal, run out, isn't in the payroll to come.)
-		const old = was.exp > g.get("season") ? was.amount : 0;
-		return (
-			(await getPayroll(tid)) - old + contractInput.amount > g.get("salaryCap")
-		);
-	};
+	// Re-signed by his own team: on the NBA calendar, tradable a month later
+	// than the summer's free agents (game/tradableOn.ts). (A CPU team's
+	// re-signing has no negotiation: he is its own already.)
+	const resigned = negotiation?.resigning === true || revert.before.tid === tid;
 
 	p.tid = tid;
 	p.numDaysFreeAgent = 0;
@@ -124,7 +105,7 @@ const sign = async (
 	} else {
 		const wait = await coolOffForSigning({
 			phase,
-			bigRaise: await bigRaise(),
+			resigned,
 		});
 		p.gamesUntilTradable = wait.games;
 		if (wait.on === undefined) {

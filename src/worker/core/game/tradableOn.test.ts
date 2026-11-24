@@ -18,7 +18,7 @@ describe("the NBA's trade dates for a signing", () => {
 		assert.strictEqual(threeMonthsAfter("2024-09-15"), "2024-12-15");
 	});
 
-	test("the summer's signings Dec 15, a big raise Jan 15, the preseason's Jan 1", () => {
+	test("the summer's signings Dec 15, re-signings Jan 15, the preseason's Jan 1", () => {
 		resetG();
 		// The 2024 offseason: the 2025 season, starting in October 2024, next.
 		g.setWithoutSavingToDB("season", 2024);
@@ -28,17 +28,17 @@ describe("the NBA's trade dates for a signing", () => {
 			PHASE.FREE_AGENCY,
 		]) {
 			assert.strictEqual(
-				signedTradableOn({ phase, bigRaise: false }),
+				signedTradableOn({ phase, resigned: false }),
 				"2024-12-15",
 			);
 		}
 		assert.strictEqual(
-			signedTradableOn({ phase: PHASE.RESIGN_PLAYERS, bigRaise: true }),
+			signedTradableOn({ phase: PHASE.RESIGN_PLAYERS, resigned: true }),
 			"2025-01-15",
 		);
 		g.setWithoutSavingToDB("season", 2025);
 		assert.strictEqual(
-			signedTradableOn({ phase: PHASE.PRESEASON, bigRaise: false }),
+			signedTradableOn({ phase: PHASE.PRESEASON, resigned: false }),
 			"2025-01-01",
 		);
 	});
@@ -50,7 +50,7 @@ describe("the NBA's trade dates for a signing", () => {
 			signedTradableOn({
 				phase: PHASE.REGULAR_SEASON,
 				signedOn: "2024-11-06",
-				bigRaise: false,
+				resigned: false,
 			}),
 			"2025-02-06",
 		);
@@ -58,7 +58,7 @@ describe("the NBA's trade dates for a signing", () => {
 			signedTradableOn({
 				phase: PHASE.AFTER_TRADE_DEADLINE,
 				signedOn: "2025-03-01",
-				bigRaise: true,
+				resigned: true,
 			}),
 			"2025-06-01",
 		);
