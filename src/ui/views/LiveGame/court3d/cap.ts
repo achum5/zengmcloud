@@ -7,6 +7,8 @@
 // it (see capHead.ts); side on and from behind it is drawn here, over his
 // head as figure.ts has drawn it, to match.
 
+import { cutTo } from "./cut.ts";
+
 export type Cap = {
 	crown: string;
 	panel: string;
@@ -101,32 +103,32 @@ export const capSide = (
 	ctx.fill(peak);
 	ctx.fillStyle = cap.crown;
 	ctx.fill(crown);
-	ctx.save();
-	ctx.clip(crown);
-	// The panel at its side, back from the seam over his ear.
-	ctx.fillStyle = cap.panel;
-	ctx.fill(
-		through([
-			P(-0.2, -1.5),
-			P(-0.34, -0.9),
-			P(-0.3, -0.3),
-			P(-1.3, -0.1),
-			P(-1.3, -1.5),
-		]),
-	);
-	// Round, not flat: lit from above and in front, in shade low at the back.
-	const lit = ctx.createLinearGradient(
-		P(0.6, -1.3).x,
-		P(0.6, -1.3).y,
-		P(-0.9, -0.2).x,
-		P(-0.9, -0.2).y,
-	);
-	lit.addColorStop(0, "rgba(255, 255, 255, 0.16)");
-	lit.addColorStop(0.5, "rgba(255, 255, 255, 0)");
-	lit.addColorStop(1, "rgba(0, 0, 0, 0.26)");
-	ctx.fillStyle = lit;
-	ctx.fillRect(c.x - r * 2, c.y - r * 2, r * 4, r * 4);
-	ctx.restore();
+	cutTo(ctx, [crown], { ...c, reach: r * 2.5 }, (g) => {
+		// The panel at its side, back from the seam over his ear.
+		g.fillStyle = cap.panel;
+		g.fill(
+			through([
+				P(-0.2, -1.5),
+				P(-0.34, -0.9),
+				P(-0.3, -0.3),
+				P(-1.3, -0.1),
+				P(-1.3, -1.5),
+			]),
+		);
+		// Round, not flat: lit from above and in front, in shade low at the
+		// back.
+		const lit = g.createLinearGradient(
+			P(0.6, -1.3).x,
+			P(0.6, -1.3).y,
+			P(-0.9, -0.2).x,
+			P(-0.9, -0.2).y,
+		);
+		lit.addColorStop(0, "rgba(255, 255, 255, 0.16)");
+		lit.addColorStop(0.5, "rgba(255, 255, 255, 0)");
+		lit.addColorStop(1, "rgba(0, 0, 0, 0.26)");
+		g.fillStyle = lit;
+		g.fillRect(c.x - r * 2, c.y - r * 2, r * 4, r * 4);
+	});
 	// The piping where the peak meets the crown, and the button on top.
 	ctx.strokeStyle = cap.trim;
 	ctx.lineWidth = Math.max(1, r * 0.07);
@@ -184,49 +186,48 @@ export const capBack = (
 	}
 	ctx.fillStyle = cap.panel;
 	ctx.fill(crown);
-	ctx.save();
-	ctx.clip(crown);
-	// (The front of it, in the crown's color, shows past the panels the more
-	// side on he is.)
-	if (side > 0.05) {
-		ctx.fillStyle = cap.crown;
-		const w = r * 2.4 * Math.min(1, side);
-		ctx.fillRect(turn > 0 ? x + r * 1.2 - w : x - r * 1.2, top - r, w, r * 3);
-	}
-	// The gap over the strap, his hair - or his head - showing through it,
-	// round toward the back of his head.
-	const gx = x - turn * side * r * 0.8;
-	ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
-	ctx.beginPath();
-	ctx.ellipse(gx, band + r * 0.06, r * 0.34, r * 0.3, 0, Math.PI, Math.PI * 2);
-	ctx.fill();
-	ctx.strokeStyle = tone(cap.panel, -0.3);
-	ctx.lineWidth = Math.max(1, r * 0.035);
-	ctx.beginPath();
-	for (const k of [-0.5, 0, 0.5]) {
-		ctx.moveTo(x, top);
-		ctx.quadraticCurveTo(
-			gx + k * r * 1.5,
-			y - r * 0.9,
-			gx + k * r * 1.9,
-			band + r * 0.1,
+	cutTo(ctx, [crown], { x, y, reach: r * 2.5 }, (g) => {
+		// (The front of it, in the crown's color, shows past the panels the more
+		// side on he is.)
+		if (side > 0.05) {
+			g.fillStyle = cap.crown;
+			const w = r * 2.4 * Math.min(1, side);
+			g.fillRect(turn > 0 ? x + r * 1.2 - w : x - r * 1.2, top - r, w, r * 3);
+		}
+		// The gap over the strap, his hair - or his head - showing through it,
+		// round toward the back of his head.
+		const gx = x - turn * side * r * 0.8;
+		g.fillStyle = "rgba(0, 0, 0, 0.55)";
+		g.beginPath();
+		g.ellipse(gx, band + r * 0.06, r * 0.34, r * 0.3, 0, Math.PI, Math.PI * 2);
+		g.fill();
+		g.strokeStyle = tone(cap.panel, -0.3);
+		g.lineWidth = Math.max(1, r * 0.035);
+		g.beginPath();
+		for (const k of [-0.5, 0, 0.5]) {
+			g.moveTo(x, top);
+			g.quadraticCurveTo(
+				gx + k * r * 1.5,
+				y - r * 0.9,
+				gx + k * r * 1.9,
+				band + r * 0.1,
+			);
+		}
+		g.stroke();
+		const lit = g.createRadialGradient(
+			x - r * 0.25,
+			y - r * 1.1,
+			r * 0.08,
+			x,
+			y - r * 0.7,
+			r * 1.3,
 		);
-	}
-	ctx.stroke();
-	const lit = ctx.createRadialGradient(
-		x - r * 0.25,
-		y - r * 1.1,
-		r * 0.08,
-		x,
-		y - r * 0.7,
-		r * 1.3,
-	);
-	lit.addColorStop(0, "rgba(255, 255, 255, 0.18)");
-	lit.addColorStop(0.5, "rgba(255, 255, 255, 0)");
-	lit.addColorStop(1, "rgba(0, 0, 0, 0.3)");
-	ctx.fillStyle = lit;
-	ctx.fillRect(x - r * 2, y - r * 2.4, r * 4, r * 4);
-	ctx.restore();
+		lit.addColorStop(0, "rgba(255, 255, 255, 0.18)");
+		lit.addColorStop(0.5, "rgba(255, 255, 255, 0)");
+		lit.addColorStop(1, "rgba(0, 0, 0, 0.3)");
+		g.fillStyle = lit;
+		g.fillRect(x - r * 2, y - r * 2.4, r * 4, r * 4);
+	});
 	ctx.fillStyle = cap.trim;
 	ctx.beginPath();
 	ctx.ellipse(x, top + r * 0.02, r * 0.13, r * 0.07, 0, 0, Math.PI * 2);

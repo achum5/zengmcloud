@@ -55,7 +55,13 @@ export type Scratch = {
 	top?: Scratch;
 };
 export const makeScratch = (): Scratch => {
-	const canvas = document.createElement("canvas");
+	// (Off the page - a hand's, see farm.ts - a canvas of its own kind, kept
+	// in plain memory as the page's is: so what is drawn on it is drawn
+	// exactly as on the page.)
+	const canvas =
+		typeof document === "undefined"
+			? (new OffscreenCanvas(1, 1) as unknown as HTMLCanvasElement)
+			: document.createElement("canvas");
 	return {
 		canvas,
 		ctx: canvas.getContext("2d", { willReadFrequently: true })!,
@@ -131,8 +137,21 @@ export const rim = (
 // plain memory instead, every one drawn has to be copied over to the card
 // again and again, and the game slows to a crawl.)
 type Box = { x0: number; y0: number; x1: number; y1: number };
+// A picture kept: a canvas made on the page, or one made ready by a hand
+// off the page's thread (see farm.ts) - handed over as is, nothing of it
+// for the page to do.
+export type Picture = HTMLCanvasElement | ImageBitmap;
+// Its memory let go of now.
+export const letGo = (p: Picture) => {
+	if ("close" in p) {
+		p.close();
+	} else {
+		p.width = 0;
+		p.height = 0;
+	}
+};
 export type Kept = {
-	canvas: HTMLCanvasElement;
+	canvas: Picture;
 	w: number;
 	h: number;
 	// From where he stands, on the picture.
@@ -213,7 +232,7 @@ export type Job = {
 // frame it was asked for in and his size then.
 export type Made = {
 	key: string;
-	shaped: Shaped;
+	shaped: Done;
 	job: Job;
 	look: Look;
 	id: number;
@@ -273,15 +292,13 @@ const drop = (cache: SpriteCache, k: Kept) => {
 			cache.last.delete(id);
 		}
 	}
-	k.canvas.width = 0;
-	k.canvas.height = 0;
+	letGo(k.canvas);
 };
 // Every one of them let go of: the cache is done with (a new size, the game
 // off the screen).
 export const releaseSprites = (cache: SpriteCache) => {
 	for (const k of cache.kept.values()) {
-		k.canvas.width = 0;
-		k.canvas.height = 0;
+		letGo(k.canvas);
 	}
 	cache.kept.clear();
 	cache.last.clear();
@@ -332,21 +349,48 @@ export const keepPixels = (
 	dx: number,
 	dy: number,
 ): Kept => {
-	// (And under it his shadow's shape, a third the size - black, as solid
-	// as he is over each patch of him - in the same canvas: one canvas made
-	// a new picture, not two - see darkOf.)
+	const { all, dark } = withDark(pixels);
+	return remember(cache, key, {
+		canvas: canvasOf(all, pixels.height, dark),
+		w: pixels.width,
+		h: pixels.height,
+		dx,
+		dy,
+		dark,
+	});
+};
+// A picture's pixels made a canvas - just his own pixels, and his shadow's
+// shape's under them (the rest of the rows under him is clear).
+const canvasOf = (
+	all: ImageData,
+	h: number,
+	dark?: { w: number; h: number },
+): HTMLCanvasElement => {
+	const canvas = document.createElement("canvas");
+	canvas.width = all.width;
+	canvas.height = all.height;
+	const g = canvas.getContext("2d")!;
+	g.putImageData(all, 0, 0, 0, 0, all.width, h);
+	if (dark) {
+		g.putImageData(all, 0, 0, 0, h, dark.w, dark.h);
+	}
+	return canvas;
+};
+// His picture's pixels and under them his shadow's shape, a third the size -
+// black, as solid as he is over each patch of him - as one picture: one
+// canvas made a new picture, not two (see darkOf).
+export const withDark = (
+	pixels: ImageData,
+): { all: ImageData; dark: { w: number; h: number } } => {
 	const w = pixels.width;
 	const h = pixels.height;
 	const dw = Math.max(1, Math.ceil(w / DARK_SCALE));
 	const dh = Math.max(1, Math.ceil(h / DARK_SCALE));
-	const canvas = document.createElement("canvas");
-	canvas.width = w;
-	canvas.height = h + dh;
-	const g = canvas.getContext("2d")!;
-	g.putImageData(pixels, 0, 0);
-	const dark = g.createImageData(dw, dh);
+	const all = new ImageData(w, h + dh);
 	const src = pixels.data;
-	const dst = dark.data;
+	const dst = all.data;
+	dst.set(src);
+	const at = w * h * 4;
 	for (let j = 0; j < dh; j++) {
 		const y1 = Math.min(h, (j + 1) * DARK_SCALE);
 		for (let i = 0; i < dw; i++) {
@@ -359,18 +403,10 @@ export const keepPixels = (
 					n++;
 				}
 			}
-			dst[(j * dw + i) * 4 + 3] = n ? a / n : 0;
+			dst[at + (j * w + i) * 4 + 3] = n ? a / n : 0;
 		}
 	}
-	g.putImageData(dark, 0, h);
-	return remember(cache, key, {
-		canvas,
-		w,
-		h,
-		dx,
-		dy,
-		dark: { w: dw, h: dh },
-	});
+	return { all, dark: { w: dw, h: dh } };
 };
 const remember = (cache: SpriteCache, key: string, k: Kept): Kept => {
 	cache.kept.set(key, k);
@@ -414,11 +450,11 @@ export const LIGHT_CASTS: Cast[] = CASTS.map(([lean, run]) => ({
 // picture (a ninth of the memory), and drawn back up soft-edged, as a
 // shadow is: made the first time it is wanted, let go with his picture.
 const DARK_SCALE = 3;
-const darks = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+const darks = new WeakMap<Picture, HTMLCanvasElement>();
 const darkOf = (
 	k: Kept,
 ):
-	| { img: HTMLCanvasElement; sx: number; sy: number; sw: number; sh: number }
+	| { img: Picture; sx: number; sy: number; sw: number; sh: number }
 	| undefined => {
 	if (k.dark) {
 		return { img: k.canvas, sx: 0, sy: k.h, sw: k.dark.w, sh: k.dark.h };
@@ -1415,6 +1451,75 @@ export const finish = (sh: Shaped, job: Job, look: Look, scratch: Scratch) => {
 	return keptBox(sh, hb, job);
 };
 
+// HIS PICTURE FINISHED OFF THE PAGE'S THREAD (see farm.ts): sculpted,
+// finished as on the page - his head and all - and ready to be kept as it
+// comes: a bitmap (or, where a hand can't make one, the pixels for one),
+// where it sits from where he stands, and under it his shadow's shape if
+// it has one (see keepPixels). Nothing, if nothing of him shows.
+export type Done = {
+	picture: ImageBitmap | ImageData;
+	w: number;
+	h: number;
+	dx: number;
+	dy: number;
+	dark?: { w: number; h: number };
+};
+export const finishedOff = (
+	sh: Shaped,
+	job: Job,
+	look: Look,
+	scratch: Scratch,
+): Done | undefined => {
+	const f = finishPixels(sh, job, look, scratch);
+	if (f) {
+		const { all, dark } = withDark(f.pixels);
+		return {
+			picture: all,
+			w: f.pixels.width,
+			h: f.pixels.height,
+			dx: f.dx,
+			dy: f.dy,
+			dark,
+		};
+	}
+	// (Finished on the sheet - see keep.)
+	const p = finish(sh, job, look, scratch);
+	const w = p.x1 - p.x0;
+	const h = p.y1 - p.y0;
+	if (w <= 0 || h <= 0) {
+		return undefined;
+	}
+	return {
+		picture: scratch.ctx.getImageData(p.x0, p.y0, w, h),
+		w,
+		h,
+		dx: p.dx,
+		dy: p.dy,
+	};
+};
+// A picture finished off the page's thread, kept as it is.
+const keepDone = (cache: SpriteCache, key: string, done: Done): Kept => {
+	const { picture, w, h, dx, dy, dark } = done;
+	if ("close" in picture) {
+		return remember(cache, key, {
+			canvas: picture,
+			w,
+			h,
+			dx,
+			dy,
+			...(dark ? { dark } : {}),
+		});
+	}
+	return remember(cache, key, {
+		canvas: canvasOf(picture, h, dark),
+		w,
+		h,
+		dx,
+		dy,
+		...(dark ? { dark } : {}),
+	});
+};
+
 // His picture, finished and kept: a new picture for the cache (nothing, if
 // there is nothing of him to keep - then left on the sheet).
 const keepMade = (
@@ -1805,7 +1910,7 @@ const make = (
 						job,
 						look,
 					);
-					if ("canvas" in made) {
+					if ("canvas" in made && "getContext" in made.canvas) {
 						made.canvas.getContext("2d")?.getImageData(0, 0, 1, 1);
 					}
 					releaseSprites(spare);
@@ -1893,10 +1998,13 @@ export const takeFarmed = <
 	made: M[],
 	// (Kept - finished, if it is to be - or nothing, if it can't be.)
 	keepOf: (m: M) => Kept | undefined,
+	// (And one not wanted - kept already - let go of.)
+	unwanted?: (m: M) => void,
 ) => {
 	const began = performance.now();
 	for (const m of made) {
 		if (cache.kept.has(m.key)) {
+			unwanted?.(m);
 			continue;
 		}
 		const kept = keepOf(m);
@@ -1920,11 +2028,17 @@ export const takeFarmed = <
 	}
 	cache.spent += performance.now() - began;
 };
-const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
-	takeFarmed(cache, farm.take(cache), (m) => {
-		const kept = keepMade(cache, m.key, scratch, m.shaped, m.job, m.look);
-		return "canvas" in kept ? kept : undefined;
-	});
+const took = (cache: SpriteCache, farm: Farm) => {
+	takeFarmed(
+		cache,
+		farm.take(cache),
+		(m) => keepDone(cache, m.key, m.shaped),
+		(m) => {
+			if ("close" in m.shaped.picture) {
+				m.shaped.picture.close();
+			}
+		},
+	);
 };
 
 // THE NEW PICTURES A FRAME NEEDS, MADE FIRST - any sport's men, each
@@ -1996,7 +2110,7 @@ export const prepareSprites = (
 	const gl = glReady();
 	const farm = cache.farm;
 	if (farm) {
-		took(cache, farm, scratch);
+		took(cache, farm);
 	}
 	const planned: { man: (typeof men)[number]; plan: Plan }[] = [];
 	for (const man of men) {

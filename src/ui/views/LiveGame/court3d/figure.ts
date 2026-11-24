@@ -11,6 +11,7 @@ import type {
 } from "./faces.ts";
 import type { KitArt } from "./kitArt.ts";
 import { capBack, capSide, type Cap } from "./cap.ts";
+import { cutTo, type Cut } from "./cut.ts";
 import { skeleton, type Body, type Pose, type V3 } from "./poses.ts";
 
 // WHAT HE LOOKS LIKE - and his head (see sprite.ts).
@@ -130,6 +131,15 @@ export type Look = {
 };
 
 type P2 = { x: number; y: number };
+
+// Round his head - centered at x, y, `r` its radius - all that is drawn on
+// it, his hair standing up off it the highest it goes (see cutTo).
+type Near = { x: number; y: number; reach: number };
+const nearHead = (x: number, y: number, r: number): Near => ({
+	x,
+	y,
+	reach: r * 3.5,
+});
 
 // His face is drawn a little above the true middle of his head (in head
 // radii): from the camera up in the stands his chin would hide his neck, and
@@ -339,6 +349,7 @@ const mix = (a: string, b: string, f: number): string => {
 // bald on top, inside `crown`.
 const fillHair = (
 	ctx: CanvasRenderingContext2D,
+	near: Near,
 	hair: Path2D,
 	cap: Path2D,
 	look: Look,
@@ -348,40 +359,44 @@ const fillHair = (
 	crown: { x: number; y: number; rx: number; ry: number },
 	strip?: { x0: number; x1: number },
 ) => {
-	ctx.save();
-	ctx.clip(cap);
-	ctx.clip(hair);
+	const cuts: Cut[] = [cap, hair];
 	if (style?.crown) {
 		const bald = new Path2D();
 		bald.rect(-1e4, -1e4, 2e4, 2e4);
 		bald.ellipse(crown.x, crown.y, crown.rx, crown.ry, 0, 0, Math.PI * 2);
-		ctx.clip(bald, "evenodd");
+		cuts.push([bald, "evenodd"]);
 	}
-	ctx.fillStyle =
-		style?.thin || style?.crown ? mix(look.skin, look.hair, 0.6) : look.hair;
-	ctx.fill(cap);
-	const skin = mix(look.skin, look.hair, 0.3);
-	if (style?.fade || style?.strip) {
-		const g = ctx.createLinearGradient(0, fadeTop, 0, fadeBottom);
-		g.addColorStop(0, `${skin}00`);
-		g.addColorStop(0.6, `${skin}b3`);
-		g.addColorStop(1, `${skin}d9`);
-		ctx.fillStyle = g;
-		ctx.fill(cap);
-	}
-	if (style?.strip && strip) {
-		// (Fading off either side of it.)
-		const soft = (strip.x1 - strip.x0) * 0.7;
-		const g = ctx.createLinearGradient(strip.x0 - soft, 0, strip.x1 + soft, 0);
-		const f = soft / (strip.x1 - strip.x0 + 2 * soft);
-		g.addColorStop(0, `${skin}b3`);
-		g.addColorStop(f, `${skin}00`);
-		g.addColorStop(1 - f, `${skin}00`);
-		g.addColorStop(1, `${skin}b3`);
-		ctx.fillStyle = g;
-		ctx.fill(cap);
-	}
-	ctx.restore();
+	cutTo(ctx, cuts, near, (g) => {
+		g.fillStyle =
+			style?.thin || style?.crown ? mix(look.skin, look.hair, 0.6) : look.hair;
+		g.fill(cap);
+		const skin = mix(look.skin, look.hair, 0.3);
+		if (style?.fade || style?.strip) {
+			const fade = g.createLinearGradient(0, fadeTop, 0, fadeBottom);
+			fade.addColorStop(0, `${skin}00`);
+			fade.addColorStop(0.6, `${skin}b3`);
+			fade.addColorStop(1, `${skin}d9`);
+			g.fillStyle = fade;
+			g.fill(cap);
+		}
+		if (style?.strip && strip) {
+			// (Fading off either side of it.)
+			const soft = (strip.x1 - strip.x0) * 0.7;
+			const fade = g.createLinearGradient(
+				strip.x0 - soft,
+				0,
+				strip.x1 + soft,
+				0,
+			);
+			const f = soft / (strip.x1 - strip.x0 + 2 * soft);
+			fade.addColorStop(0, `${skin}b3`);
+			fade.addColorStop(f, `${skin}00`);
+			fade.addColorStop(1 - f, `${skin}00`);
+			fade.addColorStop(1, `${skin}b3`);
+			g.fillStyle = fade;
+			g.fill(cap);
+		}
+	});
 };
 
 // The rest of his hair, over what fillHair has done: the partings between
@@ -389,6 +404,7 @@ const fillHair = (
 // (centered at `bun`, `br` across), inked like the rest of him.
 const hairExtras = (
 	ctx: CanvasRenderingContext2D,
+	near: Near,
 	hair: Path2D,
 	cap: Path2D,
 	look: Look,
@@ -401,14 +417,12 @@ const hairExtras = (
 	if (style?.rows) {
 		const p = new Path2D();
 		rows(p);
-		ctx.save();
-		ctx.clip(cap);
-		ctx.clip(hair);
-		ctx.strokeStyle = mix(look.skin, look.hair, 0.35);
-		ctx.lineWidth = Math.max(0.6, r * 0.08);
-		ctx.lineCap = "round";
-		ctx.stroke(p);
-		ctx.restore();
+		cutTo(ctx, [cap, hair], near, (g) => {
+			g.strokeStyle = mix(look.skin, look.hair, 0.35);
+			g.lineWidth = Math.max(0.6, r * 0.08);
+			g.lineCap = "round";
+			g.stroke(p);
+		});
 	}
 	if (style?.bun) {
 		const p = new Path2D();
@@ -449,6 +463,7 @@ const profileHead = (
 		x: c.x + turn * u * r,
 		y: c.y + v * r,
 	});
+	const near = nearHead(c.x, c.y, r);
 	const cut = look.cut ?? "short";
 	const hairy = cut !== "bald" && look.hair !== look.skin;
 	const pro = look.profile ?? {};
@@ -582,10 +597,7 @@ const profileHead = (
 		ctx.stroke(ear);
 		ctx.lineWidth = ink * 2;
 		if (hairy && !style?.thin && !style?.crown) {
-			ctx.save();
-			ctx.clip(above);
-			ctx.stroke(hair);
-			ctx.restore();
+			cutTo(ctx, [above], near, (g) => g.stroke(hair));
 		}
 	}
 	ctx.fillStyle = look.skin;
@@ -593,22 +605,21 @@ const profileHead = (
 	const shadow = shade(look.skin, -0.18);
 	// Light from in front of him and above: the back of his jaw and the
 	// underside of it in shade, his cheek round from it lit.
-	ctx.save();
-	ctx.clip(head);
-	ctx.fillStyle = shade(look.skin, -0.1);
-	ctx.fill(
-		softPoly([
-			P(-0.04, 0.36),
-			P(0.28, 0.62),
-			P(0.64, 0.78),
-			P(0.86, 0.84),
-			P(0.8, 1.1),
-			P(0.2, 1.05),
-			P(-0.36, 0.7),
-			P(-0.3, 0.4),
-		]),
-	);
-	ctx.restore();
+	cutTo(ctx, [head], near, (g) => {
+		g.fillStyle = shade(look.skin, -0.1);
+		g.fill(
+			softPoly([
+				P(-0.04, 0.36),
+				P(0.28, 0.62),
+				P(0.64, 0.78),
+				P(0.86, 0.84),
+				P(0.8, 1.1),
+				P(0.2, 1.05),
+				P(-0.36, 0.7),
+				P(-0.3, 0.4),
+			]),
+		);
+	});
 	// His beard, on his jaw, his chin, his lip - and by his ear.
 	const whiskers = new Path2D();
 	if (pro.jaw) {
@@ -641,11 +652,10 @@ const profileHead = (
 		);
 	}
 	if (pro.jaw || pro.chin || pro.lip || pro.burns) {
-		ctx.save();
-		ctx.clip(head);
-		ctx.fillStyle = cut === "bald" ? shade(look.skin, -0.55) : look.hair;
-		ctx.fill(whiskers);
-		ctx.restore();
+		cutTo(ctx, [head], near, (g) => {
+			g.fillStyle = cut === "bald" ? shade(look.skin, -0.55) : look.hair;
+			g.fill(whiskers);
+		});
 	}
 	ctx.fillStyle = look.skin;
 	ctx.fill(ear);
@@ -658,6 +668,7 @@ const profileHead = (
 		// it: faded below its crest.)
 		fillHair(
 			ctx,
+			near,
 			hair,
 			above,
 			look,
@@ -669,6 +680,7 @@ const profileHead = (
 		);
 		hairExtras(
 			ctx,
+			near,
 			hair,
 			above,
 			look,
@@ -714,18 +726,18 @@ const profileHead = (
 		band.lineTo(bottom.b.x, bottom.b.y);
 		band.quadraticCurveTo(bottom.m.x, bottom.m.y, bottom.a.x, bottom.a.y);
 		band.closePath();
-		ctx.save();
-		ctx.clip(grown);
-		ctx.fillStyle = pro.band.color;
-		ctx.fill(band);
-		ctx.strokeStyle = pro.band.stripe;
-		ctx.lineWidth = r * 0.05;
+		const { color, stripe } = pro.band;
 		const mid = edge(BAND_WIDE / 2);
-		ctx.beginPath();
-		ctx.moveTo(mid.a.x, mid.a.y);
-		ctx.quadraticCurveTo(mid.m.x, mid.m.y, mid.b.x, mid.b.y);
-		ctx.stroke();
-		ctx.restore();
+		cutTo(ctx, [grown], near, (g) => {
+			g.fillStyle = color;
+			g.fill(band);
+			g.strokeStyle = stripe;
+			g.lineWidth = r * 0.05;
+			g.beginPath();
+			g.moveTo(mid.a.x, mid.a.y);
+			g.quadraticCurveTo(mid.m.x, mid.m.y, mid.b.x, mid.b.y);
+			g.stroke();
+		});
 	}
 	if (look.silhouette) {
 		return;
@@ -785,13 +797,12 @@ const profileHead = (
 	);
 	ctx.stroke();
 	if (!pro.lip) {
-		ctx.save();
-		ctx.clip(head);
-		ctx.fillStyle = shade(look.skin, -0.14);
-		ctx.fill(
-			softPoly([P(0.8, 0.37), P(0.99, 0.39), P(0.99, 0.55), P(0.82, 0.55)]),
-		);
-		ctx.restore();
+		cutTo(ctx, [head], near, (g) => {
+			g.fillStyle = shade(look.skin, -0.14);
+			g.fill(
+				softPoly([P(0.8, 0.37), P(0.99, 0.39), P(0.99, 0.55), P(0.82, 0.55)]),
+			);
+		});
 	}
 	ctx.strokeStyle = shade(look.skin, -0.6);
 	if (yell > 0.05) {
@@ -954,6 +965,7 @@ const drawHead = (
 	// hanging down behind his face.
 	const back = (dx = 0, side = 0) => {
 		const x = c.x + dx;
+		const near = nearHead(x, c.y, r);
 		const skull = new Path2D();
 		// Side on, the back of his skull rounds off above the nape and into
 		// his neck, rather than bulging down behind his jaw.
@@ -1071,10 +1083,7 @@ const drawHead = (
 				ctx.stroke(e.outer);
 			}
 			if (hairy && !style?.thin && !style?.crown) {
-				ctx.save();
-				ctx.clip(cap);
-				ctx.stroke(hair);
-				ctx.restore();
+				cutTo(ctx, [cap], near, (g) => g.stroke(hair));
 			}
 		}
 		ctx.fillStyle = look.skin;
@@ -1089,6 +1098,7 @@ const drawHead = (
 			const w = r * (0.18 + side * 1.2);
 			fillHair(
 				ctx,
+				near,
 				hair,
 				cap,
 				look,
@@ -1100,6 +1110,7 @@ const drawHead = (
 			);
 			hairExtras(
 				ctx,
+				near,
 				hair,
 				cap,
 				look,
@@ -1124,30 +1135,29 @@ const drawHead = (
 		if (hairy) {
 			solid.addPath(hair);
 		}
-		ctx.save();
-		ctx.clip(solid);
-		const lit = ctx.createRadialGradient(
-			x - r * 0.25,
-			top - tall * 0.55,
-			r * 0.08,
-			x,
-			top - tall * 0.1,
-			r * 1.25,
-		);
-		lit.addColorStop(0, "rgba(255, 255, 255, 0.2)");
-		lit.addColorStop(0.45, "rgba(255, 255, 255, 0)");
-		lit.addColorStop(0.8, "rgba(0, 0, 0, 0.1)");
-		lit.addColorStop(1, "rgba(0, 0, 0, 0.3)");
-		ctx.fillStyle = lit;
-		ctx.fillRect(x - r * 1.6, top - tall * 1.8, r * 3.2, tall * 3.2);
-		if (hairy && cut !== "long") {
-			const under = ctx.createLinearGradient(0, nape, 0, nape + r * 0.16);
-			under.addColorStop(0, "rgba(0, 0, 0, 0.22)");
-			under.addColorStop(1, "rgba(0, 0, 0, 0)");
-			ctx.fillStyle = under;
-			ctx.fillRect(x - r * 1.2, nape, r * 2.4, r * 0.16);
-		}
-		ctx.restore();
+		cutTo(ctx, [solid], near, (g) => {
+			const lit = g.createRadialGradient(
+				x - r * 0.25,
+				top - tall * 0.55,
+				r * 0.08,
+				x,
+				top - tall * 0.1,
+				r * 1.25,
+			);
+			lit.addColorStop(0, "rgba(255, 255, 255, 0.2)");
+			lit.addColorStop(0.45, "rgba(255, 255, 255, 0)");
+			lit.addColorStop(0.8, "rgba(0, 0, 0, 0.1)");
+			lit.addColorStop(1, "rgba(0, 0, 0, 0.3)");
+			g.fillStyle = lit;
+			g.fillRect(x - r * 1.6, top - tall * 1.8, r * 3.2, tall * 3.2);
+			if (hairy && cut !== "long") {
+				const under = g.createLinearGradient(0, nape, 0, nape + r * 0.16);
+				under.addColorStop(0, "rgba(0, 0, 0, 0.22)");
+				under.addColorStop(1, "rgba(0, 0, 0, 0)");
+				g.fillStyle = under;
+				g.fillRect(x - r * 1.2, nape, r * 2.4, r * 0.16);
+			}
+		});
 		const band = look.profile?.band;
 		if (band) {
 			// His headband, round the back of his head as high as it sits at
@@ -1167,18 +1177,17 @@ const drawHead = (
 			if (hairy) {
 				head.addPath(hair);
 			}
-			ctx.save();
-			ctx.clip(head);
-			ctx.fillStyle = band.color;
-			ctx.fill(strip);
-			ctx.strokeStyle = band.stripe;
-			ctx.lineWidth = r * 0.05;
-			ctx.beginPath();
 			const mid = (y0 + y1) / 2;
-			ctx.moveTo(x - r * 1.3, mid);
-			ctx.quadraticCurveTo(x, mid + sag, x + r * 1.3, mid);
-			ctx.stroke();
-			ctx.restore();
+			cutTo(ctx, [head], near, (g) => {
+				g.fillStyle = band.color;
+				g.fill(strip);
+				g.strokeStyle = band.stripe;
+				g.lineWidth = r * 0.05;
+				g.beginPath();
+				g.moveTo(x - r * 1.3, mid);
+				g.quadraticCurveTo(x, mid + sag, x + r * 1.3, mid);
+				g.stroke();
+			});
 		}
 		if (look.cap) {
 			capBack(ctx, x, c.y, r, look.cap, ink, side, turn);
@@ -1257,17 +1266,16 @@ const drawHead = (
 		ctx.strokeStyle = INK;
 		ctx.lineWidth = Math.max(1, h * 0.01);
 		ctx.fill(mouth);
-		ctx.save();
-		ctx.clip(mouth);
 		const teeth = new Path2D();
 		teeth.moveTo(-half, y - lift - deep);
 		teeth.lineTo(half, y - lift - deep);
 		teeth.lineTo(half, y - lift * 0.15);
 		teeth.quadraticCurveTo(0, y + deep * 0.95, -half, y - lift * 0.15);
 		teeth.closePath();
-		ctx.fillStyle = "#f4efe6";
-		ctx.fill(teeth);
-		ctx.restore();
+		cutTo(ctx, [mouth], { x: 0, y, reach: half + 2 * deep }, (g) => {
+			g.fillStyle = "#f4efe6";
+			g.fill(teeth);
+		});
 		ctx.stroke(mouth);
 	} else if (yell > 0.05) {
 		// Yelling: his mouth open over the one he has - where faces.js puts

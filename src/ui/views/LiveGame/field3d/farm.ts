@@ -5,6 +5,7 @@ import {
 	type FarmCodec,
 	type FarmOf,
 	type FromHandOf,
+	type Handed,
 	type MadeOf,
 	type Pixels,
 	type ToHandOf,
@@ -27,11 +28,11 @@ const FIELD: FarmCodec<FieldLook, FieldJob, FieldShaped, SentShape> = {
 	split: ({ logo, kitArt, ...rest }) => ({
 		rest,
 		...(kitArt ? { art: kitArt } : {}),
-		...(logo ? { pic: logo } : {}),
+		...(logo ? { pics: { logo } } : {}),
 	}),
-	join: (rest, art, pic) => ({
+	join: (rest, art, pics) => ({
 		...(rest as Omit<FieldLook, "logo" | "kitArt">),
-		...(pic ? { logo: pic } : {}),
+		...(pics?.logo ? { logo: pics.logo } : {}),
 		...(art ? { kitArt: art } : {}),
 	}),
 	shape: (job, look) => shapeField(job, look),
@@ -60,5 +61,5 @@ export const makeFieldFarm = (spawn: () => Worker, hands: number): FieldFarm =>
 	makeFarmOf(spawn, hands, FIELD);
 
 export const fieldFarmHand = (
-	post: (msg: { farm: FromFieldHand }, transfer?: ArrayBuffer[]) => void,
+	post: (msg: { farm: FromFieldHand }, transfer?: Handed[]) => void,
 ) => farmHandOf(post, FIELD);

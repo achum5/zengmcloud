@@ -2,10 +2,13 @@ import type { Look } from "./figure.ts";
 import type { KitArt } from "./kitArt.ts";
 import { loadMesh, meshReady } from "./meshBody.ts";
 import {
+	finishedOff,
+	makeScratch,
 	shape,
+	type Done,
 	type Farm,
 	type Job,
-	type Shaped,
+	type Scratch,
 	type SpriteCache,
 } from "./sprite.ts";
 
@@ -21,32 +24,46 @@ import {
 //
 // So whoever can be drawn a frame as he was is sculpted by a hand off the
 // page - a worker, another instance of the one the game is staged in (see
-// src/court) - and drawn in the picture he had till his body comes back a
-// frame or two later, as pixels. The page only finishes him: his head drawn
-// on (a worker's canvas draws its edges a little rougher than the page's),
-// and the picture kept. Whoever has no picture to wait in is made on the
-// page as before, and so is everybody where there is no hand to be had.
+// src/court) - and drawn in the picture he had till his new one comes back
+// a frame or two later, finished: his head drawn on (on a canvas kept in
+// plain memory, as the page's sheet is - so drawn exactly as the page draws
+// it), rimmed, his shadow's shape under it, and made a picture ready to be
+// drawn. The page only keeps it. (Finished on the page, as they once were,
+// ten men a frame were most of the page's frame.) Whoever has no picture to
+// wait in is made on the page as before, and so is everybody where there is
+// no hand to be had.
 //
 // A hand is sent each look once - his team's pictures as pixels - and then
 // only the job: the camera, his pose, his build and the box he is drawn in
 // (see Job).
 
+// What goes over to and back from a hand without being copied: its
+// pictures and pixels.
+export type Handed = ImageBitmap | ArrayBuffer;
+
 // HOW A SPORT'S MEN GO TO A HAND AND COME BACK. A look is sent once, its
 // pictures taken off it to go as pictures of their own - its uniform's
-// (`art`) and one more (`pic`: a crest, a helmet's logo) - and put back
-// together there; he is sculpted there as on the page (`shape` - nothing,
-// if nothing of him shows), and what comes of it goes back as plain arrays
-// (`pack`, its buffers in `transfer`) and is taken back (`unpack`).
+// (`art`) and any more by name (`pics`: a crest, his face, a helmet's logo)
+// - and put back together there; he is sculpted there as on the page
+// (`shape` - nothing, if nothing of him shows), and what comes of it goes
+// back as plain arrays or pictures (`pack`, what is handed over in
+// `transfer`) and is taken back (`unpack`) - or, not wanted after all, let
+// go of (`drop`).
 export type FarmCodec<L extends object, J, Sh, Sent> = {
 	split: (look: L) => {
 		rest: object;
 		art?: KitArt;
-		pic?: HTMLCanvasElement;
+		pics?: Record<string, HTMLCanvasElement>;
 	};
-	join: (rest: object, art?: KitArt, pic?: HTMLCanvasElement) => L;
+	join: (
+		rest: object,
+		art?: KitArt,
+		pics?: Record<string, HTMLCanvasElement>,
+	) => L;
 	shape: (job: J, look: L) => Sh | undefined;
-	pack: (sh: Sh, transfer: ArrayBuffer[]) => Sent;
+	pack: (sh: Sh, transfer: Handed[]) => Sent;
 	unpack: (sent: Sent) => Sh;
+	drop?: (sh: Sh) => void;
 	// Whether the hand has what it takes to sculpt a look yet (true), or
 	// when it will have (see meshBody.ts: a man drawn as one waits for his
 	// mesh) - his jobs kept in line till then.
@@ -74,7 +91,7 @@ export type FarmOf<L, J, Sh, W> = {
 };
 
 // What a look is sent as: its pictures by number, each sent once.
-type SentLook = { rest: object; art?: number; pic?: number };
+type SentLook = { rest: object; art?: number; pics?: Record<string, number> };
 // The page to a hand: each job in its lane (one a man - see makeFarmOf)...
 type JobMsg<J> = { job: number; look: number; work: J; lane: string };
 export type ToHandOf<J> =
@@ -152,26 +169,30 @@ export const makeFarmOf = <L extends object, J, Sh, Sent, W>(
 		let s = sent.get(look);
 		if (s === undefined) {
 			const assets: [number, Asset][] = [];
-			const { rest, art, pic } = codec.split(look);
+			const { rest, art, pics } = codec.split(look);
 			const value: SentLook = { rest };
 			s = { value, assets };
 			if (art) {
 				value.art = numberOf(art);
 				assets.push([value.art, { art }]);
 			}
-			if (pic && pic.width > 0 && pic.height > 0) {
+			for (const [name, pic] of Object.entries(pics ?? {})) {
+				if (pic.width <= 0 || pic.height <= 0) {
+					continue;
+				}
 				let px: ImageData | undefined;
 				try {
 					px = pic.getContext("2d")!.getImageData(0, 0, pic.width, pic.height);
 				} catch {
 					px = undefined;
 				}
-				if (px) {
-					value.pic = numberOf(pic);
-					assets.push([value.pic, { pic: px }]);
-				} else {
+				if (!px) {
 					s = null;
+					break;
 				}
+				const n = numberOf(pic);
+				value.pics = { ...value.pics, [name]: n };
+				assets.push([n, { pic: px }]);
 			}
 			sent.set(look, s);
 		}
@@ -195,7 +216,11 @@ export const makeFarmOf = <L extends object, J, Sh, Sent, W>(
 		busy.get(t.cache)?.delete(t.key);
 		// (Nothing back - a newer pose of his came first, or the hand is
 		// gone - or the cache let go of: nothing to keep.)
-		if (!shaped || t.cache.done) {
+		if (!shaped) {
+			return;
+		}
+		if (t.cache.done) {
+			codec.drop?.(codec.unpack(shaped));
 			return;
 		}
 		let list = made.get(t.cache);
@@ -335,7 +360,7 @@ export const makeFarmOf = <L extends object, J, Sh, Sent, W>(
 // exactly as the page would (see the codec's shape), and sends back their
 // pixels.
 export const farmHandOf = <L extends object, J, Sh, Sent>(
-	post: (msg: { farm: FromHandOf<Sent> }, transfer?: ArrayBuffer[]) => void,
+	post: (msg: { farm: FromHandOf<Sent> }, transfer?: Handed[]) => void,
 	codec: FarmCodec<L, J, Sh, Sent>,
 ) => {
 	const arts = new Map<number, KitArt>();
@@ -351,7 +376,7 @@ export const farmHandOf = <L extends object, J, Sh, Sent>(
 	const sculpted = (msg: JobMsg<J>) => {
 		const look = looks.get(msg.look);
 		let back: Back<Sent> = { job: msg.job };
-		const transfer: ArrayBuffer[] = [];
+		const transfer: Handed[] = [];
 		try {
 			const sh = look ? codec.shape(msg.work, look) : undefined;
 			if (sh) {
@@ -420,72 +445,112 @@ export const farmHandOf = <L extends object, J, Sh, Sent>(
 				tick.port2.postMessage(0);
 			}
 		} else {
-			const { rest, art, pic } = msg.value;
+			const { rest, art, pics: named } = msg.value;
 			looks.set(
 				msg.look,
 				codec.join(
 					rest,
 					art === undefined ? undefined : arts.get(art),
-					pic === undefined ? undefined : pics.get(pic),
+					named &&
+						Object.fromEntries(
+							Object.entries(named).flatMap(([name, n]) => {
+								const pic = pics.get(n);
+								return pic ? [[name, pic]] : [];
+							}),
+						),
 				),
 			);
 		}
 	};
 };
 
-// THE COURT'S: no head (the page draws that on - a worker's canvas draws
-// its edges a little rougher than the page's), the crest on his warm-up
-// top as its picture; his body back as pixels, and what goes over his head
-// (see Shaped).
+// THE COURT'S: the crest on his warm-up top and his face (for his head) as
+// its pictures; his picture back finished (see sprite.ts finishedOff) - a
+// bitmap handed over as it is, where a hand can make one.
 export type Pixels = [Uint8ClampedArray<ArrayBuffer>, number, number];
-type SentShape = Omit<Shaped, "img" | "over"> & {
-	img: Pixels;
-	over?: Pixels;
-};
-export const sendPixels = (img: ImageData, transfer: ArrayBuffer[]): Pixels => {
+type SentDone = Omit<Done, "picture"> & { picture: ImageBitmap | Pixels };
+export const sendPixels = (img: ImageData, transfer: Handed[]): Pixels => {
 	const data = img.data as Uint8ClampedArray<ArrayBuffer>;
 	transfer.push(data.buffer);
 	return [data, img.width, img.height];
 };
-const COURT: FarmCodec<Look, Job, Shaped, SentShape> = {
+// (The hand's own sheet to finish him on - see makeScratch.)
+let sheet: Scratch | undefined;
+// His finished pixels made a picture ready to be drawn, where the hand can.
+const asBitmap = (done: Done): Done => {
+	const pic = done.picture;
+	if (typeof OffscreenCanvas === "undefined" || "close" in pic) {
+		return done;
+	}
+	const cv = new OffscreenCanvas(pic.width, pic.height);
+	const g = cv.getContext("2d");
+	if (!g || typeof cv.transferToImageBitmap !== "function") {
+		return done;
+	}
+	g.putImageData(pic, 0, 0);
+	return { ...done, picture: cv.transferToImageBitmap() };
+};
+const COURT: FarmCodec<Look, Job, Done, SentDone> = {
 	// (His face for his head, if he is drawn as a man, goes with him: plain
 	// pixels.)
 	split: ({ kitArt, crest, head, ...rest }) => ({
-		rest:
-			head?.tex && rest.real && !rest.faceTex
+		rest: {
+			...(head?.tex && rest.real && !rest.faceTex
 				? { ...rest, faceTex: head.tex }
-				: rest,
+				: rest),
+			...(head ? { headAt: { cx: head.cx, cy: head.cy, h: head.h } } : {}),
+		},
 		...(kitArt ? { art: kitArt } : {}),
-		...(crest ? { pic: crest } : {}),
+		pics: {
+			...(crest ? { crest } : {}),
+			...(head ? { head: head.img } : {}),
+		},
 	}),
-	join: (rest, art, pic) => ({
-		...(rest as Omit<Look, "kitArt" | "crest" | "head">),
-		...(art ? { kitArt: art } : {}),
-		...(pic ? { crest: pic } : {}),
-	}),
-	shape: (job, look) => shape(job, look, true),
+	join: (rest, art, pics) => {
+		const { headAt, ...look } = rest as Omit<
+			Look,
+			"kitArt" | "crest" | "head"
+		> & { headAt?: { cx: number; cy: number; h: number } };
+		return {
+			...look,
+			...(art ? { kitArt: art } : {}),
+			...(pics?.crest ? { crest: pics.crest } : {}),
+			...(headAt && pics?.head ? { head: { ...headAt, img: pics.head } } : {}),
+		};
+	},
+	shape: (job, look) => {
+		sheet ??= makeScratch();
+		const done = finishedOff(shape(job, look, true), job, look, sheet);
+		return done && asBitmap(done);
+	},
 	// (Not to be had - offline, say: drawn as the court's own, not waited
 	// for for ever.)
 	ready: (look) =>
 		!look.real || meshReady() || loadMesh().catch(() => undefined),
-	pack: ({ img, over, ...sh }, transfer) => ({
-		...sh,
-		img: sendPixels(img, transfer),
-		...(over ? { over: sendPixels(over, transfer) } : {}),
+	pack: ({ picture, ...done }, transfer) => {
+		if ("close" in picture) {
+			transfer.push(picture);
+			return { ...done, picture };
+		}
+		return { ...done, picture: sendPixels(picture, transfer) };
+	},
+	unpack: ({ picture, ...done }) => ({
+		...done,
+		picture: Array.isArray(picture) ? new ImageData(...picture) : picture,
 	}),
-	unpack: ({ img, over, ...sh }) => ({
-		...sh,
-		img: new ImageData(...img),
-		...(over ? { over: new ImageData(...over) } : {}),
-	}),
+	drop: ({ picture }) => {
+		if ("close" in picture) {
+			picture.close();
+		}
+	},
 };
 
 export type ToHand = ToHandOf<Job>;
-export type FromHand = FromHandOf<SentShape>;
+export type FromHand = FromHandOf<SentDone>;
 export const makeFarm = (
 	spawn: () => Worker,
 	hands: number,
 ): Farm & { stop: () => void } => makeFarmOf(spawn, hands, COURT);
 export const farmHand = (
-	post: (msg: { farm: FromHand }, transfer?: ArrayBuffer[]) => void,
+	post: (msg: { farm: FromHand }, transfer?: Handed[]) => void,
 ) => farmHandOf(post, COURT);
