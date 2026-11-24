@@ -89,11 +89,13 @@ export const MESH_CUTS = MESH_SHELLS.map(
 		MESH_LAYERED &&
 		(sh === "shorts" || sh === "shortsTop" || sh === "shoe" || sh === "jersey"),
 );
-// (Where his shorts come down to: of the way from his hip to his knee - and
-// where they are painted on him under them, short of that - with today's
-// shorts; his season's that much shorter or longer: see hemOf.)
-const MESH_HEM = 0.92;
-const MESH_UNDER_HEM = 0.8;
+// (Where his shorts come down to: of the way from his hip to his knee - the
+// step in under their hem, a hair past it - with today's shorts; his
+// season's that much shorter or longer: see hemOf. All of him above it
+// painted as his shorts, all below as his thigh: cut square, wherever the
+// mesh's own faces of each meet.)
+const MESH_HEM = HEM_TODAY + 0.004;
+const MESH_UNDER_HEM = MESH_HEM;
 // How far down his thighs his shorts come (see shortsEra.ts) - in his
 // warm-up top too; none in trousers.
 export const hemOf = (look: Look) =>
@@ -2477,15 +2479,16 @@ export const build = (
 	const cut: Cut = {
 		waist: T * 0.2,
 		band: H * 0.016,
-		// (A man's shoulders bare out to his neck but for the strap: what
-		// moves with his arm is never under it - see meshBody.ts.)
-		strap: sw * (look.real ? 0.48 : 0.62),
-		side: sw * 1.32,
+		// (On a man, fitted: his straps out over the tops of his shoulders,
+		// the armholes down the fronts of them to under his arms - his chest
+		// covered, his deltoids bare. See meshBody.ts, armOf.)
+		strap: sw * (look.real ? 0.69 : 0.62),
+		side: sw * (look.real ? 1.14 : 1.32),
 		top: shouldersOf(body),
-		pit: T - H * 0.075,
+		pit: T - H * (look.real ? 0.085 : 0.075),
 		// (Round a man's neck - the mesh's, see meshBody.ts - his collar sits
-		// out on the slope of his shoulders, not up his neck.)
-		neckIn: sw * (look.real ? 0.6 : 0.42),
+		// at the foot of his neck, on the slope of his shoulders.)
+		neckIn: sw * (look.real ? 0.515 : 0.42),
 		vAt: H * 0.068,
 		backAt: H * (look.real ? 0.036 : 0.03),
 		trim: Math.max(H * 0.0085, 1.2 / kMid),
@@ -3930,6 +3933,8 @@ export const sculpt = (
 		let along = 0;
 		const shortsR = mk[MESH_KINDS.indexOf("shortsR")];
 		const shortsL = mk[MESH_KINDS.indexOf("shortsL")];
+		const thighR = mk[MESH_KINDS.indexOf("thighR")];
+		const thighL = mk[MESH_KINDS.indexOf("thighL")];
 		const massAt = (
 			k: number,
 			Pf: number,
@@ -3972,7 +3977,19 @@ export const sculpt = (
 				return ((Pf - m.A.f) * lf + (Ps - m.A.s) * ls + (Pu - m.A.u) * lu) / l2;
 			};
 			// (His shorts, painted down his thighs to their hem - his trousers
-			// all one cloth to his shoes.)
+			// all one cloth to his shoes - and none of them past it.)
+			if (
+				MESH_PAINTED &&
+				MESH_SHELLS[k] === "shorts" &&
+				!trousers &&
+				thighR &&
+				thighL
+			) {
+				const r = raw(fc);
+				if (r > 1) {
+					fc = fc.side ? thighL : thighR;
+				}
+			}
 			if (MESH_PAINTED && fc.kind === THIGH && !trousers) {
 				const sh = mkShorts[k]!;
 				const r = raw(sh);

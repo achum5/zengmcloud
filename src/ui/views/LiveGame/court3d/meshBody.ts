@@ -68,19 +68,45 @@ export const loadMesh = (): Promise<void> =>
 		for (let i = 0; i < lq.length; i++) {
 			local[i] = lq[i]! * BODY_META.localStep;
 		}
+		const bone = unpack(D.bone, (b) => new Uint8Array(b));
 		mesh = {
 			n: BODY_META.points,
 			start,
 			counts,
-			bone: unpack(D.bone, (b) => new Uint8Array(b)),
+			bone,
 			weight,
 			local,
 			tris: unpack(D.tris, (b) => new Uint16Array(b)),
 			kind: unpack(D.kind, (b) => new Uint8Array(b)),
-			arm: unpack(D.arm, (b) => new Uint8Array(b)),
+			arm: armOf(start, bone, weight),
 			face: unpack(D.face, (b) => new Int16Array(b)),
 		};
 	}));
+// How much each point goes with his arm, not his body (0 - 255): his
+// jersey is cut where it does (see sculpt.ts). His upper arm, forearm and
+// hand all his arm's; his shoulder - the top of his chest, the front of his
+// armpit, his collarbone's end - only partly, so his jersey covers his chest
+// out to his deltoid, and up over his shoulders, as a fitted one does.
+// (Not the bake's own, which made more of his shoulder his arm's.)
+const SHOULDER_ARM = 0.3;
+const ARM_BONES = BODY_META.bones.map((b) =>
+	/^(upper|fore|hand)/.test(b)
+		? 1
+		: b.startsWith("shoulder")
+			? SHOULDER_ARM
+			: 0,
+);
+const armOf = (start: Uint32Array, bone: Uint8Array, weight: Float32Array) => {
+	const arm = new Uint8Array(start.length - 1);
+	for (let i = 0; i < arm.length; i++) {
+		let a = 0;
+		for (let j = start[i]!; j < start[i + 1]!; j++) {
+			a += weight[j]! * ARM_BONES[bone[j]!]!;
+		}
+		arm[i] = Math.round(Math.min(1, a) * 255);
+	}
+	return arm;
+};
 const meshOf = (): Mesh => {
 	if (!mesh) {
 		throw new Error("mesh not loaded");
@@ -571,10 +597,15 @@ let posedFlat = new Float64Array(0);
 // sharp as it was, and his bare thigh below it his thigh's own shape, as
 // thick there as a thigh is (thicker up toward his hip). `hem` is of the
 // way from his hip to his knee, today's HEM_TODAY; `flare`, how loose
-// round his thigh the hem is (1: as made).
+// round his thigh the hem is (1: today's).
 // (From his hip down, how much of his shorts is never moved: where they
 // meet his hips.)
 const HEM_FIXED = 0.2;
+// (Today's shorts as made are baggy - nearly twice his thigh round at the
+// hem: their legs this much of that, a fitted pair's - but never tighter
+// than the shortest's, which his thigh fills.)
+const SHORTS_FIT = 0.8;
+const SHORTS_TIGHTEST = 0.82;
 const locals = new Map<string, Float32Array>();
 let localsOf: Mesh | undefined;
 const localFor = (m: Mesh, hem: number, flare: number): Float32Array => {
@@ -584,7 +615,8 @@ const localFor = (m: Mesh, hem: number, flare: number): Float32Array => {
 	}
 	// (A step of a hundredth: one length per era, not one per season.)
 	const h = Math.round(hem * 100) / 100;
-	const fl = Math.round(flare * 100) / 100;
+	const fl =
+		Math.round(Math.max(SHORTS_TIGHTEST, flare * SHORTS_FIT) * 100) / 100;
 	if (h === HEM_TODAY && fl === 1) {
 		return m.local;
 	}

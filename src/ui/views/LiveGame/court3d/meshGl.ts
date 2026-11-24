@@ -60,6 +60,8 @@ const UPPER_R_K = kindIx("upperR") >= 0 ? kindIx("upperR") : TORSO_K;
 const UPPER_L_K = kindIx("upperL") >= 0 ? kindIx("upperL") : TORSO_K;
 const SHORTS_R_K = kindIx("shortsR");
 const SHORTS_L_K = kindIx("shortsL");
+const THIGH_R_K = kindIx("thighR");
+const THIGH_L_K = kindIx("thighL");
 const HEAD_K = kindIx("head");
 const NECK_K = kindIx("neck");
 const SHELL_CODE = {
@@ -203,6 +205,12 @@ int massAt(int k, vec3 P, float arm) {
 	int mk = mKind(mi);
 	if (${MESH_PAINTED} && (mk == ${UPPER} || mk == ${TORSO} || mk == ${NECK}) && k != ${HEAD_K}) {
 		mi = arm < 0.5 ? ${TORSO_K} : P.y > 0.0 ? ${UPPER_L_K} : ${UPPER_R_K};
+	}
+	if (
+		${MESH_PAINTED} && SHELL[k] == 1 && uOpt.x < 0.5
+		&& ${THIGH_R_K} >= 0 && ${THIGH_L_K} >= 0 && raw(mi, P) > 1.0
+	) {
+		mi = mSide(mi) > 0.5 ? ${THIGH_L_K} : ${THIGH_R_K};
 	}
 	if (${MESH_PAINTED} && mKind(mi) == ${THIGH} && uOpt.x < 0.5) {
 		int sh = ${SHORTS_AT} + k;

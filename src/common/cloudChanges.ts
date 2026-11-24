@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 557,
+		date: "2026-11-24",
+		text: "3D games: jerseys fit like real ones. They cover the whole chest out to the shoulders, with proper straps and trim round the armholes, instead of hanging like a loose tank top. Shorts are less baggy, and the short shorts of the 70s and 80s have a clean hem instead of a ragged one.",
+	},
+	{
 		n: 556,
 		date: "2026-11-24",
 		text: "3D games: players can be drawn on your device's graphics chip, taking work off the game so it runs smoother. Each device checks for itself which way is quicker and uses that. And an arm raised in front of a player's face is now drawn over his head instead of behind it.",
