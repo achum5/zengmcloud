@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 563,
+		date: "2026-11-24",
+		text: 'Game notifications now start the title with the date, like "11/12/25 - Lakers 110 vs. Celtics 86", instead of putting it on its own line under the title.',
+	},
+	{
 		n: 562,
 		date: "2026-11-24",
 		text: 'Game recaps read like a wire story now. They open with the home city ("DENVER — ") and end with Takeaways (one line on what the game means for each team, like a streak, a season high or where they sit in the standings), the Key moment, the Key stat, and Up next (who each team plays next, with the day of the week when the league uses the NBA calendar). On the Daily Schedule and every box score.',

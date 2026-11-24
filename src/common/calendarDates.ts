@@ -124,6 +124,24 @@ export const formatDateRange = (from: string, to: string) => {
 	return `${formatGameDate(from, "monthDay")}–${formatGameDate(to, "monthDay")}`;
 };
 
+// "11/12/25", as mm/dd/yy.
+export const formatNumericDate = (date: string) => {
+	const { year, month, day } = parse(date);
+	const two = (n: number) => String(n % 100).padStart(2, "0");
+	return `${two(month)}/${two(day)}/${two(year)}`;
+};
+
+// "11/28–12/02/25" for a span of nights, the year once; "12/29/25–01/02/26"
+// across New Year's.
+export const formatNumericDateRange = (from: string, to: string) => {
+	if (from === to) {
+		return formatNumericDate(from);
+	}
+	const a = formatNumericDate(from);
+	const b = formatNumericDate(to);
+	return a.slice(-2) === b.slice(-2) ? `${a.slice(0, 5)}–${b}` : `${a}–${b}`;
+};
+
 // "November 2025", or "Nov" short, for the month a date is in.
 export const formatMonth = (date: string, short?: boolean) => {
 	const { year, month } = parse(date);

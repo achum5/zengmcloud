@@ -2,8 +2,28 @@ import { assert, test } from "vitest";
 import {
 	formatGameDate,
 	formatMonth,
+	formatNumericDate,
+	formatNumericDateRange,
 	formatSeasonSpan,
 } from "./calendarDates.ts";
+
+test("mm/dd/yy", () => {
+	assert.strictEqual(formatNumericDate("2025-11-12"), "11/12/25");
+	assert.strictEqual(formatNumericDate("2027-01-05"), "01/05/27");
+	assert.strictEqual(formatNumericDate("2000-03-09"), "03/09/00");
+	assert.strictEqual(
+		formatNumericDateRange("2025-11-28", "2025-12-02"),
+		"11/28–12/02/25",
+	);
+	assert.strictEqual(
+		formatNumericDateRange("2025-12-29", "2026-01-02"),
+		"12/29/25–01/02/26",
+	);
+	assert.strictEqual(
+		formatNumericDateRange("2025-11-12", "2025-11-12"),
+		"11/12/25",
+	);
+});
 
 test("weekdays are the real ones for the year", () => {
 	assert.strictEqual(

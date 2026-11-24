@@ -21,10 +21,7 @@ import {
 	stageIndex,
 	stageName,
 } from "../realisticFrontOffice/stages.ts";
-import {
-	formatDateRange,
-	formatGameDate,
-} from "../../../common/calendarDates.ts";
+import { formatNumericDateRange } from "../../../common/calendarDates.ts";
 import { isAllStarGame } from "../../../common/specialGames.ts";
 
 // A push notification to fan out to the OTHER devices in the league room. The
@@ -570,12 +567,11 @@ const biggestGamesText = (
 	return lines.length > 0 ? lines.join("\n") : undefined;
 };
 
-// THE DAY A GAME NOTIFICATION IS ABOUT, as the first line under its
-// headline, so each one in a stack says which night it was (Alex picked this
-// over leading the title with it, which cut the end of the headline off on a
-// phone, 2026-11-23): "Wed, Nov 12" on the NBA calendar, "Nov 14–20" for a
-// week; on classic numbered days "Day 34" or "Days 30–36". Undefined when the
-// games carry neither.
+// THE DAY A GAME NOTIFICATION IS ABOUT, leading its title, so each one in a
+// stack says which night it was: "11/12/25 - Lakers 110 vs. Celtics 86"
+// (Alex, 2026-11-24, in place of a line of its own under the title).
+// "11/14–11/20/25" for a week on the NBA calendar; on classic numbered days
+// "Day 34" or "Days 30–36". Undefined when the games carry neither.
 export const gamesDateLabel = (
 	games: readonly { date?: string; day?: number }[],
 ): string | undefined => {
@@ -584,11 +580,7 @@ export const gamesDateLabel = (
 		.filter((date): date is string => date !== undefined)
 		.sort();
 	if (dates.length > 0) {
-		const first = dates[0]!;
-		const last = dates.at(-1)!;
-		return first === last
-			? formatGameDate(first, "short")
-			: formatDateRange(first, last);
+		return formatNumericDateRange(dates[0]!, dates.at(-1)!);
 	}
 	const days = games
 		.map((game) => game.day)
@@ -602,8 +594,8 @@ export const gamesDateLabel = (
 		: `Days ${days[0]}–${days.at(-1)}`;
 };
 
-const withDate = (label: string | undefined, body: string) =>
-	label === undefined ? body : body ? `${label}\n${body}` : label;
+const withDate = (label: string | undefined, title: string) =>
+	label === undefined ? title : `${label} - ${title}`;
 
 const buildSimNotifications = async (
 	label: string,
@@ -730,8 +722,8 @@ const buildSimNotifications = async (
 				isAllStarGame(game.teams?.[0]?.tid, game.teams?.[1]?.tid),
 		);
 		notifications.push({
-			title: "All-Star Weekend",
-			body: withDate(gamesDateLabel(allStarGames), allStarBody(allStars)),
+			title: withDate(gamesDateLabel(allStarGames), "All-Star Weekend"),
+			body: allStarBody(allStars),
 			targetTids: null,
 			path: "all_star/history",
 		});
@@ -757,8 +749,8 @@ const buildSimNotifications = async (
 			const body = dayGameScores(games, teamById);
 			if (body) {
 				notifications.push({
-					title: "Play-in scores",
-					body: withDate(gamesDateLabel(games), body),
+					title: withDate(gamesDateLabel(games), "Play-in scores"),
+					body,
 					targetTids: null,
 					path: "playoffs",
 				});
@@ -767,8 +759,8 @@ const buildSimNotifications = async (
 			const seriesBody = playoffSeriesScores(playoffSeries, teamById);
 			if (seriesBody) {
 				notifications.push({
-					title: "Playoff scores",
-					body: withDate(gamesDateLabel(games), seriesBody),
+					title: withDate(gamesDateLabel(games), "Playoff scores"),
+					body: seriesBody,
 					targetTids: null,
 					path: "playoffs",
 				});
@@ -863,15 +855,15 @@ const buildSimNotifications = async (
 				notifications.push({
 					// Without a recap there is no headline to lead with, so the
 					// scoreboard fallback keeps the label it always had.
-					title: recap.title ?? `Bye day for the ${team?.name ?? "team"}`,
-					body: withDate(
+					title: withDate(
 						gamesDateLabel(
 							slateDay === undefined
 								? games
 								: games.filter((game) => game.day === slateDay),
 						),
-						around ?? `No other games ${period}.`,
+						recap.title ?? `Bye day for the ${team?.name ?? "team"}`,
 					),
+					body: around ?? `No other games ${period}.`,
 					targetTids: [tid],
 					// The body is about everyone else's games, so open the slate they
 					// were played on rather than the standings.
@@ -952,8 +944,8 @@ const buildSimNotifications = async (
 		}
 
 		notifications.push({
-			title,
-			body: withDate(gamesDateLabel(teamGames), body),
+			title: withDate(gamesDateLabel(teamGames), title),
+			body,
 			targetTids: [tid],
 			path,
 		});
