@@ -7,7 +7,13 @@ import { updateTickerItems } from "./updateTickerItems.ts";
 import { hideLiveResults } from "./liveSpoilers.ts";
 import { getLiveGate } from "./liveGameGate.ts";
 
-export const initUILocalGames = async () => {
+export const initUILocalGames = async ({
+	freshTicker = false,
+}: {
+	// The ticker's slate and award races read again rather than from their
+	// memo (see updateTickerItems).
+	freshTicker?: boolean;
+} = {}) => {
 	const userTid = g.get("userTid");
 
 	// Start with completed games
@@ -60,5 +66,5 @@ export const initUILocalGames = async () => {
 	// live game is being watched, refreshAfterApply is banked and neither feed
 	// moves. Feeding it from its own hook would have meant getting that right a
 	// second time.
-	await updateTickerItems();
+	await updateTickerItems({ fresh: freshTicker });
 };

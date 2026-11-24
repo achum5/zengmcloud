@@ -16,6 +16,7 @@ import { idb } from "../db/index.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import { inStages } from "../core/realisticFrontOffice/stages.ts";
+import { getLiveGate, nightShown } from "./liveGameGate.ts";
 
 const updatePlayMenu = async () => {
 	if (__NODE_ENV === "test") {
@@ -386,8 +387,13 @@ const updatePlayMenu = async () => {
 	toUI("updateLocal", [
 		{
 			// Today's date for the top bar changes when the play menu does: after
-			// each day, at each phase, on load.
-			calendarDate: await season.getCalendarDate(),
+			// each day (simmed here or on a league mate's device), at each phase,
+			// on load, and when a live game ends - while a playoff game is still
+			// being played live, its night stays today (see nightShown).
+			calendarDate: nightShown(
+				await season.getCalendarDate(),
+				await getLiveGate(),
+			),
 			calendarOpeningNight: await season.getOpeningNight(),
 			playMenuOptions: someOptions,
 		},

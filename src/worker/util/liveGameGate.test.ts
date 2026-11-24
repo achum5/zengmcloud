@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	decideLiveGate,
 	eventGivesAwayLiveGame,
+	nightShown,
 	recordDeltas,
 	streakAndLastTen,
 	teamGoingIn,
@@ -251,6 +252,36 @@ describe("eventGivesAwayLiveGame", () => {
 				{ type: "playoffs", tids: [2, 3], season: 2026, text: "won" },
 				gate,
 			),
+		);
+	});
+});
+
+describe("nightShown", () => {
+	const gate = (
+		dayCutoff: number | undefined,
+		games: [number, { day: number; date?: string }][],
+	) => ({ dayCutoff, games: new Map(games) as any });
+
+	test("no playoff game being played live: today as it is", () => {
+		assert.strictEqual(
+			nightShown("2026-04-20", gate(undefined, [])),
+			"2026-04-20",
+		);
+		assert.strictEqual(nightShown(undefined, gate(undefined, [])), undefined);
+	});
+
+	test("a playoff game still being played live keeps its night today", () => {
+		// (Its tip-off already worked out the next night - or, a series or the
+		// playoffs over, none at all.)
+		const live = gate(40, [[900, { day: 40, date: "2026-04-19" }]]);
+		assert.strictEqual(nightShown("2026-04-21", live), "2026-04-19");
+		assert.strictEqual(nightShown(undefined, live), "2026-04-19");
+	});
+
+	test("an undated league stays undated", () => {
+		assert.strictEqual(
+			nightShown(undefined, gate(40, [[900, { day: 40 }]])),
+			undefined,
 		);
 	});
 });

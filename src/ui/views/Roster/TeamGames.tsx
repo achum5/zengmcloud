@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toWorker } from "../../util/toWorker.ts";
+import { useLeagueRefresh } from "../../util/leagueRefresh.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
@@ -61,12 +62,21 @@ export const TeamGames = ({
 		| undefined
 	>();
 	const current = season === currentSeason;
+	// Asked again each time the league moves on (a day simmed here or on a
+	// league mate's device: today, and the night's results). Only another
+	// team or season clears what is up meanwhile.
+	const refresh = useLeagueRefresh();
+	const shownFor = useRef<string | undefined>(undefined);
 	useEffect(() => {
 		let live = true;
-		setGames(undefined);
+		const team = `${abbrev}_${tid}`;
+		const showing = `${team}|${season}|${current}`;
+		if (shownFor.current !== showing) {
+			shownFor.current = showing;
+			setGames(undefined);
+		}
 		(async () => {
 			try {
-				const team = `${abbrev}_${tid}`;
 				const calendar = (await load("calendar", {
 					team,
 					season: String(season),
@@ -112,7 +122,7 @@ export const TeamGames = ({
 		return () => {
 			live = false;
 		};
-	}, [abbrev, current, season, tid]);
+	}, [abbrev, current, season, tid, refresh]);
 
 	if (!games) {
 		return <div className="hub-wait" />;

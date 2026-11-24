@@ -71,7 +71,14 @@ import {
 import { changeTracker } from "../../db/changeTracker.ts";
 import { runBecameSimmerHooks } from "./simmerHooks.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
+import {
+	g,
+	helpers,
+	local,
+	logEvent,
+	toUI,
+	updatePlayMenu,
+} from "../../util/index.ts";
 import { liveFlagShown } from "../../util/toUI.ts";
 import {
 	liveSpoilerGids,
@@ -745,6 +752,9 @@ export const recheckLiveSpoilers = (force = false) => {
 	syncDebugLog("live:spoilers", { gids: key });
 	if (local.leagueLoaded) {
 		void initUILocalGames().catch(() => {});
+		// (And the header's date: a playoff game's night stays today till it
+		// is over - see nightShown.)
+		void updatePlayMenu().catch(() => {});
 		// Pages showing a game as in progress (or not) redo it, and a phase
 		// change held for a playoff game played live goes in at its final.
 		void toUI("realtimeUpdate", [["liveGames"]]).catch(() => {});

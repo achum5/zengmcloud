@@ -153,6 +153,23 @@ const readLiveGate = async (
 	return { hidden, dayCutoff, games: rows };
 };
 
+// Today on the calendar as the screen should have it: while a playoff game is
+// still being played live, its night. The next one - worked out at its
+// tip-off - is not shown yet. Pure: today is getCalendarDate's.
+export const nightShown = (
+	today: string | undefined,
+	gate: Pick<LiveGate, "dayCutoff" | "games">,
+) => {
+	if (gate.dayCutoff !== undefined) {
+		for (const game of gate.games.values()) {
+			if (game.day === gate.dayCutoff && game.date !== undefined) {
+				return game.date;
+			}
+		}
+	}
+	return today;
+};
+
 // A team in a game row as it stood going in: the row stores records and the
 // series standing as they were AFTER the game, its result already counted.
 export const teamGoingIn = <

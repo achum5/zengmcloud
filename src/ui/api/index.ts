@@ -1,4 +1,5 @@
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
+import { noteLeagueRefresh } from "../util/leagueRefresh.ts";
 import { local, localActions } from "../util/local.ts";
 import {
 	showNotification,
@@ -58,6 +59,7 @@ async function realtimeUpdate2(
 	url?: string,
 	raw?: Record<string, unknown>,
 ) {
+	noteLeagueRefresh(updateEvents);
 	await realtimeUpdate(updateEvents, url, raw);
 }
 

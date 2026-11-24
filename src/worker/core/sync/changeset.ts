@@ -1013,11 +1013,6 @@ export const refreshAfterApply = async ({
 		} catch (error) {
 			console.error("Failed to refresh phase text after sync", error);
 		}
-		try {
-			await updatePlayMenu();
-		} catch (error) {
-			console.error("Failed to refresh play menu after sync", error);
-		}
 
 		// Reset the same worker-local flags the simmer's phase functions reset, so
 		// a follower's later behavior (live-sim stop points, fantasy draft results
@@ -1057,9 +1052,14 @@ export const refreshAfterApply = async ({
 
 	// Refresh the status line ("X days left in free agency", draft progress) on a
 	// receiving device. A phase change also moves the status (e.g. into/out of
-	// free agency), so recompute in either case. updateStatus() with no argument
-	// derives the right text from the just-updated g.
-	if (touchedStatus || touchedPhase) {
+	// free agency), so recompute in either case - and a league mate's draft
+	// pick, which is what turns it to "Draft in progress...". updateStatus()
+	// with no argument derives the right text from the just-updated g.
+	if (
+		touchedStatus ||
+		touchedPhase ||
+		(touchedStores.has("players") && g.get("phase") === PHASE.DRAFT)
+	) {
 		try {
 			await updateStatus();
 		} catch (error) {
@@ -1074,12 +1074,28 @@ export const refreshAfterApply = async ({
 		rebuildAggregates,
 	});
 
+	// Today's date (the header's date tile, the scores bar's today) and the
+	// Play menu. The simmer refreshes both at the start of every day it sims
+	// (cbRunDay); a receiving device only ever did on a phase change, so a
+	// league mate's day sim - the auto-play scheduler's, above all - left
+	// this device's header on the night already played, and the Play menu
+	// offering "Until trade deadline" after it passed. Every apply, then: it
+	// reads only the cache, and after the repairs above, which can drop
+	// schedule rows that today is read from.
+	try {
+		await updatePlayMenu();
+	} catch (error) {
+		console.error("Failed to refresh play menu after sync", error);
+	}
+
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
 	// the cache/realtimeUpdate path. When a synced sim adds games, rebuild it from
-	// the (now-updated) cache so the ticker reflects the new results.
+	// the (now-updated) cache so the ticker reflects the new results - its
+	// slate of next games read fresh, as the simmer's is at the end of a sim:
+	// the memo would still be quoting the night that was just played.
 	if (touchedGames) {
 		try {
-			await initUILocalGames();
+			await initUILocalGames({ freshTicker: true });
 		} catch (error) {
 			console.error("Failed to refresh LeagueTopBar after sync", error);
 		}

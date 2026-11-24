@@ -8,7 +8,7 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import { validateSeason, validateTeam } from "../util/processInputs.ts";
-import { getLiveGate } from "../util/liveGameGate.ts";
+import { getLiveGate, nightShown } from "../util/liveGameGate.ts";
 import { getPlannedPlayoffGames } from "../util/plannedPlayoffGames.ts";
 import { nationalTags } from "./nationalBroadcast.ts";
 
@@ -146,12 +146,8 @@ export const getCalendarData = async (
 	let today: string | undefined;
 	if (season === g.get("season")) {
 		today = await seasonCore.getCalendarDate();
-		if (gate?.dayCutoff !== undefined) {
-			for (const game of gate.games.values()) {
-				if (game.day === gate.dayCutoff && game.date !== undefined) {
-					today = game.date;
-				}
-			}
+		if (gate) {
+			today = nightShown(today, gate);
 		}
 		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 		const schedule = await seasonCore.getSchedule();

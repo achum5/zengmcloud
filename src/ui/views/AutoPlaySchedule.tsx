@@ -3,6 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { confirm } from "../util/confirm.tsx";
 import { useLocal } from "../util/local.ts";
 import { toWorker } from "../util/toWorker.ts";
+import { useLeagueRefresh } from "../util/leagueRefresh.ts";
 import {
 	autoPlayScheduler,
 	describeAmount,
@@ -217,8 +218,10 @@ const AutoPlaySchedule = () => {
 	}, []);
 
 	// The upcoming-season calendar, refetched after each sim (the schedule
-	// advances) and when eligibility changes.
+	// advances) and when eligibility changes. A sim on the simmer's device is
+	// not a run of this one's scheduler, so the league moving on counts too.
 	const [preview, setPreview] = useState<AutoPlayPreviewData | undefined>();
+	const leagueRefresh = useLeagueRefresh();
 	useEffect(() => {
 		// Fetched on EVERY device, not just the simmer. It reads this device's own
 		// copy of the schedule and is not sim-authority locked, and without it a
@@ -241,7 +244,7 @@ const AutoPlaySchedule = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [eligible, lid, state.runCount]);
+	}, [eligible, lid, state.runCount, leagueRefresh]);
 
 	// "Day 41", or its night on a calendar.
 	const dayName = (day: number) => {

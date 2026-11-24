@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 543,
+		date: "2026-11-24",
+		text: "Shared leagues: when the auto-play scheduler or a league mate sims a day, your screen now keeps up without a reload. The date at the top, the Play menu, today on the scores bar, the ticker's next games, the calendar on a team's page and the Auto Play schedule all move to the new day.",
+	},
+	{
 		n: 542,
 		date: "2026-11-24",
 		text: "No more \"Watch live?\" popup when a league mate starts a live game. It shows up in the header's live scores like any other, and you tap it there to watch.",

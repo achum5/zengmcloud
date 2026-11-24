@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { toWorker } from "../../util/toWorker.ts";
+import { useLeagueRefresh } from "../../util/leagueRefresh.ts";
 import { EmbeddedView } from "../../components/EmbeddedView.tsx";
 import {
 	DOCK_ICONS,
@@ -27,6 +28,9 @@ const ViewPart = ({
 }) => {
 	const [data, setData] = useState<Record<string, unknown>>();
 	const key = JSON.stringify(params);
+	// Asked again each time the league moves on (a day simmed here or on a
+	// league mate's device), the section kept up while it is.
+	const refresh = useLeagueRefresh();
 	useEffect(() => {
 		let live = true;
 		(async () => {
@@ -50,7 +54,7 @@ const ViewPart = ({
 		return () => {
 			live = false;
 		};
-	}, [viewId, key]);
+	}, [viewId, key, refresh]);
 	if (!data) {
 		return <div className="hub-wait" />;
 	}
