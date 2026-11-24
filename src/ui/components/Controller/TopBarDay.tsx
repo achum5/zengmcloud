@@ -68,6 +68,7 @@ export const TopBarDay = memo(
 		);
 		const title = `${isToday ? "Today, " : ""}${formatGameDate(date, "full")}`;
 
+		// A day off: a slim faded column, the weekday over the date.
 		if (!game) {
 			return (
 				<div
@@ -76,10 +77,10 @@ export const TopBarDay = memo(
 						isToday && "tbd-today",
 						past && "tbd-past",
 					)}
-					title={title}
+					title={`${title}, no game`}
 				>
-					{head}
-					<div className="tbd-body" />
+					<span className="tbd-off-weekday">{WEEKDAYS[weekdayOf(date)]}</span>
+					<span className="tbd-off-num">{Number(date.slice(8))}</span>
 				</div>
 			);
 		}
@@ -112,17 +113,29 @@ export const TopBarDay = memo(
 			);
 		} else {
 			const branding = teamInfoCache[opp.tid];
+			// (The logo and abbreviation open the team's roster; the rest of the
+			// day, its game.)
 			matchup = (
 				<>
 					<span className="tbd-at">{home ? "vs" : "@"}</span>
-					<TeamLogoInline
-						imgURL={branding?.imgURL}
-						imgURLSmall={branding?.imgURLSmall}
-						includePlaceholderIfNoLogo
-						size={16}
-						className="tbd-logo"
-					/>
-					<span className="tbd-abbrev">{branding?.abbrev}</span>
+					<a
+						className="tbd-team"
+						href={helpers.leagueUrl([
+							"roster",
+							`${abbrevOf(opp.tid)}_${opp.tid}`,
+							season,
+						])}
+						title={`${branding?.region ?? ""} ${branding?.name ?? ""} roster`}
+					>
+						<TeamLogoInline
+							imgURL={branding?.imgURL}
+							imgURLSmall={branding?.imgURLSmall}
+							includePlaceholderIfNoLogo
+							size={16}
+							className="tbd-logo"
+						/>
+						<span className="tbd-abbrev">{branding?.abbrev}</span>
+					</a>
 				</>
 			);
 		}
@@ -181,31 +194,33 @@ export const TopBarDay = memo(
 			}
 		}
 
+		const label = `${title}${
+			allStar || deadline
+				? ""
+				: `, ${home ? "vs" : "@"} ${teamInfoCache[opp.tid]?.region ?? ""} ${
+						teamInfoCache[opp.tid]?.name ?? ""
+					}`
+		}${game.ifNecessary ? " (if necessary)" : ""}`;
+
+		// The whole day is the game's link, laid over it, under the team's.
 		return (
-			<a
+			<div
 				className={clsx(
-					"tbd",
+					"tbd tbd-link",
 					home && "tbd-home",
 					isToday && "tbd-today",
 					past && "tbd-past",
 					game.ifNecessary && "tbd-maybe",
 				)}
-				href={href}
-				title={`${title}${
-					allStar || deadline
-						? ""
-						: `, ${home ? "vs" : "@"} ${teamInfoCache[opp.tid]?.region ?? ""} ${
-								teamInfoCache[opp.tid]?.name ?? ""
-							}`
-				}${game.ifNecessary ? " (if necessary)" : ""}`}
 			>
+				<a className="tbd-cover" href={href} title={label} aria-label={label} />
 				{head}
 				{/* (A game still to come with nothing under it sits centered.) */}
 				<div className="tbd-body">
 					<div className="tbd-matchup">{matchup}</div>
 					{result ? <div className="tbd-result">{result}</div> : null}
 				</div>
-			</a>
+			</div>
 		);
 	},
 );

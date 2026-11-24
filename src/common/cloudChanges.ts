@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 516,
+		date: "2026-11-24",
+		text: "NBA calendar scores bar and month calendar: tap a game's team logo or abbreviation to open that team's roster (the rest of the box still opens the game). In the scores bar, off days are now slim columns, and scores no longer get cut off on phones.",
+	},
+	{
 		n: 515,
 		date: "2026-11-24",
 		text: "Nightly Recap is now just the night's games, one after another (no Player of the Night, top plays or standings after them). A night's recap also waits until the whole day is over: simming one or a few of a day's games no longer brings it up.",

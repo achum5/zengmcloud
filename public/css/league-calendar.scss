@@ -177,7 +177,8 @@ $lc-dark: lightness($white) < 50%;
 	}
 
 	// The whole night is the link.
-	td:has(> .lc-game[href]):hover {
+	td:has(> .lc-game[href]):hover,
+	td:has(> .lc-game > .lc-cover):hover {
 		box-shadow: inset 0 0 0 2px var(--lc-ring);
 	}
 
@@ -262,13 +263,37 @@ $lc-dark: lightness($white) < 50%;
 	}
 }
 
+// A team's night: its game's link over the whole night.
+.lc-cover {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+}
+
 .lc-matchup {
+	display: flex;
+	max-width: 100%;
+	min-width: 0;
+}
+
+// The opponent's logo and abbreviation, above the night's link: its roster.
+.lc-team-link {
+	position: relative;
+	z-index: 2;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	gap: 0.1rem;
 	min-width: 0;
 	max-width: 100%;
+
+	&,
+	&:hover,
+	&:focus,
+	&:active {
+		color: inherit;
+		text-decoration: none;
+	}
 }
 
 // The opponent's logo on a white disc, so it shows on any night.
@@ -613,7 +638,7 @@ $lc-dark: lightness($white) < 50%;
 		margin-top: 0.3rem;
 	}
 
-	.lc-matchup {
+	.lc-team-link {
 		flex-direction: row;
 		gap: 0.5rem;
 	}

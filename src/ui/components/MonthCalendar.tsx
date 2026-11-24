@@ -230,27 +230,38 @@ const TeamNight = ({
 			? `${game.overtimes > 1 ? game.overtimes : ""}OT`
 			: undefined;
 
+	const label = `${home ? "vs" : "@"} ${t?.region ?? ""} ${t?.name ?? ""}${
+		final ? `, ${won ? "W" : "L"} ${pts}-${oppPts}${ot ? ` ${ot}` : ""}` : ""
+	}${game.ifNecessary ? " (if necessary)" : ""}`;
+
+	// The whole night is the game's link, laid over it, under the
+	// opponent's logo and abbreviation, which open its roster.
 	return (
-		<a
-			className="lc-game"
-			href={href}
-			title={`${home ? "vs" : "@"} ${t?.region ?? ""} ${t?.name ?? ""}${
-				final
-					? `, ${won ? "W" : "L"} ${pts}-${oppPts}${ot ? ` ${ot}` : ""}`
-					: ""
-			}${game.ifNecessary ? " (if necessary)" : ""}`}
-		>
+		<div className="lc-game">
+			{href ? (
+				<a className="lc-cover" href={href} title={label} aria-label={label} />
+			) : null}
 			<span className="lc-matchup">
-				{/* (On the crest where there's no room for more: phones and compact.) */}
-				<Crest t={t}>
-					{final ? <Coin className="lc-badge" won={won} /> : null}
-				</Crest>
-				{compact ? null : (
-					<span className="lc-opp-abbrev">
-						<span className="lc-at">{home ? "vs" : "@"}</span>
-						{t?.abbrev}
-					</span>
-				)}
+				<a
+					className="lc-team-link"
+					href={helpers.leagueUrl([
+						"roster",
+						`${t?.abbrev ?? opp}_${opp}`,
+						season,
+					])}
+					title={`${t?.region ?? ""} ${t?.name ?? ""} roster`}
+				>
+					{/* (On the crest where there's no room for more: phones and compact.) */}
+					<Crest t={t}>
+						{final ? <Coin className="lc-badge" won={won} /> : null}
+					</Crest>
+					{compact ? null : (
+						<span className="lc-opp-abbrev">
+							<span className="lc-at">{home ? "vs" : "@"}</span>
+							{t?.abbrev}
+						</span>
+					)}
+				</a>
 			</span>
 			{final ? (
 				<span className="lc-result">
@@ -265,7 +276,7 @@ const TeamNight = ({
 			) : game.national ? (
 				<NationalTag className="lc-national" tag={game.national} />
 			) : null}
-		</a>
+		</div>
 	);
 };
 
