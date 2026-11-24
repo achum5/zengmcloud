@@ -169,15 +169,12 @@ const KeyDateLabel = ({
 	);
 };
 
-// What's in a team's night's corner: Play-In, the playoff game's number, or
-// a back-to-back.
+// What's in a team's night's corner: Play-In or the playoff game's number.
 const teamTag = ({
-	b2b,
 	compact,
 	game,
 	playoffGame,
 }: {
-	b2b: boolean;
 	compact: boolean;
 	game: CalendarGame;
 	playoffGame: number | undefined;
@@ -193,10 +190,6 @@ const teamTag = ({
 		>
 			G{playoffGame}
 			{game.ifNecessary ? "*" : null}
-		</span>
-	) : b2b && !compact ? (
-		<span className="lc-tag" title="Back-to-back">
-			B2B
 		</span>
 	) : null;
 
@@ -646,7 +639,6 @@ export const MonthCalendar = ({
 											<span className="lc-num">{Number(date.slice(8))}</span>
 											{game && isTeam
 												? teamTag({
-														b2b: teamByDate.has(addDays(date, -1)),
 														compact,
 														game,
 														playoffGame: playoffGameNumbers.get(game.gid),

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 540,
+		date: "2026-11-24",
+		text: 'NBA calendar: the month calendar no longer labels back-to-backs with "B2B".',
+	},
+	{
 		n: 539,
 		date: "2026-11-24",
 		text: "The rest of BBGM's latest updates: releasing a player now gives you an Undo button, exhibition games can heal injuries first, Back from Customize Settings keeps what you entered for a new league, the graph pages remember your picks, and God Mode's Danger Zone can randomize every contract. Starting and stopping sims is also more reliable.",
