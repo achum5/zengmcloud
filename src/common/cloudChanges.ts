@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 573,
+		date: "2026-11-24",
+		text: "Draft History redrafts every class that has played at least two seasons, by career win shares: the first round done again, with each pick's team, who it would take now and where that player really went, plus a Redraft column in the table.",
+	},
+	{
 		n: 572,
 		date: "2026-11-24",
 		text: "NBA calendar: the separate Calendar page is gone, since a team's Schedule page has the same month calendar. The menu and team pages no longer list it, and the dashboard's Full Calendar link and any old Calendar links now open Schedule.",
