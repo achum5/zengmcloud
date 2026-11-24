@@ -356,19 +356,6 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				? ([
 						{
 							type: "link",
-							active: (pageID) => pageID === "calendar",
-							league: true,
-							nbaCalendar: true,
-							commandPalette: true,
-							path: ["calendar"],
-							text: "Calendar",
-						},
-					] as MenuItemLink[])
-				: []),
-			...(__SPORT === "basketball"
-				? ([
-						{
-							type: "link",
 							active: (pageID) => pageID === "lineups",
 							league: true,
 							commandPalette: true,

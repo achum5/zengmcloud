@@ -1557,8 +1557,6 @@ export type MenuItemLink = {
 	rotationPlans?: true;
 	// Hidden unless the league runs realistic front offices' contract rules.
 	contractRules?: true;
-	// Hidden unless the league plays on the NBA calendar.
-	nbaCalendar?: true;
 	// Pro leagues only (contracts, trades, the draft) / college leagues only.
 	pro?: true;
 	college?: true;
