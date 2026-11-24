@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 512,
+		date: "2026-11-24",
+		text: 'Shared leagues: no more "Reconnecting to the shared league" pop-up. While your device reconnects, the header still shows it.',
+	},
+	{
 		n: 511,
 		date: "2026-11-24",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players off the ball no longer stand on their spots waiting for the play. Each works his spot, walking it and jogging to a new one, gets out of the way of a drive or slides to where the kick-out would find him, and after a pass cuts to the rim or relocates instead of standing to watch.",

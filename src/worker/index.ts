@@ -622,16 +622,10 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 		} else if (getSyncRequired()) {
 			// Meant to be synced but not connected (reconnecting after a refresh,
 			// or offline). Pause so this device can't advance while offline and
-			// diverge from everyone else.
-			showRefusal(
-				{
-					type: "error",
-					text: `Reconnecting to the shared league — paused until you're back online. To play offline instead, disconnect on the Multiplayer Sync page.`,
-					// It clears itself as the connection comes back.
-					persistent: false,
-				},
-				conditions,
-			);
+			// diverge from everyone else - without a word (the owner, 2026-11-24:
+			// "get rid of the disconnect from multiplayer message entirely"): it
+			// clears itself, and the header already says it's reconnecting.
+			syncDebugLog("api:guard-refused", { type, name, step: "reconnecting" });
 			return undefined;
 		}
 	}
