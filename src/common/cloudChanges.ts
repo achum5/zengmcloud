@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 572,
+		date: "2026-11-24",
+		text: "NBA calendar: the separate Calendar page is gone, since a team's Schedule page has the same month calendar. The menu and team pages no longer list it, and the dashboard's Full Calendar link and any old Calendar links now open Schedule.",
+	},
+	{
 		n: 571,
 		date: "2026-11-24",
 		text: "New page, Stats > Milestone Watch: the active players climbing the league's all-time lists in points, rebounds, assists, steals, blocks and 3-pointers and how many it takes to pass the next man up, the ones a few games from a round number like 20,000 points, and anyone on pace for one of the best seasons the league has seen. A player's page shows his part of it.",
