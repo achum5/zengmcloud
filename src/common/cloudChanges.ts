@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 570,
+		date: "2026-11-24",
+		text: "Game and night recaps repeat themselves less. Their most common lines now come in several wordings. The race only brings up a magic number or a cut line on a night that moved it, so a team moving into or out of a playoff spot is never crowded out, and Worth watching says how far ahead a conference leader is.",
+	},
+	{
 		n: 569,
 		date: "2026-11-24",
 		text: "The game-by-game strip on Schedule pages is now Game Results: green bars up for wins and red bars down for losses, as tall as the margin, with gray blocks for the games still to play. With the NBA Calendar on, every date gets a slot and the games are grouped by month. Hover a bar for the game, tap it for the box score.",

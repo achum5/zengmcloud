@@ -388,7 +388,7 @@ export const verifyRecap = (
 		}
 		// "4-of-7", and "hitting 4 of 7 threes".
 		for (const m of sentence.matchAll(
-			/(?<![\d.])(\d+)(?:-of-| of (?=\d+ (?:threes|three-pointers|free throws|shots)\b))(\d+)/g,
+			/(?<![\d.])(\d+)(?:-of-| of (?=\d+ (?:threes|three-pointers|free throws|shots|shooting)\b))(\d+)/g,
 		)) {
 			if (!splits.has(`${m[1]}-${m[2]}`)) {
 				add("shooting split", `${m[1]}-of-${m[2]} matches nothing`, sentence);
@@ -789,7 +789,7 @@ export const verifyRecap = (
 		};
 		claim(/(\d+) lead changes/g, (n) => n === flow.leadChanges, "lead changes");
 		claim(
-			/changed hands (\d+) times/g,
+			/(?:changed hands|traded the lead) (\d+) times/g,
 			(n) => n === flow.leadChanges,
 			"lead changes",
 		);
@@ -851,10 +851,17 @@ export const verifyRecap = (
 		)) {
 			const a = Number(m[1]);
 			const b = Number(m[2]);
-			const r = logRuns.find((x) => x.pts === a && x.opp === b);
+			// A game can hold two runs of one score: either will do.
 			const who = byName.get(m[4]!.trim());
-			const said = m[3] === "all" ? r?.pts : wordToNumber(m[3]!);
-			if (!r || !who || r.top?.pid !== who.pid || r.top?.pts !== said) {
+			const fits = logRuns.some(
+				(r) =>
+					r.pts === a &&
+					r.opp === b &&
+					who !== undefined &&
+					r.top?.pid === who.pid &&
+					r.top?.pts === (m[3] === "all" ? r.pts : wordToNumber(m[3]!)),
+			);
+			if (!fits) {
 				add("run scorer", `said ${m[3]} of ${a}-${b} from ${m[4]}`, m[0]);
 			}
 		}

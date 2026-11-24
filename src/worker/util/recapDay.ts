@@ -1639,7 +1639,11 @@ const ledeSentence = (s: Story, rng: Rng, night = ""): string => {
 // shooter's line, the shot that won it when the sentence before did not say,
 // how the big scorer got there, who else carried it. "He" for the man the
 // sentence before was about, when he is the only man it named.
-const ledeDetail = (s: Story, written: string): string | undefined => {
+const ledeDetail = (
+	s: Story,
+	written: string,
+	rng: Rng,
+): string | undefined => {
 	const star = s.star;
 	const named = [...s.W.players, ...s.L.players].filter((p) =>
 		written.includes(p.name),
@@ -1687,7 +1691,7 @@ const ledeDetail = (s: Story, written: string): string | undefined => {
 		if (other) {
 			return `${he(hero)} finished with ${lineOf(hero)}, and ${other.name} led ${s.w} with ${lineOf(other)}.`;
 		}
-		const second = secondMan(s, `${written} ${hero.name}`);
+		const second = secondMan(s, `${written} ${hero.name}`, rng);
 		return second
 			? `${he(hero)} finished with ${lineOf(hero)}. ${second}`
 			: `${he(hero)} finished with ${lineOf(hero)}.`;
@@ -1711,16 +1715,46 @@ const ledeDetail = (s: Story, written: string): string | undefined => {
 		return `${star.name} led ${s.w} with ${lineOf(star)}.`;
 	}
 	if (star && star.pts >= 30 && star.fga >= 12) {
-		const threes =
-			star.tp >= 5 ? `, making ${star.tp} of ${star.tpa} three-pointers` : "";
-		return `${he(star)} shot ${star.fg}-of-${star.fga} from the field${threes}.`;
+		const deep = star.tp >= 5;
+		const fg = `${star.fg} of ${star.fga}`;
+		const tp = `${star.tp} of ${star.tpa}`;
+		return pick(
+			rng,
+			deep
+				? [
+						`${he(star)} shot ${star.fg}-of-${star.fga} from the field, making ${tp} three-pointers.`,
+						`${he(star)} made ${fg} shots, including ${tp} three-pointers.`,
+						`${he(star)} was ${star.fg}-of-${star.fga} from the field and ${star.tp}-of-${star.tpa} from 3-point range.`,
+					]
+				: [
+						`${he(star)} shot ${star.fg}-of-${star.fga} from the field.`,
+						`${he(star)} made ${fg} shots.`,
+						`${he(star)} got there on ${fg} shooting.`,
+					],
+			deep ? "day:shooting:deep" : "day:shooting",
+		);
 	}
-	return secondMan(s, written);
+	return secondMan(s, written, rng);
 };
+
+// "Jaden Green added 30 points and 12 assists", said a few ways.
+const addedLine = (p: RecapPlayer, rng: Rng): string =>
+	pick(
+		rng,
+		[
+			`${p.name} added ${lineOf(p)}.`,
+			`${p.name} had ${lineOf(p)}.`,
+			...(p.pts < 20 ? [`${p.name} chipped in ${lineOf(p)}.`] : []),
+			...(doubleCategories(p).length >= 2
+				? []
+				: [`${p.name} also scored ${p.pts}.`]),
+		],
+		"day:added",
+	);
 
 // The man next to the star, when he had a night too: "Jaden Green added 30
 // points and 12 assists."
-const secondMan = (s: Story, written: string): string | undefined => {
+const secondMan = (s: Story, written: string, rng: Rng): string | undefined => {
 	const second = s.W.players
 		.filter((p) => p !== s.star && !written.includes(p.name))
 		.sort((a, b) => b.pts - a.pts)[0];
@@ -1729,20 +1763,20 @@ const secondMan = (s: Story, written: string): string | undefined => {
 		(second.pts >= 22 ||
 			(second.pts >= 15 && doubleCategories(second).length >= 2))
 	) {
-		return `${second.name} added ${lineOf(second)}.`;
+		return addedLine(second, rng);
 	}
 	return undefined;
 };
 
 // The next man in, for a lede with nothing else to say: the winners' second
 // scorer, else the losers' best.
-const depthLine = (s: Story, written: string): string | undefined => {
+const depthLine = (s: Story, written: string, rng: Rng): string | undefined => {
 	const fresh = (p: RecapPlayer) => !written.includes(p.name);
 	const second = s.W.players
 		.filter((p) => p !== s.star && fresh(p))
 		.sort((a, b) => b.pts - a.pts)[0];
 	if (second && second.pts >= 15) {
-		return `${second.name} added ${lineOf(second)}.`;
+		return addedLine(second, rng);
 	}
 	const top = s.L.players.filter(fresh).sort((a, b) => b.pts - a.pts)[0];
 	if (top && top.pts >= 18) {
@@ -1977,7 +2011,19 @@ const itemShapes = (s: Story, rng: Rng): Shaped[] => {
 			out.push(
 				sx("for", `${star.name} ${did(star, rng)} for ${w}.`),
 				sx("lead", leadLine(star, w, rng)),
-				sx("got", `${W} got ${lineOf(star)} from ${star.name}.`),
+				sx(
+					"got",
+					pick(
+						rng,
+						[
+							`${W} got ${lineOf(star)} from ${star.name}.`,
+							...(star.pts >= 25
+								? [`${W} rode ${poss(star.name)} ${lineOf(star)}.`]
+								: []),
+						],
+						"day:item:got",
+					),
+				),
 			);
 			return out;
 		}
@@ -2108,7 +2154,17 @@ const contextParts = (
 	const changes = s.game.flow?.leadChanges ?? 0;
 	if (changes >= 15) {
 		tag = "changes";
-		push(`The teams traded the lead ${changes} times.`);
+		push(
+			pick(
+				rng,
+				[
+					`The teams traded the lead ${changes} times.`,
+					`The lead changed hands ${changes} times.`,
+					`There were ${changes} lead changes.`,
+				],
+				"day:ctx:changes",
+			),
+		);
 	}
 	if (s.dog !== undefined && !/underdog|upset/.test(told)) {
 		tag = "dog";
@@ -2642,7 +2698,7 @@ const storyParagraph = (
 		s = { ...s, kind: "ended" };
 	}
 	const para: string[] = [ledeSentence(s, rng, night)];
-	const detail = ledeDetail(s, para.join(" "));
+	const detail = ledeDetail(s, para.join(" "), rng);
 	if (detail) {
 		para.push(detail);
 	}
@@ -2660,7 +2716,7 @@ const storyParagraph = (
 		}
 	}
 	if (para.length === 1) {
-		const extra = depthLine(s, para[0]!);
+		const extra = depthLine(s, para[0]!, rng);
 		if (extra) {
 			para.push(extra);
 		}
@@ -2886,7 +2942,7 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 			paragraphs.push(bracket);
 		}
 	} else {
-		const watch = worthWatching(input.next, standings);
+		const watch = worthWatching(input.next, standings, rng);
 		const next = watch ?? dayNextSlate(dayCtx, rng);
 		if (next) {
 			paragraphs.push(next);
