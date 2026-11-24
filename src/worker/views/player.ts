@@ -38,6 +38,9 @@ import { upgradeFace } from "../util/face.ts";
 import { choice } from "../../common/random.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
+import { shownTradableOn } from "../core/game/tradableOn.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
+import { timeBetweenGames } from "../../common/timeBetweenGames.ts";
 import { pressTidsOf } from "../util/pressConference.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
 import { getNoteTeammates } from "../util/getNoteTeammates.ts";
@@ -98,6 +101,22 @@ const shownInjuries = (p: Player): ShownInjury[] => {
 				prospectRatingsSeason(p.draft.year, season, exceptProspects),
 		}),
 	}));
+};
+
+// When a player on a team who can't be traded yet can be: his night on the
+// NBA calendar ("Dec 15"), else the wait left.
+const tradableWhen = (p: Player) => {
+	if (!(p.gamesUntilTradable > 0) || p.tid < 0) {
+		return undefined;
+	}
+	const on = shownTradableOn(p);
+	if (on !== undefined) {
+		return formatGameDate(on, "monthDay");
+	}
+	if (p.daysUntilTradable !== undefined) {
+		return `in ${p.daysUntilTradable} ${p.daysUntilTradable === 1 ? "day" : "days"}`;
+	}
+	return `in ${p.gamesUntilTradable} ${timeBetweenGames(p.gamesUntilTradable)}`;
 };
 
 export const getPlayer = async <
@@ -185,6 +204,9 @@ export const getPlayer = async <
 		stats: p.stats.filter((row) => (row.gp ?? 0) > 0),
 
 		injuries: shownInjuries(pRaw),
+
+		// When he can be traded, if he can't yet: "Dec 15", or the wait left.
+		tradableWhen: tradableWhen(pRaw),
 
 		// Handle prefixing awards
 		awards: p.awards.map(

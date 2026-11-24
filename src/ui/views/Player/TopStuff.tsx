@@ -462,6 +462,17 @@ const TopStuff = ({
 				{amount}/yr
 				{exp !== undefined ? ` thru ${exp}` : null}
 				<br />
+				{season === undefined && player.tradableWhen !== undefined ? (
+					<>
+						<span
+							className="small text-body-secondary"
+							title={player.untradableMsg}
+						>
+							Tradable {player.tradableWhen}
+						</span>
+						<br />
+					</>
+				) : null}
 			</>
 		);
 	}

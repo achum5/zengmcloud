@@ -21,6 +21,7 @@ import type { State } from "./SettingsForm.tsx";
 import RowsEditor from "./RowsEditor.tsx";
 import PlayerBioInfo2 from "./PlayerBioInfo.tsx";
 import SaveReplaysTeams from "./SaveReplaysTeams.tsx";
+import { SimStopChips, SimStopDatePicker } from "./SimStopDates.tsx";
 import LeagueLogoField from "./LeagueLogoField.tsx";
 import {
 	DIFFICULTY_VALUES,
@@ -144,6 +145,10 @@ type Setting = {
 	// Longer than one line, hidden by default
 	descriptionLong?: ReactNode;
 };
+
+// Whether the form has the NBA calendar on (calendarTicks.ts nbaCalendarLeague).
+const simStopCalendar = (state: State) =>
+	state.nbaCalendar === "true" && state.groupScheduleSeries !== "true";
 
 export const settings: Setting[] = (
 	[
@@ -1395,7 +1400,7 @@ export const settings: Setting[] = (
 			name: "Pause Sim On Days",
 			type: "string",
 			description:
-				'Days the sim pauses before playing, as a list. Include "deadline" to pause at the trade deadline. Blank means it never pauses.',
+				"Days the sim pauses before playing. Blank means it never pauses.",
 			descriptionLong: (
 				<>
 					<p>
@@ -1403,6 +1408,10 @@ export const settings: Setting[] = (
 						stops when one of those days is the next thing to be played - so you
 						can trade or sign before it happens - and the trade deadline is just
 						another entry rather than a special case.
+					</p>
+					<p>
+						On the NBA Calendar you pick dates instead. Each one pauses every
+						season, before the first night with games on or after it.
 					</p>
 					<p>
 						In a shared league each one is a ready-up: nobody moves past it
@@ -1417,6 +1426,24 @@ export const settings: Setting[] = (
 					</p>
 				</>
 			),
+			// On the NBA calendar, dates off a calendar (SimStopDates.tsx).
+			customForm: ({ disabled, handleChangeRaw, id, state }) =>
+				simStopCalendar(state) ? (
+					<SimStopDatePicker
+						disabled={disabled}
+						id={id}
+						value={state.simStopDays}
+						onChange={handleChangeRaw("simStopDays")}
+					/>
+				) : null,
+			customFormBelow: ({ disabled, handleChangeRaw, state }) =>
+				simStopCalendar(state) ? (
+					<SimStopChips
+						disabled={disabled}
+						value={state.simStopDays}
+						onChange={handleChangeRaw("simStopDays")}
+					/>
+				) : null,
 			validator: (value) => {
 				const bad = invalidSimStopDayToken(value);
 				if (bad !== undefined) {

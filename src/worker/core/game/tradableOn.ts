@@ -139,6 +139,45 @@ export const coolOffForSigning = async ({
 	return { games: Math.max(1, await ticksTo(on)), on };
 };
 
+// A wait from before the NBA's dates (a classic count, no date) that hasn't
+// begun, the summer's: to December 15 of the season starting in `year`, or a
+// summer re-signing's (his deal, a re-signing's, starts that season) to
+// January 15.
+const summerTradableOn = (
+	p: Pick<Player, "gamesUntilTradable" | "contracts">,
+	year: number,
+) => {
+	if (p.gamesUntilTradable < classicCoolOff()) {
+		return undefined;
+	}
+	const contract = p.contracts.at(-1);
+	return contract?.type === "reSign" && contract.start === year + 1
+		? makeDate(year + 1, 1, 15)
+		: makeDate(year, 12, 15);
+};
+
+// The night a player's wait ends, as the game shows it: his date, or before
+// the season's schedule is made, the one a wait from before the NBA's dates
+// is going to get.
+export const shownTradableOn = (
+	p: Pick<Player, "gamesUntilTradable" | "contracts" | "tradableOn">,
+) => {
+	if (!(p.gamesUntilTradable > 0)) {
+		return undefined;
+	}
+	if (p.tradableOn !== undefined) {
+		return p.tradableOn;
+	}
+	const phase = g.get("phase");
+	if (
+		!nbaCalendarLeague() ||
+		(phase >= PHASE.REGULAR_SEASON && phase <= PHASE.PLAYOFFS)
+	) {
+		return undefined;
+	}
+	return summerTradableOn(p, startYear(phase));
+};
+
 // As a season's schedule is made: each wait to a date, the classic days to
 // it on this season's own dates. A wait from before the NBA's dates (a
 // classic count, no date): one that hasn't started, the summer's, to
@@ -151,15 +190,7 @@ export const tradableOnForNewSeason = async (calendar: boolean) => {
 		Infinity,
 	]);
 	const now = calendar ? await getInjuryClock(PHASE.REGULAR_SEASON) : undefined;
-	const full = classicCoolOff();
-	const season = g.get("season");
-	const december15 = makeDate(season - 1, 12, 15);
-	const january15 = makeDate(season, 1, 15);
-	// Re-signed this summer: his deal, a re-signing's, starts this season.
-	const resigned = (p: Player) => {
-		const contract = p.contracts.at(-1);
-		return contract?.type === "reSign" && contract.start === season;
-	};
+	const year = g.get("season") - 1;
 	const changed: Player[] = [];
 	for (const p of players) {
 		if (!now) {
@@ -172,13 +203,7 @@ export const tradableOnForNewSeason = async (calendar: boolean) => {
 		if (p.gamesUntilTradable <= 0 && p.tradableOn === undefined) {
 			continue;
 		}
-		const on =
-			p.tradableOn ??
-			(p.gamesUntilTradable >= full
-				? resigned(p)
-					? january15
-					: december15
-				: undefined);
+		const on = p.tradableOn ?? summerTradableOn(p, year);
 		const games =
 			on === undefined
 				? 0

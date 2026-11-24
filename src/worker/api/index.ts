@@ -427,8 +427,15 @@ import { env } from "../util/env.ts";
 import { recomputeLocalUITeamOvrs } from "../util/recomputeLocalUITeamOvrs.ts";
 import { initUILocalGames } from "../util/initUILocalGames.ts";
 import type { GenOrderResult } from "../core/draft/genOrder.ts";
-import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
-import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
+import {
+	allowCrossingNextSimStop,
+	lastNightPlayed,
+} from "../core/sync/tradeDeadlineGate.ts";
+import {
+	parseSimStopDays,
+	stopsOnDay,
+	stopsOnNight,
+} from "../../common/simStopDays.ts";
 import {
 	latestAppearanceSeason,
 	revertAppearance,
@@ -7954,16 +7961,26 @@ const setTradesAfterDeadline = async (tradesAfterDeadline: boolean) => {
 	await toUI("realtimeUpdate", [["gameAttributes"]]);
 };
 
-// God Mode (Danger Zone): the smart CPU's trade market as it meets when
-// re-signing or the preseason opens, run now - for a league that switched
-// Smart CPU on after that. The number of trades made.
+// God Mode (Danger Zone): what the smart CPU does as re-signing or the
+// preseason opens, run now - for a league that switched Smart CPU on after
+// that: as the preseason opens, a last day of signings (every team looks),
+// then the trade market. The signings and trades made.
 const smartMarketNow = async () => {
 	if (!smartBrainOn() || !smartWindowPhase()) {
 		return undefined;
 	}
+	let signed = 0;
+	if (g.get("phase") === PHASE.PRESEASON) {
+		const pool = async () =>
+			(await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT))
+				.length;
+		const before = await pool();
+		await freeAgents.autoSign({ everyTeam: true });
+		signed = Math.max(0, before - (await pool()));
+	}
 	const made = await smartTradeWindow();
 	await toUI("realtimeUpdate", [["playerMovement"]]);
-	return made.length;
+	return { signed, trades: made.length };
 };
 
 const toggleTradeDeadline = async () => {
@@ -8185,6 +8202,19 @@ const getAutoPlayPreview = async () => {
 		}
 	}
 	const upcomingDays = [...byDay.values()].sort((a, b) => a.day - b.day);
+	// A date stop, on the NBA calendar: before the first night on or after it.
+	if (stops.dates.length > 0) {
+		let lastNight = await lastNightPlayed();
+		for (const entry of upcomingDays) {
+			if (entry.tradeDeadline || entry.date === undefined) {
+				continue;
+			}
+			if (stopsOnNight(stops, entry.date, lastNight, g.get("season"))) {
+				entry.simStop = true;
+			}
+			lastNight = entry.date;
+		}
+	}
 
 	// How many game-days each Play Menu amount advances (mirrors playAmount for the
 	// current, playable phase). The actual sim is still capped at the days left.

@@ -10,17 +10,31 @@ import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import AutoSave from "./AutoSave.tsx";
 import WorkerConsole from "./WorkerConsole.tsx";
+import { SimHereButton } from "../../components/SimHereButton.tsx";
 
 const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 	useTitleBar({
 		title: "Danger Zone",
 	});
 
-	const { godMode, phase, tradesAfterDeadline } = useLocal([
+	const {
+		godMode,
+		mpSyncActive,
+		mpSyncHostName,
+		mpSyncIsHost,
+		phase,
+		tradesAfterDeadline,
+	} = useLocal([
 		"godMode",
+		"mpSyncActive",
+		"mpSyncHostName",
+		"mpSyncIsHost",
 		"phase",
 		"tradesAfterDeadline",
 	]);
+	// A shared league's other device is in charge of simming: the smart CPU's
+	// moves run there (the worker turns them away here).
+	const notSimming = mpSyncActive && !mpSyncIsHost;
 
 	const [faceAgingScope, setFaceAgingScope] = useState<FaceAgingScope>("all");
 	const [agingFaces, setAgingFaces] = useState(false);
@@ -195,19 +209,30 @@ const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 
 					{smartCpu ? (
 						<div className="mt-5">
-							<h2>Smart CPU trade market</h2>
+							<h2>Smart CPU moves</h2>
 
 							{!marketPhase ? (
 								<p className="text-warning">
 									This only works while re-signing players or in the preseason.
+								</p>
+							) : notSimming ? (
+								<p className="text-warning d-flex flex-wrap align-items-center gap-2">
+									{mpSyncHostName ?? "Another device"} is in charge of simming.
+									<SimHereButton className="btn btn-sm btn-secondary" />
 								</p>
 							) : null}
 
 							<button
 								type="button"
 								className="btn btn-god-mode border-0"
-								disabled={!marketPhase || !godMode || marketRunning}
-								title="CPU teams trade with each other, as they do when this phase opens"
+								disabled={
+									!marketPhase || !godMode || notSimming || marketRunning
+								}
+								title={
+									phase === PHASE.PRESEASON
+										? "CPU teams sign free agents and trade with each other, as they do when the preseason opens"
+										: "CPU teams trade with each other, as they do when this phase opens"
+								}
 								onClick={async () => {
 									setMarketRunning(true);
 									try {
@@ -216,33 +241,52 @@ const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 											"smartMarketNow",
 											undefined,
 										);
-										if (made !== undefined) {
-											showNotification({
-												text:
-													made === 0 ? (
-														"No trades made."
-													) : (
-														<>
-															{made} trade{made === 1 ? "" : "s"} made.{" "}
-															<a
-																href={helpers.leagueUrl([
-																	"transactions",
-																	"all",
-																])}
-															>
-																Transactions
-															</a>
-														</>
-													),
-												type: "success",
-											});
+										if (made === undefined) {
+											// Turned down before it ran (the reason, if any, is
+											// its own notification).
+											return;
 										}
+										const parts = [
+											...(made.signed > 0
+												? [
+														`${made.signed} free agent${made.signed === 1 ? "" : "s"} signed.`,
+													]
+												: []),
+											...(made.trades > 0
+												? [
+														`${made.trades} trade${made.trades === 1 ? "" : "s"} made.`,
+													]
+												: []),
+										];
+										showNotification({
+											text:
+												parts.length === 0 ? (
+													"No signings or trades made."
+												) : (
+													<>
+														{parts.join(" ")}{" "}
+														<a
+															href={helpers.leagueUrl(["transactions", "all"])}
+														>
+															Transactions
+														</a>
+													</>
+												),
+											type: "success",
+										});
+									} catch (error) {
+										showNotification({
+											text: `That didn't finish: ${
+												error instanceof Error ? error.message : String(error)
+											}`,
+											type: "error",
+										});
 									} finally {
 										setMarketRunning(false);
 									}
 								}}
 							>
-								{marketRunning ? "Trading..." : "Run it now"}
+								{marketRunning ? "Running..." : "Run it now"}
 							</button>
 						</div>
 					) : null}

@@ -2910,3 +2910,13 @@ look 11% of the market's time over the 36 nights.
 with it on - as for the Danger Zone's "Run it now" - CPU teams could trade
 the players they had just signed. The smart CPU now keeps the cool-off
 itself (`tradeRules.ts`, `smartTradable`), God Mode or not.
+
+**The Danger Zone button (2026-11-24, later).** In the preseason it now does
+what the smart CPU does as the preseason opens: a last day of free agency
+with every team looking (`freeAgents.autoSign({ everyTeam: true })`), then
+the trade market. In the owner's shared league it did nothing at first: the
+phone wasn't the device in charge of simming, and the guard's "... is in
+charge of simming" message never showed, because every refusal in the
+worker's guard logged an event with no pids or tids and `logEvent` threw
+before showing it (now `saveToDb: false`). The section offers Sim here when
+another device is in charge.

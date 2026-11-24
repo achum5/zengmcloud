@@ -25,7 +25,11 @@ import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realistic
  * @memberOf core.freeAgents
  * @return {Promise}
  */
-const autoSign = async () => {
+const autoSign = async ({
+	// Every team looks, as on the day the preseason opens (the smart CPU's
+	// signings run now from the Danger Zone, api smartMarketNow).
+	everyTeam = false,
+}: { everyTeam?: boolean } = {}) => {
 	// The smart CPU on vanilla's rules signs only where it decides: a league
 	// mate's own game that ends a day leaves the signings to the device in
 	// charge of simming (smartCpu/decidesHere.ts).
@@ -58,7 +62,7 @@ const autoSign = async () => {
 	// agents signed (League 5: rebuilders sat out days 1-5 more often than
 	// not).
 	const looksEveryDay =
-		smartVanillaOn() && g.get("phase") === PHASE.FREE_AGENCY;
+		smartVanillaOn() && (everyTeam || g.get("phase") === PHASE.FREE_AGENCY);
 
 	// List of free agents, sorted by value
 	let playersSorted = orderBy(players, "value", "desc");

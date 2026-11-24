@@ -330,6 +330,9 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 		syncDebugLog("api:sim-call", { type, name });
 	}
 
+	// (Each refusal below is a message, not a saved event: saveToDb false, or
+	// logEvent throws for want of pids or tids before anything shows - and the
+	// person who pressed the button sees nothing at all.)
 	if (needsConnection) {
 		// Another copy of the game on this device has taken over syncing (see
 		// core/sync/instanceOwner.ts): nothing from this one goes to the room.
@@ -354,6 +357,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				} else {
 					util.logEvent(
 						{
+							saveToDb: false,
 							type: "error",
 							text: `${mateLive.byName} is simming this game live. Watch it with them instead.`,
 							persistent: true,
@@ -382,7 +386,12 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						step: "own-game",
 					});
 					util.logEvent(
-						{ type: "error", text: decision.reason, persistent: true },
+						{
+							saveToDb: false,
+							type: "error",
+							text: decision.reason,
+							persistent: true,
+						},
 						conditions,
 					);
 					return undefined;
@@ -404,6 +413,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 						: holderName;
 				util.logEvent(
 					{
+						saveToDb: false,
 						type: "error",
 						text: `${holder} is in charge of simming. Go to Multiplayer Sync to sim here.`,
 						persistent: true,
@@ -423,6 +433,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					syncDebugLog("api:guard-refused", { type, name, step: "live-game" });
 					util.logEvent(
 						{
+							saveToDb: false,
 							type: "error",
 							text: `${holding} is still being played. The league waits for its final.`,
 							persistent: true,
@@ -439,6 +450,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				syncDebugLog("api:guard-refused", { type, name, step: "step-claimed" });
 				util.logEvent(
 					{
+						saveToDb: false,
 						type: "error",
 						text: "A league mate's device is running the next step. Try again when it's done.",
 						persistent: true,
@@ -452,6 +464,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				syncDebugLog("api:guard-refused", { type, name, step: "caught-up" });
 				util.logEvent(
 					{
+						saveToDb: false,
 						type: "error",
 						text: `Still catching up to the cloud, so this wasn't done. Try again in a moment.`,
 						persistent: true,
@@ -481,6 +494,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				});
 				util.logEvent(
 					{
+						saveToDb: false,
 						type: "error",
 						text: `Cloud sync is not ready right now, so this wasn't done. Check your connection and try again.`,
 						persistent: true,
@@ -510,6 +524,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				syncDebugLog("api:guard-refused", { type, name, step: "verify" });
 				util.logEvent(
 					{
+						saveToDb: false,
 						type: "error",
 						text: `Not connected to the cloud right now, so this wasn't done — it wouldn't reach your league-mates. Check your connection and try again in a moment.`,
 						persistent: true,
@@ -549,6 +564,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					});
 					util.logEvent(
 						{
+							saveToDb: false,
 							type: "error",
 							text: `Still catching up to the cloud, so this wasn't done. Try again in a moment.`,
 							persistent: true,
@@ -587,6 +603,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					});
 					util.logEvent(
 						{
+							saveToDb: false,
 							type: "error",
 							text: `This wasn't done: ${safety.reason}`,
 							persistent: true,
@@ -602,6 +619,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			// diverge from everyone else.
 			util.logEvent(
 				{
+					saveToDb: false,
 					type: "error",
 					text: `Reconnecting to the shared league — paused until you're back online. To play offline instead, disconnect on the Multiplayer Sync page.`,
 					persistent: true,
@@ -630,6 +648,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 		) {
 			util.logEvent(
 				{
+					saveToDb: false,
 					type: "error",
 					text: `The league is simming right now, so this wasn't done — it would collide with the sim. Try again in a moment.`,
 					persistent: true,
@@ -739,6 +758,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					const held = getSyncEngine()?.isHeldForSim() ?? false;
 					util.logEvent(
 						{
+							saveToDb: false,
 							type: held ? "info" : "error",
 							text: held
 								? `The league is simming, so this will go to the room as soon as the sim finishes.`
@@ -767,6 +787,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 					});
 					util.logEvent(
 						{
+							saveToDb: false,
 							type: "error",
 							text: `That didn't finish: ${
 								error instanceof Error ? error.message : String(error)

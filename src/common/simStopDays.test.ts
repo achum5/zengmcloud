@@ -3,7 +3,9 @@ import {
 	formatSimStopDays,
 	invalidSimStopDayToken,
 	parseSimStopDays,
+	stopDateIn,
 	stopsOnDay,
+	stopsOnNight,
 } from "./simStopDays.ts";
 
 describe("parseSimStopDays", () => {
@@ -12,6 +14,7 @@ describe("parseSimStopDays", () => {
 			assert.deepStrictEqual(parseSimStopDays(raw), {
 				deadline: false,
 				days: [],
+				dates: [],
 			});
 		}
 	});
@@ -22,10 +25,12 @@ describe("parseSimStopDays", () => {
 		assert.deepStrictEqual(parseSimStopDays("deadline"), {
 			deadline: true,
 			days: [],
+			dates: [],
 		});
 		assert.deepStrictEqual(parseSimStopDays("15, deadline"), {
 			deadline: true,
 			days: [15],
+			dates: [],
 		});
 		assert.strictEqual(parseSimStopDays("15").deadline, false);
 	});
@@ -51,7 +56,13 @@ describe("parseSimStopDays", () => {
 	});
 
 	test("it round-trips through the settings field", () => {
-		for (const raw of ["", "15", "deadline", "15, 41, deadline"]) {
+		for (const raw of [
+			"",
+			"15",
+			"deadline",
+			"15, 41, deadline",
+			"Jan 15, Dec 15, deadline",
+		]) {
 			const parsed = parseSimStopDays(raw);
 			assert.deepStrictEqual(
 				parseSimStopDays(formatSimStopDays(parsed)),
@@ -70,6 +81,9 @@ describe("invalidSimStopDayToken", () => {
 		assert.strictEqual(invalidSimStopDayToken("15, deadlien"), "deadlien");
 		assert.strictEqual(invalidSimStopDayToken("15, 0"), "0");
 		assert.strictEqual(invalidSimStopDayToken("1.5"), "1.5");
+		assert.strictEqual(invalidSimStopDayToken("Dec 15, Feb 29"), undefined);
+		assert.strictEqual(invalidSimStopDayToken("Dec 15, Feb 30"), "Feb 30");
+		assert.strictEqual(invalidSimStopDayToken("Dex 15"), "Dex 15");
 	});
 });
 
@@ -87,5 +101,40 @@ describe("stopsOnDay", () => {
 		for (const day of [1, 15, 41, 82]) {
 			assert.isFalse(stopsOnDay(stops, day));
 		}
+	});
+});
+
+describe("dates, on the NBA calendar", () => {
+	test("read however they're typed, kept in season order", () => {
+		assert.deepStrictEqual(
+			parseSimStopDays("January 15, dec 15, Dec. 15, 15").dates,
+			[
+				{ month: 12, day: 15 },
+				{ month: 1, day: 15 },
+			],
+		);
+		assert.deepStrictEqual(parseSimStopDays("Jan 15, Dec 15").days, []);
+		assert.strictEqual(
+			formatSimStopDays(parseSimStopDays("jan 15, december 15")),
+			"Dec 15, Jan 15",
+		);
+	});
+
+	// The 2025 season: opening night October 22, 2024.
+	test("before the first night on or after the date", () => {
+		const stops = parseSimStopDays("Dec 15");
+		assert.strictEqual(stopDateIn(stops.dates[0]!, 2025), "2024-12-15");
+		// Nights with games on the 14th and 16th, none on the 15th.
+		assert.isFalse(stopsOnNight(stops, "2024-12-14", "2024-12-13", 2025));
+		assert.isTrue(stopsOnNight(stops, "2024-12-16", "2024-12-14", 2025));
+		// Games on the 15th: that night.
+		assert.isTrue(stopsOnNight(stops, "2024-12-15", "2024-12-14", 2025));
+		// Once past it, never again.
+		assert.isFalse(stopsOnNight(stops, "2024-12-16", "2024-12-15", 2025));
+		// Before opening night: there.
+		assert.isTrue(
+			stopsOnNight(parseSimStopDays("Oct 22"), "2024-10-22", undefined, 2025),
+		);
+		assert.isFalse(stopsOnNight(stops, undefined, "2024-12-14", 2025));
 	});
 });

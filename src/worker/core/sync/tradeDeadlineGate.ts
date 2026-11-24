@@ -1,7 +1,11 @@
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { getSyncEngine } from "./engineHolder.ts";
-import { parseSimStopDays, stopsOnDay } from "../../../common/simStopDays.ts";
+import {
+	parseSimStopDays,
+	stopsOnDay,
+	stopsOnNight,
+} from "../../../common/simStopDays.ts";
 import type { ScheduleGame } from "../../../common/types.ts";
 
 // The places the sim stops on purpose.
@@ -68,11 +72,28 @@ export type SimStopPoint =
 	// date: its night, on the NBA calendar.
 	| { kind: "day"; day: number; date?: string };
 
+// The last night played this season, on the NBA calendar (where a date stop
+// stands: common/simStopDays.ts).
+export const lastNightPlayed = async () => {
+	const season = g.get("season");
+	let last: string | undefined;
+	for (const game of await idb.cache.games.getAll()) {
+		if (
+			game.season === season &&
+			game.date !== undefined &&
+			(last === undefined || game.date > last)
+		) {
+			last = game.date;
+		}
+	}
+	return last;
+};
+
 export const getPendingSimStop = async (): Promise<
 	SimStopPoint | undefined
 > => {
 	const stops = parseSimStopDays(g.get("simStopDays"));
-	if (!stops.deadline && stops.days.length === 0) {
+	if (!stops.deadline && stops.days.length === 0 && stops.dates.length === 0) {
 		return undefined;
 	}
 
@@ -87,7 +108,10 @@ export const getPendingSimStop = async (): Promise<
 			? { kind: "deadline", gid: first.gid, day: first.day }
 			: undefined;
 	}
-	return stopsOnDay(stops, first.day)
+	return stopsOnDay(stops, first.day) ||
+		(stops.dates.length > 0 &&
+			first.day !== undefined &&
+			stopsOnNight(stops, first.date, await lastNightPlayed(), g.get("season")))
 		? {
 				kind: "day",
 				day: first.day!,

@@ -12,6 +12,21 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 507,
+		date: "2026-11-24",
+		text: "Shared leagues: when your device isn't in charge of simming and you try something only that device can do, it now tells you who is, instead of doing nothing. The Danger Zone's Smart CPU button also offers Sim here, and in the preseason it now runs a last round of free-agent signings before the trades.",
+	},
+	{
+		n: 506,
+		date: "2026-11-24",
+		text: "NBA calendar leagues: Pause Sim On Days now takes dates you pick from a calendar, like Dec 15. Each one pauses the sim every season, before the first night with games on or after it.",
+	},
+	{
+		n: 505,
+		date: "2026-11-24",
+		text: 'Player pages now show, in small print under the contract, when a recently signed player can be traded, like "Tradable Dec 15".',
+	},
+	{
 		n: 504,
 		date: "2026-11-24",
 		text: "NBA calendar leagues: every re-signed player can't be traded until January 15, this summer's included. Free agents signed in the summer still open up December 15.",

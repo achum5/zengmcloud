@@ -4,6 +4,7 @@ import type { PlayerWithoutKey } from "../../../common/types.ts";
 import { timeBetweenGames } from "../../../common/timeBetweenGames.ts";
 import { getContractSummary } from "../contract/index.ts";
 import { formatGameDate } from "../../../common/calendarDates.ts";
+import { shownTradableOn } from "../game/tradableOn.ts";
 
 const isUntradable = (
 	p: PlayerWithoutKey,
@@ -33,11 +34,12 @@ const isUntradable = (
 
 		if (p.gamesUntilTradable > 0) {
 			// Can't trade players who recently were signed or traded
+			const on = shownTradableOn(p);
 			return {
 				untradable: true,
 				untradableMsg:
-					p.tradableOn !== undefined
-						? `Cannot trade recently-acquired player until ${formatGameDate(p.tradableOn, "withYear")}`
+					on !== undefined
+						? `Cannot trade recently-acquired player until ${formatGameDate(on, "withYear")}`
 						: p.daysUntilTradable !== undefined
 							? `Cannot trade recently-acquired player for ${
 									p.daysUntilTradable
