@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 523,
+		date: "2026-11-24",
+		text: "NBA calendar: the defending champion now always opens the season at home on opening night. To fit it in, a couple of nearby games can trade nights, and nobody ends up with a tougher stretch than before.",
+	},
+	{
 		n: 522,
 		date: "2026-11-24",
 		text: "NBA calendar: checked across dozens of generated seasons. Opening night and Christmas matchups no longer add any three-in-threes, cross-country back-to-backs or extra travel to anyone's schedule, and the defending champion now hosts opening night far more often.",

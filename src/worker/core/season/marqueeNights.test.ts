@@ -195,4 +195,38 @@ describe("featureMarquee", () => {
 		const tids = christmas.flatMap((game) => [game.homeTid, game.awayTid]);
 		assert.isAtLeast(tids.filter((tid) => bigDraw.get(tid)! >= 0.8).length, 5);
 	});
+
+	test("every champion hosts opening night, however its season starts", () => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2027);
+		g.setWithoutSavingToDB("nbaCalendar", true);
+		const teams = helpers.getTeamsDefault().map((t) => ({
+			tid: t.tid,
+			seasonAttrs: {
+				cid: t.cid,
+				did: t.did,
+				abbrev: t.abbrev,
+				region: t.region,
+			},
+		}));
+		const draw = new Map(teams.map((t) => [t.tid, ((t.tid * 7) % 30) / 30]));
+		const regular = ({ tids, dates }: ReturnType<typeof newCalendarSchedule>) =>
+			tids.flatMap(([homeTid, awayTid], i) =>
+				isAllStarGame(homeTid, awayTid) || isTradeDeadline(homeTid, awayTid)
+					? []
+					: [{ homeTid, awayTid, date: dates![i]! }],
+			);
+		const plain = regular(newCalendarSchedule(teams));
+		for (const champion of [0, 5, 11, 17, 23, 29]) {
+			const games = regular(
+				newCalendarSchedule(teams, undefined, { draw, champion }),
+			);
+			checkSame(plain, games);
+			const opening = games.filter((game) => game.date === games[0]!.date);
+			assert.ok(
+				opening.some((game) => game.homeTid === champion),
+				`champion ${champion} at home on opening night`,
+			);
+		}
+	});
 });
