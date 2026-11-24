@@ -26,7 +26,11 @@ import { pregameLineupSynergyFromPlayers } from "../core/GameSim.basketball/syne
 import { defineView, keepType, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateTeam } from "../util/processInputs.ts";
-import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import {
+	isAllStarGame,
+	isOffDay,
+	isTradeDeadline,
+} from "../../common/specialGames.ts";
 import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
 import { getInjuryClock } from "../core/game/classicDays.ts";
 import { getCalendarIfDated } from "./calendar.ts";
@@ -87,6 +91,8 @@ export const getUpcoming = async ({
 	let keptOneGame = false;
 	const filteredSchedule = schedule.filter((game) => {
 		const keep =
+			// (A day with no games has nothing to show.)
+			!isOffDay(game.homeTid, game.awayTid) &&
 			(tid === undefined ||
 				tid === game.homeTid ||
 				tid === game.awayTid ||

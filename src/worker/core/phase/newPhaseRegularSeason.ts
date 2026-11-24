@@ -1,4 +1,4 @@
-import { season, team } from "../index.ts";
+import { league, season, team } from "../index.ts";
 import { saveClassicDays } from "../game/saveClassicDays.ts";
 import { refreshCalendarDaysForNewSeason } from "../game/refreshCalendarDays.ts";
 import { tradableOnForNewSeason } from "../game/tradableOn.ts";
@@ -26,6 +26,7 @@ import { isAllStarGame } from "../../../common/specialGames.ts";
 import { smartBrainOn } from "../realisticFrontOffice/isOn.ts";
 import { calendarOn } from "../season/newCalendarSchedule.ts";
 import { marqueeDraw } from "../season/marqueeDraw.ts";
+import { withOffDays } from "../season/offDays.ts";
 
 class GameHasYourTeamCache {
 	cache: Record<number, boolean> = {};
@@ -194,11 +195,15 @@ const newPhaseRegularSeason = async (
 			console.error("Could not rate the teams' draw", error);
 		}
 	}
-	const { tids, dates, classicDays } = season.newCalendarSchedule(
-		teams,
-		undefined,
-		marquee,
-	);
+	const built = season.newCalendarSchedule(teams, undefined, marquee);
+	const { classicDays } = built;
+	let { tids, dates } = built;
+	if (dates !== undefined) {
+		// Every date from opening night to the last night is a day
+		// (offDays.ts).
+		({ tids, dates } = withOffDays(tids, dates));
+		await league.setGameAttributes({ calendarOffDays: g.get("season") });
+	}
 	await season.setSchedule(tids, dates);
 	if (classicDays !== undefined) {
 		await saveClassicDays(classicDays);

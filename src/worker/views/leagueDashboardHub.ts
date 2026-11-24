@@ -5,6 +5,7 @@ import type { ViewArgs } from "../util/defineView.ts";
 import { getCalendarIfDated } from "./calendar.ts";
 import { processEvents } from "./news.ts";
 import { eventGivesAwayLiveGame, getLiveGate } from "../util/liveGameGate.ts";
+import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 
 // The new interface's home (the League Hub), on top of the dashboard: the
 // inbox with subjects, the team's own news, its schedule with results, the
@@ -107,12 +108,17 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 	// On a calendar, the night of the next day of games.
 	const nextDate = schedule.find((s) => s.day === nextDay)?.date;
 	const keyDates = schedule
-		.filter((s) => s.homeTid < 0)
+		.filter(
+			(s) =>
+				isAllStarGame(s.homeTid, s.awayTid) ||
+				isTradeDeadline(s.homeTid, s.awayTid),
+		)
 		.map((s) => ({
 			day: s.day,
 			date: s.date,
-			type:
-				s.homeTid === -3 ? ("tradeDeadline" as const) : ("allStar" as const),
+			type: isTradeDeadline(s.homeTid, s.awayTid)
+				? ("tradeDeadline" as const)
+				: ("allStar" as const),
 		}));
 
 	// The cache holds every game of the current season.

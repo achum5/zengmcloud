@@ -65,6 +65,30 @@ describe("classicDaysLeftFrom", () => {
 		assert.strictEqual(at(), 7);
 	});
 
+	// season/offDays.ts: a date with no games is in the classic days the
+	// games make already, not a day of its own like the deadline's.
+	test("days with no games add no classic days", () => {
+		const schedule: Row[] = [
+			{ homeTid: 0, awayTid: 1, day: 21 },
+			{ homeTid: -4, awayTid: -4, day: 22 },
+			{ homeTid: 2, awayTid: 3, day: 23 },
+			{ homeTid: -4, awayTid: -4, day: 24 },
+			{ homeTid: 0, awayTid: 2, day: 25 },
+			{ homeTid: 1, awayTid: 3, day: 26 },
+			{ homeTid: -3, awayTid: -3, day: 27 },
+			{ homeTid: -1, awayTid: -2, day: 28 },
+			...[29, 30, 31, 32, 33, 34].map((day) => ({
+				homeTid: 0,
+				awayTid: 1,
+				day,
+			})),
+		];
+		const at = (target?: "tradeDeadline") =>
+			classicDaysLeftFrom({ schedule, played: 10, classicDays: 10, target });
+		assert.strictEqual(at("tradeDeadline"), 2);
+		assert.strictEqual(at(), 7);
+	});
+
 	// The point: the deadline's last days come as often as in the same
 	// league's classic season, each about two nights.
 	test("a calendar counts down to the deadline as the classic season does", () => {

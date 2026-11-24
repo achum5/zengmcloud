@@ -10,7 +10,11 @@ import { season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
-import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import {
+	isAllStarGame,
+	isOffDay,
+	isTradeDeadline,
+} from "../../common/specialGames.ts";
 
 export const formatScheduleForEditor = (
 	scheduleRaw: ScheduleGameWithoutKey[],
@@ -39,28 +43,32 @@ export const formatScheduleForEditor = (
 						winner === 0 ? homeTid : winner === 1 ? awayTid : undefined,
 				};
 			}),
-		...scheduleRaw.map((game) => {
-			if (isAllStarGame(game.homeTid, game.awayTid)) {
-				return {
-					type: "allStarGame" as const,
-					...game,
-				};
-			}
+		// (Days with no games - season/offDays.ts - aren't edited. Saving an
+		// edited schedule leaves them out.)
+		...scheduleRaw
+			.filter((game) => !isOffDay(game.homeTid, game.awayTid))
+			.map((game) => {
+				if (isAllStarGame(game.homeTid, game.awayTid)) {
+					return {
+						type: "allStarGame" as const,
+						...game,
+					};
+				}
 
-			if (isTradeDeadline(game.homeTid, game.awayTid)) {
-				return {
-					type: "tradeDeadline" as const,
-					...game,
-				};
-			}
+				if (isTradeDeadline(game.homeTid, game.awayTid)) {
+					return {
+						type: "tradeDeadline" as const,
+						...game,
+					};
+				}
 
-			return {
-				type: "game" as const,
-				...game,
-				awayAbbrev: teamsByTid[game.awayTid]!.seasonAttrs.abbrev,
-				homeAbbrev: teamsByTid[game.homeTid]!.seasonAttrs.abbrev,
-			};
-		}),
+				return {
+					type: "game" as const,
+					...game,
+					awayAbbrev: teamsByTid[game.awayTid]!.seasonAttrs.abbrev,
+					homeAbbrev: teamsByTid[game.homeTid]!.seasonAttrs.abbrev,
+				};
+			}),
 	];
 
 	const schedule2: (

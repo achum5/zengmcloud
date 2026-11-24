@@ -171,6 +171,9 @@
 	&:hover {
 		background: none;
 	}
+	&.selected {
+		opacity: 1;
+	}
 }
 .lh-week-pad {
 	visibility: hidden;

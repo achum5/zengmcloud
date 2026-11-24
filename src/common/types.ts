@@ -1228,11 +1228,21 @@ export type GameAttributesLeague = {
 	// The last schedule day whose end-of-day countdowns (injuries, trade
 	// cooldowns, FA demands, AI trades) ran, so a day simmed in slices on
 	// several devices is never counted twice. See game/dailyCountdownGate.ts.
-	lastDailyCountdownDay?: { season: number; phase: number; day: number };
+	// On a calendar, its date too, so the next day's countdown counts the
+	// calendar's days from it (calendarTicks.ts nightTick).
+	lastDailyCountdownDay?: {
+		season: number;
+		phase: number;
+		day: number;
+		date?: string;
+	};
 	// On an NBA calendar, how many classic days the season would have taken,
 	// so its end-of-day rules tick as often as classic days' would. See
 	// game/calendarTicks.ts.
 	calendarClassicDays?: { season: number; days: number };
+	// On an NBA calendar, the season whose schedule has a day for each date
+	// with no games (season/offDays.ts). Seasons before it skip those dates.
+	calendarOffDays?: number;
 	// Vanilla+ front offices' market (worker/core/vanillaPlus/market.ts): its
 	// day this season, and the day each team last traded, kept with the league
 	// so a reload - or the sim moving to a league mate's device - doesn't let a

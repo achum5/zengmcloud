@@ -29,6 +29,7 @@ import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { nightTick } from "./calendarTicks.ts";
 import { classicDaysTo } from "./tradableOn.ts";
 import { refreshCalendarDays } from "./refreshCalendarDays.ts";
+import { countedThrough } from "./classicDays.ts";
 import { ensureClassicDays } from "./saveClassicDays.ts";
 import {
 	RECAP_REELS_ON,
@@ -113,8 +114,14 @@ import { orphanedScheduleGids } from "./orphanedSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { advStats } from "../../util/advStats.ts";
-import { isAllStarGame } from "../../../common/specialGames.ts";
+import { isAllStarGame, isOffDay } from "../../../common/specialGames.ts";
 import { formatGameDate } from "../../../common/calendarDates.ts";
+
+// Today's slate is a day with no games (season/offDays.ts).
+const offDayAhead = (schedule: { homeTid: number; awayTid: number }[]) =>
+	schedule.length === 0
+		? false
+		: isOffDay(schedule[0]!.homeTid, schedule[0]!.awayTid);
 
 // Plays one day, then calls itself for the next day, until run is finished
 const playDays = async (
@@ -304,6 +311,283 @@ const playDays = async (
 		});
 	};
 
+	// THE END OF A DAY: injuries heal, trade waits run down, front offices
+	// deal and sign - once a day, after its games or on a day without any
+	// (season/offDays.ts).
+	//
+	// See dailyCountdownGate.ts: everything in here has per-day semantics, a
+	// shared league can end up deciding "the day is over" on more than one
+	// device, and a double run is a player healing a day early (a real
+	// incident), doubled tragic-death odds, and doubled AI signing/trade
+	// evaluations. The day's identity is stamped into a replicated game
+	// attribute in the same write as the countdown, so a counted day is never
+	// counted again anywhere.
+	const countDownDay = async ({
+		simmedDay,
+		offDate,
+		pidsInjuredOneGameOrLess,
+		updateEvents,
+	}: {
+		simmedDay: number | undefined;
+		// A day with no games: its date.
+		offDate?: string;
+		pidsInjuredOneGameOrLess: Set<number>;
+		updateEvents: UpdateEvents;
+	}) => {
+		const countdownDay =
+			simmedDay === undefined
+				? undefined
+				: { season: g.get("season"), phase: g.get("phase"), day: simmedDay };
+		if (dayAlreadyCounted(g.get("lastDailyCountdownDay"), countdownDay)) {
+			syncDebugLog("sim:daily-countdown-skipped", { day: simmedDay });
+			void recordInjuryForensics({
+				source: "day-tick-skipped",
+				detail: `day=${simmedDay} already counted, countdown not run`,
+			});
+			return;
+		}
+
+		local.minFractionDiffs = undefined;
+
+		const healedTexts: string[] = [];
+		const injuryTickNotes: string[] = [];
+
+		// On a calendar, the night counts the calendar's days at the classic
+		// rate - see calendarTicks.ts.
+		const scheduleLeft = await idb.cache.schedule.getAll();
+		// The next night with games (a wait to a date over by then is over
+		// now, tradableOn.ts).
+		let nextNight: string | undefined;
+		for (const game of scheduleLeft) {
+			if (
+				game.date !== undefined &&
+				(nextNight === undefined || game.date < nextNight)
+			) {
+				nextNight = game.date;
+			}
+		}
+		const tick = nightTick({
+			games: await idb.cache.games.getAll(),
+			schedule: scheduleLeft,
+			season: g.get("season"),
+			day: simmedDay,
+			phase: g.get("phase"),
+			classicDays:
+				g.get("phase") === PHASE.PLAYOFFS
+					? undefined
+					: await ensureClassicDays(),
+			date: offDate,
+			countedThrough: countedThrough(),
+		});
+
+		// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
+		const players = await idb.cache.players.indexGetAll("playersByTid", [
+			0,
+			Infinity,
+		]);
+
+		const playersToSave = [];
+		for (const p of players) {
+			let changed = false;
+
+			// How many days this night is for the player's team: none if it had
+			// the night off.
+			const ticks =
+				tick.ticksByTid === undefined
+					? 1
+					: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
+			// A wait to one of the NBA's dates goes by the date, whatever
+			// classic days tonight came to (tradableOn.ts).
+			const tradableIn =
+				p.tradableOn !== undefined &&
+				p.gamesUntilTradable > 0 &&
+				tick.clock !== undefined &&
+				tick.tonight !== undefined
+					? classicDaysTo(p.tradableOn, tick.clock, tick.tonight, nextNight)
+					: undefined;
+			if (ticks === 0) {
+				if (tradableIn !== undefined && tradableIn !== p.gamesUntilTradable) {
+					p.gamesUntilTradable = tradableIn;
+					if (tradableIn === 0) {
+						delete p.tradableOn;
+					}
+					playersToSave.push(p);
+				}
+				continue;
+			}
+
+			if (p.injury.gamesRemaining > 0) {
+				const gamesRemaining = Math.max(0, p.injury.gamesRemaining - ticks);
+				injuryTickNotes.push(
+					`p${p.pid}:${p.injury.gamesRemaining}>${gamesRemaining}`,
+				);
+				p.injury.gamesRemaining = gamesRemaining;
+				changed = true;
+			}
+
+			if (
+				__SPORT === "baseball" &&
+				p.pFatigue !== undefined &&
+				p.pFatigue > 0
+			) {
+				p.pFatigue = helpers.bound(
+					p.pFatigue - P_FATIGUE_DAILY_REDUCTION,
+					0,
+					80,
+				);
+				changed = true;
+			}
+
+			// Is it already over?
+			if (p.injury.type !== "Healthy" && p.injury.gamesRemaining <= 0) {
+				const score = p.injury.score;
+				p.injury = {
+					type: "Healthy",
+					gamesRemaining: 0,
+				};
+				changed = true;
+				const healedText = `${
+					last(p.ratings).pos
+				} <a href="${helpers.leagueUrl(["player", p.pid])}">${p.firstName} ${
+					p.lastName
+				}</a>`;
+
+				if (
+					p.tid === g.get("userTid") &&
+					!pidsInjuredOneGameOrLess.has(p.pid)
+				) {
+					healedTexts.push(healedText);
+				}
+
+				logEvent(
+					{
+						type: "healed",
+						text: `${healedText} has recovered from ${helpers.pronoun(
+							g.get("gender"),
+							"his",
+						)} injury.`,
+						showNotification: false,
+						pids: [p.pid],
+						tids: [p.tid],
+						score,
+					},
+					conditions,
+				);
+			}
+
+			// Also check for gamesUntilTradable
+			if (p.gamesUntilTradable === undefined) {
+				p.gamesUntilTradable = 0; // Initialize for old leagues
+
+				changed = true;
+			} else if (p.gamesUntilTradable > 0) {
+				p.gamesUntilTradable =
+					tradableIn ?? Math.max(0, p.gamesUntilTradable - ticks);
+				if (p.gamesUntilTradable === 0) {
+					delete p.tradableOn;
+				}
+				changed = true;
+			}
+
+			if (changed) {
+				playersToSave.push(p);
+			}
+		}
+		await idb.cache.players.putAll(playersToSave);
+
+		if (healedTexts.length > 0) {
+			logEvent(
+				{
+					type: "healedList",
+					text: healedTexts.join("<br>"),
+					showNotification: true,
+					saveToDb: false,
+				},
+				conditions,
+			);
+		}
+
+		for (let run = 0; run < tick.leagueRuns; run++) {
+			// Tragic deaths only happen during the regular season!
+			if (
+				g.get("phase") !== PHASE.PLAYOFFS &&
+				Math.random() < g.get("tragicDeathRate") &&
+				!g.get("repeatSeason") &&
+				!g.get("forceHistoricalRosters")
+			) {
+				await player.killOne(conditions);
+
+				if (g.get("stopOnInjury")) {
+					sim.requestStop();
+				}
+
+				updateEvents.push("playerMovement");
+			}
+
+			// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
+			const phase = g.get("phase");
+			if (g.get("college")) {
+				// College: no in-season signings or trades, but recruiting goes on
+				// all season.
+				await collegeRecruitingDay();
+				if (phase !== PHASE.PLAYOFFS) {
+					await collegePollDay();
+				}
+			} else {
+				if (
+					phase === PHASE.REGULAR_SEASON ||
+					phase === PHASE.AFTER_TRADE_DEADLINE
+				) {
+					await freeAgents.decreaseDemands();
+					await freeAgents.autoSign();
+				}
+				if (phase === PHASE.REGULAR_SEASON) {
+					await trade.betweenAiTeams();
+				}
+			}
+		}
+
+		// On a calendar: the days each injury and trade wait has left, as
+		// the game shows them.
+		if (tick.clock && tick.tonight !== undefined) {
+			await refreshCalendarDays(tick.clock, tick.tonight);
+		}
+
+		// The smart CPU's market keeps its own clock - a moment every so many
+		// games, and one on each of the deadline's last nights
+		// (smartCpu/market.ts) - so it is asked every night, a calendar night
+		// that ends no round of games too.
+		if (
+			tick.leagueRuns === 0 &&
+			!g.get("college") &&
+			g.get("phase") === PHASE.REGULAR_SEASON
+		) {
+			await trade.betweenAiTeams({ smartOnly: true });
+		}
+
+		// One compact durable line for the whole league's countdown this day -
+		// the record that distinguishes "the tick ran twice" from "a remote row
+		// wiped the injury" next time a countdown loses days it should not.
+		if (injuryTickNotes.length > 0) {
+			void recordInjuryForensics({
+				source: "day-tick",
+				detail: `day=${simmedDay ?? "?"} ${injuryTickNotes.join(" ")}`,
+			});
+		}
+
+		// Stamped LAST, so a crash mid-block re-counts the day rather than
+		// marking it counted without counting. Rides the same capture window
+		// as the countdown itself, so the whole room learns of both together.
+		if (countdownDay !== undefined) {
+			await setGameAttributes({
+				lastDailyCountdownDay:
+					tick.tonight === undefined
+						? countdownDay
+						: { ...countdownDay, date: tick.tonight },
+			});
+		}
+	};
+
 	// Saves a vector of results objects for a day, as is output from cbSimGames.
 	// simmedDay identifies the schedule day for the once-per-day gate below.
 	const cbSaveResults = async (
@@ -394,262 +678,12 @@ const playDays = async (
 
 		const updateEvents: UpdateEvents = ["gameSim"];
 
-		// See dailyCountdownGate.ts: everything in the dayOver block below has
-		// per-day semantics, a shared league can end up deciding "the day is
-		// over" on more than one device, and a double run is a player healing a
-		// day early (a real incident), doubled tragic-death odds, and doubled AI
-		// signing/trade evaluations. The day's identity is stamped into a
-		// replicated game attribute in the same write as the countdown, so a
-		// counted day is never counted again anywhere.
-		const countdownDay =
-			simmedDay === undefined
-				? undefined
-				: { season: g.get("season"), phase: g.get("phase"), day: simmedDay };
-		const countdownAlreadyRan = dayAlreadyCounted(
-			g.get("lastDailyCountdownDay"),
-			countdownDay,
-		);
-		if (dayOver && countdownAlreadyRan) {
-			syncDebugLog("sim:daily-countdown-skipped", { day: simmedDay });
-			void recordInjuryForensics({
-				source: "day-tick-skipped",
-				detail: `day=${simmedDay} already counted, countdown not run`,
+		if (dayOver) {
+			await countDownDay({
+				simmedDay,
+				pidsInjuredOneGameOrLess,
+				updateEvents,
 			});
-		}
-
-		if (dayOver && !countdownAlreadyRan) {
-			local.minFractionDiffs = undefined;
-
-			const healedTexts: string[] = [];
-			const injuryTickNotes: string[] = [];
-
-			// On a calendar, the night counts the calendar's days at the classic
-			// rate - see calendarTicks.ts.
-			const scheduleLeft = await idb.cache.schedule.getAll();
-			// The next night with games (a wait to a date over by then is over
-			// now, tradableOn.ts).
-			let nextNight: string | undefined;
-			for (const game of scheduleLeft) {
-				if (
-					game.date !== undefined &&
-					(nextNight === undefined || game.date < nextNight)
-				) {
-					nextNight = game.date;
-				}
-			}
-			const tick = nightTick({
-				games: await idb.cache.games.getAll(),
-				schedule: scheduleLeft,
-				season: g.get("season"),
-				day: simmedDay,
-				phase: g.get("phase"),
-				classicDays:
-					g.get("phase") === PHASE.PLAYOFFS
-						? undefined
-						: await ensureClassicDays(),
-			});
-
-			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
-			const players = await idb.cache.players.indexGetAll("playersByTid", [
-				0,
-				Infinity,
-			]);
-
-			const playersToSave = [];
-			for (const p of players) {
-				let changed = false;
-
-				// How many days this night is for the player's team: none if it had
-				// the night off.
-				const ticks =
-					tick.ticksByTid === undefined
-						? 1
-						: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
-				// A wait to one of the NBA's dates goes by the date, whatever
-				// classic days tonight came to (tradableOn.ts).
-				const tradableIn =
-					p.tradableOn !== undefined &&
-					p.gamesUntilTradable > 0 &&
-					tick.clock !== undefined &&
-					tick.tonight !== undefined
-						? classicDaysTo(p.tradableOn, tick.clock, tick.tonight, nextNight)
-						: undefined;
-				if (ticks === 0) {
-					if (tradableIn !== undefined && tradableIn !== p.gamesUntilTradable) {
-						p.gamesUntilTradable = tradableIn;
-						if (tradableIn === 0) {
-							delete p.tradableOn;
-						}
-						playersToSave.push(p);
-					}
-					continue;
-				}
-
-				if (p.injury.gamesRemaining > 0) {
-					const gamesRemaining = Math.max(0, p.injury.gamesRemaining - ticks);
-					injuryTickNotes.push(
-						`p${p.pid}:${p.injury.gamesRemaining}>${gamesRemaining}`,
-					);
-					p.injury.gamesRemaining = gamesRemaining;
-					changed = true;
-				}
-
-				if (
-					__SPORT === "baseball" &&
-					p.pFatigue !== undefined &&
-					p.pFatigue > 0
-				) {
-					p.pFatigue = helpers.bound(
-						p.pFatigue - P_FATIGUE_DAILY_REDUCTION,
-						0,
-						80,
-					);
-					changed = true;
-				}
-
-				// Is it already over?
-				if (p.injury.type !== "Healthy" && p.injury.gamesRemaining <= 0) {
-					const score = p.injury.score;
-					p.injury = {
-						type: "Healthy",
-						gamesRemaining: 0,
-					};
-					changed = true;
-					const healedText = `${
-						last(p.ratings).pos
-					} <a href="${helpers.leagueUrl(["player", p.pid])}">${p.firstName} ${
-						p.lastName
-					}</a>`;
-
-					if (
-						p.tid === g.get("userTid") &&
-						!pidsInjuredOneGameOrLess.has(p.pid)
-					) {
-						healedTexts.push(healedText);
-					}
-
-					logEvent(
-						{
-							type: "healed",
-							text: `${healedText} has recovered from ${helpers.pronoun(
-								g.get("gender"),
-								"his",
-							)} injury.`,
-							showNotification: false,
-							pids: [p.pid],
-							tids: [p.tid],
-							score,
-						},
-						conditions,
-					);
-				}
-
-				// Also check for gamesUntilTradable
-				if (p.gamesUntilTradable === undefined) {
-					p.gamesUntilTradable = 0; // Initialize for old leagues
-
-					changed = true;
-				} else if (p.gamesUntilTradable > 0) {
-					p.gamesUntilTradable =
-						tradableIn ?? Math.max(0, p.gamesUntilTradable - ticks);
-					if (p.gamesUntilTradable === 0) {
-						delete p.tradableOn;
-					}
-					changed = true;
-				}
-
-				if (changed) {
-					playersToSave.push(p);
-				}
-			}
-			await idb.cache.players.putAll(playersToSave);
-
-			if (healedTexts.length > 0) {
-				logEvent(
-					{
-						type: "healedList",
-						text: healedTexts.join("<br>"),
-						showNotification: true,
-						saveToDb: false,
-					},
-					conditions,
-				);
-			}
-
-			for (let run = 0; run < tick.leagueRuns; run++) {
-				// Tragic deaths only happen during the regular season!
-				if (
-					g.get("phase") !== PHASE.PLAYOFFS &&
-					Math.random() < g.get("tragicDeathRate") &&
-					!g.get("repeatSeason") &&
-					!g.get("forceHistoricalRosters")
-				) {
-					await player.killOne(conditions);
-
-					if (g.get("stopOnInjury")) {
-						sim.requestStop();
-					}
-
-					updateEvents.push("playerMovement");
-				}
-
-				// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
-				const phase = g.get("phase");
-				if (g.get("college")) {
-					// College: no in-season signings or trades, but recruiting goes on
-					// all season.
-					await collegeRecruitingDay();
-					if (phase !== PHASE.PLAYOFFS) {
-						await collegePollDay();
-					}
-				} else {
-					if (
-						phase === PHASE.REGULAR_SEASON ||
-						phase === PHASE.AFTER_TRADE_DEADLINE
-					) {
-						await freeAgents.decreaseDemands();
-						await freeAgents.autoSign();
-					}
-					if (phase === PHASE.REGULAR_SEASON) {
-						await trade.betweenAiTeams();
-					}
-				}
-			}
-
-			// On a calendar: the days each injury and trade wait has left, as
-			// the game shows them.
-			if (tick.clock && tick.tonight !== undefined) {
-				await refreshCalendarDays(tick.clock, tick.tonight);
-			}
-
-			// The smart CPU's market keeps its own clock - a moment every so many
-			// games, and one on each of the deadline's last nights
-			// (smartCpu/market.ts) - so it is asked every night, a calendar night
-			// that ends no round of games too.
-			if (
-				tick.leagueRuns === 0 &&
-				!g.get("college") &&
-				g.get("phase") === PHASE.REGULAR_SEASON
-			) {
-				await trade.betweenAiTeams({ smartOnly: true });
-			}
-
-			// One compact durable line for the whole league's countdown this day -
-			// the record that distinguishes "the tick ran twice" from "a remote row
-			// wiped the injury" next time a countdown loses days it should not.
-			if (injuryTickNotes.length > 0) {
-				void recordInjuryForensics({
-					source: "day-tick",
-					detail: `day=${simmedDay ?? "?"} ${injuryTickNotes.join(" ")}`,
-				});
-			}
-
-			// Stamped LAST, so a crash mid-block re-counts the day rather than
-			// marking it counted without counting. Rides the same capture window
-			// as the countdown itself, so the whole room learns of both together.
-			if (countdownDay !== undefined) {
-				await setGameAttributes({ lastDailyCountdownDay: countdownDay });
-			}
 		}
 
 		// More stuff for LeagueTopBar - update ovrs based on injuries, and (if user just played a game) update the score of the user's last game and add their next game
@@ -1130,6 +1164,7 @@ const playDays = async (
 
 		// If live game sim, only do that one game, not the whole day.
 		const plan = scheduleForSim(schedule, gidOneGame);
+		const todayOff = offDayAhead(schedule);
 		schedule = plan.games;
 		const dayOver = plan.dayOver;
 
@@ -1145,6 +1180,19 @@ const playDays = async (
 		// playoffs runs behind you: exactly the "I live-simmed game 5, and when I
 		// left, game 6 had already been played" report. A request to play one
 		// game must never be able to advance the timeline.
+		if (plan.requestedGameMissing && todayOff) {
+			// Today has no games (season/offDays.ts): the game asked for is a
+			// day or more away.
+			logEvent(
+				{
+					type: "error",
+					text: "There are no games today.",
+					saveToDb: false,
+				},
+				conditions,
+			);
+			return cbNoGames();
+		}
 		if (plan.requestedGameMissing) {
 			syncDebugLog("sim:live-game-already-played", { gid: gidOneGame });
 			// Say so. This is the ordinary way a Watch click fails now that auto
@@ -1265,6 +1313,38 @@ const playDays = async (
 			await season.deleteScheduledTradeDeadline(schedule[0]!.gid);
 			await phase.newPhase(PHASE.AFTER_TRADE_DEADLINE, conditions);
 			await playDays(run, numDays - 1, conditions, false);
+		} else if (
+			schedule[0] !== undefined &&
+			isOffDay(schedule[0].homeTid, schedule[0].awayTid)
+		) {
+			// A day with no games (season/offDays.ts): nothing to sim, but a
+			// day all the same - claimed like one, off the schedule, and its
+			// end of day counted.
+			const offDay = schedule[0];
+			if (!(await claimDayOrBail([offDay]))) {
+				return cbNoGames();
+			}
+			await idb.cache.schedule.delete(offDay.gid);
+			const updateEvents: UpdateEvents = ["gameSim"];
+			await countDownDay({
+				simmedDay: offDay.day,
+				offDate: offDay.date,
+				pidsInjuredOneGameOrLess: new Set(),
+				updateEvents,
+			});
+			// The top bar's day and next games.
+			await recomputeLocalUITeamOvrs();
+			try {
+				await updateTickerItems();
+			} catch (error) {
+				console.error("Ticker refresh after sim failed", error);
+			}
+			await toUI("realtimeUpdate", [updateEvents]);
+			if (numDays - 1 <= 0) {
+				await cbNoGames();
+			} else {
+				await playDays(run, numDays - 1, conditions, false);
+			}
 		} else {
 			// This should also call cbNoGames after the playoffs end, because g.get("phase") will have been incremented by season.newSchedulePlayoffsDay after the previous day's games
 			// College: when the regular season runs out, the conference

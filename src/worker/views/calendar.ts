@@ -1,7 +1,11 @@
 import { PHASE } from "../../common/constants.ts";
 import type { NationalSlate, NationalTag } from "../../common/types.ts";
 import { slateOf } from "../../common/nationalBroadcasts.ts";
-import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import {
+	isAllStarGame,
+	isOffDay,
+	isTradeDeadline,
+} from "../../common/specialGames.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { season as seasonCore } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -165,6 +169,14 @@ export const getCalendarData = async (
 		for (const game of schedule) {
 			if (game.date === undefined) {
 				undated = true;
+				continue;
+			}
+			// A day with no games (season/offDays.ts): a day to open, nothing
+			// on it.
+			if (isOffDay(game.homeTid, game.awayTid)) {
+				if (gate?.dayCutoff === undefined || game.day <= gate.dayCutoff) {
+					addNight(game.date, game.day);
+				}
 				continue;
 			}
 			if (

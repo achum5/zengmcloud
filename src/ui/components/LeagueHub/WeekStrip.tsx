@@ -164,6 +164,7 @@ const MonthDropdown = ({
 	calendar: {
 		games: CalendarGame[];
 		keyDates: CalendarKeyDate[];
+		nightDays?: Record<string, number>;
 		today: string | undefined;
 	};
 	date: string | undefined;
@@ -257,6 +258,7 @@ const DatedStrip = ({
 	calendar: {
 		games: CalendarGame[];
 		keyDates: CalendarKeyDate[];
+		nightDays?: Record<string, number>;
 		today: string | undefined;
 	};
 	date: string;
@@ -319,12 +321,17 @@ const DatedStrip = ({
 									<Games night={night} />
 								</>
 							);
-							return night && night.numGames > 0 ? (
+							// (A day still to come with no games is a day to open too.)
+							return night ? (
 								<a
 									key={d}
-									className={clsx("lh-week-day", { selected, today })}
+									className={clsx(
+										"lh-week-day",
+										night.numGames === 0 && "lh-week-off",
+										{ selected, today },
+									)}
 									href={dayUrl(season, night.day)}
-									title={nightTitle(night)}
+									title={night.numGames > 0 ? nightTitle(night) : "No games"}
 								>
 									{inner}
 								</a>

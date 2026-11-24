@@ -15,10 +15,29 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { cleanupAutoPlay } from "../core/league/autoPlay.ts";
 import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 import { capDraftReadyForOnePick } from "../core/sync/draftReady.ts";
+import { daysBetween } from "../../common/calendarDates.ts";
+import { offDaysThisSeason } from "../core/season/offDays.ts";
+import { playInFinalNight } from "../core/season/playoffCalendar.ts";
 
-// On the NBA calendar, a sim day is a night of games: the play-in's nights
-// left, from its plan (see playoffCalendar.ts).
-const playInNightsLeft = (playoffSeries: PlayoffSeries) => {
+// On the NBA calendar, a sim day is a night of games - or, in a season with
+// its days with no games in it (offDays.ts), every date: `today`, the date
+// the league is on, then counts the days through the last of the nights.
+const daysThrough = (nights: Set<string>, today: string) => {
+	const last = [...nights].sort().at(-1);
+	return last === undefined ? 0 : Math.max(1, daysBetween(today, last) + 1);
+};
+
+// In a season with days with no games, the date the league is on.
+const offDaysToday = async () => {
+	if (!offDaysThisSeason()) {
+		return;
+	}
+	return season.getCalendarDate();
+};
+
+// The play-in's nights (or days) left, from its plan (see
+// playoffCalendar.ts).
+const playInNightsLeft = (playoffSeries: PlayoffSeries, today?: string) => {
 	const playIns = playoffSeries.playIns;
 	if (!playIns || !playIns.every((playIn) => playIn[0].dates)) {
 		return;
@@ -36,12 +55,20 @@ const playInNightsLeft = (playoffSeries: PlayoffSeries) => {
 			lastGamesLeft = true;
 		}
 	}
+	if (today !== undefined) {
+		if (lastGamesLeft) {
+			nights.add(
+				playInFinalNight(playIns.map((playIn) => playIn[0].dates![0]!)),
+			);
+		}
+		return daysThrough(nights, today);
+	}
 	return nights.size + (lastGamesLeft ? 1 : 0);
 };
 
 // The round's nights left, from its plan, and the All-Star Game's night when
-// it's before the Finals.
-const roundNightsLeft = (playoffSeries: PlayoffSeries) => {
+// it's before the Finals (or its days left, from `today`).
+const roundNightsLeft = (playoffSeries: PlayoffSeries, today?: string) => {
 	const roundSeries = playoffSeries.series[playoffSeries.currentRound];
 	if (!roundSeries?.some((series) => series.dates)) {
 		return;
@@ -68,17 +95,21 @@ const roundNightsLeft = (playoffSeries: PlayoffSeries) => {
 		roundSeries.length === 1 &&
 		playoffSeries.currentRound ===
 			g.get("numGamesPlayoffSeries", "current").length - 1;
+	if (today !== undefined) {
+		// (The All-Star Game's night is before Game 1.)
+		return daysThrough(nights, today);
+	}
 	return nights.size + (allStar ? 1 : 0);
 };
 
-const getNumDaysThisRound = (playoffSeries: PlayoffSeries) => {
+const getNumDaysThisRound = (playoffSeries: PlayoffSeries, today?: string) => {
 	let numDaysThisRound = 0;
 
 	if (playoffSeries.currentRound === -1) {
-		return playInNightsLeft(playoffSeries) ?? 1;
+		return playInNightsLeft(playoffSeries, today) ?? 1;
 	}
 
-	const nightsLeft = roundNightsLeft(playoffSeries);
+	const nightsLeft = roundNightsLeft(playoffSeries, today);
 	if (nightsLeft !== undefined) {
 		return nightsLeft;
 	}
@@ -115,7 +146,7 @@ const getNumDaysPlayIn = async () => {
 		return 0;
 	}
 
-	const nightsLeft = playInNightsLeft(playoffSeries);
+	const nightsLeft = playInNightsLeft(playoffSeries, await offDaysToday());
 	if (nightsLeft !== undefined) {
 		return nightsLeft;
 	}
@@ -148,15 +179,21 @@ const getNumDaysPlayoffs = async () => {
 	const calendar =
 		playInNightsLeft(playoffSeries) !== undefined ||
 		roundNightsLeft(playoffSeries) !== undefined;
+	const today = await offDaysToday();
 	let numDaysFutureRounds = 0;
 	let numSeries = playoffSeries.series[0]?.length ?? 1;
 
 	for (let i = 0; i < g.get("numGamesPlayoffSeries", "current").length; i++) {
 		if (i > playoffSeries.currentRound) {
 			const numGames = g.get("numGamesPlayoffSeries", "current")[i]!;
-			numDaysFutureRounds += calendar
-				? numGames * Math.min(numSeries, 4) + 3
-				: numGames;
+			// (Every date a day: a round's games two or three days apart, and
+			// the days before it.)
+			numDaysFutureRounds +=
+				calendar && today !== undefined
+					? Math.max(numGames * Math.min(numSeries, 4), numGames * 3) + 7
+					: calendar
+						? numGames * Math.min(numSeries, 4) + 3
+						: numGames;
 		}
 		numSeries = Math.max(1, Math.ceil(numSeries / 2));
 	}
@@ -173,7 +210,7 @@ const getNumDaysPlayoffs = async () => {
 		numDaysAllStar +
 		numDaysPlayIn +
 		numDaysFutureRounds +
-		getNumDaysThisRound(playoffSeries)
+		getNumDaysThisRound(playoffSeries, today)
 	);
 };
 
@@ -290,7 +327,10 @@ const playMenu = {
 				throw new Error("playoffSeries not found");
 			}
 			local.playingUntilEndOfRound = true;
-			game.play(getNumDaysThisRound(playoffSeries), conditions);
+			game.play(
+				getNumDaysThisRound(playoffSeries, await offDaysToday()),
+				conditions,
+			);
 		}
 	},
 	untilEndOfPlayIn: async (param: unknown, conditions: Conditions) => {

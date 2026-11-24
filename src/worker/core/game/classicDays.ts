@@ -23,9 +23,16 @@ export const storedClassicDays = () => {
 	return stored?.season === g.get("season") ? stored.days : undefined;
 };
 
-// This stretch's clock (calendarTicks.ts) and the last night played, for
-// projecting injuries forward and for the days they have left. Undefined off
-// the calendar.
+// The date of this season's last day whose end of day was counted: a night
+// with games, or a day without (season/offDays.ts).
+export const countedThrough = () => {
+	const last = g.get("lastDailyCountdownDay");
+	return last?.season === g.get("season") ? last.date : undefined;
+};
+
+// This stretch's clock (calendarTicks.ts) and the last night played (or a
+// later day with no games, once counted), for projecting injuries forward
+// and for the days they have left. Undefined off the calendar.
 export const getInjuryClock = async (phase: number = g.get("phase")) => {
 	const season = g.get("season");
 	const games = await idb.cache.games.getAll();
@@ -49,6 +56,13 @@ export const getInjuryClock = async (phase: number = g.get("phase")) => {
 			lastNight = game.date;
 		}
 	}
+	const counted = countedThrough();
+	if (
+		counted !== undefined &&
+		(lastNight === undefined || counted > lastNight)
+	) {
+		lastNight = counted;
+	}
 	return { clock, lastNight, games, season };
 };
 
@@ -70,6 +84,7 @@ export const daysOutForNewInjury = async (
 		games: now.games,
 		season: now.season,
 		tonight,
+		countedThrough: countedThrough(),
 	});
 };
 

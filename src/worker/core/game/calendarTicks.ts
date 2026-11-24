@@ -233,11 +233,14 @@ export const ticksBetween = (
 	to: string,
 ) => Math.max(0, ticksAt(clock, to) - ticksAt(clock, from));
 
-// The latest night before this one with games this season.
+// The latest day before this one whose end of day has been counted this
+// season: its last night with games, or a later day with none
+// (season/offDays.ts) - `countedThrough`, the date of the last day counted.
 const nightBefore = (
 	games: readonly ClockGame[],
 	season: number,
 	date: string,
+	countedThrough?: string,
 ) => {
 	let before: string | undefined;
 	for (const game of games) {
@@ -249,6 +252,13 @@ const nightBefore = (
 		) {
 			before = game.date;
 		}
+	}
+	if (
+		countedThrough !== undefined &&
+		countedThrough < date &&
+		(before === undefined || countedThrough > before)
+	) {
+		before = countedThrough;
 	}
 	return before;
 };
@@ -262,6 +272,8 @@ export const nightTick = ({
 	day,
 	phase,
 	classicDays,
+	date,
+	countedThrough,
 }: {
 	// This season's games, including tonight's.
 	games: readonly ClockGame[];
@@ -272,12 +284,16 @@ export const nightTick = ({
 	phase: number;
 	// The season's classic days (see countClassicDays), if known.
 	classicDays: number | undefined;
+	// A day with no games (season/offDays.ts): its date.
+	date?: string;
+	// The date of the last day counted this season (see nightBefore).
+	countedThrough?: string;
 }): DayTick => {
 	if (day === undefined) {
 		return CLASSIC;
 	}
-	let tonight: string | undefined;
-	for (const game of games) {
+	let tonight: string | undefined = date;
+	for (const game of date === undefined ? games : []) {
 		if (game.season === season && game.day === day) {
 			if (game.date === undefined) {
 				return CLASSIC;
@@ -298,7 +314,11 @@ export const nightTick = ({
 	if (!clock) {
 		return CLASSIC;
 	}
-	const n = ticksBetween(clock, nightBefore(games, season, tonight), tonight);
+	const n = ticksBetween(
+		clock,
+		nightBefore(games, season, tonight, countedThrough),
+		tonight,
+	);
 	return {
 		ticksByTid: new Map(),
 		restTicks: n,
@@ -340,18 +360,24 @@ export const daysOutHurtTonight = ({
 	games,
 	season,
 	tonight,
+	countedThrough,
 }: {
 	gamesRemaining: number;
 	clock: CalendarClock;
 	games: readonly ClockGame[];
 	season: number;
 	tonight: string;
+	countedThrough?: string;
 }) =>
 	Math.max(
 		1,
 		daysOut(
 			gamesRemaining -
-				ticksBetween(clock, nightBefore(games, season, tonight), tonight),
+				ticksBetween(
+					clock,
+					nightBefore(games, season, tonight, countedThrough),
+					tonight,
+				),
 			clock,
 			tonight,
 		),

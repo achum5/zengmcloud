@@ -78,7 +78,9 @@ const autoPlay = async (conditions: Conditions = {}) => {
 			(await season.getDaysLeftSchedule()) + (g.get("college") ? 10 : 0);
 		await game.play(numDays, conditions);
 	} else if (currentPhase === PHASE.PLAYOFFS) {
-		await game.play(100, conditions);
+		// (Through the end: on the NBA calendar every date is a day, about 70
+		// of them - season/offDays.ts.)
+		await game.play(300, conditions);
 	} else if (currentPhase === PHASE.DRAFT_LOTTERY) {
 		const type = g.get("repeatSeason")?.type;
 		if (type === "playersAndRosters" || g.get("forceHistoricalRosters")) {

@@ -1,3 +1,4 @@
+import { countedThrough } from "../game/classicDays.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { getSyncEngine } from "./engineHolder.ts";
@@ -73,10 +74,11 @@ export type SimStopPoint =
 	| { kind: "day"; day: number; date?: string };
 
 // The last night played this season, on the NBA calendar (where a date stop
-// stands: common/simStopDays.ts).
+// stands: common/simStopDays.ts) - or a later day with no games already
+// lived (season/offDays.ts).
 export const lastNightPlayed = async () => {
 	const season = g.get("season");
-	let last: string | undefined;
+	let last: string | undefined = countedThrough();
 	for (const game of await idb.cache.games.getAll()) {
 		if (
 			game.season === season &&

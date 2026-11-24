@@ -642,6 +642,17 @@ export const guardDayContiguity = async (
 	let minDay: number | undefined;
 	const incomingGids = new Set<number>();
 	for (const change of changeset.changes) {
+		// A day with no game on it (the trade deadline, a date with no games -
+		// season/offDays.ts) is lived by deleting its row: one this changeset
+		// deletes has arrived with it.
+		if (
+			change.store === "schedule" &&
+			change.type === "delete" &&
+			typeof change.id === "number"
+		) {
+			incomingGids.add(change.id);
+			continue;
+		}
 		if (change.store !== "games" || change.type !== "put") {
 			continue;
 		}

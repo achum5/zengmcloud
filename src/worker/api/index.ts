@@ -460,6 +460,7 @@ import { getMetaAttribute, putMetaAttribute } from "../db/metaAttributes.ts";
 import {
 	ALL_STAR_GAME_TIDS,
 	isAllStarGame,
+	isOffDay,
 	isTradeDeadline,
 } from "../../common/specialGames.ts";
 import { augmentOffers } from "../views/trade.ts";
@@ -8271,7 +8272,7 @@ const getAutoPlayPreview = async () => {
 			}
 		} else if (item.homeTid === -1 && item.awayTid === -2) {
 			entry.allStar = true;
-		} else {
+		} else if (!isOffDay(item.homeTid, item.awayTid)) {
 			entry.numGames += 1;
 		}
 	}

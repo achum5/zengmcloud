@@ -87,6 +87,44 @@ describe("guardDayContiguity", () => {
 		assert.strictEqual(resyncMarks, 0);
 	});
 
+	// A day with no game on it (season/offDays.ts, the trade deadline) is
+	// lived by deleting its row - shipped in the same changeset as the next
+	// day's games by a multi-day sim.
+	test("a no-game day deleted by the same changeset is not missing", async () => {
+		await resetCache({});
+		await idb.cache.schedule.add({
+			gid: 115,
+			day: 11,
+			homeTid: -4,
+			awayTid: -4,
+		} as any);
+		await idb.cache.schedule.add(scheduleRow(120, 12) as any);
+		await guardDayContiguity({
+			changes: [
+				{ store: "schedule" as any, id: 115, type: "delete" as const },
+				gameFor(120, 12),
+			],
+		});
+		assert.strictEqual(resyncMarks, 0);
+	});
+
+	test("a no-game day not lived yet still refuses the next day's games", async () => {
+		await resetCache({});
+		await idb.cache.schedule.add({
+			gid: 115,
+			day: 11,
+			homeTid: -4,
+			awayTid: -4,
+		} as any);
+		let refused = false;
+		try {
+			await guardDayContiguity({ changes: [gameFor(120, 12)] });
+		} catch {
+			refused = true;
+		}
+		assert.isTrue(refused);
+	});
+
 	// A schedule row whose game this device already HAS is a phantom row (the
 	// played-game sweep cleans those) - wrong, but not missing data. Refusing
 	// on it would pin healthy devices on a cosmetic leftover.

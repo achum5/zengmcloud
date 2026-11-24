@@ -15,7 +15,9 @@
 // kind of thing.
 //
 // On the NBA calendar a stop can be a date instead ("Dec 15", every season):
-// the sim stops before the first night with games on or after it.
+// the sim stops on arrival at it - or, in a season that skips the dates with
+// no games (from before season/offDays.ts), before the first night on or
+// after it.
 
 import { makeDate } from "./calendarDates.ts";
 

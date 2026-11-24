@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 561,
+		date: "2026-11-24",
+		text: "NBA calendar: every date is a day now. A date with no games anywhere, like Thanksgiving, Christmas Eve, the All-Star break or the days between playoff games, no longer gets skipped. One day takes you to it, it's today in the header and on the Daily Schedule, injuries and trade waits count down that day, and teams can make moves. It starts with each league's next season.",
+	},
+	{
 		n: 560,
 		date: "2026-11-24",
 		text: 'Game recaps tell runs the way broadcasts count them, both numbers and who carried them ("a 31-6 run in the second quarter, 12 of the points from Devin Nash"), say how a close game got away late ("The Knicks were within a point with 4:51 left before the Nuggets closed on a 20-1 run"), and point out when a team went the last five minutes without a field goal. The same goes for the night recap on the Daily Schedule.',

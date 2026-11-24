@@ -8,9 +8,15 @@ import addDaysToSchedule from "./addDaysToSchedule.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { isFinals } from "./isFinals.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
+import { isOffDay, OFF_DAY_TIDS } from "../../../common/specialGames.ts";
+import { daysBetween } from "../../../common/calendarDates.ts";
+import { offDaysThisSeason, playoffOffDates } from "./offDays.ts";
 
+// (A day with no games, by its date.)
 const makePlayoffsKey = (game: ScheduleGameWithoutKey) =>
-	JSON.stringify([game.homeTid, game.awayTid]);
+	isOffDay(game.homeTid, game.awayTid)
+		? JSON.stringify(["off", game.date])
+		: JSON.stringify([game.homeTid, game.awayTid]);
 
 /**
  * Save the schedule to the database, overwriting what's currently there.
@@ -37,6 +43,58 @@ const setSchedule = async (
 		}
 	}
 
+	const existingGames = await idb.cache.games.getAll();
+
+	// In the playoffs on the calendar, the days before this night with no
+	// games are days too (offDays.ts), numbered by their dates from the last
+	// game played, so a day already lived is never numbered again. (The
+	// playoffs' first night is set before the phase is.)
+	let dayOfDate: ((date: string) => number) | undefined;
+	if (
+		dates !== undefined &&
+		dates.length > 0 &&
+		offDaysThisSeason() &&
+		(playoffs ||
+			(await idb.cache.playoffSeries.get(g.get("season"))) !== undefined)
+	) {
+		let firstLeft: string | undefined;
+		for (const game of await idb.cache.schedule.getAll()) {
+			if (
+				game.date !== undefined &&
+				(firstLeft === undefined || game.date < firstLeft)
+			) {
+				firstLeft = game.date;
+			}
+		}
+		const dated = dates.filter((date): date is string => date !== undefined);
+		const season = g.get("season");
+		let last: { day: number; date: string } | undefined;
+		for (const game of existingGames) {
+			if (
+				game.season === season &&
+				game.date !== undefined &&
+				game.day !== undefined &&
+				(last === undefined || game.day > last.day)
+			) {
+				last = { day: game.day, date: game.date };
+			}
+		}
+		if (dated.length === dates.length && last !== undefined) {
+			const offDates = playoffOffDates({
+				lastPlayed: last.date,
+				firstLeft,
+				firstNew: dated.toSorted()[0]!,
+			});
+			tids = [
+				...offDates.map(() => [...OFF_DAY_TIDS] as [number, number]),
+				...tids,
+			];
+			dates = [...offDates, ...dated];
+			const anchor = last;
+			dayOfDate = (date) => anchor.day + daysBetween(anchor.date, date);
+		}
+	}
+
 	await idb.cache.schedule.clear();
 
 	const finals = playoffs && (await isFinals());
@@ -47,9 +105,12 @@ const setSchedule = async (
 			awayTid,
 			date: dates?.[i],
 		})),
-		await idb.cache.games.getAll(),
+		existingGames,
 	);
 	for (const game of schedule) {
+		if (dayOfDate && game.date !== undefined) {
+			game.day = dayOfDate(game.date);
+		}
 		if (playoffs) {
 			const key = makePlayoffsKey(game);
 			if (oldPlayoffGames[key]) {

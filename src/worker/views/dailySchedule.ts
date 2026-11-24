@@ -21,7 +21,12 @@ import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdow
 import { env } from "../util/env.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateSeason } from "../util/processInputs.ts";
-import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
+import {
+	isAllStarGame,
+	isNoGameDay,
+	isOffDay,
+	isTradeDeadline,
+} from "../../common/specialGames.ts";
 import { formatGameDate } from "../../common/calendarDates.ts";
 import { getCalendarIfDated } from "./calendar.ts";
 import { getLiveGate, liveScheduleRow } from "../util/liveGameGate.ts";
@@ -182,25 +187,26 @@ export default defineView({
 					}
 
 					if (inputs.yesterday) {
-						if (schedule[0]?.day !== undefined) {
-							day = Math.max(1, schedule[0].day - 1);
-						} else {
-							// Nothing left to play: "yesterday" is the last played day.
-							let lastPlayedDay: number | undefined;
-							await idb.merged.games.forEach(
-								{ season: inputs.season },
-								(game) => {
-									if (
-										game.day !== undefined &&
-										(lastPlayedDay === undefined || game.day > lastPlayedDay)
-									) {
-										lastPlayedDay = game.day;
-									}
-								},
-							);
-							if (lastPlayedDay !== undefined) {
-								day = lastPlayedDay;
-							}
+						// The last day played (a day with no games before today has
+						// nothing to show - season/offDays.ts).
+						const today = schedule[0]?.day;
+						let lastPlayedDay: number | undefined;
+						await idb.merged.games.forEach(
+							{ season: inputs.season },
+							(game) => {
+								if (
+									game.day !== undefined &&
+									(today === undefined || game.day < today) &&
+									(lastPlayedDay === undefined || game.day > lastPlayedDay)
+								) {
+									lastPlayedDay = game.day;
+								}
+							},
+						);
+						if (lastPlayedDay !== undefined) {
+							day = lastPlayedDay;
+						} else if (today !== undefined) {
+							day = Math.max(1, today - 1);
 						}
 					}
 
@@ -307,7 +313,7 @@ export default defineView({
 
 					for (const game of schedule) {
 						if (game.day !== undefined) {
-							if (!isTradeDeadline(game.homeTid, game.awayTid)) {
+							if (!isNoGameDay(game.homeTid, game.awayTid)) {
 								addToDay(game.day, {
 									gid: game.gid,
 									homeTid: game.homeTid,
@@ -574,6 +580,12 @@ export default defineView({
 							: undefined,
 					},
 					nights,
+					// A day with no games (season/offDays.ts), still to come.
+					offDay:
+						schedule?.some(
+							(game) =>
+								game.day === day && isOffDay(game.homeTid, game.awayTid),
+						) ?? false,
 					// The night the league is on, for the strip's "today".
 					todayDay:
 						inputs.season === currentSeason ? schedule?.[0]?.day : undefined,
@@ -591,6 +603,7 @@ export default defineView({
 			if (
 				info.completed.length === 0 &&
 				info.upcoming.length === 0 &&
+				!info.offDay &&
 				info.days.length > 0
 			) {
 				const dayAbove = info.days.find(({ key }) => key > info.day);

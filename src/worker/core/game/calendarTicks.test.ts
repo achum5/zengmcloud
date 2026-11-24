@@ -93,6 +93,69 @@ describe("nightTick", () => {
 		assert.deepStrictEqual(ticks, [0, 1, 1, 3]);
 	});
 
+	// season/offDays.ts: a date with no games counts its days that day, and
+	// the next night counts from it, so the season's total is the same.
+	test("a day with no games counts its own days, the next night the rest", () => {
+		const games = [
+			game(1, 1, [0, 1], "2026-10-20"),
+			game(2, 3, [2, 3], "2026-10-22"),
+			game(3, 6, [0, 2], "2026-10-25"),
+			game(4, 7, [1, 3], "2026-10-29"),
+		];
+		const schedule = (after: number) =>
+			games
+				.filter((row) => row.day! > after)
+				.map((row) => ({
+					homeTid: row.teams[0].tid,
+					awayTid: row.teams[1].tid,
+					date: row.date,
+				}));
+		const offDay = (date: string, day: number, countedThrough: string) =>
+			nightTick({
+				games: games.filter((row) => row.day! < day),
+				schedule: schedule(day),
+				season: 2027,
+				day,
+				phase: PHASE.REGULAR_SEASON,
+				classicDays: 5,
+				date,
+				countedThrough,
+			});
+		const night = (day: number, countedThrough: string) =>
+			nightTick({
+				games: games.filter((row) => row.day! <= day),
+				schedule: schedule(day),
+				season: 2027,
+				day,
+				phase: PHASE.REGULAR_SEASON,
+				classicDays: 5,
+				countedThrough,
+			});
+		const ticks = [
+			night(1, "2026-10-20").restTicks,
+			offDay("2026-10-21", 2, "2026-10-20").restTicks,
+			night(3, "2026-10-21").restTicks,
+			offDay("2026-10-23", 4, "2026-10-22").restTicks,
+			offDay("2026-10-24", 5, "2026-10-23").restTicks,
+			night(6, "2026-10-24").restTicks,
+		];
+		// One classic day every two: through Oct 21, 23 and 25.
+		assert.deepStrictEqual(ticks, [0, 1, 0, 1, 0, 1]);
+		assert.strictEqual(
+			offDay("2026-10-21", 2, "2026-10-20").tonight,
+			"2026-10-21",
+		);
+		// The same nights without the days between: the same total.
+		const withoutOffDays = [1, 3, 6].map(
+			(day) =>
+				night(day, games.find((row) => row.day === day)!.date!).restTicks,
+		);
+		assert.strictEqual(
+			withoutOffDays.reduce((a, b) => a! + b!, 0),
+			ticks.reduce((a, b) => a! + b!, 0),
+		);
+	});
+
 	test("the All-Star Game counts one more classic day", () => {
 		const games = [
 			game(1, 1, [0, 1], "2027-02-01"),

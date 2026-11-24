@@ -1,5 +1,5 @@
 import { PHASE } from "../../../common/constants.ts";
-import { isTradeDeadline } from "../../../common/specialGames.ts";
+import { isOffDay, isTradeDeadline } from "../../../common/specialGames.ts";
 import type { ScheduleGame } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
@@ -62,7 +62,11 @@ export const classicDaysLeftFrom = ({
 			if (game.day < end) {
 				before += 1;
 			}
-		} else if (game.day < end || end === Infinity) {
+		} else if (
+			!isOffDay(game.homeTid, game.awayTid) &&
+			(game.day < end || end === Infinity)
+		) {
+			// (A day with no games is in the classic days already.)
 			ownDays.add(game.day);
 		}
 	}

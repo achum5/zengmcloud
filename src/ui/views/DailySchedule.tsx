@@ -75,6 +75,7 @@ const DailySchedule = ({
 	todayDay,
 	elamASG,
 	isToday,
+	offDay,
 	ownGameSimCutoffSeconds,
 	season,
 	ties,
@@ -331,6 +332,12 @@ const DailySchedule = ({
 						<p>
 							Sim one day to move past the trade deadline, and then the next
 							day's games will be available here.
+						</p>
+					) : null}
+
+					{offDay ? (
+						<p className="text-body-secondary">
+							{isToday ? "No games today." : "No games."}
 						</p>
 					) : null}
 
