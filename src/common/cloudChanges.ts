@@ -17,6 +17,26 @@ export const CLOUD_CHANGES: CloudChange[] = [
 		text: "3D game, New sim: players' feet stay planted through shots, jumps, screens and jab steps too. A shooter steps into his shot and leaves the floor from where his feet are, comes down on the feet his jump puts down, and a jab step is a real step out and back.",
 	},
 	{
+		n: 498,
+		date: "2026-11-23",
+		text: "Nightly Recap: smoother into each game. The GAME RECAP card no longer stutters as it comes up; the 3D court is set up behind it once it's still, and the arena is painted once instead of twice.",
+	},
+	{
+		n: 497,
+		date: "2026-11-23",
+		text: "NBA calendar month view: home games are a plain fill in your team's color (no stripe on top), and the small calendar on the dashboard now shows each game's score.",
+	},
+	{
+		n: 496,
+		date: "2026-11-23",
+		text: "Daily Schedule's row of days (NBA calendar): swipe it to move a week at a time, or use the arrows on a computer. The night you're looking at is filled in, and tonight has a red dot.",
+	},
+	{
+		n: 495,
+		date: "2026-11-23",
+		text: "NBA calendar month view, redesigned (Schedule, Calendar, dashboard): every night is a tile, home games filled in your team's colors, road games a plain card, each with the opponent's logo, the result and the score. National TV games still to come show the network, and the months are tabs with your record in each.",
+	},
+	{
 		n: 494,
 		date: "2026-11-23",
 		text: "NBA calendar scores bar: it now works like the regular one. It opens on its right end with your next game, runs through that game instead of the days after it, and has the same yesterday and today buttons on the right, which stay put while you scroll back.",

@@ -1,4 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
+import type { NationalTag } from "../../common/types.ts";
 import { isAllStarGame, isTradeDeadline } from "../../common/specialGames.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { season as seasonCore } from "../core/index.ts";
@@ -8,6 +9,7 @@ import { defineView } from "../util/defineView.ts";
 import { validateSeason, validateTeam } from "../util/processInputs.ts";
 import { getLiveGate } from "../util/liveGameGate.ts";
 import { getPlannedPlayoffGames } from "../util/plannedPlayoffGames.ts";
+import { nationalTags } from "./nationalBroadcast.ts";
 
 // THE CALENDAR PAGE: a season's nights, month by month, for a team or the
 // whole league. The same month calendar sits on Daily Schedule, Schedule and
@@ -39,6 +41,8 @@ export type CalendarGame = {
 	homePts?: number;
 	awayPts?: number;
 	overtimes?: number;
+	// The network, for a team's national game still to come.
+	national?: NationalTag;
 };
 
 export type CalendarKeyDate = {
@@ -129,7 +133,19 @@ export const getCalendarData = async (
 			}
 		}
 		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
-		for (const game of await seasonCore.getSchedule()) {
+		const schedule = await seasonCore.getSchedule();
+		// (One tag object a network, so its logo crosses to the page once.)
+		const national = new Map<number, NationalTag>();
+		if (tid !== "all") {
+			const byNetwork = new Map<string, NationalTag>();
+			for (const [gid, tag] of await nationalTags(schedule)) {
+				if (!byNetwork.has(tag.network)) {
+					byNetwork.set(tag.network, tag);
+				}
+				national.set(gid, byNetwork.get(tag.network)!);
+			}
+		}
+		for (const game of schedule) {
 			if (game.date === undefined) {
 				undated = true;
 				continue;
@@ -159,6 +175,9 @@ export const getCalendarData = async (
 					playoffs,
 					...(playoffs && playoffSeries?.currentRound === -1
 						? { playIn: true }
+						: {}),
+					...(national.has(game.gid)
+						? { national: national.get(game.gid) }
 						: {}),
 				});
 			}
