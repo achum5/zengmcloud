@@ -218,6 +218,7 @@ const Playoffs = ({
 												numGamesToWinSeries={numGamesToWinSeries[m.matchup[0]]}
 												season={season}
 												series={series[m.matchup[0]]![m.matchup[1]]}
+												seriesLinks={finalMatchups}
 												userTid={userTid}
 												editing={editingInfo}
 											/>

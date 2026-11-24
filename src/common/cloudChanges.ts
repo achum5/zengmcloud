@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 566,
+		date: "2026-11-24",
+		text: "Every playoff series has its own page. Tap the games won on the Playoffs bracket, or the series score on a box score: it shows where the series stands, every game with its recap and the games still to come, the series leaders, both teams' stats side by side, their regular season meetings and every other time they met in the playoffs.",
+	},
+	{
 		n: 562,
 		date: "2026-11-24",
 		text: 'Game recaps read like a wire story now. They open with the home city ("DENVER — ") and end with Takeaways (one line on what the game means for each team, like a streak, a season high or where they sit in the standings), the Key moment, the Key stat, and Up next (who each team plays next, with the day of the week when the league uses the NBA calendar). On the Daily Schedule and every box score.',

@@ -2108,3 +2108,34 @@ export const getAutoRecapForGid = async ({
 		wire: true,
 	});
 };
+
+// The auto recaps of some of a season's completed games, from one context -
+// a playoff series page's games, which fall on different days.
+export const getAutoRecapsForGids = async ({
+	season,
+	gids,
+}: {
+	season: number;
+	gids: number[];
+}): Promise<Record<number, string>> => {
+	if (__SPORT !== "basketball" || gids.length === 0) {
+		return {};
+	}
+	const ctx = await createAutoRecapContext(season);
+	const wanted = new Set(gids);
+	const notes: Record<number, string> = {};
+	beginRecapBatch();
+	try {
+		for (const game of ctx.allGames) {
+			if (wanted.has(game.gid) && game.won && game.lost) {
+				notes[game.gid] = getAutoRecap(
+					await ctx.buildRecapGame(game, game.day ?? 0),
+					{ wire: true },
+				);
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	return notes;
+};

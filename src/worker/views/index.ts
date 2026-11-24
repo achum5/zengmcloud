@@ -106,6 +106,7 @@ export { default as playerStatDists } from "./playerStatDists.ts";
 export { default as playerGraphs } from "./playerGraphs.ts";
 export { default as playerStats } from "./playerStats.ts";
 export { default as playoffs } from "./playoffs.ts";
+export { default as playoffSeries } from "./playoffSeries.ts";
 export { default as powerRankings } from "./powerRankings.ts";
 export { default as protectPlayers } from "./protectPlayers.ts";
 export { default as relatives } from "./relatives.ts";

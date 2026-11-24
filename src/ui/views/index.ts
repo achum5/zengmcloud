@@ -109,6 +109,7 @@ export { default as PlayerStatDists } from "./PlayerStatDists.tsx";
 export { default as PlayerGraphs } from "./PlayerGraphs/index.tsx";
 export { default as PlayerStats } from "./PlayerStats.tsx";
 export { default as Playoffs } from "./Playoffs.tsx";
+export { default as PlayoffSeries } from "./PlayoffSeries.tsx";
 export { default as PowerRankings } from "./PowerRankings.tsx";
 export { default as ProtectPlayers } from "./ProtectPlayers.tsx";
 export { default as Relatives } from "./Relatives.tsx";

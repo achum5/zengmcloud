@@ -33,6 +33,7 @@ export const routeInfos = {
 	"/l/:lid/standings/:season/:type": "standings",
 	"/l/:lid/playoffs": "playoffs",
 	"/l/:lid/playoffs/:season": "playoffs",
+	"/l/:lid/playoff_series/:season/:team/:opp": "playoffSeries",
 	"/l/:lid/league_finances": "leagueFinances",
 	"/l/:lid/league_finances/:season": "leagueFinances",
 	"/l/:lid/history": "history",

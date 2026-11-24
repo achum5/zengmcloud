@@ -1,0 +1,507 @@
+// ONE PLAYOFF SERIES (views/PlayoffSeries.tsx), in the hub's look: the two
+// teams across the top as the game cards draw a game, bigger, then the
+// games and the side panels in the hub's columns (.lh-grid, .lh-card).
+
+// The two teams, each half in its colors meeting on a slant: the logo on its
+// striped end, the seed and record, the city and name, and the games won,
+// with where it stands on a dark plate over the seam.
+.ps-hero {
+	position: relative;
+	display: grid;
+	grid-template-columns:
+		5.5rem minmax(0, 1fr) auto minmax(9rem, auto) auto minmax(0, 1fr)
+		5.5rem;
+	align-items: center;
+	min-height: 8.5rem;
+	margin-bottom: 1.25rem;
+	overflow: hidden;
+	background: linear-gradient(110deg, var(--ps-a-bg) 50%, var(--ps-h-bg) 50%);
+	border-radius: 0.75rem;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
+	// A soft light from the top, and a fine line where the colors meet.
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	&::before {
+		background: linear-gradient(
+			180deg,
+			rgb(255 255 255 / 0.1),
+			rgb(0 0 0 / 0.16)
+		);
+	}
+	&::after {
+		background: linear-gradient(
+			110deg,
+			transparent calc(50% - 1px),
+			rgb(255 255 255 / 0.45) calc(50% - 1px) calc(50% + 1px),
+			transparent calc(50% + 1px)
+		);
+	}
+	> * {
+		position: relative;
+		z-index: 1;
+	}
+}
+// The season and the round, on a tag hung from the top over the seam.
+.ps-hero > .ps-hero-tag {
+	position: absolute;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 0.18rem 0.8rem 0.22rem;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #fff;
+	white-space: nowrap;
+	background: rgb(16 18 22 / 0.72);
+	border-radius: 0 0 0.45rem 0.45rem;
+}
+.ps-cap {
+	position: relative;
+	align-self: stretch;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 0.5rem;
+	--ps-accent: var(--ps-a-accent);
+	// Stripes in its second color across the top and the foot.
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 14%;
+		background: repeating-linear-gradient(
+			110deg,
+			var(--ps-accent) 0 0.5rem,
+			transparent 0.5rem 1rem
+		);
+	}
+	&::before {
+		top: 0;
+	}
+	&::after {
+		bottom: 0;
+	}
+	img {
+		position: relative;
+		z-index: 1;
+		width: 100%;
+		max-width: 4rem;
+		height: auto;
+		filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+	}
+}
+.ps-cap-home {
+	--ps-accent: var(--ps-h-accent);
+}
+.ps-team {
+	min-width: 0;
+	padding: 1.4rem 0.5rem 0.9rem 0.9rem;
+	color: var(--ps-a-fg);
+}
+.ps-team-home {
+	padding: 1.4rem 0.9rem 0.9rem 0.5rem;
+	color: var(--ps-h-fg);
+	text-align: right;
+}
+.ps-team-seed {
+	font-size: 0.75rem;
+	font-weight: 700;
+	opacity: 0.8;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.ps-team-region {
+	margin-top: 0.15rem;
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	opacity: 0.85;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ps-team-name {
+	font-size: 1.9rem;
+	font-weight: 800;
+	line-height: 1.05;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ps-team-name-long {
+	font-size: 1.5rem;
+}
+.ps-wins {
+	padding: 1rem 0.7rem 0.4rem;
+	font-size: 3.6rem;
+	font-weight: 800;
+	line-height: 1;
+	color: var(--ps-a-fg);
+	font-variant-numeric: tabular-nums;
+}
+.ps-wins-home {
+	color: var(--ps-h-fg);
+}
+// (The team that went out, dimmed.)
+.ps-team.out .ps-team-name,
+.ps-wins.out {
+	opacity: 0.6;
+}
+.ps-mid {
+	justify-self: center;
+	margin-top: 1.3rem;
+	padding: 0.4rem 0.8rem;
+	text-align: center;
+	color: #fff;
+	background: rgb(16 18 22 / 0.72);
+	border-radius: 0.5rem;
+	box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+}
+.ps-status {
+	font-size: 1rem;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.ps-bestof {
+	margin-top: 0.2rem;
+	padding-top: 0.2rem;
+	border-top: 1px solid rgb(255 255 255 / 0.22);
+	font-size: 0.72rem;
+	font-weight: 700;
+	color: rgb(255 255 255 / 0.85);
+	white-space: nowrap;
+}
+
+// The night of each game, over its card.
+.ps-game-date {
+	margin: -0.1rem 0 0.35rem 0.1rem;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+
+// The games still to come, in one frame under the played ones: a column
+// each for the game, the night, and who's where.
+.ps-next {
+	list-style: none;
+	margin: 0;
+	padding: 0 0.9rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.75rem;
+	> li {
+		display: grid;
+		grid-template-columns: 4.4rem minmax(0, 1fr) auto;
+		align-items: center;
+		column-gap: 1rem;
+		padding: 0.6rem 0;
+		& + li {
+			border-top: 1px solid var(--bs-border-color);
+		}
+	}
+}
+.ps-next-dated > li {
+	grid-template-columns: 4.4rem 7rem minmax(0, 1fr) auto;
+}
+.lh-finals + .ps-next {
+	margin-top: 1rem;
+}
+.ps-next-num {
+	font-weight: 800;
+	white-space: nowrap;
+}
+.ps-next-date {
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+}
+.ps-next-where {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-weight: 700;
+	white-space: nowrap;
+}
+.ps-next-if {
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+}
+.ps-next-maybe {
+	.ps-next-num,
+	.ps-next-where {
+		opacity: 0.65;
+	}
+}
+
+// Each team's leaders, face to face.
+.ps-leaders-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 0.2rem;
+	font-size: 0.72rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--bs-secondary-color);
+}
+.ps-leaders-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 2.6rem minmax(0, 1fr);
+	align-items: center;
+	padding: 0.35rem 0;
+}
+.ps-leaders-label {
+	text-align: center;
+	font-size: 0.72rem;
+	font-weight: 800;
+	letter-spacing: 0.04em;
+	color: var(--bs-secondary-color);
+}
+.ps-leader {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	min-width: 0;
+	color: inherit;
+	text-decoration: none;
+	&:hover .ps-leader-name {
+		color: var(--bs-link-hover-color);
+	}
+}
+.ps-leader-home {
+	flex-direction: row-reverse;
+	text-align: right;
+}
+.ps-face {
+	flex: 0 0 auto;
+	width: 2.3rem;
+	height: 3.45rem;
+	> * {
+		width: 100%;
+		height: 100%;
+	}
+}
+.ps-leader-words {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.15;
+}
+.ps-leader-name {
+	font-size: 0.8rem;
+	font-weight: 700;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ps-leader-value {
+	font-size: 1.3rem;
+	font-weight: 800;
+	font-variant-numeric: tabular-nums;
+}
+
+// The two teams side by side, a line a stat.
+.ps-compare {
+	width: 100%;
+	font-variant-numeric: tabular-nums;
+	th,
+	td {
+		padding: 0.3rem 0;
+		text-align: left;
+		white-space: nowrap;
+	}
+	th:last-child,
+	td:last-child {
+		text-align: right;
+	}
+	thead th {
+		font-size: 0.85rem;
+		font-weight: 800;
+	}
+	tbody tr + tr td,
+	tbody tr:first-child td {
+		border-top: 1px solid var(--bs-border-color);
+	}
+	.ps-compare-label {
+		text-align: center;
+		font-size: 0.8rem;
+		color: var(--bs-secondary-color);
+	}
+	thead .ps-compare-label {
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+}
+
+.ps-record {
+	font-weight: 800;
+	margin-bottom: 0.2rem;
+}
+.ps-meeting > a,
+.ps-history > a {
+	display: flex;
+	align-items: baseline;
+	gap: 0.45rem;
+	padding: 0.4rem 0;
+	color: inherit;
+	text-decoration: none;
+	font-variant-numeric: tabular-nums;
+	&:hover {
+		color: var(--bs-link-hover-color);
+	}
+}
+.ps-meeting-when {
+	flex: 0 0 3.6rem;
+	color: var(--bs-secondary-color);
+}
+.ps-history-season {
+	flex: 0 0 2.6rem;
+	font-weight: 800;
+}
+.ps-history-round {
+	flex: 1 1 auto;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ps-history-result {
+	flex: 0 0 auto;
+	font-weight: 700;
+}
+
+// Everybody's averages, a table a team, under it all.
+.ps-players {
+	margin-top: 1.5rem;
+	.lh-section-title a {
+		color: inherit;
+		text-decoration: none;
+	}
+}
+.ps-players-team + .ps-players-team {
+	margin-top: 1.25rem;
+}
+
+// ON A PHONE: the ends narrower, each side's city and name over the games
+// won beside it, and where it stands on the plate under them, over the seam.
+@include media-breakpoint-down(md) {
+	.ps-hero {
+		grid-template-columns:
+			2.6rem minmax(0, 1fr) auto auto minmax(0, 1fr)
+			2.6rem;
+		grid-template-areas:
+			"ac at aw hw ht hc"
+			"ac m m m m hc";
+		min-height: 0;
+		border-radius: 0.6rem;
+	}
+	.ps-cap-away {
+		grid-area: ac;
+	}
+	.ps-cap-home {
+		grid-area: hc;
+	}
+	.ps-team-away {
+		grid-area: at;
+	}
+	.ps-team-home {
+		grid-area: ht;
+	}
+	.ps-wins-away {
+		grid-area: aw;
+	}
+	.ps-wins-home {
+		grid-area: hw;
+	}
+	.ps-mid {
+		grid-area: m;
+		margin: 0 0 0.5rem;
+		padding: 0.2rem 0.6rem;
+		display: flex;
+		align-items: baseline;
+		gap: 0.45rem;
+	}
+	.ps-hero > .ps-hero-tag {
+		max-width: 92%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		font-size: 0.6rem;
+		padding: 0.12rem 0.55rem 0.15rem;
+	}
+	.ps-cap {
+		padding: 0 0.25rem;
+		img {
+			max-width: 2.1rem;
+		}
+	}
+	.ps-team {
+		padding: 1.3rem 0.1rem 0.4rem 0.45rem;
+	}
+	.ps-team-home {
+		padding: 1.3rem 0.45rem 0.4rem 0.1rem;
+	}
+	.ps-team-seed {
+		font-size: 0.6rem;
+	}
+	.ps-team-region {
+		font-size: 0.6rem;
+	}
+	.ps-team-name {
+		font-size: 1.05rem;
+	}
+	.ps-team-name-long {
+		font-size: 0.9rem;
+	}
+	.ps-wins {
+		padding: 1.2rem 0.35rem 0.3rem;
+		font-size: 2.2rem;
+	}
+	// (Clear of the seam, so the two don't read as a fraction.)
+	.ps-wins-away {
+		padding-right: 0.75rem;
+	}
+	.ps-wins-home {
+		padding-left: 0.75rem;
+	}
+	.ps-status {
+		font-size: 0.7rem;
+	}
+	.ps-bestof {
+		margin: 0;
+		padding: 0 0 0 0.45rem;
+		border-top: 0;
+		border-left: 1px solid rgb(255 255 255 / 0.22);
+		font-size: 0.62rem;
+	}
+	.ps-next {
+		padding: 0 0.7rem;
+		font-size: 0.9rem;
+		> li {
+			grid-template-columns: 3.9rem minmax(0, 1fr) auto;
+			column-gap: 0.5rem;
+		}
+	}
+	.ps-next-dated > li {
+		grid-template-columns: 3.9rem 5.9rem minmax(0, 1fr) auto;
+	}
+	.ps-next-if {
+		font-size: 0.72rem;
+	}
+}
