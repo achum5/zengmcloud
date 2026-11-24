@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 574,
+		date: "2026-11-24",
+		text: "Any two teams have a page of their own: who leads the all-time regular season series, every time they met in the playoffs, the record season by season, their totals side by side and their latest games. Tap a team on a Head-to-Head page, or All-time on a playoff series page.",
+	},
+	{
 		n: 573,
 		date: "2026-11-24",
 		text: "Draft History redrafts every class that has played at least two seasons, by career win shares: the first round done again, with each pick's team, who it would take now and where that player really went, plus a Redraft column in the table.",

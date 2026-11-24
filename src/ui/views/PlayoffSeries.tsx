@@ -414,7 +414,18 @@ const RegularSeason = ({
 					: `${away.abbrev} ${lost}-${won}${tie}`;
 	}
 	return (
-		<RailCard title="Regular season" className="lh-o4">
+		<RailCard
+			title="Regular season"
+			className="lh-o4"
+			more={{
+				href: helpers.leagueUrl([
+					"rivalry",
+					`${home.abbrev}_${home.tid}`,
+					`${away.abbrev}_${away.tid}`,
+				]),
+				text: "All-time",
+			}}
+		>
 			{record ? <div className="ps-record">{record}</div> : null}
 			{meetings.length > 0 ? (
 				<ul className="lh-list">

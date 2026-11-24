@@ -138,6 +138,7 @@ $flag-icon-css-path: "/img/flags";
 @import "season-strip";
 @import "milestone-watch";
 @import "redraft";
+@import "rivalry";
 @import "top-bar";
 
 @each $color, $value in $table-variants {

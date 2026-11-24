@@ -115,6 +115,7 @@ export { default as PowerRankings } from "./PowerRankings.tsx";
 export { default as ProtectPlayers } from "./ProtectPlayers.tsx";
 export { default as Relatives } from "./Relatives.tsx";
 export { default as ResetPassword } from "./ResetPassword.tsx";
+export { default as Rivalry } from "./Rivalry.tsx";
 export { default as Roster } from "./Roster/index.tsx";
 export { default as Rotation } from "./Rotation.tsx";
 export { default as RosterContinuity } from "./RosterContinuity.tsx";

@@ -30,7 +30,11 @@ const processInputs = (params: RouteParams<"playoffSeries">) => {
 
 type Matchup = PlayoffSeries["series"][number][number];
 
-const findSeries = (series: PlayoffSeries["series"], a: number, b: number) => {
+export const findSeries = (
+	series: PlayoffSeries["series"],
+	a: number,
+	b: number,
+) => {
 	for (const [round, matchups] of series.entries()) {
 		for (const matchup of matchups) {
 			const tids = [matchup.home.tid, matchup.away?.tid];
@@ -48,7 +52,7 @@ const findSeries = (series: PlayoffSeries["series"], a: number, b: number) => {
 };
 
 // "Eastern Conference Finals", "First Round", "Finals".
-const roundLabel = async (
+export const roundLabel = async (
 	season: number,
 	round: number,
 	numRounds: number,
@@ -106,7 +110,7 @@ export type SeriesPlayer = Sums & {
 
 export type SeriesTeamTotals = Sums & { tid: number; gp: number };
 
-const branding = async (tid: number, season: number) => {
+export const branding = async (tid: number, season: number) => {
 	const teamSeason = await idb.merged.teamSeasons.getByTidSeason(tid, season);
 	const info = g.get("teamInfoCache")[tid];
 	return {
