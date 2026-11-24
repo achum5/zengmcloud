@@ -802,7 +802,60 @@ export const verifyRecap = (
 			(n) => n === Math.max(flow.maxLead[0], flow.maxLead[1]),
 			"biggest lead",
 		);
-		claim(/(\d+)-0 run/g, (n) => n === flow.run?.pts, "run");
+		// The runs the score log found (recapRuns.ts), on top of the flow's
+		// one unanswered run.
+		const logRuns = game.runs?.runs ?? [];
+		const straight = (n: number) =>
+			n === flow.run?.pts || logRuns.some((r) => r.opp === 0 && r.pts === n);
+		claim(/(\d+)-0 run/g, straight, "run");
+		// "a 31-6 run": one the log has, both numbers.
+		for (const m of text.matchAll(/\b(\d+)-([1-9]\d*) (?:run|burst)\b/g)) {
+			const a = Number(m[1]);
+			const b = Number(m[2]);
+			if (!logRuns.some((r) => r.pts === a && r.opp === b)) {
+				add(
+					"run",
+					`said ${a}-${b}, log has ${logRuns.map((r) => `${r.pts}-${r.opp}`).join(", ")}`,
+					m[0],
+				);
+			}
+		}
+		// "scored 20 of the last 21 points": a run the game ended on.
+		for (const m of text.matchAll(/(\d+) of the last (\d+) points/g)) {
+			const a = Number(m[1]);
+			const b = Number(m[2]);
+			if (
+				!logRuns.some((r) => r.closed && r.pts === a && r.pts + r.opp === b)
+			) {
+				add("run", `said ${a} of the last ${b}`, m[0]);
+			}
+		}
+		// "...a 31-6 run in the second quarter, 12 of the points from Devin
+		// Nash": that run's top scorer, with that many.
+		for (const m of text.matchAll(
+			/(\d+)-(\d+) run[^.]*?, (all|\w+) of (?:the points|them) from ([^,.]+?)[,.]/g,
+		)) {
+			const a = Number(m[1]);
+			const b = Number(m[2]);
+			const r = logRuns.find((x) => x.pts === a && x.opp === b);
+			const who = byName.get(m[4]!.trim());
+			const said = m[3] === "all" ? r?.pts : wordToNumber(m[3]!);
+			if (!r || !who || r.top?.pid !== who.pid || r.top?.pts !== said) {
+				add("run scorer", `said ${m[3]} of ${a}-${b} from ${m[4]}`, m[0]);
+			}
+		}
+		// "The Knicks did not make a field goal over the final 5:00": a dry
+		// spell the log has, to the buzzer.
+		for (const m of text.matchAll(
+			/(?:did not make a field goal over the final|went the last) ([\d.:]+(?: seconds)?)(?: without a field goal)?/g,
+		)) {
+			const ok = (game.runs?.droughts ?? []).some(
+				(d) => d.kind === "fg" && d.toEnd && clockLeft(d.from.clock) === m[1],
+			);
+			if (!ok) {
+				add("drought", `said ${m[1]}`, m[0]);
+			}
+		}
 		// "The Spurs were up 120-116 with two minutes left. The Nuggets
 		// outscored them 13-6 from there": from the two-minute score to the
 		// final.
@@ -823,30 +876,36 @@ export const verifyRecap = (
 				add("last two minutes", `said ${m[1]}-${m[2]}, real ${real}`, all[i]!);
 			}
 		}
-		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
-		claim(
-			/(?:scored|reeled off) (\d+) straight points/g,
-			(n) => n === flow.run?.pts,
-			"run",
-		);
+		claim(/ran off (\d+) straight/g, straight, "run");
+		claim(/(?:scored|reeled off) (\d+) straight points/g, straight, "run");
 		// "...scored 15 straight points, eight of them from Devin Nash": the
 		// run's top scorer and his share of it, as the log has them.
 		for (const m of text.matchAll(
-			/straight points[^.]*?, (all|\w+) of them from ([^,.]+?)[,.]/g,
+			/(\d+) straight points[^.]*?, (all|\w+) of them from ([^,.]+?)[,.]/g,
 		)) {
-			const who = byName.get(m[2]!.trim());
+			const who = byName.get(m[3]!.trim());
 			const run = flow.run;
-			const said = m[1] === "all" ? run?.pts : wordToNumber(m[1]!);
+			const n = Number(m[1]);
+			const said = m[2] === "all" ? n : wordToNumber(m[2]!);
+			const fromLog = logRuns.some(
+				(r) =>
+					r.opp === 0 &&
+					r.pts === n &&
+					r.top?.pid === who?.pid &&
+					r.top?.pts === said,
+			);
 			if (
-				!who ||
-				!run ||
-				run.topPid !== who.pid ||
-				run.topPts !== said ||
-				said === undefined
+				!fromLog &&
+				(!who ||
+					!run ||
+					run.pts !== n ||
+					run.topPid !== who.pid ||
+					run.topPts !== said ||
+					said === undefined)
 			) {
 				add(
 					"run scorer",
-					`said ${m[1]} from ${m[2]}, the log has ${run?.topPts} from pid ${run?.topPid}`,
+					`said ${m[2]} from ${m[3]}, the log has ${run?.topPts} from pid ${run?.topPid}`,
 					m[0],
 				);
 			}
@@ -870,9 +929,12 @@ export const verifyRecap = (
 				add("quarter scorer", `said ${part} of ${whole} for ${m[1]}`, m[0]);
 			}
 		}
+		claim(/scored (\d+) unanswered/g, straight, "run");
 		claim(
-			/scored (\d+) unanswered|scored the last (\d+) points/g,
-			(n) => n === flow.run?.pts,
+			/scored the last (\d+) points/g,
+			(n) =>
+				n === flow.run?.pts ||
+				logRuns.some((r) => r.closed && r.opp === 0 && r.pts === n),
 			"run",
 		);
 		// "ran off 14 straight points in the first": the run began and ended
@@ -880,20 +942,33 @@ export const verifyRecap = (
 		// all second quarter.
 		const RUN_PERIOD_WORDS = ["first", "second", "third", "fourth"];
 		const run = flow.run;
-		if (run) {
+		if (run || logRuns.length > 0) {
 			for (const m of text.matchAll(
-				/(?:straight points|unanswered|-0 (?:run|burst)) in (?:the (first|second|third|fourth)\b|overtime)/g,
+				/(?:(\d+) straight points|(\d+) unanswered|(\d+)-(\d+) (?:run|burst))(?:, [^,.]+,)? in (?:the (first|second|third|fourth)\b|overtime)/g,
 			)) {
-				const period = m[1]
-					? RUN_PERIOD_WORDS.indexOf(m[1]) + 1
+				const period = m[5]
+					? RUN_PERIOD_WORDS.indexOf(m[5]) + 1
 					: (game.teams[0].ptsQtrs?.length ?? 0) - (game.overtimes ?? 0) + 1;
+				const pts = Number(m[1] ?? m[2] ?? m[3]);
+				const opp = Number(m[4] ?? 0);
+				const inLog = logRuns.some(
+					(r) =>
+						r.pts === pts &&
+						r.opp === opp &&
+						r.from.period === period &&
+						r.to.period === period,
+				);
 				if (
-					run.period !== period ||
-					(run.endPeriod !== undefined && run.endPeriod !== period)
+					!inLog &&
+					(!run ||
+						run.pts !== pts ||
+						opp !== 0 ||
+						run.period !== period ||
+						(run.endPeriod !== undefined && run.endPeriod !== period))
 				) {
 					add(
 						"run",
-						`run in period ${run.period}-${run.endPeriod ?? "?"}`,
+						`run in period ${run?.period}-${run?.endPeriod ?? "?"}`,
 						m[0],
 					);
 				}
@@ -967,6 +1042,10 @@ export const verifyRecap = (
 				// "...with 38.6 seconds left, closing out the series 4-2": the
 				// series, checked with the series claims.
 				if (/series(?: at)? $|series lead $/.test(lead)) {
+					continue;
+				}
+				// "closed on an 18-6 run": a run, checked with the runs.
+				if (/^ (?:run|burst)\b/.test(sentence.slice(m.index + m[0].length))) {
 					continue;
 				}
 				const a = Number(m[1]);

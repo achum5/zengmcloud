@@ -2987,6 +2987,8 @@ class GameSim extends GameSimBase {
 						: this.possessionStart +
 								this.possessionInbound +
 								this.possessionLength,
+					p?.id,
+					this.flowKind !== undefined && this.flowKind !== "ft",
 				);
 				this.flow.addPoints(
 					t,

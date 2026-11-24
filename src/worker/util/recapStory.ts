@@ -100,8 +100,10 @@ export type Told = {
 	partial: Set<string>;
 	// The second half's score.
 	secondHalf: boolean;
-	// The game's longest run.
+	// A run has been told - and which ones, by key, since a game can have one
+	// in each half and another to close it.
 	run: boolean;
+	runKeys?: Set<string>;
 	// The basket that won it.
 	shot: boolean;
 	// That it went to overtime.
@@ -163,15 +165,76 @@ type Facts = {
 	lp: number;
 	wpAt?: number;
 	lpAt?: number;
-	// The longest unanswered run.
-	run?: {
-		mine: boolean;
-		pts: number;
+	// The game's biggest run, counted both ways ("a 31-6 run") when the score
+	// log is there to count it, else the longest unanswered one.
+	run?: RunFact;
+	// Every run the score log found, in order, with a key each.
+	runs: RunFact[];
+	// The winners' run that finished a game still in the balance: "It was
+	// 106-105 with 4:51 left before the Nuggets closed on a 20-1 run."
+	closer?: RunFact;
+	// The losers' longest dry spell, when it was part of how they lost.
+	drought?: {
+		kind: "pts" | "fg";
+		secs: number;
+		toEnd: boolean;
 		period: number;
-		endPeriod: number;
-		top?: { p: RecapPlayer; pts: number };
+		clock: number;
 	};
 	close: boolean;
+};
+
+export type RunFact = {
+	// The winners'.
+	mine: boolean;
+	pts: number;
+	// The other side's points inside it: 0 for "14 straight".
+	opp: number;
+	period: number;
+	endPeriod: number;
+	top?: { p: RecapPlayer; pts: number };
+	// From the score log: the clock and the score (winners first) as it
+	// began and as it ended, and how long it took.
+	from?: { clock: number; w: number; l: number };
+	to?: { clock: number; w: number; l: number };
+	secs?: number;
+	// The game ended on it: nobody scored after it but the other side's
+	// last free throw or two.
+	closed?: boolean;
+	// Nobody at all scored after it: "scored 20 of the last 21 points".
+	ended?: boolean;
+	key: string;
+};
+
+// A run from the score log, as the story reads it.
+const runFactOf = (
+	game: RecapGame,
+	shape: Shape,
+	r: NonNullable<RecapGame["runs"]>["runs"][number],
+): RunFact => {
+	const wSide = sideOf(game, shape.winner);
+	const mine = r.side === wSide;
+	const team = mine ? shape.winner : shape.loser;
+	const p = r.top ? team.players.find((x) => x.pid === r.top!.pid) : undefined;
+	const at = (m: typeof r.from) => ({
+		clock: m.clock,
+		w: m.score[wSide],
+		l: m.score[1 - wSide]!,
+	});
+	return {
+		mine,
+		pts: r.pts,
+		opp: r.opp,
+		period: r.from.period,
+		endPeriod: r.to.period,
+		...(p && r.top ? { top: { p, pts: r.top.pts } } : {}),
+		from: at(r.from),
+		to: at(r.to),
+		secs: r.to.t - r.from.t,
+		closed: !!r.closed || (!!r.after && r.after[0] === 0 && r.after[1] <= 2),
+		ended: !!r.closed,
+		key: `${r.from.t}:${r.side}`,
+	};
 };
 
 const factsOf = (game: RecapGame, shape: Shape): Facts => {
@@ -201,6 +264,9 @@ const factsOf = (game: RecapGame, shape: Shape): Facts => {
 	const wSide = sideOf(game, shape.winner);
 	const lSide = sideOf(game, shape.loser);
 	const flow = game.flow;
+	const logged = (game.runs?.runs ?? [])
+		.filter((x) => x.pts - x.opp >= 8)
+		.map((x) => runFactOf(game, shape, x));
 	const r = flow?.run;
 	const runSide = r
 		? r.side === wSide
@@ -232,19 +298,118 @@ const factsOf = (game: RecapGame, shape: Shape): Facts => {
 		wpAt: flow?.maxLeadAt?.[wSide] || undefined,
 		lpAt: flow?.maxLeadAt?.[lSide] || undefined,
 		run:
-			r && r.pts >= 10
-				? {
-						mine: r.side === wSide,
-						pts: r.pts,
-						period: r.period,
-						endPeriod: r.endPeriod ?? r.period,
-						top:
-							runTop && r.topPts !== undefined && r.topPts >= 6
-								? { p: runTop, pts: r.topPts }
-								: undefined,
-					}
-				: undefined,
+			logged.length > 0
+				? biggestRun(logged)
+				: r && r.pts >= 10
+					? {
+							mine: r.side === wSide,
+							pts: r.pts,
+							opp: 0,
+							period: r.period,
+							endPeriod: r.endPeriod ?? r.period,
+							top:
+								runTop && r.topPts !== undefined && r.topPts >= 6
+									? { p: runTop, pts: r.topPts }
+									: undefined,
+							key: "flow",
+						}
+					: undefined,
+		runs: logged,
+		closer: closerOf(logged, shape),
+		drought: droughtOf(game, shape),
 		close: shape.margin <= 5 || shape.ot > 0 || closeLate(game),
+	};
+};
+
+// The game's biggest run: most points more than the other side, an
+// unanswered one counted a little bigger ("15 straight" says more than
+// "18-2").
+const runSize = (r: RunFact): number => r.pts - r.opp + (r.opp === 0 ? 2 : 0);
+const biggestRun = (runs: RunFact[]): RunFact | undefined => {
+	let best: RunFact | undefined;
+	for (const r of runs) {
+		if (r.pts >= 10 && (!best || runSize(r) > runSize(best))) {
+			best = r;
+		}
+	}
+	return best;
+};
+
+// THE RUN THAT FINISHED IT. The winners' last run, in the last period of a
+// game still level or nearly so when it began, that the game ended on - and
+// that made a real margin of a close game.
+const closerOf = (runs: RunFact[], shape: Shape): RunFact | undefined => {
+	const last = runs.at(-1);
+	if (
+		!last ||
+		!last.mine ||
+		!last.closed ||
+		!last.from ||
+		last.period < shape.regPeriods ||
+		last.from.w - last.from.l > 3 ||
+		last.pts - last.opp < 10 ||
+		shape.margin < 8 ||
+		// Begun inside the last minute, it is the finish, told basket by
+		// basket.
+		(last.period === shape.regPeriods + shape.ot && last.from.clock < 60)
+	) {
+		return undefined;
+	}
+	return last;
+};
+
+// THE RUNS THAT DECIDED IT, for writers that tell a game in a line (the
+// night's roundup): the run that finished a game still in the balance, and
+// the winners' run that broke a close game open.
+export const decisiveRuns = (
+	game: RecapGame,
+	shape: Shape,
+): { closer?: RunFact; breaker?: RunFact } => {
+	const runs = (game.runs?.runs ?? [])
+		.filter((x) => x.pts - x.opp >= 8)
+		.map((x) => runFactOf(game, shape, x));
+	const closer = closerOf(runs, shape);
+	let breaker: RunFact | undefined;
+	for (const r of runs) {
+		if (
+			r === closer ||
+			!r.mine ||
+			!r.from ||
+			!r.to ||
+			r.pts - r.opp < 12 ||
+			r.from.w - r.from.l > 4 ||
+			r.to.w - r.to.l < 10 ||
+			shape.margin < 10
+		) {
+			continue;
+		}
+		if (!breaker || runSize(r) > runSize(breaker)) {
+			breaker = r;
+		}
+	}
+	return { closer, breaker };
+};
+
+// The losers' long dry spell in the last period of a game they had a chance
+// in: "New York did not make a field goal over the final five minutes."
+const droughtOf = (game: RecapGame, shape: Shape): Facts["drought"] => {
+	const lSide = sideOf(game, shape.loser);
+	const last = shape.regPeriods + shape.ot;
+	const spells = (game.runs?.droughts ?? []).filter(
+		(d) => d.side === lSide && d.to.period === last && d.secs >= 240,
+	);
+	const fg = spells.find((d) => d.kind === "fg");
+	const pts = spells.find((d) => d.kind === "pts");
+	const d = pts && pts.secs >= 240 ? pts : fg;
+	if (!d) {
+		return undefined;
+	}
+	return {
+		kind: d.kind,
+		secs: d.secs,
+		toEnd: !!d.toEnd,
+		period: d.from.period,
+		clock: d.from.clock,
 	};
 };
 
@@ -252,19 +417,91 @@ const factsOf = (game: RecapGame, shape: Shape): Facts => {
 // in most recaps. It is told when it is 15 or more, when it came in a
 // quarter that turned the game or broke it open (12 or more), or in a last
 // quarter the game was won in from behind or level.
-const runIsNews = (f: Facts): boolean => {
-	const r = f.run;
+const runIsNews = (f: Facts, r: RunFact | undefined = f.run): boolean => {
 	if (!r || !r.mine) {
 		return false;
 	}
+	const net = r.pts - r.opp;
 	const after = (n: number) => (n <= 0 ? 0 : (f.cum[n - 1] ?? 0));
 	return (
-		r.pts >= 15 ||
-		(r.pts >= 12 &&
+		net >= 15 ||
+		// A run that took the lead, from the log.
+		(net >= 10 &&
+			!!r.from &&
+			!!r.to &&
+			r.from.w <= r.from.l &&
+			r.to.w > r.to.l) ||
+		(net >= 12 &&
 			((after(r.period - 1) <= 4 && after(r.period) >= 6) ||
 				(after(r.period - 1) < 0 && after(r.period) > 0))) ||
-		(r.pts >= 10 && r.period === f.n && f.shape.ot === 0 && after(f.n - 1) <= 0)
+		(net >= 10 && r.period === f.n && f.shape.ot === 0 && after(f.n - 1) <= 0)
 	);
+};
+
+// "14-0", "31-6".
+const runScore = (r: RunFact): string => `${r.pts}-${r.opp}`;
+
+// "a 14-0", "an 11-2", "an 8-0".
+const aRun = (r: RunFact): string => aFigure(runScore(r));
+
+// Mark a run told.
+const tellRun = (told: Told, r: RunFact) => {
+	told.run = true;
+	told.runKeys?.add(r.key);
+};
+const runTold = (told: Told, r: RunFact): boolean =>
+	told.runKeys?.has(r.key) ?? told.run;
+
+// "ran off 14 straight points", "went on an 11-2 run".
+const ranRun = (r: RunFact): string =>
+	r.opp === 0 ? `ran off ${r.pts} straight points` : `went on ${aRun(r)} run`;
+
+// The runs a part of the story can choose from: every one the log found,
+// or the flow's one unanswered run for a game that kept no log.
+const candidateRuns = (f: Facts): RunFact[] =>
+	f.runs.length > 0 ? f.runs : f.run ? [f.run] : [];
+
+const biggestOf = (runs: RunFact[]): RunFact | undefined => {
+	let best: RunFact | undefined;
+	for (const r of runs) {
+		if (!best || runSize(r) > runSize(best)) {
+			best = r;
+		}
+	}
+	return best;
+};
+
+// The man who scored a real share of a run: half of a short one, or eight
+// or more of a long one.
+const runTopOf = (r: RunFact): RunFact["top"] =>
+	r.top &&
+	r.top.pts >= 6 &&
+	(r.top.pts >= r.pts * 0.45 || (r.top.pts >= 8 && r.top.pts >= r.pts * 0.3))
+		? r.top
+		: undefined;
+
+// The man to credit with a run where the story tells it: not a winner the
+// reader would take for the night's man while a teammate who outscored him
+// by eight or more has not been named yet.
+const creditOf = (f: Facts, told: Told, r: RunFact): RunFact["top"] => {
+	const top = runTopOf(r);
+	if (!top || !r.mine) {
+		return top;
+	}
+	const best = f.shape.winner.players.reduce<RecapPlayer | undefined>(
+		(a, p) => (!a || p.pts > a.pts ? p : a),
+		undefined,
+	);
+	if (
+		best &&
+		best !== top.p &&
+		best.pts >= 18 &&
+		best.pts >= top.p.pts + 8 &&
+		!told.lines.has(best.name)
+	) {
+		return undefined;
+	}
+	return top;
 };
 
 // "third quarter", "second half", "overtime", "second overtime".
@@ -908,6 +1145,7 @@ const ledeOf = (given: StoryInput): { sentences: string[]; told: Told } => {
 		lPeak: false,
 		secondHalf: false,
 		run: false,
+		runKeys: new Set(),
 		shot: false,
 		ot: false,
 		streak: false,
@@ -1343,12 +1581,33 @@ const runDid = (
 	// " in the fourth quarter", or nothing when the sentence has already
 	// said where it is.
 	span: string,
+	r: RunFact = f.run!,
 ): string => {
-	const r = f.run!;
-	told.run = true;
-	const top = r.top;
+	tellRun(told, r);
+	const top = creditOf(f, told, r);
 	const sp = span === "" ? "" : ` ${span}`;
-	if (top && top.pts >= 6 && top.pts >= r.pts * 0.45) {
+	if (r.opp > 0) {
+		// Counted both ways: "went on a 31-6 run in the second quarter, 12 of
+		// the points from Devin Nash,".
+		if (top) {
+			told.hero = top.p.name;
+			told.lines.add(top.p.name);
+			told.partial.add(top.p.name);
+		}
+		const share = top
+			? `, ${numWord(top.pts)} of the points from ${top.p.name},`
+			: "";
+		return pick(
+			rng,
+			[
+				`went on ${aRun(r)} run${sp}${share}`,
+				`put together ${aRun(r)} run${sp}${share}`,
+				`used ${aRun(r)} run${sp}${share}`,
+			],
+			"runDid:xy",
+		);
+	}
+	if (top) {
 		told.hero = top.p.name;
 		const share =
 			top.pts === r.pts
@@ -1376,8 +1635,7 @@ const runDid = (
 };
 
 // Where a run happened, when it can be said in a word.
-const runSpanOf = (f: Facts): string => {
-	const r = f.run!;
+const runSpanOf = (f: Facts, r: RunFact = f.run!): string => {
 	const h = f.halfAt;
 	return r.period === r.endPeriod
 		? inP(f, r.period)
@@ -1439,15 +1697,36 @@ const firstHalf = (f: Facts, told: Told, rng: Rng): Half => {
 		}
 	};
 	// A first-half run: the winners' when it is news, the losers' when it
-	// was a big one.
-	const run =
-		f.run &&
-		f.run.endPeriod <= h &&
-		!told.run &&
-		(f.run.mine ? runIsNews(f) : f.run.pts >= 12 && f.lp > 0)
-			? f.run
-			: undefined;
+	// was a big one. The half's own biggest, when the log has more than one.
+	const run = biggestOf(
+		candidateRuns(f).filter(
+			(r) =>
+				r.endPeriod <= h &&
+				!runTold(told, r) &&
+				(r.mine ? runIsNews(f, r) : r.pts - r.opp >= 12 && f.lp > 0),
+		),
+	);
 	const runIsX = run ? run.mine === mh >= 0 : false;
+	// The halftime leader's run that turned a deficit into the lead they took
+	// to the break: "...before the Nuggets answered with a 31-6 run in the
+	// second quarter".
+	const swing = biggestOf(
+		candidateRuns(f).filter((r) => {
+			if (r.mine !== mh >= 0 || r.endPeriod > h || !r.from || !r.to) {
+				return false;
+			}
+			const sign = mh >= 0 ? 1 : -1;
+			const before = sign * (r.from.w - r.from.l);
+			const after = sign * (r.to.w - r.to.l);
+			return (
+				!runTold(told, r) &&
+				r.pts - r.opp >= 10 &&
+				before < 0 &&
+				after > 0 &&
+				runSpanOf(f, r) !== ""
+			);
+		}),
+	);
 	const q1 =
 		h >= 2 && f.cum[0] !== undefined
 			? { m: f.cum[0], s: sc2(f.ws[0]!, f.ls[0]!) }
@@ -1481,6 +1760,34 @@ const firstHalf = (f: Facts, told: Told, rng: Rng): Half => {
 	if (yPeak >= 9 && yAt !== undefined && yAt <= h) {
 		const said = yToldPeak;
 		tellPeak(false);
+		if (swing) {
+			// "led by as many as 16 in the second quarter before the Kings
+			// answered with a 24-4 run" - the quarter is said once.
+			const span =
+				swing.period === swing.endPeriod && swing.period === yAt
+					? ""
+					: runSpanOf(f, swing);
+			const raw = runDid(f, told, rng, span, swing);
+			const comma = raw.endsWith(",") ? "," : "";
+			const did = raw.replace(/,$/, "");
+			const answered = did
+				.replace(/^went on /, "answered with ")
+				.replace(/^put together /, "answered with ")
+				.replace(/^used /, "answered with ");
+			return {
+				sentence: said
+					? `${cap(X)} ${answered}${comma} and led ${hs} at halftime.`
+					: pick(
+							rng,
+							[
+								`${cap(Y)} led by as many as ${yPeak} ${inP(f, yAt)} before ${X} ${answered}${comma} and led ${hs} at halftime.`,
+								`${cap(X)} trailed by as many as ${yPeak} ${inP(f, yAt)}, then ${did}${comma} and led ${hs} at the half.`,
+							],
+							"fh:flipRun",
+						),
+				subject: xw,
+			};
+		}
 		return {
 			sentence: said
 				? pick(
@@ -1496,7 +1803,7 @@ const firstHalf = (f: Facts, told: Told, rng: Rng): Half => {
 						rng,
 						[
 							`${cap(Y)} led by as many as ${yPeak} ${inP(f, yAt)}, but ${X} were in front ${hs} by halftime.`,
-							`${cap(X)} trailed by as many as ${yPeak} ${inP(f, yAt)} and still led ${hs} at halftime.`,
+							`${cap(X)} trailed by as many as ${yPeak} ${inP(f, yAt)} but led ${hs} at halftime.`,
 							`${cap(Y)} built ${aNum(yPeak)}-point lead ${inP(f, yAt)}, only for ${X} to take ${aFigure(hs)} lead into the break.`,
 						],
 						"fh:flip",
@@ -1506,14 +1813,14 @@ const firstHalf = (f: Facts, told: Told, rng: Rng): Half => {
 	}
 
 	// A run that made the half.
-	if (run && runIsX && Math.abs(mh) >= 6 && runSpanOf(f) !== "") {
-		const span = runSpanOf(f);
+	if (run && runIsX && Math.abs(mh) >= 6 && runSpanOf(f, run) !== "") {
+		const span = runSpanOf(f, run);
 		return {
 			sentence: pick(
 				rng,
 				[
-					`${cap(X)} ${runDid(f, told, rng, span)} and led ${hs} at halftime.`,
-					`${cap(X)} ${runDid(f, told, rng, span)} on the way to ${aFigure(hs)} halftime lead.`,
+					`${cap(X)} ${runDid(f, told, rng, span, run)} and led ${hs} at halftime.`,
+					`${cap(X)} ${runDid(f, told, rng, span, run)} on the way to ${aFigure(hs)} halftime lead.`,
 				],
 				"fh:runX",
 			).replace(/,, /, ", "),
@@ -1531,22 +1838,22 @@ const firstHalf = (f: Facts, told: Told, rng: Rng): Half => {
 		f.n === 4
 	) {
 		// A second-quarter run into a lead built in the first: in order.
-		told.run = true;
+		tellRun(told, run);
 		return {
-			sentence: `${cap(X)} led ${q1.s} after one quarter, and though ${Y} ran off ${run.pts} straight points in the second, ${X} still led ${hs} at halftime.`,
+			sentence: `${cap(X)} led ${q1.s} after one quarter, and though ${Y} ${ranRun(run)} in the second, ${X} still led ${hs} at halftime.`,
 			subject: xw,
 		};
 	}
 	if (run && !runIsX && run.period === run.endPeriod) {
-		told.run = true;
+		tellRun(told, run);
 		const span = inP(f, run.period);
 		return {
 			sentence: pick(
 				rng,
 				[
-					`${cap(Y)} ran off ${run.pts} straight points ${span}, but ${X} led ${hs} at halftime.`,
-					`${cap(X)} absorbed ${aNum(run.pts)}-0 run ${span} and still led ${hs} at halftime.`,
-					`${cap(Y)} put together ${aNum(run.pts)}-0 run ${span} and still trailed ${hs} at halftime.`,
+					`${cap(Y)} ${ranRun(run)} ${span}, but ${X} led ${hs} at halftime.`,
+					`${cap(X)} absorbed ${aRun(run)} run ${span} and still led ${hs} at halftime.`,
+					`${cap(Y)} put together ${aRun(run)} run ${span} and still trailed ${hs} at halftime.`,
 				],
 				"fh:runY",
 			),
@@ -1658,6 +1965,109 @@ const latePeak = (
 		? { n: f.wp, at: f.wpAt }
 		: undefined;
 
+// THE RUN THAT FINISHED IT, from where the game stood when it began: "It
+// was 106-105 with 4:51 to play before the Nuggets closed on a 20-1 run,
+// eight of the points from Franz Owens." And the losers' dry spell, when it
+// lasted the whole way.
+const closerSentences = (
+	f: Facts,
+	told: Told,
+	rng: Rng,
+	// The sentence before said the losers led, or it was tied, going into
+	// the fourth: "still led", "tied again".
+	into?: "tie" | "l",
+): string[] => {
+	const c = f.closer!;
+	const from = c.from!;
+	const left = clockLeft(from.clock);
+	if (!left) {
+		return [];
+	}
+	tellRun(told, c);
+	const { W, L } = f;
+	const top = creditOf(f, told, c);
+	if (top) {
+		told.lines.add(top.p.name);
+		told.partial.add(top.p.name);
+	}
+	const share = top
+		? top.pts === c.pts
+			? `, all of them from ${top.p.name}`
+			: `, ${numWord(top.pts)} of the points from ${top.p.name}`
+		: "";
+	const { w, l } = from;
+	const lastN = `${
+		c.opp === 0
+			? `scored the last ${c.pts} points`
+			: `scored ${c.pts} of the last ${c.pts + c.opp} points`
+	}${share.replace("of the points", "of them")}`;
+	const tieAgain = into === "tie" ? " again" : "";
+	const still = into === "l" ? " still" : "";
+	const out: string[] = [];
+	if (w === l) {
+		out.push(
+			c.ended
+				? pick(
+						rng,
+						[
+							`It was tied${tieAgain} at ${w} with ${left} left before ${W} closed on ${aRun(c)} run${share}.`,
+							`It was tied${tieAgain} at ${w} with ${left} to play, and ${W} ${lastN}.`,
+						],
+						"closer:tied",
+					)
+				: `It was tied${tieAgain} at ${w} with ${left} left before ${W} pulled away with ${aRun(c)} run${share}.`,
+		);
+	} else if (w < l) {
+		out.push(
+			c.ended
+				? pick(
+						rng,
+						[
+							`${cap(L)}${still} led ${l}-${w} with ${left} left, but ${W} closed on ${aRun(c)} run${share}.`,
+							`${cap(L)} were${still} up ${l}-${w} with ${left} to play before ${W} ${lastN}.`,
+						],
+						"closer:behind",
+					)
+				: `${cap(L)}${still} led ${l}-${w} with ${left} left before ${W} took over with ${aRun(c)} run${share}.`,
+		);
+	} else {
+		const gap = w - l;
+		out.push(
+			c.ended
+				? pick(
+						rng,
+						[
+							`It was ${w}-${l} with ${left} to play before ${W} closed on ${aRun(c)} run${share}.`,
+							`${cap(W)} led only ${w}-${l} with ${left} left, then ${lastN}.`,
+							`${cap(L)} were within ${gap === 1 ? "a point" : numWord(gap)} at ${w}-${l} with ${left} left, and ${W} ${lastN}.`,
+						],
+						"closer:ahead",
+					)
+				: `It was ${w}-${l} with ${left} to play before ${W} pulled away with ${aRun(c)} run${share}.`,
+		);
+	}
+	// The losers' dry spell, when it covered the whole finish.
+	const d = f.drought;
+	if (d && d.toEnd && d.period === c.period && d.clock >= from.clock - 20) {
+		const span = clockLeft(d.clock);
+		if (span) {
+			out.push(
+				d.kind === "fg"
+					? pick(
+							rng,
+							[
+								`${cap(L)} did not make a field goal over the final ${span}.`,
+								`${cap(L)} went the last ${span} without a field goal.`,
+							],
+							"closer:dryFg",
+						)
+					: `${cap(L)} did not score over the final ${span}.`,
+			);
+		}
+	}
+	return out;
+};
+
 // The second half: what the break led to. Written against the first half's
 // clause, so the two read as one thought where they are one.
 const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
@@ -1708,15 +2118,19 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 	const told3 = told.quarters.has(3);
 	const told4 = told.quarters.has(4);
 	// The winners' run, when it came after the break.
-	const runW =
-		f.run &&
-		f.run.mine &&
-		f.run.endPeriod > h &&
-		f.run.period <= n &&
-		!told.run &&
-		runIsNews(f)
-			? f.run
-			: undefined;
+	const runW = biggestOf(
+		candidateRuns(f).filter(
+			(r) =>
+				r.mine &&
+				r.endPeriod > h &&
+				r.period <= n &&
+				!runTold(told, r) &&
+				// The run that finished a game still in the balance is told as
+				// the finish.
+				!(r === f.closer && (f.close || Math.abs(f.m3 ?? 99) <= 6)) &&
+				runIsNews(f, r),
+		),
+	);
 	// One in the fourth quarter alone decided something.
 	const run4 =
 		runW && runW.period === 4 && runW.endPeriod === 4 ? runW : undefined;
@@ -1845,6 +2259,41 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 		return out;
 	}
 
+	// --- A game still alive late that one side then ran away with: where
+	// it stood, and the run. ---
+	const closerHere =
+		!!f.closer &&
+		!runTold(told, f.closer) &&
+		n === 4 &&
+		shape.ot === 0 &&
+		(f.close || Math.abs(m3) <= 6);
+	if (closerHere) {
+		// Level or behind after three: the fourth quarter was the game, and
+		// its score goes with where it stood.
+		const q4 =
+			m3 <= 0 && !told4 ? `, where ${W} won the quarter ${a4}-${b4}` : "";
+		let into: "tie" | "l" | undefined;
+		if (m3 === 0) {
+			stateFirst();
+			out.push(`It was tied at ${f.ws[2]} going into the fourth${q4}.`);
+			into = "tie";
+		} else if (st || half.sentence || q4) {
+			into = m3 < 0 ? "l" : undefined;
+			out.push(
+				join(
+					m3 > 0 ? "w" : "l",
+					m3 > 0 ? afterThree.bare : `${s3} going into the fourth${q4}`,
+					m3 > 0 ? afterThree.full : `led ${s3} going into the fourth${q4}`,
+				),
+			);
+		}
+		if (q4) {
+			told.quarters.add(4);
+		}
+		out.push(...closerSentences(f, told, rng, into));
+		return out.map((t) => t.replace(/,\./, "."));
+	}
+
 	// --- The winners trailed going into the fourth: the last quarter is the
 	// game. ---
 	if (m3 < 0) {
@@ -1852,8 +2301,8 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 		// What the winners did with it.
 		const did = run4
 			? told4
-				? `${runDid(f, told, rng, "")} in the fourth`
-				: `${runDid(f, told, rng, "")} and won the fourth quarter ${a4}-${b4}`
+				? `${runDid(f, told, rng, "", runW)} in the fourth`
+				: `${runDid(f, told, rng, "", runW)} and won the fourth quarter ${a4}-${b4}`
 			: told4
 				? "took over in the fourth"
 				: pick(
@@ -1930,7 +2379,7 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 		const tied = f.ws[2]!;
 		out.push(
 			run4
-				? `It was tied at ${tied} going into the fourth, where ${W} ${runDid(f, told, rng, "")}${told4 ? "" : ` and won the quarter ${a4}-${b4}`}.`
+				? `It was tied at ${tied} going into the fourth, where ${W} ${runDid(f, told, rng, "", runW)}${told4 ? "" : ` and won the quarter ${a4}-${b4}`}.`
 				: told4
 					? `It was tied at ${tied} going into the fourth.`
 					: pick(
@@ -1994,7 +2443,7 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 		// "...and the lead with it and stayed there" is one "and" too many.
 		const thenPlain = /^ and /.test(then) ? "" : then;
 		if (run3) {
-			const did3 = `${runDid(f, told, rng, "in the third quarter")} and won the quarter ${a3}-${b3} to go in front${thenPlain}`;
+			const did3 = `${runDid(f, told, rng, "in the third quarter", runW)} and won the quarter ${a3}-${b3} to go in front${thenPlain}`;
 			out.push(
 				st && st.who === "l"
 					? `${cap(L)} ${st.led}, but ${W} ${did3}.`
@@ -2040,7 +2489,7 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 		const man = told4 ? "" : quarterMan(f, 4, shape.winner, told, true);
 		const shrink = m3 === 1 ? "a single point" : `${numWord(m3)} points`;
 		const reassert = run4
-			? runDid(f, told, rng, "in the fourth")
+			? runDid(f, told, rng, "in the fourth", runW)
 			: told4
 				? "took over in the fourth"
 				: pick(
@@ -2097,7 +2546,9 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 	if (m3 <= 5 && f.reg >= 9 && !f.close) {
 		const man = told4 ? "" : quarterMan(f, 4, shape.winner, told, true);
 		const finish = run4
-			? `put it away when they ${runDid(f, told, rng, "in the fourth")}`
+			? run4.opp > 0
+				? `put it away with ${runDid(f, told, rng, "in the fourth", runW).replace(/^(?:went on|put together|used) /, "")}`
+				: `put it away when they ${runDid(f, told, rng, "in the fourth", runW)}`
 			: told4
 				? ""
 				: pick(
@@ -2202,7 +2653,7 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 			);
 			if (run4) {
 				out.push(
-					`${cap(W)} ${runDid(f, told, rng, "in the fourth")}.`.replace(
+					`${cap(W)} ${runDid(f, told, rng, "in the fourth", runW)}.`.replace(
 						/,\.$/,
 						".",
 					),
@@ -2224,7 +2675,9 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 			return out;
 		}
 		// The run that won it, when the last two minutes held nothing.
-		const then = run4 ? `, then ${runDid(f, told, rng, "in the fourth")}` : "";
+		const then = run4
+			? `, then ${runDid(f, told, rng, "in the fourth", runW)}`
+			: "";
 		if (st || then || Math.abs(m3 - mh) >= 5 || (told.wPeak && m3 >= 6)) {
 			out.push(
 				join(
@@ -2261,8 +2714,8 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 	}
 
 	// --- In control: how far it got. ---
-	if (runW && runSpanOf(f) !== "") {
-		const span = runSpanOf(f);
+	if (runW && runSpanOf(f, runW) !== "") {
+		const span = runSpanOf(f, runW);
 		// A run across the break is its own sentence after the halftime
 		// score: "were up 56-47 at halftime and then went on a 17-0 run
 		// either side of halftime" says halftime twice and gets the order
@@ -2271,24 +2724,24 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 		if (acrossBreak) {
 			stateFirst();
 		}
-		if (acrossBreak || (!st && !runW.top && rng() < 0.6)) {
-			told.run = true;
+		if (acrossBreak || (!st && !runTopOf(runW) && rng() < 0.6)) {
+			tellRun(told, runW);
 			out.push(
 				pick(
 					rng,
 					acrossBreak
 						? [
-								`${cap(W)} went on ${aNum(runW.pts)}-0 run on either side of the break.`,
-								`${cap(aNum(runW.pts))}-0 ${nick(shape.winner)} run straddled the break.`,
+								`${cap(W)} went on ${aRun(runW)} run on either side of the break.`,
+								`${cap(aRun(runW))} ${nick(shape.winner)} run straddled the break.`,
 							]
 						: shape.margin >= 12
 							? [
-									`${cap(aNum(runW.pts))}-0 run ${span} put it out of reach.`,
-									`${cap(aNum(runW.pts))}-0 run ${span} finished it.`,
+									`${cap(aRun(runW))} run ${span} put it out of reach.`,
+									`${cap(aRun(runW))} run ${span} finished it.`,
 								]
 							: [
-									`${cap(W)} went on ${aNum(runW.pts)}-0 run ${span}.`,
-									`${cap(aNum(runW.pts))}-0 run ${span} gave ${W} room.`,
+									`${cap(W)} went on ${aRun(runW)} run ${span}.`,
+									`${cap(aRun(runW))} run ${span} gave ${W} room.`,
 								],
 					acrossBreak ? "sh:controlRunBreak" : "sh:controlRunSubject",
 				),
@@ -2297,11 +2750,11 @@ const secondHalf = (f: Facts, half: Half, told: Told, rng: Rng): string[] => {
 			out.push(
 				join(
 					"w",
-					`${runDid(f, told, rng, span)} to put it away`.replace(
+					`${runDid(f, told, rng, span, runW)} to put it away`.replace(
 						/^(ran|went|scored|reeled)/,
 						"then $1",
 					),
-					`${runDid(f, told, rng, span)} to put it away`,
+					`${runDid(f, told, rng, span, runW)} to put it away`,
 				),
 			);
 		}
@@ -2544,19 +2997,22 @@ export const composeStory = (input: StoryInput, told: Told): string[] => {
 
 	// The finish, for a game that was still one at the end.
 	const last = out.at(-1) ?? "";
-	const sequence = finishStory(
-		{
-			game,
-			winner: shape.winner,
-			loser: shape.loser,
-			regPeriods: shape.regPeriods,
-			shotTold: told.shot,
-			justNamed: undefined,
-			afterItWas: /^It was\b/.test(last),
-			losersJustNamed: last.includes(nick(shape.loser)),
-		},
-		rng,
-	);
+	const closerTold = !!f.closer && runTold(told, f.closer);
+	const sequence = closerTold
+		? []
+		: finishStory(
+				{
+					game,
+					winner: shape.winner,
+					loser: shape.loser,
+					regPeriods: shape.regPeriods,
+					shotTold: told.shot,
+					justNamed: undefined,
+					afterItWas: /^It was\b/.test(last),
+					losersJustNamed: last.includes(nick(shape.loser)),
+				},
+				rng,
+			);
 	out.push(...sequence);
 	const notes = finishNote(
 		game,

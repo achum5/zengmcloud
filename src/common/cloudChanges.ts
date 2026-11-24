@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 560,
+		date: "2026-11-24",
+		text: 'Game recaps tell runs the way broadcasts count them, both numbers and who carried them ("a 31-6 run in the second quarter, 12 of the points from Devin Nash"), say how a close game got away late ("The Knicks were within a point with 4:51 left before the Nuggets closed on a 20-1 run"), and point out when a team went the last five minutes without a field goal. The same goes for the night recap on the Daily Schedule.',
+	},
+	{
 		n: 559,
 		date: "2026-11-24",
 		text: "3D games: uniforms aren't skin tight anymore. Jerseys hang loose from the chest and shoulders down to the shorts, the way real ones do, instead of clinging to every muscle, and shorts are roomier again.",

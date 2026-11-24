@@ -549,6 +549,10 @@ export type Game = {
 	// the seconds each row of `shifts` played.
 	stints?: number[];
 	scoring?: number[];
+	// Who scored each row of `scoring`, for the written recap's runs and
+	// droughts: pid * 2, plus 1 for a basket (vs free throws only), -1 for
+	// nobody known. Absent on games from before it was kept.
+	scorers?: number[];
 	periodEnds?: number[];
 	shiftSecs?: number[];
 	// What the box score did while each player was on the floor, his team's

@@ -285,11 +285,16 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 
 	// When it all happened, for the box score's pictures. See gameTimeline.ts.
 	if (results.timeline) {
-		const { stints, scoring, periodEnds } = encodeTimeline(results.timeline);
+		const { stints, scoring, scorers, periodEnds } = encodeTimeline(
+			results.timeline,
+		);
 		if (stints.length > 0) {
 			gameStats.stints = stints;
 			gameStats.scoring = scoring;
 			gameStats.periodEnds = periodEnds;
+			if (scorers.some((code) => code >= 0)) {
+				gameStats.scorers = scorers;
+			}
 		}
 	}
 

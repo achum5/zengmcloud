@@ -958,5 +958,16 @@ export const finishScores = (
 	if (game.flow?.lastTie) {
 		ties.add(game.flow.lastTie.pts);
 	}
+	// Where each run the log found began and ended: "It was tied at 96 with
+	// 3:25 left before the Hawks closed on a 15-4 run."
+	for (const r of game.runs?.runs ?? []) {
+		for (const m of [r.from, r.to]) {
+			pairs.add(`${m.score[0]}-${m.score[1]}`);
+			pairs.add(`${m.score[1]}-${m.score[0]}`);
+			if (m.score[0] === m.score[1]) {
+				ties.add(m.score[0]);
+			}
+		}
+	}
 	return { pairs, ties };
 };

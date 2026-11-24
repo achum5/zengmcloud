@@ -61,6 +61,8 @@ import type {
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
+import { decisiveRuns, type RunFact } from "./recapStory.ts";
+import { clockLeft } from "../../common/gameFlow.ts";
 import {
 	dayBracketWatch,
 	dayNextSlate,
@@ -157,6 +159,10 @@ export type Story = {
 	gameKind: Kind;
 	shot?: ClutchShot;
 	late?: { text: string; name: string; what: string; left: string };
+	// The run the game ended on, from a game still in the balance, and the
+	// winners' run that broke a close game open (recapStory.decisiveRuns).
+	closer?: RunFact;
+	breaker?: RunFact;
 	comeback: number;
 	// Points the winners were getting from the books, when it was an upset.
 	dog?: number;
@@ -381,6 +387,7 @@ const storyOf = (game: RecapGame): Story => {
 		gameKind,
 		shot,
 		late,
+		...decisiveRuns(game, shape),
 		comeback,
 		dog,
 		loserStar,
@@ -535,6 +542,48 @@ const beatVerb = (s: Story, rng: Rng): string => {
 // something: "pulled away with a 34-25 third quarter", "held on late".
 const howWon = (s: Story, rng: Rng): string | undefined => {
 	const sh = s.shape;
+	// The run that settled it, when the score log had one: more exact than
+	// the quarter it came in.
+	const c = s.closer;
+	if (c && !s.shot && !s.late) {
+		return c.ended
+			? pick(
+					rng,
+					[
+						`closed on ${aFigure(`${c.pts}-${c.opp}`)} run`,
+						c.opp === 0
+							? `scored the last ${c.pts} points`
+							: `scored ${c.pts} of the last ${c.pts + c.opp} points`,
+					],
+					"day:how:closer",
+				)
+			: `pulled away late with ${aFigure(`${c.pts}-${c.opp}`)} run`;
+	}
+	const b = s.breaker;
+	// A quarter that did more than the run inside it is told as the quarter.
+	const q = sh.bigRun;
+	const quarterBigger =
+		!!q && !!b && q.margin >= b.pts - b.opp + 5 && q.period === b.period;
+	if (b && b.period <= 4 && !quarterBigger) {
+		const when =
+			b.period === b.endPeriod
+				? ` in the ${ordinal(b.period)} quarter`
+				: b.endPeriod === b.period + 1 && b.period < 4
+					? ` spanning the ${ordinal(b.period)} and ${ordinal(b.endPeriod)} quarters`
+					: "";
+		const run = `${aFigure(`${b.pts}-${b.opp}`)} run${when}`;
+		return b.period <= 2
+			? pick(
+					rng,
+					[`took control with ${run}`, `took over with ${run}`],
+					"day:how:breakEarly",
+				)
+			: pick(
+					rng,
+					[`pulled away with ${run}`, `broke it open with ${run}`],
+					"day:how:breakLate",
+				);
+	}
 	const r = sh.bigRun;
 	const role = bigQuarterRole(sh);
 	const quarter = r
@@ -1567,7 +1616,9 @@ const ledeSentence = (s: Story, rng: Rng, night = ""): string => {
 			const how = howWon(s, rng);
 			return star
 				? how
-					? /^(?:held on|pulled it out)/.test(how)
+					? /^(?:held on|pulled it out|closed on|scored (?:the|\d+ of the) last)/.test(
+							how,
+						)
 						? `${star.name} ${did(star, rng)} as ${w} ${how} to beat ${l} ${score}.`
 						: `${star.name} ${did(star, rng)} as ${w} ${how} on the way to ${aWin(s)} over ${l}.`
 					: `${star.name} ${did(star, rng)} as ${w} ${verb} ${l} ${score}.`
@@ -1589,6 +1640,27 @@ const ledeDetail = (s: Story, written: string): string | undefined => {
 		named.length === 1 && named[0] === p ? "He" : p.name;
 	const sh = s.shot;
 	const hero = sh ? s.W.players.find((p) => p.name === sh.name) : undefined;
+	// A game still in the balance late that the winners ran away with: where
+	// it stood, and the run.
+	const c = s.closer;
+	if (c && c.from && !sh && !s.late && !/ run\b|of the last/.test(written)) {
+		const clock = clockLeft(c.from.clock);
+		const left =
+			clock && c.period > s.shape.regPeriods
+				? `${clock} ${c.period - s.shape.regPeriods === 1 ? "left in overtime" : `left in the ${ordinal(c.period - s.shape.regPeriods)} overtime`}`
+				: clock && `${clock} left`;
+		const run = c.ended
+			? `closed on ${aFigure(`${c.pts}-${c.opp}`)} run`
+			: `pulled away with ${aFigure(`${c.pts}-${c.opp}`)} run`;
+		const { w, l } = c.from;
+		if (left) {
+			return w === l
+				? `It was tied at ${w} with ${left} before ${s.w} ${run}.`
+				: w > l
+					? `${cap(s.l)} were within ${w - l === 1 ? "a point" : numWord(w - l)} with ${left} before ${s.w} ${run}.`
+					: `${cap(s.l)} led ${l}-${w} with ${left} before ${s.w} ${run}.`;
+		}
+	}
 	// A playoff game won at the end: the lede gave the series, this gives
 	// the shot.
 	if (sh && hero && !written.includes(sh.name)) {

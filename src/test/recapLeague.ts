@@ -15,6 +15,7 @@ import { g, helpers } from "../worker/util/index.ts";
 import { PHASE } from "../common/constants.ts";
 import { player, team } from "../worker/core/index.ts";
 import GameSim from "../worker/core/GameSim.ts";
+import { encodeTimeline } from "../worker/util/gameTimeline.ts";
 import { processTeam } from "../worker/core/game/loadTeams.ts";
 import { createRandomPlayers } from "../worker/core/league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../common/budgetLevels.ts";
@@ -332,6 +333,14 @@ export const simRecapLeague = async ({
 			att: 18000,
 			clutchPlays: (result.clutchPlays ?? []).map((c: any) => `${c.text}.`),
 			flow: result.flow,
+			// The score log, kept the way writeGameStats keeps it.
+			...(result.timeline
+				? (({ scoring, scorers, periodEnds }) => ({
+						scoring,
+						scorers,
+						periodEnds,
+					}))(encodeTimeline(result.timeline))
+				: {}),
 			numPlayersOnCourt: result.numPlayersOnCourt ?? 5,
 			numPeriods: g.get("numPeriods"),
 			overtimes: result.overtimes ?? 0,

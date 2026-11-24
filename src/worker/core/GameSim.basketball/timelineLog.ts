@@ -13,7 +13,16 @@ import type { TeamNum } from "../../../common/types.ts";
 export type GameTimelineRaw = {
 	periodEnds: number[];
 	stints: { pid: number; spans: [number, number][] }[];
-	scoring: { t: number; side: TeamNum; pts: number }[];
+	// Each score, and - for the written recap's runs and droughts - who
+	// scored it and whether it was a basket (an and-one is a basket) or only
+	// free throws.
+	scoring: {
+		t: number;
+		side: TeamNum;
+		pts: number;
+		pid?: number;
+		fg?: boolean;
+	}[];
 };
 
 export class TimelineLog {
@@ -54,13 +63,25 @@ export class TimelineLog {
 		}
 	}
 
-	addPoints(side: TeamNum, pts: number, t: number) {
+	addPoints(side: TeamNum, pts: number, t: number, pid?: number, fg?: boolean) {
 		const last = this.scoring.at(-1);
 		// A basket and its and-one, or a trip to the line: one score.
 		if (last && last.side === side && last.t === t) {
 			last.pts += pts;
+			if (fg) {
+				last.fg = true;
+			}
+			if (last.pid === undefined && pid !== undefined) {
+				last.pid = pid;
+			}
 		} else {
-			this.scoring.push({ t, side, pts });
+			this.scoring.push({
+				t,
+				side,
+				pts,
+				...(pid !== undefined ? { pid } : {}),
+				...(fg ? { fg } : {}),
+			});
 		}
 	}
 

@@ -1,3 +1,4 @@
+import { runsOf, type RecapRuns } from "./recapRuns.ts";
 import type { GameFlow } from "../../common/gameFlow.ts";
 import type { Game } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
@@ -295,6 +296,9 @@ export type RecapGame = {
 	clutchPlays: string[];
 	// How the game unfolded, when the sim recorded it. See common/gameFlow.ts.
 	flow?: GameFlow;
+	// Its runs and dry spells, read from the stored score log. See
+	// recapRuns.ts. Absent for games that kept no log.
+	runs?: RecapRuns;
 	// The regular season's length in games, so an injury that outlasts it is
 	// "the rest of the season" and not "about 175 games".
 	seasonGames?: number;
@@ -1221,6 +1225,7 @@ export const getDayGamesForRecap = async ({
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			flow: game.flow,
+			runs: allStar ? undefined : runsOf(game),
 			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
 			...(g.get("gender") === "female" ? { gender: "female" as const } : {}),
@@ -1922,6 +1927,7 @@ const createAutoRecapContext = async (season: number) => {
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			flow: game.flow,
+			runs: allStar ? undefined : runsOf(game),
 			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
 			...(g.get("gender") === "female" ? { gender: "female" as const } : {}),

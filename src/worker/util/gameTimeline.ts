@@ -35,15 +35,28 @@ export const encodeTimeline = (timeline: GameTimelineRaw) => {
 		}
 	}
 	const scoring: number[] = [];
-	for (const { t, side, pts } of timeline.scoring) {
+	// Who scored each row of `scoring`, row for row: pid * 2, plus 1 when it
+	// was a basket rather than free throws only; -1 when nobody is known.
+	const scorers: number[] = [];
+	for (const { t, side, pts, pid, fg } of timeline.scoring) {
 		scoring.push(Math.round(t), side, pts);
+		scorers.push(pid === undefined ? -1 : pid * 2 + (fg ? 1 : 0));
 	}
 	return {
 		stints,
 		scoring,
+		scorers,
 		periodEnds: timeline.periodEnds.map((t) => Math.round(t)),
 	};
 };
+
+// One row of `scorers`, read back.
+export const decodeScorer = (
+	code: number | undefined,
+): { pid?: number; fg?: boolean } =>
+	code === undefined || code < 0
+		? {}
+		: { pid: Math.floor(code / 2), fg: code % 2 === 1 };
 
 // The seconds column for `shifts`, row for row: the same rows encodeShifts
 // keeps, in the same order.
