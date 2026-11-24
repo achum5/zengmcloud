@@ -51,6 +51,9 @@ everyone: ratings say how far above it he is, so stars look like stars and a
   most 5 ft/s on top of his own going) rather than left feet behind. On the
   play itself whenever he catches, shoots, passes or screens. Swapped in for
   `stepper.ts`'s `follow`, one man at a time (`Director.ownMovers`).
+- `through.ts`: step 8a's first piece. The play's runs into a catch or a
+  throw laid on through it, rather than ended stood on its spot before the
+  ball gets there (see Step 8a).
 - `packages.ts`: the library of moves. Each kind of move (walking, running,
   down in his stance, backpedaling for now) comes in versions, packages,
   each with its timing (read by the staging), its look (read only by the
@@ -103,7 +106,27 @@ looks better.
      none for a small shift; the deep stance looks wrong), legs that move
      like a real player's rather than splayed, and nothing that hitches a
      frame (60 fps for everyone).
-8. The planner's full vocabulary: transition, the playbook, team styles.
+8. The planner (Alex's pick, 2026-11-24, before the rest of the
+   packages): the play becomes something the ten run, not something they
+   are dragged through.
+   - 8a, checkpoints as windows: catches, passes, contests, rebounds,
+     reaches and shots met at a pace a body allows (catches and passes
+     built: see below).
+   - 8b, calm decisions: a choice holds a moment; a target slides.
+   - 8c, plays run live: the action, roles and coverage from the players
+     on the floor.
+   - 8d, transition: push or walk it up, lanes, a rim runner, a trailer.
+   - 8e, team styles from the lineup's ratings.
+
+   Alex's calls (2026-11-24): a catch may come a few feet from the play's
+   spot along the catcher's own way in, and a catch or a pass 0.3 s either
+   side of the play's moment (the shot exact on the clock). The shooter's
+   move picks his spot inside the engine's zone, but a two is plainly a
+   two in the picture (feet inside the arc) and a three plainly a three.
+   Nothing seen gives the result away: a late closeout leans toward a
+   make, but some contested shots go in and some open ones miss - the
+   same for every mechanic.
+
 9. Contact: screens hit, bumps, box-outs.
 10. The rest of the packages (shots, finishes, dribble moves, passes).
 11. Switch on, when Alex says so on film. The old possession code goes.
@@ -382,6 +405,60 @@ Still short:
 - Jolts about where they were (teleport flags 14 against 13, lurches 185
   against 194): now and then a defender lunging the last few feet into a
   swipe, a foul or a contest the play pins him to.
+
+## Step 8a: on the move through the ball
+
+Real men catch a pass on the move and throw one on the move: 5.6 ft/s at
+the catch and 3.9 at the throw, median, over the 17 games - a catch-and-
+shoot about 4 as it comes into his hands, still 2 or 3 a few tenths later
+as he goes up; a catch passed on or dribbled off hardly slowing at all.
+The play laid every run into a catch or a throw as one that ended on its
+spot, stood, before the ball got there: braked hard, then stood. That was
+the commonest jolt, and the staged look.
+
+`through.ts`, on the play's runs before they are stepped: each run into a
+catch, and each run into a throw, is laid on through it.
+
+- Off on another run straight after (an outlet dribbled up the floor, a
+  drive off the catch, a cut after the pass), he goes on into it, handed on
+  at the pace both runs allow - and the turn between them (a change of no
+  more than 4 ft/s in the way he is going: turning back, he plants).
+- Otherwise he is still going as the ball comes or goes (no faster than
+  he can stop from: 11 ft/s a second), and stopped on the play's spot by
+  the time he has to be stood: up into his shot (a moment before he leaves
+  the floor), a move with his feet set, his next run. A pass on from him,
+  or anything else his legs run on under, he does on the way.
+- He catches it a step short of the play's spot, along his own way in; the
+  ball flies to his hands wherever they are. Whatever he does after is
+  from the play's spot, as before.
+
+The man with the ball makes for the spot of his pick-up going as the play
+has him going then (`handler.ts` home): a pass off the dribble leaves on
+the move, the stride or two of his gather under it.
+
+| Measure (real_11, whole possessions) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Pace at the catch (median, ft/s) | 0.5 | 3.6 | 5.6 |
+| ... a catch-and-shoot, as it comes into his hands | 0.2 | 3.4 | 3.9 |
+| Stood for the catch (under 1.5 ft/s; passes in play, as staged) | 69% | 17% | about 10% |
+| The passer as it leaves his hands (median, ft/s) | 0.2 | 1.4 | 3.9 |
+| ... off the dribble (as staged) | 0.5 | 4.0 | |
+| Sudden starts and stops (lurch flags) | 185 | 162 | old sim 16 |
+| Jumps from one spot to another (teleport flags) | 14 | 10 | |
+
+Still short:
+
+- A man stood a long while for a pass (most of a second and more) still
+  takes it stood; a step to meet it is a choice of his (8b/8c).
+- Passes held a second and more are thrown stood, as the man with the ball
+  holds it now (how long he holds it is 8c's).
+- A catch-and-shoot comes to a stop a few tenths sooner than a real one
+  (stopped 0.2 s after the catch, real 0.6).
+- Closeouts: the nearest defender as a jumper leaves the shooter's hands
+  is going 2.4 ft/s (real 6.5); off a quick catch he is 8.6 ft off (real
+  5.1) - he goes out once his man has it, not on the pass, and sets his
+  feet on the play's spot. Pull-ups: the shooter stood 0.6 s before it
+  leaves his hands (real 5.7 ft/s). Both next.
 
 ## Natural and smooth (before step 8)
 

@@ -42,8 +42,9 @@ export type Handling = {
 	handTo?: { at: Pt; v: Pt; until: number; lead: number; commit?: boolean };
 	// Picking it up this soon (ms) with something of the play's to come
 	// before it leaves his hands (a shot): where the play has him then -
-	// there by then, since he cannot go anywhere with it after.
-	home?: { at: Pt; in: number };
+	// there by then, since he cannot go anywhere with it after - and how
+	// fast it has him going (into a pass on the move, still going).
+	home?: { at: Pt; in: number; v: Pt };
 };
 
 // What he keeps between picks of what next.
@@ -123,6 +124,12 @@ const smooth01 = (u: number) => {
 	return x * x * (3 - 2 * x);
 };
 const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
+// (Where the spot for his pick-up is now, going as the play has it going
+// then: the play still taking him there, he goes with it.)
+const homeNow = (h: NonNullable<Handling["home"]>): Pt => ({
+	x: h.at.x - (h.v.x * h.in) / 1000,
+	y: h.at.y - (h.v.y * h.in) / 1000,
+});
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 
 // (No farther than the leash off the play's spot, no nearer the rim than
@@ -367,7 +374,8 @@ export const decide = (
 		most = undefined;
 		effort = 1;
 	} else if (f.home && f.home.in <= HOME_SURE) {
-		to = f.home.at;
+		to = homeNow(f.home);
+		toV = f.home.v;
 		most = undefined;
 		effort = 1;
 	} else {
@@ -381,8 +389,8 @@ export const decide = (
 		}
 		if (f.home && f.home.in <= HOME_LEAD) {
 			homes.push({
-				at: f.home.at,
-				v: { x: 0, y: 0 },
+				at: homeNow(f.home),
+				v: f.home.v,
 				u: smooth01((HOME_LEAD - f.home.in) / (HOME_LEAD - HOME_SURE)),
 			});
 		}

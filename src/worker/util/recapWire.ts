@@ -28,6 +28,16 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import { shotName } from "./recapFinish.ts";
+import {
+	careerHighOf,
+	careerWeight,
+	draftTag,
+	firstOf,
+	isDebut,
+	moveNote,
+	raceNote,
+	stretchNote,
+} from "./recapPeople.ts";
 import { decisiveRuns, type RunFact } from "./recapStory.ts";
 import {
 	cap,
@@ -170,6 +180,8 @@ type Totals = {
 	blk: number;
 	bench: number;
 	starters: boolean;
+	// When every man's line has them.
+	orb?: number;
 };
 
 const totalsOf = (t: RecapTeam): Totals => {
@@ -206,6 +218,9 @@ const totalsOf = (t: RecapTeam): Totals => {
 		} else if (p.starter === false) {
 			out.bench += p.pts ?? 0;
 		}
+	}
+	if (t.players.length > 0 && t.players.every((p) => p.orb !== undefined)) {
+		out.orb = t.players.reduce((sum, p) => sum + (p.orb ?? 0), 0);
 	}
 	return out;
 };
@@ -621,6 +636,79 @@ const playerLines = (t: RecapTeam, story: string): Line[] => {
 	return [];
 };
 
+// Who a man was tonight, past his season: a first, a career high, a debut,
+// a new club or an old one - for the men who mattered, at `min` weight and
+// up (see careerWeight), and not when the story said it.
+const careerLines = (
+	t: RecapTeam,
+	story: string,
+	rng: Rng,
+	min: number,
+	max = Infinity,
+): Line[] => {
+	const men = [...t.players]
+		.filter((p) => careerWeight(p) >= min && careerWeight(p) <= max)
+		.sort((a, b) => careerWeight(b) - careerWeight(a) || b.pts - a.pts);
+	for (const p of men) {
+		if (
+			/career|debut|first game|since they traded|since leaving/.test(
+				aboutPlayer(story, p),
+			)
+		) {
+			continue;
+		}
+		const n = p.name;
+		const line = (text: string): Line[] => [{ kind: "career", text }];
+		const first = firstOf(p);
+		if (first === "triple-double" || first === "double-double") {
+			return line(`${n} had his first career ${first}.`);
+		}
+		if (first === "40-point game" || first === "30-point game") {
+			return line(`${n} had his first ${first}.`);
+		}
+		const high = careerHighOf(p);
+		if (high) {
+			return line(`${n} set a career high with ${high.n} ${high.unit}.`);
+		}
+		if (isDebut(p)) {
+			const tag = draftTag(p);
+			return line(
+				tag ? `${n}, ${tag}, made his debut.` : `${n} made his debut.`,
+			);
+		}
+		const move = moveNote(p, t, rng);
+		if (move) {
+			return line(move);
+		}
+	}
+	return [];
+};
+
+// What the night settled in the race, and where the club is on a trip -
+// unless the story said it.
+const raceLines = (
+	t: RecapTeam,
+	x: Subject,
+	won: boolean,
+	story: string,
+): Line[] => {
+	const text = raceNote(t, x, won);
+	const said = raceNote(t, { S: "", one: x.one }, won);
+	return text && said && !story.includes(said.trim().replace(/\.$/, ""))
+		? [{ kind: "race", text }]
+		: [];
+};
+
+const tripLines = (t: RecapTeam, x: Subject, story: string): Line[] => {
+	const text = stretchNote(t, x);
+	const plural = stretchNote(t, { S: "", one: false });
+	const single = stretchNote(t, { S: "", one: true });
+	const told = [plural, single].some(
+		(said) => said && story.includes(said.trim().replace(/\.$/, "")),
+	);
+	return text && !told ? [{ kind: "split", text }] : [];
+};
+
 // A team's own season marks: its most points, its biggest win.
 const teamHighLines = (
 	game: RecapGame,
@@ -793,12 +881,16 @@ const takeawayOf = (
 		...(game.series
 			? seriesLines(game, t, x, won, opp)
 			: playInLines(game, x, won)),
+		...(game.playoffs ? [] : raceLines(t, x, won, story)),
+		...(game.playoffs ? [] : careerLines(t, story, rng, 4)),
 		...streakLines(t, x, won, told, rng),
 		...standingLines(game, t, x, won, story),
 		...playerLines(t, story),
+		...(game.playoffs ? [] : careerLines(t, story, rng, 2, 3)),
 		...formLines(game, t, x, won, told),
 		...teamHighLines(game, t, x, won, t.pts - opp.pts, story),
 		...nightLines(t, opp, x, won, story),
+		...(game.playoffs ? [] : tripLines(t, x, story)),
 		...homeRoadLines(game, t, x, won, story),
 		...seasonSeriesLines(game, t, x, won, story),
 		...missingLines(t, x, story),
@@ -1115,6 +1207,14 @@ const keyStatOf = (
 			min: 8,
 			text: `${W.S} shot ${wp} from the field, ${L.s} ${lp}.`,
 			sig: new RegExp(`${esc(wp)}|${esc(lp)}`),
+		});
+	}
+	if (w.orb !== undefined && l.orb !== undefined) {
+		cands.push({
+			value: (w.orb - l.orb) * 1.1,
+			min: 8,
+			text: `${W.S} had ${w.orb} offensive rebounds to ${poss(L.s)} ${l.orb}.`,
+			sig: new RegExp(String.raw`\b${w.orb} offensive`),
 		});
 	}
 	if (w.starters && l.starters) {

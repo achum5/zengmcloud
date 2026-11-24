@@ -17,6 +17,21 @@ export const CLOUD_CHANGES: CloudChange[] = [
 		text: "Every playoff series has its own page. Tap the games won on the Playoffs bracket, or the series score on a box score: it shows where the series stands, every game with its recap and the games still to come, the series leaders, both teams' stats side by side, their regular season meetings and every other time they met in the playoffs.",
 	},
 	{
+		n: 565,
+		date: "2026-11-24",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): players catch and throw passes on the move. A man running to a pass no longer pulls up and waits on his spot for it. He catches it in stride and gathers into his shot, his dribble or his next pass, and the man with the ball passes off the dribble instead of stopping first.",
+	},
+	{
+		n: 564,
+		date: "2026-11-24",
+		text: 'Game recaps know players\' careers and the race now. They call a career high one ("a career-high 34 points"), note a first career triple-double or 30-point game, a rookie\'s debut and where he was drafted, a player\'s first game for a new team or against the team that traded him. They say where a team is on a road trip or homestand ("finished their five-game trip 3-2"), and when a team clinches a playoff spot, the best record, a play-in spot, gets eliminated, or becomes the first team to 50 wins. The Key stat can be offensive rebounds too.',
+	},
+	{
+		n: 563,
+		date: "2026-11-24",
+		text: 'Game notifications now start the title with the date, like "11/12/25 - Lakers 110 vs. Celtics 86", instead of putting it on its own line under the title.',
+	},
+	{
 		n: 562,
 		date: "2026-11-24",
 		text: 'Game recaps read like a wire story now. They open with the home city ("DENVER — ") and end with Takeaways (one line on what the game means for each team, like a streak, a season high or where they sit in the standings), the Key moment, the Key stat, and Up next (who each team plays next, with the day of the week when the league uses the NBA calendar). On the Daily Schedule and every box score.',

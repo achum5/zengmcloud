@@ -1055,6 +1055,9 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 				(strict.get(pid)!.next(up) < again || end < again)
 					? mine.want(up)
 					: undefined;
+			// (And how the play has him going then: into a pass on the move,
+			// still going - see through.ts.)
+			const H1 = H && mine.want(up! + STEP_MS);
 			const mates: Pt[] = [];
 			let man: Seen | undefined;
 			for (const o of x.men) {
@@ -1082,7 +1085,16 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 					man,
 					mates,
 					handTo,
-					home: H && up !== undefined ? { at: H, in: up - t } : undefined,
+					home:
+						H && up !== undefined
+							? {
+									at: H,
+									in: up - t,
+									v: H1
+										? { x: (H1.x - H.x) / STEP_S, y: (H1.y - H.y) / STEP_S }
+										: { x: 0, y: 0 },
+								}
+							: undefined,
 				},
 				me,
 				w.hand!,

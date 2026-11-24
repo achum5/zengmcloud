@@ -202,7 +202,7 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("L @ BOS 98-102"));
 	});
 
-	test("the day opens the body: its date on the NBA calendar, a span for a week", async () => {
+	test("the day leads the title: mm/dd/yy on the NBA calendar, a span for a week", async () => {
 		const dated = (
 			gid: number,
 			home: { tid: number; pts: number },
@@ -224,8 +224,8 @@ describe("buildNotifications", () => {
 			},
 			opts,
 		);
-		assert.strictEqual(day[0]!.title, "Lakers 110 vs. Celtics 86");
-		assert.ok(day[0]!.body.startsWith("Wed, Nov 12\n"));
+		assert.strictEqual(day[0]!.title, "11/12/25 - Lakers 110 vs. Celtics 86");
+		assert.strictEqual(day[0]!.body, "Final: Lakers 110 vs. Celtics 86.");
 
 		const week = await buildNotifications(
 			"playMenu.week",
@@ -237,18 +237,21 @@ describe("buildNotifications", () => {
 			},
 			opts,
 		);
-		assert.ok(week[0]!.title.startsWith("Your LA Lakers went 1-1"));
-		assert.ok(week[0]!.body.startsWith("Nov 28–Dec 2\nW vs BOS 110-105"));
+		assert.ok(
+			week[0]!.title.startsWith("11/28–12/02/25 - Your LA Lakers went 1-1"),
+			week[0]!.title,
+		);
+		assert.ok(week[0]!.body.startsWith("W vs BOS 110-105"), week[0]!.body);
 	});
 
-	test("on classic numbered days the day number opens the body", async () => {
+	test("on classic numbered days the day number leads the title", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
 			{ changes: [gamePut(3, { tid: 0, pts: 110 }, { tid: 1, pts: 86 }, 34)] },
 			opts,
 		);
-		assert.strictEqual(notifs[0]!.title, "Lakers 110 vs. Celtics 86");
-		assert.ok(notifs[0]!.body.startsWith("Day 34\n"));
+		assert.strictEqual(notifs[0]!.title, "Day 34 - Lakers 110 vs. Celtics 86");
+		assert.ok(!notifs[0]!.body.includes("Day 34"), notifs[0]!.body);
 	});
 
 	test("single game → ESPN-style final-score title, top 2 stat lines per team", async () => {
@@ -345,12 +348,15 @@ describe("buildNotifications", () => {
 			},
 			opts,
 		);
-		// The headline takes the title - a phone renders it bold and never
-		// truncates it - and the story's first line goes under it, after the day.
-		assert.strictEqual(notifs[0]!.title, "Celtics stun the Bulls at the wire");
+		// The headline takes the title, after the day, and the story's first
+		// line goes under it.
+		assert.strictEqual(
+			notifs[0]!.title,
+			"Day 12 - Celtics stun the Bulls at the wire",
+		);
 		assert.strictEqual(
 			notifs[0]!.body,
-			"Day 12\nThe Celtics beat the Bulls 120-114 on a buzzer-beater.",
+			"The Celtics beat the Bulls 120-114 on a buzzer-beater.",
 		);
 		// The column of final scores it replaced, and the deck, are both gone.
 		assert.ok(!notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);

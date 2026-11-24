@@ -145,6 +145,7 @@ import { type Attacker, attackerOf } from "./possession/offense.ts";
 import { type Follow, followWith } from "./possession/follow.ts";
 import { inchesOf, type OwnGait } from "./possession/gait.ts";
 import { signatureOf } from "./possession/signature.ts";
+import { throughPasses } from "./possession/through.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
 	floorRoll,
@@ -1913,18 +1914,30 @@ const needed = (
 // How far along a run he is, as a share of it, u of the way through its
 // time: getting going and pulling up as the evaluator has him (see
 // motion.ts) - from and to the pace it says, where it says, from and to a
-// standstill where not. (Worked out once a run, again if its times change.)
-const runShapes = new WeakMap<Move, { t0: number; t1: number; r: RunShape }>();
+// standstill where not. (Worked out once a run, again if its times or paces
+// change.)
+const runShapes = new WeakMap<
+	Move,
+	{ t0: number; t1: number; v0?: number; v1?: number; r: RunShape }
+>();
 const shareAlong = (m: Move, u: number): number => {
 	const L = dist(m.from, m.to);
 	if (L < 1e-6) {
 		return u;
 	}
 	let got = runShapes.get(m);
-	if (!got || got.t0 !== m.t0 || got.t1 !== m.t1) {
+	if (
+		!got ||
+		got.t0 !== m.t0 ||
+		got.t1 !== m.t1 ||
+		got.v0 !== m.v0 ||
+		got.v1 !== m.v1
+	) {
 		got = {
 			t0: m.t0,
 			t1: m.t1,
+			v0: m.v0,
+			v1: m.v1,
 			r: runShape(L, (m.t1 - m.t0) / 1000, m.v0 ?? 0, m.v1 ?? 0),
 		};
 		runShapes.set(m, got);
@@ -31676,6 +31689,11 @@ class Director {
 		// all that - then kept off each other, the ball's way kept clear and
 		// the rest, as he goes.
 		if (this.step) {
+			// (The new sim: a pass thrown and caught on the move, not stood
+			// for - see possession/through.ts.)
+			if (this.possession) {
+				throughPasses(this.tracks, this.ball, this.spacing);
+			}
 			stepTimeline(
 				{
 					tracks: this.tracks,

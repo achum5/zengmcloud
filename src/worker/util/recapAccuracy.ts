@@ -123,7 +123,7 @@ const NOT_A_FINAL =
 // A count in one of these sentences is a season or career total, a season
 // high being quoted, or a bench total - not a line from tonight's box score.
 const SEASON_TALK =
-	/\bcareer\b|-point mark|-rebound mark|-assist mark|for the season|on the season|this season|of the season|season high/i;
+	/\bcareer\b(?!-high)|-point mark|-rebound mark|-assist mark|for the season|on the season|this season|of the season|season high/i;
 const BENCH_TALK = /\bbench\b|\breserves?\b/i;
 
 // A points figure in one of these sentences is a betting margin, not a stat.
@@ -1001,10 +1001,24 @@ export const verifyRecap = (
 			if (FINISH_CLOCK.test(sentence)) {
 				continue;
 			}
+			// "With the score tied at 28, Miami went on a 17-4 run" is where a
+			// run started, not the last tie: held to the runs instead.
+			const runFrom = /^With the score tied at (\d+), /.exec(sentence);
 			for (const m of sentence.matchAll(
 				/(?<!regulation ended )tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,
 			)) {
-				if (Number(m[1]) !== flow.lastTie?.pts) {
+				const n = Number(m[1]);
+				if (
+					runFrom &&
+					Number(runFrom[1]) === n &&
+					/\brun\b|scored \w+ of the/.test(sentence) &&
+					(game.runs?.runs ?? []).some(
+						(r) => r.from.score[0] === n && r.from.score[1] === n,
+					)
+				) {
+					continue;
+				}
+				if (n !== flow.lastTie?.pts) {
 					add("last tie", `said ${m[1]}`, m[0]);
 				}
 			}
@@ -1688,6 +1702,271 @@ export const verifyRecap = (
 						m[0]!,
 					);
 				}
+			}
+		}
+	}
+
+	// --- careers: highs, firsts, debuts, moves -------------------------------
+	//
+	// "a career-high 34 points", "It was Devin Nash's first career
+	// triple-double", "made his Nuggets debut", "the third pick in the 2025
+	// draft" - each held against the career the builder read (recapCareer).
+	{
+		const UNIT_KEY: Record<string, "pts" | "reb" | "ast" | "tp"> = {
+			points: "pts",
+			rebounds: "reb",
+			assists: "ast",
+			"3-pointers": "tp",
+		};
+		let owner: string | undefined;
+		for (const sentence of splitSentences(recap)) {
+			const pronounLed = /^(?:He|His|She|Her|It was (?:his|her))\b/.test(
+				sentence,
+			);
+			const named = names.filter((nm) => sentence.includes(nm));
+			owner = lastNameIn(sentence) ?? (pronounLed ? owner : undefined);
+			for (const m of sentence.matchAll(
+				/\bcareer-high (\d+) (points|rebounds|assists|3-pointers)\b/g,
+			)) {
+				const n = Number(m[1]);
+				const key = UNIT_KEY[m[2]!]!;
+				const owns = named
+					.map((nm) => byName.get(nm)!)
+					.some((p) => p[key] === n && !!p.past && p.past.high[key] < n);
+				if (!owns) {
+					add("career high", `no one named had ${n} ${m[2]} as one`, sentence);
+				}
+			}
+			let m =
+				/The (\d+) (points|rebounds|assists|3-pointers) were a career high for (.+?)\.$/.exec(
+					sentence,
+				);
+			if (m) {
+				const p = byName.get(m[3]!);
+				const key = UNIT_KEY[m[2]!]!;
+				const n = Number(m[1]);
+				if (!p || p[key] !== n || !p.past || p.past.high[key] >= n) {
+					add("career high", `said ${n} ${m[2]} for ${m[3]}`, sentence);
+				}
+			}
+			const p = owner ? byName.get(owner) : undefined;
+			m =
+				/set a career high with (\d+) (points|rebounds|assists|3-pointers)/.exec(
+					sentence,
+				);
+			if (m) {
+				const key = UNIT_KEY[m[2]!]!;
+				const n = Number(m[1]);
+				if (!p?.past || p[key] !== n || p.past.high[key] >= n) {
+					add("career high", `said ${n} ${m[2]} for ${owner}`, sentence);
+				}
+			}
+			m =
+				/career high of (\d+)|previous career high was (\d+)|had never scored more than (\d+)/.exec(
+					sentence,
+				);
+			if (m) {
+				const n = Number(m[1] ?? m[2] ?? m[3]);
+				if (!p?.past || p.past.high.pts !== n || p.pts <= n) {
+					add(
+						"career high",
+						`said ${n}, real ${p?.past?.high.pts ?? "unknown"}`,
+						sentence,
+					);
+				}
+			}
+			const doubles = p
+				? [p.pts, p.reb, p.ast, p.stl, p.blk].filter((v) => v >= 10).length
+				: 0;
+			if (
+				/first (?:career )?triple-double|first triple-double of (?:his|her) career/.test(
+					sentence,
+				)
+			) {
+				if (!p?.past || p.past.td !== 0 || doubles < 3) {
+					add("first triple-double", `not one for ${owner}`, sentence);
+				}
+			}
+			if (/first career double-double/.test(sentence)) {
+				if (!p?.past || p.past.dd !== 0 || doubles < 2) {
+					add("first double-double", `not one for ${owner}`, sentence);
+				}
+			}
+			m = /first (30|40)-point game|had never scored (30|40) in a game/.exec(
+				sentence,
+			);
+			if (m) {
+				const bar = Number(m[1] ?? m[2]);
+				if (!p?.past || p.past.high.pts >= bar || p.pts < bar) {
+					add(`first ${bar}`, `not one for ${owner}`, sentence);
+				}
+			}
+			if (
+				/making (?:his|her) debut|first game in the league|made (?:his|her) debut|in (?:his|her) debut/.test(
+					sentence,
+				)
+			) {
+				if (p?.past?.gp !== 0) {
+					add("debut", `not ${owner}'s first game`, sentence);
+				}
+			}
+			m = /made (?:his|her) (.+?) debut/.exec(sentence);
+			if (m && p) {
+				const t = game.teams.find((x) => x.players.includes(p));
+				if (!p.newTeam || t?.name !== m[1]) {
+					add("team debut", `not ${owner}'s first game for ${m[1]}`, sentence);
+				}
+				const from = /from the (.+?) in a trade/.exec(sentence);
+				if (
+					from &&
+					(p.newTeam?.via !== "trade" || p.newTeam.name !== from[1])
+				) {
+					add("trade", `not traded from ${from[1]}`, sentence);
+				}
+				if (/as a free agent/.test(sentence) && p.newTeam?.via !== "signing") {
+					add("signing", `${owner} was not signed`, sentence);
+				}
+			}
+			m =
+				/facing the (.+?) for the first time since they traded|first game against the (.+?) since leaving/.exec(
+					sentence,
+				);
+			if (m) {
+				const club = m[1] ?? m[2];
+				if (
+					!p?.formerTeam ||
+					p.formerTeam.name !== club ||
+					(m[1] !== undefined && p.formerTeam.via !== "trade")
+				) {
+					add("former team", `${owner} and the ${club}`, sentence);
+				}
+			}
+			m =
+				/the (top|\w+) pick in the (\d+) draft|a second-round pick in the (\d+) draft/.exec(
+					sentence,
+				);
+			if (m) {
+				const d = p?.draft;
+				const pickNo = m[1] === "top" ? 1 : wordToNumber(m[1] ?? "");
+				const ok =
+					m[1] !== undefined
+						? d?.round === 1 && d.pick === pickNo && d.year === Number(m[2])
+						: d?.round === 2 && d.year === Number(m[3]);
+				if (!ok) {
+					add("draft", `${owner} was not ${m[0]}`, sentence);
+				}
+			}
+		}
+	}
+
+	// --- the offensive glass -----------------------------------------------
+	{
+		const sumOf = (t: RecapTeam, key: "orb") =>
+			t.players.every((p) => p[key] !== undefined)
+				? t.players.reduce((n, p) => n + (p[key] ?? 0), 0)
+				: undefined;
+		const pairOk = (key: "orb", a: number, b: number) => {
+			const h = sumOf(home, key);
+			const v = sumOf(away, key);
+			return (h === a && v === b) || (h === b && v === a);
+		};
+		for (const sentence of splitSentences(recap)) {
+			for (const m of sentence.matchAll(
+				/(\d+) offensive rebounds to [^.]*?'s? (\d+)/g,
+			)) {
+				if (!pairOk("orb", Number(m[1]), Number(m[2]))) {
+					add("offensive rebounds", `said ${m[1]} to ${m[2]}`, sentence);
+				}
+			}
+		}
+	}
+
+	// --- the race and the trip ---------------------------------------------
+	{
+		const subjectOf = (sentence: string): RecapTeam | undefined => {
+			let best = Infinity;
+			let who: RecapTeam | undefined;
+			for (const t of game.teams) {
+				for (const label of [t.name, t.region]) {
+					const at = label ? sentence.indexOf(label) : -1;
+					if (at >= 0 && at < best) {
+						best = at;
+						who = t;
+					}
+				}
+			}
+			return who;
+		};
+		let last: RecapTeam | undefined;
+		for (const sentence of splitSentences(recap)) {
+			// "They opened a six-game trip." is the team the sentence before
+			// it was about - whoever else it goes on to name ("They took both
+			// meetings with the Clippers").
+			const t = /^(?:They|It)\b/.test(sentence) ? last : subjectOf(sentence);
+			last = t;
+			const r = t?.race;
+			const claim = (ok: boolean, kind: string) => {
+				if (!ok) {
+					add(kind, `not so for ${t?.name ?? "anyone"}`, sentence);
+				}
+			};
+			if (/clinched a playoff spot/.test(sentence)) {
+				claim(r?.clinched === "playoffs", "clinch");
+			}
+			if (/first team to clinch a playoff spot/.test(sentence)) {
+				claim(!!r?.firstToClinch, "first to clinch");
+			}
+			if (/clinched the best record/.test(sentence)) {
+				claim(r?.clinched === "top", "best record");
+			}
+			if (/clinched at least a play-in spot/.test(sentence)) {
+				claim(r?.clinched === "playIn", "play-in");
+			}
+			if (/eliminated from playoff contention/.test(sentence)) {
+				claim(!!r?.eliminated, "eliminated");
+			}
+			let m = /first team to (\d+) wins/.exec(sentence);
+			if (m) {
+				claim(r?.firstTo === Number(m[1]), "first to");
+			}
+			const st = t?.stretch;
+			m = /opened an? (\w+)-game (trip|homestand)/.exec(sentence);
+			if (m) {
+				claim(
+					!!st &&
+						st.game === 1 &&
+						st.games === wordToNumber(m[1]!) &&
+						st.home === (m[2] === "homestand"),
+					"trip",
+				);
+			}
+			m = /finished (?:its|their) (\w+)-game (trip|homestand) (\d+)-(\d+)/.exec(
+				sentence,
+			);
+			if (m) {
+				claim(
+					!!st &&
+						st.game === st.games &&
+						st.games === wordToNumber(m[1]!) &&
+						st.home === (m[2] === "homestand") &&
+						st.won === Number(m[3]) &&
+						st.lost === Number(m[4]),
+					"trip",
+				);
+			}
+			m =
+				/(?:is|are) (\d+)-(\d+) on (?:its|their) (\w+)-game (trip|homestand)/.exec(
+					sentence,
+				);
+			if (m) {
+				claim(
+					!!st &&
+						st.games === wordToNumber(m[3]!) &&
+						st.home === (m[4] === "homestand") &&
+						st.won === Number(m[1]) &&
+						st.lost === Number(m[2]),
+					"trip",
+				);
 			}
 		}
 	}
