@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 536,
+		date: "2026-11-24",
+		text: "Sportsbook: preseason win totals are no longer too far apart. Before the schedule comes out, the best teams' lines ran up to 3 wins too high and the worst teams' up to 3 too low, so a favourite's over hardly ever hit. They now match the lines opening night shows.",
+	},
+	{
 		n: 535,
 		date: "2026-11-24",
 		text: "Box score banner (refreshed look): the city name now links to the team page like the logo and team name. A game that was on national TV shows the network's logo next to FINAL.",

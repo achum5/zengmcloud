@@ -183,7 +183,6 @@ export const simulateFutures = ({
 	const normalPdf = (z: number) =>
 		Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
 	const ratingByTid = new Map(teams.map((t) => [t.tid, t.rating]));
-	const ratingSum = teams.reduce((s, t) => s + t.rating, 0);
 	const scheduleStats = new Map<
 		number,
 		{ n: number; pSum: number; slopeSum: number }
@@ -217,15 +216,33 @@ export const simulateFutures = ({
 		if (s && s.n > 0) {
 			baseP.set(t.tid, { p: s.pSum / s.n, slope: s.slopeSum / s.n });
 		} else {
-			// No schedule info: balanced slate against the average of everyone else
-			// (excluding yourself - the league mean includes you, which quietly
-			// shaved a top team's edge).
-			const others = teams.length > 1 ? teams.length - 1 : 1;
-			const meanMargin = t.rating - (ratingSum - t.rating) / others;
-			baseP.set(t.tid, {
-				p: marginToWinProb(meanMargin, sigma),
-				slope: normalPdf(meanMargin / sigma) / sigma,
-			});
+			// No schedule yet (the preseason - the app draws it up on opening
+			// night): a balanced one, every other team home and away, each game
+			// at its own margin like a real slate. Read off the average
+			// opponent instead, every strong team was paid the win that Phi's
+			// curve takes back over a real slate, and every weak one lost it:
+			// the preseason win totals ran 6% wider than the same rosters'
+			// opening-night ones, in every league audited.
+			let n = 0;
+			let pSum = 0;
+			let slopeSum = 0;
+			for (const o of teams) {
+				if (o.tid === t.tid) {
+					continue;
+				}
+				for (const hca of [hcaPoints, -hcaPoints]) {
+					const margin = t.rating - o.rating + hca;
+					n += 1;
+					pSum += marginToWinProb(margin, sigma);
+					slopeSum += normalPdf(margin / sigma) / sigma;
+				}
+			}
+			baseP.set(
+				t.tid,
+				n > 0
+					? { p: pSum / n, slope: slopeSum / n }
+					: { p: 0.5, slope: normalPdf(0) / sigma },
+			);
 		}
 	}
 
