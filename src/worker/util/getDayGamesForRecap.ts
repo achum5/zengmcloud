@@ -213,11 +213,14 @@ export type RecapTeam = {
 	// The next game on the schedule after this one.
 	nextGame?: {
 		day: number;
+		// Its night, on an NBA-calendar schedule.
+		date?: string;
 		daysAway: number;
 		home: boolean;
 		oppTid: number;
 		oppName: string;
 		oppAbbrev: string;
+		oppRegion?: string;
 	};
 	// Conference standing after this game, and where it stood the day before.
 	standing?: {
@@ -299,6 +302,10 @@ export type RecapGame = {
 	// Its runs and dry spells, read from the stored score log. See
 	// recapRuns.ts. Absent for games that kept no log.
 	runs?: RecapRuns;
+	// The night it was played ("YYYY-MM-DD"), on an NBA-calendar schedule.
+	date?: string;
+	// Played at a neutral site: no home city to put it in.
+	neutral?: true;
 	// The regular season's length in games, so an injury that outlasts it is
 	// "the rest of the season" and not "about 175 games".
 	seasonGames?: number;
@@ -1226,6 +1233,8 @@ export const getDayGamesForRecap = async ({
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			flow: game.flow,
 			runs: allStar ? undefined : runsOf(game),
+			...(typeof game.date === "string" ? { date: game.date } : {}),
+			...(game.neutralSite ? { neutral: true as const } : {}),
 			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
 			...(g.get("gender") === "female" ? { gender: "female" as const } : {}),
@@ -1847,6 +1856,7 @@ const createAutoRecapContext = async (season: number) => {
 						daysAway: next.day - day2,
 						oppName: info?.name ?? "",
 						oppAbbrev: info?.abbrev ?? "???",
+						...(info?.region ? { oppRegion: info.region } : {}),
 					};
 				}
 				if (playoffs) {
@@ -1928,6 +1938,8 @@ const createAutoRecapContext = async (season: number) => {
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			flow: game.flow,
 			runs: allStar ? undefined : runsOf(game),
+			...(typeof game.date === "string" ? { date: game.date } : {}),
+			...(game.neutralSite ? { neutral: true as const } : {}),
 			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
 			...(g.get("gender") === "female" ? { gender: "female" as const } : {}),
@@ -2057,7 +2069,7 @@ export const getAutoRecapsForDay = async ({
 	beginRecapBatch();
 	try {
 		for (const recapGame of games) {
-			notes[recapGame.gid] = getAutoRecap(recapGame);
+			notes[recapGame.gid] = getAutoRecap(recapGame, { wire: true });
 		}
 	} finally {
 		endRecapBatch();
@@ -2092,5 +2104,7 @@ export const getAutoRecapForGid = async ({
 	if (!game) {
 		return undefined;
 	}
-	return getAutoRecap(await ctx.buildRecapGame(game, game.day ?? 0));
+	return getAutoRecap(await ctx.buildRecapGame(game, game.day ?? 0), {
+		wire: true,
+	});
 };

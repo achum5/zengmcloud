@@ -2841,6 +2841,16 @@ $score-box-player-width: 200px;
 	}
 }
 
+// The closing parts under a wire-style game recap ("### Takeaways", "Key
+// moment", "Key stat", "Up next"): a bold label the size of the text, with
+// room above it.
+.markdown h6 {
+	font-size: 1em;
+	font-weight: 700;
+	line-height: inherit;
+	margin-top: 0.75em;
+}
+
 // A recap sentence that resolved to one game: hover lays a faint wash behind
 // the whole sentence (no underline - its player names never underline) and
 // the click goes to that game's box score.

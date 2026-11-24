@@ -20,6 +20,8 @@
 export type ContextGameRow = {
 	gid: number;
 	day?: number;
+	// The night, on an NBA-calendar schedule.
+	date?: string;
 	playoffs?: boolean;
 	won?: { tid: number; pts: number };
 	lost?: { tid: number; pts: number };
@@ -29,6 +31,7 @@ export type ContextGameRow = {
 export type ContextScheduleRow = {
 	gid: number;
 	day: number;
+	date?: string;
 	homeTid: number;
 	awayTid: number;
 };
@@ -153,6 +156,8 @@ export const seasonSeries = (
 
 export type NextGame = {
 	day: number;
+	// Its night, on an NBA-calendar schedule.
+	date?: string;
 	home: boolean;
 	oppTid: number;
 };
@@ -167,13 +172,20 @@ export const nextGameFor = (
 	schedule: readonly ContextScheduleRow[] = [],
 ): NextGame | undefined => {
 	let best:
-		| { day: number; gid: number; home: boolean; oppTid: number }
+		| {
+				day: number;
+				gid: number;
+				home: boolean;
+				oppTid: number;
+				date?: string;
+		  }
 		| undefined;
 	const consider = (cand: {
 		day: number;
 		gid: number;
 		home: boolean;
 		oppTid: number;
+		date?: string;
 	}) => {
 		if (
 			!best ||
@@ -189,7 +201,13 @@ export const nextGameFor = (
 		}
 		const { home, opp } = sideOf(g, tid);
 		if (opp) {
-			consider({ day: dayOf(g), gid: g.gid, home, oppTid: opp.tid });
+			consider({
+				day: dayOf(g),
+				gid: g.gid,
+				home,
+				oppTid: opp.tid,
+				date: g.date,
+			});
 		}
 	}
 	for (const s of schedule) {
@@ -202,10 +220,16 @@ export const nextGameFor = (
 			gid: s.gid,
 			home,
 			oppTid: home ? s.awayTid : s.homeTid,
+			date: s.date,
 		});
 	}
 	return best
-		? { day: best.day, home: best.home, oppTid: best.oppTid }
+		? {
+				day: best.day,
+				home: best.home,
+				oppTid: best.oppTid,
+				...(typeof best.date === "string" ? { date: best.date } : {}),
+			}
 		: undefined;
 };
 

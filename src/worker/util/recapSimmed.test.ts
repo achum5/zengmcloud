@@ -10,6 +10,7 @@ import {
 } from "./getDayGamesForRecap.ts";
 import { getAutoRecap } from "./getAutoRecap.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
+import { storyOf } from "./recapWire.ts";
 
 // RECAPS OF REAL GAMES, CHECKED IN CI.
 //
@@ -23,7 +24,9 @@ import { verifyRecap } from "./recapAccuracy.ts";
 const DAYS = 8;
 const SEED = 11;
 
-type Pair = { gid: number; recap: string; game: RecapGame };
+// `recap` is the whole recap as a page shows it; `story` is the story
+// above its closing parts (see recapWire.ts), for what is about the story.
+type Pair = { gid: number; recap: string; story: string; game: RecapGame };
 const pairs: Pair[] = [];
 const dayRecaps: string[] = [];
 let savedLeague: unknown;
@@ -44,7 +47,7 @@ beforeAll(async () => {
 			for (const game of await recapGamesForDay({ season, day })) {
 				const recap = notes[game.gid];
 				if (recap) {
-					pairs.push({ gid: game.gid, recap, game });
+					pairs.push({ gid: game.gid, recap, story: storyOf(recap), game });
 				}
 			}
 		}
@@ -84,7 +87,7 @@ describe("simmed recaps", () => {
 	test("a women's league's recaps are about women", () => {
 		for (const { gid, game } of pairs) {
 			const hers = { ...game, gender: "female" as const };
-			const recap = getAutoRecap(hers);
+			const recap = getAutoRecap(hers, { wire: true });
 			assert.notMatch(
 				recap,
 				/\b(?:he|He|his|His|him|himself|men)\b/,

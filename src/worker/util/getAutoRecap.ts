@@ -63,6 +63,7 @@ import {
 	type BeatContext,
 } from "./recapBeats.ts";
 import { shotName, winningShotKind, withSettledLead } from "./recapFinish.ts";
+import { wireOf, withWire } from "./recapWire.ts";
 import { gameHeadline, writeDayRecap } from "./recapDay.ts";
 import {
 	composeCast,
@@ -3333,7 +3334,7 @@ const loserSkidNote = (
 	);
 };
 
-const buildGameRecap = (game: RecapGame): string => {
+const buildGameRecap = (game: RecapGame, wire = false): string => {
 	if (!isInBatch()) {
 		clearPhraseMemory();
 	}
@@ -3765,7 +3766,8 @@ const buildGameRecap = (game: RecapGame): string => {
 	if (injury) {
 		context.push(injury);
 	}
-	const closer = nextGameBeat(beatCtx, rng);
+	// Under the wire format, what is next has a part of its own (Up next).
+	const closer = wire ? undefined : nextGameBeat(beatCtx, rng);
 	if (closer) {
 		context.push(closer);
 	}
@@ -4024,21 +4026,29 @@ export const teamOpeners = (
 	return text.slice(0, cut) + parts.join("");
 };
 
-export const getAutoRecap = (game: RecapGame): string => {
+// `wire`: as the wire prints it - a dateline, and the closing parts under
+// the story (Takeaways, Key moment, Key stat, Up next; see recapWire.ts).
+export const getAutoRecap = (
+	game: RecapGame,
+	{ wire = false }: { wire?: boolean } = {},
+): string => {
+	const settled = withSettledLead(game);
 	const text = fixArticles(
-		tiedScores(varyRuns(buildGameRecap(withSettledLead(game)), game.gid + 1)),
+		tiedScores(varyRuns(buildGameRecap(settled, wire), game.gid + 1)),
 	);
 	const names = peopleIn([game]);
 	const teams = teamsIn([game]);
+	const story = game.allStar
+		? text
+		: cityReferences(
+				teamOpeners(text, teams),
+				teams,
+				names,
+				(game.gid + 1) * 7919 + 17,
+			);
+	const parts = wire ? wireOf(settled, story) : undefined;
 	const referenced = secondReferences(
-		game.allStar
-			? text
-			: cityReferences(
-					teamOpeners(text, teams),
-					teams,
-					names,
-					(game.gid + 1) * 7919 + 17,
-				),
+		parts ? withWire(story, parts) : story,
 		names,
 		teams,
 	);
