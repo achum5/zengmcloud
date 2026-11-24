@@ -154,6 +154,8 @@ export type KeySegment = {
 const LEAD_MS = 4500;
 const TAIL_MS = 900;
 const NET_MS = 700;
+// The end of the game shown from this long (ms) before the horn.
+const FINAL_MS = 3600;
 // A play that moves the chance of winning by this much (0-1) makes the reel
 // on that alone, weighed at this much a whole game's worth.
 export const SWING_MIN = 0.04;
@@ -357,6 +359,17 @@ export const planKeyPlays = (
 		t1: tl.end,
 		close: false,
 	});
+	// And the last seconds of it before the horn, however it ends - dribbled
+	// out, or a look for a shot that never comes - not a cut from the last
+	// big play straight to the final.
+	const horn = beats.findLast((b) => typeOf(b) === "endOfPeriod");
+	if (horn) {
+		picked.push({
+			t0: Math.max(horn.preStart, horn.actionStart - FINAL_MS),
+			t1: tl.end,
+			close: false,
+		});
+	}
 	// Every shot at the end of a period - any period, overtime too - got up
 	// in its last seconds: in at the horn or off the rim, from the play that
 	// gets it up till the ball is down.

@@ -1,5 +1,5 @@
 import { assert, describe, test, vi } from "vitest";
-import { compile } from "./testGame.ts";
+import { compile, fakeGame } from "./testGame.ts";
 import {
 	getKeyPlays,
 	KEY_PLAY_DEFAULTS,
@@ -13,7 +13,7 @@ import { makeFollow } from "./follow.ts";
 import { askForHighlights } from "../../../util/highlightsAsk.ts";
 import { stepPlay, type PlayClock } from "./playback.ts";
 import { fastAt } from "./evaluate.ts";
-import { isLineItem } from "./director.ts";
+import { compileCourt, isLineItem, type RawEvent } from "./director.ts";
 
 const watchMs = (tl: any, segs: { t0: number; t1: number }[]) => {
 	let ms = 0;
@@ -212,6 +212,53 @@ describe("3D key plays", () => {
 			);
 		assert.isAbove(n(6, 1), n(2, 1));
 		assert.isAbove(n(2, 4), n(2, 1));
+	}, 60_000);
+
+	// However the game ends - the clock dribbled out, or nothing got up -
+	// the reel shows its last seconds up to the horn, not a cut from the
+	// last big play straight to the final.
+	test("the last seconds of the game, up to the horn, are always in it", () => {
+		// (The game won, and the last of the clock dribbled out: a miss, the
+		// board, and twenty-odd seconds of it.)
+		const game = fakeGame("keys", 140);
+		const k = game.events.findLastIndex((e) => e.type === "endOfPeriod");
+		const last = game.events.findLast(
+			(e, j) => j < k && typeof e.clock === "number",
+		)!;
+		const winning = 0;
+		// (Men on the floor: the last of each side's in the lines.)
+		const onFloor = (t: number) =>
+			game.events.findLast(
+				(e, j) =>
+					j < k && e.t === t && typeof e.pid === "number" && e.type !== "stat",
+			)!.pid as number;
+		const shooter = onFloor(1 - winning);
+		const rebounder = onFloor(winning);
+		const at = Math.min(30, (last.clock as number) - 2);
+		const events: RawEvent[] = [
+			...game.events.slice(0, k),
+			{ type: "fgaMidRange", t: 1 - winning, pid: shooter, clock: at },
+			{ type: "missMidRange", t: 1 - winning, pid: shooter, clock: at - 0.4 },
+			{ type: "drb", t: winning, pid: rebounder, clock: at - 0.8 },
+			{ type: "endOfPeriod", t: winning, reason: "runOutClock", clock: 0 },
+			{ type: "gameOver" },
+		];
+		const tl = compileCourt({ events, players: game.players, gid: 3 });
+		const horn = tl.beats.findLast((b) => b.type === "endOfPeriod")!;
+		assert.isAbove(horn.actionStart - horn.preStart, 10_000);
+		const from = horn.actionStart - 3000;
+		for (const minutes of [1, 3]) {
+			const plan = planKeyPlays(
+				tl,
+				events,
+				{ ...on, minutes, closePoints: 0 },
+				{ rate: 1, numPeriods: 4 },
+			);
+			assert.isTrue(
+				plan.some((s) => s.t0 <= from && s.t1 >= horn.actionStart),
+				`${minutes} min`,
+			);
+		}
 	}, 60_000);
 
 	// A shot got up in the last seconds of a period - any period, overtime

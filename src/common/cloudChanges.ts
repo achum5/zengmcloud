@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 551,
+		date: "2026-11-24",
+		text: "3D Key Plays: the reel always shows the last few seconds of the game up to the final horn, even when a team is just dribbling it out, instead of cutting from the last big play straight to the final.",
+	},
+	{
 		n: 550,
 		date: "2026-11-24",
 		text: "Team schedule: the players' stat lines on upcoming games no longer get cut off when Upcoming and Completed Games sit side by side. The team names make the room instead, and a national TV logo stays at the end of the team names, clear of the players.",
