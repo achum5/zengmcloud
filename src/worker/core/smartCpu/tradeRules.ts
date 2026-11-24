@@ -1,4 +1,7 @@
+import { PHASE } from "../../../common/constants.ts";
+import type { Player } from "../../../common/types.ts";
 import { g } from "../../util/index.ts";
+import { getContractSummary } from "../contract/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { checkTradeSalary } from "../realisticFrontOffice/cba.ts";
 import { stagesOn } from "../realisticFrontOffice/stages.ts";
@@ -45,4 +48,30 @@ export const salaryRulesAllow = (
 		return false;
 	}
 	return true;
+};
+
+// THE SIGNING COOL-OFF, AS THE GM KNOWS IT: a player just signed can't be
+// traded for 14 games (player/sign.ts; isUntradable), nor a player whose
+// deal has run out once the season is over. For a CPU team whatever God
+// Mode lets a person do: with God Mode on (as for the Danger Zone's market
+// run) the game's own check lets anybody go, and the CPU traded players it
+// had signed the week before.
+// `lifted`: a look ahead to when every cool-off running now is over (the
+// market's, market.ts laterGains).
+export const coolOff = { lifted: false };
+
+export const inCoolOff = (p: Player) => (p.gamesUntilTradable ?? 0) > 0;
+
+export const smartTradable = (p: Player) => {
+	if (inCoolOff(p) && !coolOff.lifted) {
+		return false;
+	}
+	const contract = getContractSummary(p);
+	const phase = g.get("phase");
+	return !(
+		contract &&
+		contract.exp <= g.get("season") &&
+		phase > PHASE.PLAYOFFS &&
+		phase < PHASE.FREE_AGENCY
+	);
 };

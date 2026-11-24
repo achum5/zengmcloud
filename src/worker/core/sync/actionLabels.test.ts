@@ -54,3 +54,12 @@ describe("isTimelineAdvanceLabel", () => {
 		assert.isTrue(isSimAuthorityLockedCall("main", "updateConfsDivs"));
 	});
 });
+
+describe("smart CPU trade market, run now", () => {
+	// It trades between CPU teams all over the league: only the device in
+	// charge of simming runs it, with the room held busy meanwhile.
+	test("needs authority", () => {
+		assert.isTrue(isSimAuthorityLockedCall("main", "smartMarketNow"));
+		assert.isTrue(isTimelineAdvanceLabel("main.smartMarketNow"));
+	});
+});

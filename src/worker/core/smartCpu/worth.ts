@@ -3,10 +3,9 @@ import type { DraftPick, Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { contractOf, draftedAs } from "../realisticFrontOffice/contractOf.ts";
-import isUntradable from "../trade/isUntradable.ts";
 import summary from "../trade/summary.ts";
 import { lap, mark, valueCount } from "./clock.ts";
-import { salaryRulesAllow } from "./tradeRules.ts";
+import { smartTradable, salaryRulesAllow } from "./tradeRules.ts";
 import { marginOf, tradedAwayOf } from "../realisticFrontOffice/market.ts";
 import { SMART_ON_COURT_ERROR } from "../realisticFrontOffice/margin.ts";
 import {
@@ -1715,7 +1714,7 @@ export class SmartView {
 		const held = await this.holdingsOf(buyer);
 		const m1 = mark();
 		const allowed = (p: Player) =>
-			!isUntradable(p).untradable && (ask?.allowed?.(p) ?? true);
+			smartTradable(p) && (ask?.allowed?.(p) ?? true);
 		// Its players and its nearest picks (as NBA teams pay: a deal
 		// without picks was every one of the GM's first 72), best for the
 		// seller first - all its players, when the seller says what it is

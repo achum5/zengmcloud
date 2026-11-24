@@ -1,6 +1,7 @@
 import { season, team } from "../index.ts";
 import { saveClassicDays } from "../game/saveClassicDays.ts";
 import { refreshCalendarDaysForNewSeason } from "../game/refreshCalendarDays.ts";
+import { tradableOnForNewSeason } from "../game/tradableOn.ts";
 import { collegePreseasonPoll } from "../college/polls.ts";
 import { collegeMigrate } from "../college/setup.ts";
 import { idb } from "../../db/index.ts";
@@ -181,6 +182,8 @@ const newPhaseRegularSeason = async (
 	if (classicDays !== undefined) {
 		await saveClassicDays(classicDays);
 	}
+	// Trade waits to the NBA's dates, on this season's own (tradableOn.ts).
+	await tradableOnForNewSeason(dates !== undefined);
 	// Injuries and trade waits carried over: the days of this season they take.
 	await refreshCalendarDaysForNewSeason(dates !== undefined);
 

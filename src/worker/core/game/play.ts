@@ -27,6 +27,7 @@ import {
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { nightTick } from "./calendarTicks.ts";
+import { classicDaysTo } from "./tradableOn.ts";
 import { refreshCalendarDays } from "./refreshCalendarDays.ts";
 import { ensureClassicDays } from "./saveClassicDays.ts";
 import {
@@ -429,9 +430,21 @@ const play = async (
 
 			// On a calendar, the night counts the calendar's days at the classic
 			// rate - see calendarTicks.ts.
+			const scheduleLeft = await idb.cache.schedule.getAll();
+			// The next night with games (a wait to a date over by then is over
+			// now, tradableOn.ts).
+			let nextNight: string | undefined;
+			for (const game of scheduleLeft) {
+				if (
+					game.date !== undefined &&
+					(nextNight === undefined || game.date < nextNight)
+				) {
+					nextNight = game.date;
+				}
+			}
 			const tick = nightTick({
 				games: await idb.cache.games.getAll(),
-				schedule: await idb.cache.schedule.getAll(),
+				schedule: scheduleLeft,
 				season: g.get("season"),
 				day: simmedDay,
 				phase: g.get("phase"),
@@ -457,7 +470,23 @@ const play = async (
 					tick.ticksByTid === undefined
 						? 1
 						: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
+				// A wait to one of the NBA's dates goes by the date, whatever
+				// classic days tonight came to (tradableOn.ts).
+				const tradableIn =
+					p.tradableOn !== undefined &&
+					p.gamesUntilTradable > 0 &&
+					tick.clock !== undefined &&
+					tick.tonight !== undefined
+						? classicDaysTo(p.tradableOn, tick.clock, tick.tonight, nextNight)
+						: undefined;
 				if (ticks === 0) {
+					if (tradableIn !== undefined && tradableIn !== p.gamesUntilTradable) {
+						p.gamesUntilTradable = tradableIn;
+						if (tradableIn === 0) {
+							delete p.tradableOn;
+						}
+						playersToSave.push(p);
+					}
 					continue;
 				}
 
@@ -526,7 +555,11 @@ const play = async (
 
 					changed = true;
 				} else if (p.gamesUntilTradable > 0) {
-					p.gamesUntilTradable = Math.max(0, p.gamesUntilTradable - ticks);
+					p.gamesUntilTradable =
+						tradableIn ?? Math.max(0, p.gamesUntilTradable - ticks);
+					if (p.gamesUntilTradable === 0) {
+						delete p.tradableOn;
+					}
 					changed = true;
 				}
 

@@ -2,6 +2,7 @@ import { PHASE, WEBSITE_ROOT } from "../../../common/constants.ts";
 import { recordPhaseForensics } from "./phaseForensics.ts";
 import finalize from "./finalize.ts";
 import { refreshCalendarDaysForNewSeason } from "../game/refreshCalendarDays.ts";
+import { tradableOnForPreseason } from "../game/tradableOn.ts";
 import { nbaCalendarLeague } from "../game/calendarTicks.ts";
 import newPhasePreseason from "./newPhasePreseason.ts";
 import newPhaseRegularSeason from "./newPhaseRegularSeason.ts";
@@ -100,6 +101,11 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 
 			if (doPhaseChange[phase]) {
 				const result = await doPhaseChange[phase](conditions, extra);
+
+				// A late-season signing's three months, run out over the summer.
+				if (phase === PHASE.PRESEASON) {
+					await tradableOnForPreseason();
+				}
 
 				// On the NBA calendar, injuries and trade waits carried through the
 				// offseason read as days of the coming season.

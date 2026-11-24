@@ -5,7 +5,6 @@ import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import classicDaysLeft from "../game/classicDaysLeft.ts";
-import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import summary from "../trade/summary.ts";
@@ -13,7 +12,12 @@ import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { currentOutlook, gamesPlayed } from "../realisticFrontOffice/market.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed, timedSync } from "./clock.ts";
-import { salaryRulesAllow } from "./tradeRules.ts";
+import {
+	coolOff,
+	inCoolOff,
+	salaryRulesAllow,
+	smartTradable,
+} from "./tradeRules.ts";
 import { inStages } from "../realisticFrontOffice/stages.ts";
 import { smartVanillaOn } from "../realisticFrontOffice/isOn.ts";
 import { viewFor } from "./signing.ts";
@@ -142,6 +146,16 @@ export const marketSettings = {
 	// under 0.01 of a title (Oklahoma City three firsts for Cedric Coward,
 	// 0.002), where its read of a one-player swap is off by about 0.04.
 	margins: true,
+	// THE COOL-OFF (owner, 2026-11-24: "be smart enough to take into
+	// account what's about to be available"). A player signed can't be
+	// traded for 14 games, so through the preseason and the season's first
+	// weeks most of the summer's signings are off the market - in the
+	// owner's league 24 of the 100 best players, Tyus Jones (84) among them.
+	// A team doesn't make a deal now when a clearly better one opens up for
+	// it once they can be traded (laterGains): it waits unless what it gains
+	// now is at least this share of the most it could gain then.
+	waitForCoolOff: true,
+	waitShare: 0.75,
 };
 
 // Whether a deal leaves the seller its share (marketSettings.sellerShare) of
@@ -171,6 +185,9 @@ export const marketStats = {
 	unfair: 0,
 	// Deals a side's gain didn't clear its margin of error (margins).
 	withinMargin: 0,
+	// Deals a side passed up for a better one once the cool-off is over
+	// (waitForCoolOff).
+	waits: 0,
 };
 
 export type SmartDeal = {
@@ -239,6 +256,8 @@ export const candidates = async (
 	// Players each team shopped last moment without a taker: behind the rest.
 	rested: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
 	plans: ReadonlyMap<number, Plan> = new Map(),
+	// Only these players shopped (laterGains: the ones in a cool-off).
+	only?: (p: Player) => boolean,
 ): Promise<Candidate[]> => {
 	const buyers = [...cpu].filter((k) => !dealt.has(k));
 	// The first look (marketSettings.firstLook): a player below a team's
@@ -266,7 +285,7 @@ export const candidates = async (
 		const held = view.heldNow(seller);
 		await ensureRetention(view.outlook, held.players, seller);
 		for (const p of held.players) {
-			if (isUntradable(p).untradable) {
+			if (!smartTradable(p) || (only && !only(p))) {
 				continue;
 			}
 			// Read roughly - rosters not cut to the limit, a third of the work
@@ -467,12 +486,13 @@ export const dealsNow = async (
 	rested: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
 	// Told which players were shopped.
 	onShopped?: (shopped: readonly { seller: number; p: Player }[]) => void,
+	only?: (p: Player) => boolean,
 ) => {
 	await view.prime();
 	const deals: SmartDeal[] = [];
 	plansNow = plansOf(view, view.outlook.teams.keys());
 	const all = await timed("market: candidates", () =>
-		candidates(view, cpu, new Set(), rested, plansNow),
+		candidates(view, cpu, new Set(), rested, plansNow, only),
 	);
 	const shopped: Candidate[] = [];
 	let asked = 0;
@@ -614,6 +634,7 @@ export type MarketTrace = {
 		| "within margin"
 		| "unfair"
 		| "illegal"
+		| "waits"
 		| "made";
 	seller: number;
 	buyer?: number;
@@ -626,7 +647,12 @@ export type MarketTrace = {
 };
 export const smartTraceWatchers: ((t: MarketTrace, view: SmartView) => void)[] =
 	[];
+// (Quiet while the market looks ahead: laterGains.)
+let tracing = true;
 const trace = (t: MarketTrace, view: SmartView) => {
+	if (!tracing) {
+		return;
+	}
 	for (const watch of smartTraceWatchers) {
 		watch(t, view);
 	}
@@ -654,6 +680,70 @@ const shoppedBefore = () =>
 			([tid, pids]) => [tid, new Set(pids)] as const,
 		),
 	);
+
+// Watchers of each look past the cool-off: the deals it found and the most
+// each team could gain then (tests and probes).
+export const smartLaterWatchers: ((
+	ahead: readonly SmartDeal[],
+	later: ReadonlyMap<number, number>,
+	view: SmartView,
+) => void)[] = [];
+
+// THE COOL-OFF, LOOKED PAST (marketSettings.waitForCoolOff): the most each
+// team could gain from a deal once the players in a cool-off now can be
+// traded - each of them shopped as if he could be, the offers free to take
+// them in too, the deals found but none made. Weighed only against deals
+// open now. A team's deals for players it could trade now are open to it
+// then as well, so these are the deals only waiting brings.
+const laterGains = async (
+	view: SmartView,
+	cpu: ReadonlySet<number>,
+	open: readonly SmartDeal[],
+) => {
+	const later = new Map<number, number>();
+	if (!marketSettings.waitForCoolOff || open.length === 0) {
+		return later;
+	}
+	const cooling = new Set<number>();
+	for (const tid of cpu) {
+		for (const p of view.heldNow(tid).players) {
+			if (inCoolOff(p)) {
+				cooling.add(p.pid);
+			}
+		}
+	}
+	if (cooling.size === 0) {
+		return later;
+	}
+	const stats = { ...marketStats };
+	const plans = plansNow;
+	coolOff.lifted = true;
+	tracing = false;
+	try {
+		const ahead = await timed("market: after the cool-off", () =>
+			dealsNow(view, cpu, new Map(), undefined, (p) => cooling.has(p.pid)),
+		);
+		const add = (tid: number, gain: number) => {
+			if (gain > (later.get(tid) ?? 0)) {
+				later.set(tid, gain);
+			}
+		};
+		for (const d of ahead) {
+			add(d.seller, d.sellerGain);
+			d.buyerGain = await view.dealWorth(d.buyer, d.seller, d.offer, d.out);
+			add(d.buyer, d.buyerGain);
+		}
+		for (const watch of smartLaterWatchers) {
+			watch(ahead, later, view);
+		}
+	} finally {
+		coolOff.lifted = false;
+		tracing = true;
+		Object.assign(marketStats, stats);
+		plansNow = plans;
+	}
+	return later;
+};
 
 // A market moment: its deals, best for the seller first, each team dealing
 // at most once - each checked again as it stands just before it is made
@@ -683,6 +773,7 @@ const marketMomentNow = async () => {
 			shoppedNow.set(c.seller, set);
 		}
 	});
+	const later = await laterGains(view, cpu, deals);
 	const open = marketSettings.buyersChoose
 		? await timed("market: alternatives", () => withAlternatives(view, deals))
 		: deals;
@@ -799,6 +890,24 @@ const marketMomentNow = async () => {
 			);
 			continue;
 		}
+		// A side with a clearly better deal open to it once the cool-off is
+		// over waits for it.
+		const waits = (tid: number, gain: number) =>
+			gain < marketSettings.waitShare * (later.get(tid) ?? 0);
+		if (waits(found.seller, sellerGain) || waits(found.buyer, buyerGain)) {
+			marketStats.waits += 1;
+			trace(
+				{
+					stage: "waits",
+					...at,
+					sellerGain,
+					buyerGain,
+					why: `after the cool-off: seller ${(later.get(found.seller) ?? 0).toFixed(3)}, buyer ${(later.get(found.buyer) ?? 0).toFixed(3)}`,
+				},
+				view,
+			);
+			continue;
+		}
 		const teams = teamsOf(found.seller, found.buyer, found.out, found.offer);
 		if ((await summary(teams)).warning) {
 			marketStats.illegal += 1;
@@ -909,8 +1018,10 @@ const WINDOW_PHASES: readonly number[] = [
 	PHASE.PRESEASON,
 ];
 
+export const smartWindowPhase = () => WINDOW_PHASES.includes(g.get("phase"));
+
 export const smartTradeWindow = async () => {
-	if (!WINDOW_PHASES.includes(g.get("phase")) || !smartDecidesHere()) {
+	if (!smartWindowPhase() || !smartDecidesHere()) {
 		return [];
 	}
 	return marketMoment();

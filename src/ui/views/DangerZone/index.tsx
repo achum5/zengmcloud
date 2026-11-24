@@ -11,7 +11,7 @@ import { toWorker } from "../../util/toWorker.ts";
 import AutoSave from "./AutoSave.tsx";
 import WorkerConsole from "./WorkerConsole.tsx";
 
-const DangerZone = ({ autoSave }: View<"dangerZone">) => {
+const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 	useTitleBar({
 		title: "Danger Zone",
 	});
@@ -26,6 +26,9 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 	const [agingFaces, setAgingFaces] = useState(false);
 	const [clearingRecaps, setClearingRecaps] = useState(false);
 	const [backfillingRanks, setBackfillingRanks] = useState(false);
+	const [marketRunning, setMarketRunning] = useState(false);
+	const marketPhase =
+		phase === PHASE.RESIGN_PLAYERS || phase === PHASE.PRESEASON;
 
 	return (
 		<>
@@ -189,6 +192,60 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 							Schedule All-Star Game now
 						</button>
 					</div>
+
+					{smartCpu ? (
+						<div className="mt-5">
+							<h2>Smart CPU trade market</h2>
+
+							{!marketPhase ? (
+								<p className="text-warning">
+									This only works while re-signing players or in the preseason.
+								</p>
+							) : null}
+
+							<button
+								type="button"
+								className="btn btn-god-mode border-0"
+								disabled={!marketPhase || !godMode || marketRunning}
+								title="CPU teams trade with each other, as they do when this phase opens"
+								onClick={async () => {
+									setMarketRunning(true);
+									try {
+										const made = await toWorker(
+											"main",
+											"smartMarketNow",
+											undefined,
+										);
+										if (made !== undefined) {
+											showNotification({
+												text:
+													made === 0 ? (
+														"No trades made."
+													) : (
+														<>
+															{made} trade{made === 1 ? "" : "s"} made.{" "}
+															<a
+																href={helpers.leagueUrl([
+																	"transactions",
+																	"all",
+																])}
+															>
+																Transactions
+															</a>
+														</>
+													),
+												type: "success",
+											});
+										}
+									} finally {
+										setMarketRunning(false);
+									}
+								}}
+							>
+								{marketRunning ? "Trading..." : "Run it now"}
+							</button>
+						</div>
+					) : null}
 				</div>
 
 				<div className="col-md-6 mt-5 mt-sm-0">

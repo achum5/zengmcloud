@@ -2865,3 +2865,47 @@ and the team's read asked only of the ones it would pick (`evaluatePiece`):
 the same deal as asking it of every piece in all 522 searches, at about a
 quarter of the time: "What would make this work" 0.3-0.6 s against 0.12 s
 on vanilla alone, the trading block 0.06 s a team against 0.01 s.
+
+## The signing cool-off: waiting for what's about to open up (2026-11-24)
+
+A player who signs can't be traded for a while (`player/sign.ts`,
+`trade/isUntradable.ts`): 14 games in a classic league. On the NBA calendar
+it now goes by the NBA's dates (`game/tradableOn.ts`, the owner's pick): the
+summer's signings December 15, a re-signing for over 20% more on Bird rights
+over the cap January 15, a preseason signing (training camp, October 1)
+January 1, a signing in season three months on. The engine still counts
+classic days (`gamesUntilTradable`); the date is kept with the player
+(`tradableOn`) and turned into the classic days to it once the season's
+schedule is made. In the owner's league (2025, opening night October 22)
+December 15 is 24 to 29 games in, 26 typical; the 14 games ended about
+November 18.
+
+The owner asked whether CPU teams wait for what is about to open up, as
+people do: his league stops the day the summer's signings can be traded.
+They didn't: a market moment only ever saw the players it could trade that
+moment. In the owner's league in the preseason 101 players on CPU teams
+were in a cool-off, among them Tyus Jones (84) and Anthony Edwards (73),
+24 of the league's best 100.
+
+**What a team does now.** At each market moment with deals open, the
+market looks past the cool-off (`laterGains`): each player in one is
+shopped as if he could be traded, the offers free to take them in too, the
+deals found but none made. A side passes up a deal now when what it gains
+is under `waitShare` (0.75) of the most it could gain then
+(`marketSettings.waitForCoolOff`). A team's deals for players it could
+trade now are open to it then as well, so the look counts only the deals
+waiting brings.
+
+Measured on the owner's league from the preseason to 18 games in
+(`coolOffProbe`, `coolOffLookProbe`): the market would shop 76 of the 101,
+Milwaukee the keenest buyer of nearly all, and none would be sold - 62 with
+no offer that cleared (Tyus Jones at $46.5M among them), 14 with the seller
+saying no (Chicago would lose 0.498 of a title selling Mario Hezonja to
+Milwaukee). So nothing waits there: the preseason made the same two trades
+with the look and without, the moment taking 88 s against 71 s, and the
+look 11% of the market's time over the 36 nights.
+
+**God Mode.** The game's own check lets anybody be traded in God Mode, so
+with it on - as for the Danger Zone's "Run it now" - CPU teams could trade
+the players they had just signed. The smart CPU now keeps the cool-off
+itself (`tradeRules.ts`, `smartTradable`), God Mode or not.

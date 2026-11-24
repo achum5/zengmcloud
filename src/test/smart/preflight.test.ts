@@ -333,7 +333,7 @@ test.skipIf(!env.PF_LEAGUE)("preflight", { timeout: 14_400_000 }, async () => {
 			const last = p.transactions?.at(-1);
 			return (
 				last &&
-				(last.type === "freeAgent" || last.type === "reSigned") &&
+				last.type === "freeAgent" &&
 				last.season >= startSeason &&
 				p.ratings.at(-1)!.ovr < 50 &&
 				!humans.includes(p.tid)

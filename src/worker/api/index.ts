@@ -372,6 +372,7 @@ import {
 } from "../core/realisticFrontOffice/isOn.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { smartTradingBlock } from "../core/smartCpu/screens.ts";
+import { smartTradeWindow, smartWindowPhase } from "../core/smartCpu/market.ts";
 import {
 	ownReadValuer,
 	smartGuardOffer,
@@ -7953,6 +7954,18 @@ const setTradesAfterDeadline = async (tradesAfterDeadline: boolean) => {
 	await toUI("realtimeUpdate", [["gameAttributes"]]);
 };
 
+// God Mode (Danger Zone): the smart CPU's trade market as it meets when
+// re-signing or the preseason opens, run now - for a league that switched
+// Smart CPU on after that. The number of trades made.
+const smartMarketNow = async () => {
+	if (!smartBrainOn() || !smartWindowPhase()) {
+		return undefined;
+	}
+	const made = await smartTradeWindow();
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+	return made.length;
+};
+
 const toggleTradeDeadline = async () => {
 	const currentPhase = g.get("phase");
 	if (currentPhase === PHASE.AFTER_TRADE_DEADLINE) {
@@ -9152,6 +9165,7 @@ const api = {
 		toggleColaOptOut,
 		toggleTradeDeadline,
 		setTradesAfterDeadline,
+		smartMarketNow,
 		tradeCounterOffer,
 		onLiveSimOver,
 		liveWatchAlive,

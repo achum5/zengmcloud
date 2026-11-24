@@ -308,6 +308,7 @@ const rebuildRevert = async (
 				},
 				numDaysFreeAgent: 0,
 				gamesUntilTradable: p.gamesUntilTradable,
+				...(p.tradableOn !== undefined ? { tradableOn: p.tradableOn } : {}),
 				ptModifier: 1,
 				yearsFreeAgent: 0,
 			},
@@ -363,6 +364,7 @@ const rebuildRevert = async (
 				contract: genContract(p, false),
 				numDaysFreeAgent: p.numDaysFreeAgent,
 				gamesUntilTradable: p.gamesUntilTradable,
+				...(p.tradableOn !== undefined ? { tradableOn: p.tradableOn } : {}),
 				ptModifier: p.ptModifier,
 				yearsFreeAgent: p.yearsFreeAgent,
 				draft: {
@@ -572,6 +574,11 @@ const revertSigning = async (
 	p.contractDemand = askingFor(before.contract);
 	p.numDaysFreeAgent = wasFreeAgent ? before.numDaysFreeAgent : 0;
 	p.gamesUntilTradable = before.gamesUntilTradable;
+	if (before.tradableOn === undefined) {
+		delete p.tradableOn;
+	} else {
+		p.tradableOn = before.tradableOn;
+	}
 	p.ptModifier = wasFreeAgent ? before.ptModifier : 1;
 	restoreJerseyNumber(p, before.jerseyNumber);
 	p.numPlayersTradedAwayNormalized =
@@ -646,6 +653,11 @@ const revertRelease = async (
 	p.tid = tid;
 	p.numDaysFreeAgent = before.numDaysFreeAgent;
 	p.gamesUntilTradable = before.gamesUntilTradable;
+	if (before.tradableOn === undefined) {
+		delete p.tradableOn;
+	} else {
+		p.tradableOn = before.tradableOn;
+	}
 	p.ptModifier = before.ptModifier;
 	p.yearsFreeAgent = before.yearsFreeAgent;
 	delete p.numPlayersTradedAwayNormalized;
@@ -690,6 +702,11 @@ const revertDraftPick = async (revert: TransactionRevert, p: Player) => {
 	p.contractDemand = askingFor(before.contract);
 	p.numDaysFreeAgent = before.numDaysFreeAgent;
 	p.gamesUntilTradable = before.gamesUntilTradable;
+	if (before.tradableOn === undefined) {
+		delete p.tradableOn;
+	} else {
+		p.tradableOn = before.tradableOn;
+	}
 	p.ptModifier = before.ptModifier;
 	p.yearsFreeAgent = before.yearsFreeAgent;
 	restoreJerseyNumber(p, before.jerseyNumber);

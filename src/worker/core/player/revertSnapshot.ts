@@ -15,6 +15,7 @@ export const revertBefore = (
 		| "contracts"
 		| "numDaysFreeAgent"
 		| "gamesUntilTradable"
+		| "tradableOn"
 		| "ptModifier"
 		| "yearsFreeAgent"
 		| "jerseyNumber"
@@ -36,6 +37,9 @@ export const revertBefore = (
 	};
 	if (p.jerseyNumber !== undefined) {
 		before.jerseyNumber = p.jerseyNumber;
+	}
+	if (p.tradableOn !== undefined) {
+		before.tradableOn = p.tradableOn;
 	}
 	return before;
 };

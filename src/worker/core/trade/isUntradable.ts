@@ -3,6 +3,7 @@ import { g } from "../../util/index.ts";
 import type { PlayerWithoutKey } from "../../../common/types.ts";
 import { timeBetweenGames } from "../../../common/timeBetweenGames.ts";
 import { getContractSummary } from "../contract/index.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
 
 const isUntradable = (
 	p: PlayerWithoutKey,
@@ -35,13 +36,15 @@ const isUntradable = (
 			return {
 				untradable: true,
 				untradableMsg:
-					p.daysUntilTradable !== undefined
-						? `Cannot trade recently-acquired player for ${
-								p.daysUntilTradable
-							} more ${p.daysUntilTradable === 1 ? "day" : "days"}`
-						: `Cannot trade recently-acquired player for ${
-								p.gamesUntilTradable
-							} more ${timeBetweenGames(p.gamesUntilTradable)}`,
+					p.tradableOn !== undefined
+						? `Cannot trade recently-acquired player until ${formatGameDate(p.tradableOn, "withYear")}`
+						: p.daysUntilTradable !== undefined
+							? `Cannot trade recently-acquired player for ${
+									p.daysUntilTradable
+								} more ${p.daysUntilTradable === 1 ? "day" : "days"}`
+							: `Cannot trade recently-acquired player for ${
+									p.gamesUntilTradable
+								} more ${timeBetweenGames(p.gamesUntilTradable)}`,
 			};
 		}
 	}
