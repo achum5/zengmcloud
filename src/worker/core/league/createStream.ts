@@ -1,5 +1,5 @@
 import { applyFaceAgingToLeague } from "../player/applyFaceAgingToLeague.ts";
-import type { IDBPTransaction } from "@dumbmatter/idb";
+import type { IDBPDatabase, IDBPTransaction } from "@dumbmatter/idb";
 import {
 	draft,
 	finances,
@@ -42,6 +42,7 @@ import {
 	helpers,
 	local,
 	lock,
+	sim,
 	logEvent,
 	toUI,
 	updatePhase,
@@ -53,7 +54,7 @@ import { getAutoTicketPriceByTid } from "../game/attendance.ts";
 import addRelatives from "../realRosters/addRelatives.ts";
 import loadDataBasketball from "../realRosters/loadData.basketball.ts";
 import addDraftProspects from "./create/addDraftProspects.ts";
-import createRandomPlayers from "./create/createRandomPlayers.ts";
+import { createRandomPlayers } from "./create/createRandomPlayers.ts";
 import createCollegePlayers from "../college/createCollegePlayers.ts";
 import getRealTeamPlayerData from "./create/getRealTeamPlayerData.ts";
 import createGameAttributes from "./createGameAttributes.ts";
@@ -77,6 +78,7 @@ import { DEFAULT_LEVEL, amountToLevel } from "../../../common/budgetLevels.ts";
 import {
 	colaUpdate,
 	upgradeGamesVersion65,
+	type LeagueDB,
 	type LeagueDBStoreNames,
 } from "../../db/connectLeague.ts";
 import { getNumPlayersTradedAwayNormalized } from "../player/getNumPlayersTradedAwayNormalized.ts";
@@ -159,8 +161,6 @@ const addLeagueMeta = async ({
 	}
 
 	await idb.meta.add("leagues", l);
-
-	idb.league = await connectLeague(lid);
 };
 
 // Roughly how much memory one buffered row costs, in units of "a typical small
@@ -186,6 +186,7 @@ export const importRowWeight = (
 };
 
 class Buffer {
+	db: IDBPDatabase<LeagueDB>;
 	MAX_BUFFER_SIZE: number;
 	// Flush once the buffered rows are worth this much, whatever their count.
 	// Equal to MAX_BUFFER_SIZE so ordinary stores (weight 1 per row) behave
@@ -197,7 +198,8 @@ class Buffer {
 	rows: [LeagueDBStoreNames, any][];
 	previousTransaction: IDBPTransaction<any, any, any> | undefined;
 
-	constructor(keptKeys: Set<string>) {
+	constructor(db: IDBPDatabase<LeagueDB>, keptKeys: Set<string>) {
+		this.db = db;
 		this.MAX_BUFFER_SIZE = 10000;
 		this.MAX_BUFFER_WEIGHT = 10000;
 		this.weight = 0;
@@ -243,7 +245,7 @@ class Buffer {
 		await this.waitForPreviousTransaction();
 
 		if (this.keys.size > 0) {
-			const transaction = idb.league.transaction(
+			const transaction = this.db.transaction(
 				Array.from(this.keys),
 				"readwrite",
 			);
@@ -311,7 +313,7 @@ export const shouldCatchUpFacesOnCreate = ({
 	realPlayers: boolean;
 }) => realPlayers || !fileHasPlayers;
 
-// These obejcts have auto incrementing primary keys that aren't referenced by anything else, so it's safe to delete them when importing, and also prevents any issues from people manually editing league files and accidentally repeating a primary key, resulting in the latest one overwriting any earlier ones
+// These objects have auto incrementing primary keys that aren't referenced by anything else, so it's safe to delete them when importing, and also prevents any issues from people manually editing league files and accidentally repeating a primary key, resulting in the latest one overwriting any earlier ones
 const PRIMARY_KEYS_TO_DELETE: Record<string, string> = {
 	messages: "mid",
 	playerFeats: "fid",
@@ -462,17 +464,19 @@ type ExtraFromStream = {
 const LEGACY_RELEASED_PLAYERS = "releasedPlayers" as LeagueDBStoreNames;
 
 const getSaveToDB = ({
+	db,
 	keptKeys,
 	maxGid,
 	preProcessParams,
 	setLeagueCreationStatus,
 }: {
+	db: IDBPDatabase<LeagueDB>;
 	keptKeys: Set<LeagueDBStoreNames>;
 	maxGid: number | undefined;
 	preProcessParams: PreProcessParams;
 	setLeagueCreationStatus: CreateStreamProps["setLeagueCreationStatus"];
 }) => {
-	const buffer = new Buffer(keptKeys);
+	const buffer = new Buffer(db, keptKeys);
 
 	const extraFromStream: ExtraFromStream = {
 		activePlayers: [],
@@ -611,7 +615,7 @@ const finalizeStartingSeason = (
 
 type GameAttributeOverrides = Partial<Record<keyof GameAttributesLeague, any>>;
 
-const finalizeGameAttributes = async ({
+const finalizeGameAttributes = ({
 	conditions,
 	gameAttributes,
 	gameAttributeOverrides,
@@ -716,7 +720,7 @@ const finalizeGameAttributes = async ({
 	}
 
 	// Also mutates teamInfos
-	const finalized2 = await createGameAttributes(
+	const finalized2 = createGameAttributes(
 		{
 			gameAttributesInput: finalized,
 			startingSeason,
@@ -731,15 +735,17 @@ const finalizeGameAttributes = async ({
 };
 
 const finalizeDBExceptPlayers = async ({
+	db,
 	teamSeasons,
 	teamStats,
 	teams,
 }: {
+	db: IDBPDatabase<LeagueDB>;
 	teamSeasons: TeamSeasonWithoutKey[];
 	teamStats: TeamStatsWithoutKey[];
 	teams: Team[];
 }) => {
-	const tx = idb.league.transaction(
+	const tx = db.transaction(
 		["games", "schedule", "teamSeasons", "teamStats", "teams", "trade"],
 		"readwrite",
 	);
@@ -1017,7 +1023,7 @@ const processTeamInfos = async ({
 					}
 				}
 				if (!teamSeason.expenseLevels) {
-					// Compute historical expense levels, assuming budget was the same as it is now. In theory could come up wtih a better estimate from expenses, but historical salary cap data is not stored so it wouldn't be perfect, and also who cares
+					// Compute historical expense levels, assuming budget was the same as it is now. In theory could come up with a better estimate from expenses, but historical salary cap data is not stored so it wouldn't be perfect, and also who cares
 					const expenseLevelsKeys = [
 						"coaching",
 						"facilities",
@@ -1380,46 +1386,14 @@ const finalizeActivePlayers = async ({
 	// WHY IS THIS NEEDED? Can't use players0 because the addRelatives call above might make a copy of a player object and write it to the cache, in which case the prior objects for those players in players0 will be stale.
 	const players = await idb.cache.players.getAll();
 
-	// Adjustment for hard cap - lower contracts for teams above cap
-	if (!fileHasPlayers && g.get("salaryCapType") === "hard") {
-		const minContract = g.get("minContract");
-
-		const teams = await idb.cache.teams.getAll();
-		for (const t of teams) {
-			if (t.disabled) {
-				continue;
-			}
-			// Contract demands of random players, which become their contracts below
-			const roster = players
-				.filter((p) => p.tid === t.tid)
-				.map((p) => p.contractDemand)
-				.filter((contractDemand) => contractDemand !== undefined);
-			let payroll = await team.getPayroll(t.tid);
-			for (const contractDemand of roster) {
-				payroll += contractDemand.amount;
-			}
-
-			while (payroll > g.get("salaryCap")) {
-				let foundAny = false;
-
-				for (const contractDemand of roster) {
-					if (contractDemand.amount >= minContract + 10) {
-						payroll -= 10;
-						contractDemand.amount -= 10;
-						foundAny = true;
-					} else if (contractDemand.amount > minContract) {
-						payroll -= contractDemand.amount - minContract;
-						contractDemand.amount = minContract;
-						foundAny = true;
-					}
-				}
-
-				if (!foundAny) {
-					throw new Error(
-						"Invalid combination of salaryCapType, salaryCap, and minContract - a team full of min contract players is still over the hard cap",
-					);
-				}
-			}
+	// Adjustment for hard cap - lower contracts of random players for teams above cap. Their contract demands become their contracts below.
+	if (!fileHasPlayers) {
+		const tidsOverCap =
+			await freeAgents.lowerContractDemandsForHardCap(players);
+		if (tidsOverCap.length > 0) {
+			throw new Error(
+				"Invalid combination of salaryCapType, salaryCap, and minContract - a team full of min contract players is still over the hard cap",
+			);
 		}
 	}
 
@@ -1496,6 +1470,7 @@ const beforeDBStream = async ({
 	| "tid"
 >) => {
 	// These wouldn't be needed here, except the beforeView logic is fucked up
+	sim.reset();
 	lock.reset();
 	local.reset();
 
@@ -1554,7 +1529,7 @@ const beforeDBStream = async ({
 	// Validation of some identifiers
 	confirmSequential(teamInfos, "tid", "team");
 
-	const gameAttributes = await finalizeGameAttributes({
+	const gameAttributes = finalizeGameAttributes({
 		conditions,
 		// Use fromFile.gameAttributes in addition to gameAttributeOverrides because it preserves history and any non-standard settings
 		gameAttributes: filteredFromFile.gameAttributes ?? {},
@@ -1636,9 +1611,13 @@ const beforeDBStream = async ({
 		tid,
 	});
 
+	// Not assigned to idb.league yet, because another league might still be open. See the comment in afterDBStream where this league becomes the current league.
+	const db = await connectLeague(lid);
+
 	return {
 		activeTids,
 		averagePopulation,
+		db,
 		gameAttributes,
 		noStartingInjuries,
 		realPlayerPhotos,
@@ -1679,6 +1658,7 @@ const adjustSeasonPlayer = (p: Partial<PlayerWithoutKey>) => {
 
 const afterDBStream = async ({
 	activeTids,
+	db,
 	extraFromStream,
 	fromFile,
 	hasRookieContracts,
@@ -1710,6 +1690,7 @@ const afterDBStream = async ({
 	Pick<
 		Awaited<ReturnType<typeof beforeDBStream>>,
 		| "activeTids"
+		| "db"
 		| "gameAttributes"
 		| "repeatSeason"
 		| "scoutingLevel"
@@ -1842,11 +1823,9 @@ const afterDBStream = async ({
 
 				// This may not be ideal for a season before the rookie contract scale existed, but whatever
 				if ((p2 as any).rookieContract && draftPickAutoContract) {
-					const pickIndex =
-						(p2.draft.round - 1) * g.get("numActiveTeams") + p2.draft.pick - 1;
 					// Not temp, so this won't be normalized. Then it becomes his contract in finalizeActivePlayers.
 					player.setContractDemand(p2, {
-						amount: rookieSalaries[pickIndex] ?? rookieSalaries.at(-1)!,
+						amount: draft.getRookieSalary(p2.draft, rookieSalaries),
 						exp: p2.contractDemand!.exp,
 						rookie: true,
 					});
@@ -1956,6 +1935,7 @@ const afterDBStream = async ({
 
 	// Write final versions of everything to the DB, except active players because some post-processing uses functions that read from the cache
 	await finalizeDBExceptPlayers({
+		db,
 		teamSeasons,
 		teamStats,
 		teams,
@@ -1968,12 +1948,13 @@ const afterDBStream = async ({
 		await migrateScheduledEvents80({
 			confs: unwrapGameAttribute(gameAttributes, "confs"),
 			divs: unwrapGameAttribute(gameAttributes, "divs"),
-			scheduledEventsStore: idb.league.transaction(
-				"scheduledEvents",
-				"readwrite",
-			).store,
+			scheduledEventsStore: db.transaction("scheduledEvents", "readwrite")
+				.store,
 		});
 	}
+
+	// Everything above wrote to db directly. From here on, the new league becomes the current league, and the code below uses idb.league and idb.cache like the rest of the app.
+	idb.league = db;
 
 	// Clear old game attributes from g, to make sure the new ones are saved to the db in setGameAttributes
 	helpers.resetG();
@@ -2040,7 +2021,7 @@ const afterDBStream = async ({
 	const realPlayers = !!getLeagueOptions;
 
 	if (!skipNewPhase || realPlayers) {
-		await updatePhase();
+		updatePhase();
 		await updateStatus();
 
 		// Auto sort rosters
@@ -2156,7 +2137,7 @@ const afterDBStream = async ({
 
 	// Version 73 upgrade
 	if (migrationData["73"]) {
-		// Need to do this at the end of afterDBStream because we need all players (including activePlayers) to be in the databse. And then fill is to handle activePlayers already being in the cache
+		// Need to do this at the end of afterDBStream because we need all players (including activePlayers) to be in the database. And then fill is to handle activePlayers already being in the cache
 		await updatePlayerAwards({
 			...migrationData["73"],
 			playerStore: idb.league.transaction("players", "readwrite").store,
@@ -2165,7 +2146,7 @@ const afterDBStream = async ({
 	}
 };
 
-const createStream = async (
+export const createStream = async (
 	leagueData: ReadableStream | Record<string, unknown>,
 	{
 		conditions,
@@ -2188,6 +2169,7 @@ const createStream = async (
 	const {
 		activeTids,
 		averagePopulation,
+		db,
 		gameAttributes,
 		noStartingInjuries,
 		realPlayerPhotos,
@@ -2217,6 +2199,7 @@ const createStream = async (
 	const migrationData: PreProcessParams["migrationData"] = {};
 
 	const { close, extraFromStream, write } = getSaveToDB({
+		db,
 		keptKeys,
 		maxGid: fromFile.maxGid,
 		preProcessParams: {
@@ -2262,6 +2245,7 @@ const createStream = async (
 
 		await afterDBStream({
 			activeTids,
+			db,
 			extraFromStream,
 			fromFile,
 			gameAttributes,
@@ -2282,7 +2266,8 @@ const createStream = async (
 		});
 		// console.timeEnd("createStream");
 	} catch (error) {
-		// League was already added to the meta database in beforeDBStream, so delete it rather than leave a broken partial league in the list
+		// League was already added to the meta database in beforeDBStream, so delete it rather than leave a broken partial league in the list. Close this connection first, otherwise it would block deleting the database (if the error happened after this league became the current league, remove will close it too, which is harmless).
+		db.close();
 		try {
 			await remove(lid);
 		} catch (error_) {
@@ -2292,5 +2277,3 @@ const createStream = async (
 		throw error;
 	}
 };
-
-export default createStream;

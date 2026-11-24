@@ -10,6 +10,7 @@ import type {
 	ByConf,
 } from "./types.ts";
 import getTeamInfos from "./getTeamInfos.ts";
+import { formatDecimal } from "./formatDecimal.ts";
 import { PHASE } from "./constants.ts";
 import { orderBy } from "./utils.ts";
 import type { LeagueUrlParts } from "../ui/router/types.ts";
@@ -1048,31 +1049,21 @@ function ordinal(x?: number | null): string {
 	return x.toString() + suffix;
 }
 
-// On iOS in some locales, the inputMode="decimal" keyboard contians a , as the decimal separator rather than .
+// On iOS in some locales, the inputMode="decimal" keyboard contains a , as the decimal separator rather than .
 const localeParseFloat = (string: string) => {
 	return Number.parseFloat(
 		typeof string === "string" ? string.replaceAll(",", ".") : string,
 	);
 };
 
-const DEFAULT_MAXIMUM_FRACTION_DIGITS = 10;
-
-const numberWithCommasFormatter = new Intl.NumberFormat("en-US", {
-	maximumFractionDigits: DEFAULT_MAXIMUM_FRACTION_DIGITS,
-});
-
 // Format a number as an integer with commas in the thousands places.
 const numberWithCommas = (
 	x: number | string,
-	maximumFractionDigits: number = DEFAULT_MAXIMUM_FRACTION_DIGITS,
+	maximumFractionDigits: number = 10,
 ): string => {
 	const y = typeof x === "string" ? localeParseFloat(x) : x;
 
-	if (maximumFractionDigits === DEFAULT_MAXIMUM_FRACTION_DIGITS) {
-		return numberWithCommasFormatter.format(y);
-	}
-
-	return y.toLocaleString("en-US", { maximumFractionDigits });
+	return formatDecimal(y, { maximumFractionDigits });
 };
 
 const roundWinp = (winp: number): string => {
@@ -1325,7 +1316,7 @@ const getJerseyNumber = (
 	return undefined;
 };
 
-// Based on the currnet number of active teams, the number of draft rounds, and the number of expansion teams, what is the minimum valid number for the max number of players that can be taken per team?
+// Based on the current number of active teams, the number of draft rounds, and the number of expansion teams, what is the minimum valid number for the max number of players that can be taken per team?
 const getExpansionDraftMinimumPlayersPerActiveTeam = (
 	numExpansionTeams: number,
 	numDraftRounds: number,
@@ -1539,7 +1530,7 @@ const plural = (text: string, amount: number, textPluralOverride?: string) => {
 };
 
 const playoffRoundName = (
-	currentRound: number, // Like currentRound from PlayoffSeries, not playoffRoundsWon. Difference is that playoffRoundsWon can be 1 higher than this (for finals winner) and -1 means differnet things (here it is play-in tournament, not missed playoffs)
+	currentRound: number, // Like currentRound from PlayoffSeries, not playoffRoundsWon. Difference is that playoffRoundsWon can be 1 higher than this (for finals winner) and -1 means different things (here it is play-in tournament, not missed playoffs)
 	numPlayoffRounds: number,
 	playoffsByConf: ByConf,
 ) => {

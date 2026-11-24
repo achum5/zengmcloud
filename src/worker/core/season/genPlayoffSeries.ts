@@ -8,7 +8,7 @@ import type {
 	ByConf,
 } from "../../../common/types.ts";
 import genPlayoffSeeds from "./genPlayoffSeeds.ts";
-import getPlayoffsByConf from "./getPlayoffsByConf.ts";
+import { getPlayoffsByConf } from "./getPlayoffsByConf.ts";
 import validatePlayoffSettings from "./validatePlayoffSettings.ts";
 import { range } from "../../../common/utils.ts";
 import { getNumPlayoffByes } from "./getNumPlayoffByes.ts";
@@ -230,7 +230,7 @@ export const genPlayoffSeriesFromTeams = async (
 					teamsMatchup.push(sorted[0]!);
 
 					if (teamsMatchup.length === 2) {
-						const { round } = await makeMatchups(
+						const { round } = makeMatchups(
 							await orderTeams(teamsMatchup, teams, orderTeamsOptions),
 							numPlayoffTeams / byConf,
 							numPlayoffByes / byConf,
@@ -252,7 +252,7 @@ export const genPlayoffSeriesFromTeams = async (
 					teamsConf &&
 					teamsConf.length >= numPlayoffAndPlayInTeams / byConf
 				) {
-					const { round, playIn } = await makeMatchups(
+					const { round, playIn } = makeMatchups(
 						await orderTeams(teamsConf, teams, orderTeamsOptions),
 						numPlayoffTeams / byConf,
 						numPlayoffByes / byConf,
@@ -292,7 +292,7 @@ export const genPlayoffSeriesFromTeams = async (
 		// Reset, in case it was partially set in prior branch
 		series = range(numRounds).map(() => []);
 
-		const { round, playIn } = await makeMatchups(
+		const { round, playIn } = makeMatchups(
 			g.get("college")
 				? await orderCollegeTournamentField(teams, numPlayoffTeams)
 				: await orderTeams(teams, teams, orderTeamsOptions),

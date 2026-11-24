@@ -1,19 +1,19 @@
 import { AD_DIVS } from "../../common/constants.ts";
 import { localActions } from "./local.ts";
 
-const SKYSCAPER_WIDTH_CUTOFF = 1200 + 190;
+const SKYSCRAPER_WIDTH_CUTOFF = 1200 + 190;
 
 class Skyscraper {
 	displayed = false;
 
-	updateDislay(initial: boolean) {
+	updateDisplay(initial: boolean) {
 		const div = document.getElementById(AD_DIVS.rail);
 
 		if (div) {
 			const gold = !!div.dataset.gold;
 
 			if (
-				document.documentElement.clientWidth >= SKYSCAPER_WIDTH_CUTOFF &&
+				document.documentElement.clientWidth >= SKYSCRAPER_WIDTH_CUTOFF &&
 				!gold
 			) {
 				if (!this.displayed) {
@@ -113,7 +113,7 @@ class Ads {
 			const rail = document.getElementById(AD_DIVS.rail);
 			if (rail) {
 				rail.dataset.gold = "true";
-				this.skyscraper.updateDislay(false);
+				this.skyscraper.updateDisplay(false);
 			}
 
 			localActions.update({

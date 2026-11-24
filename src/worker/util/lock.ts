@@ -1,15 +1,18 @@
 import { idb } from "../db/index.ts";
-import toUI from "./toUI.ts";
-import type { Locks } from "../../common/types.ts";
+import { toUI } from "./toUI.ts";
 import helpers from "./helpers.ts";
 import local from "./local.ts";
+import * as sim from "./sim.ts";
+
+type Locks = {
+	drafting: boolean;
+	newPhase: boolean;
+};
 
 // These are transient variables that always reset to "false" on reload. See local.js for more.
 const locks: Locks = {
 	drafting: false,
-	gameSim: false,
 	newPhase: false,
-	stopGameSim: false,
 };
 
 // Views and phase changes are mutually exclusive, because a phase change temporarily leaves data in an inconsistent state (like g.season being incremented before players get ratings for the new season). So views wait for any phase change to finish before running, and a phase change waits for any running views to finish before starting.
@@ -23,12 +26,16 @@ const resolveAll = (callbacks: (() => void)[]) => {
 	}
 };
 
+// Resolves when the running phase change releases the newPhase lock. Another phase change could start before the caller gets to run, like during auto play, so callers check the lock again in a loop.
+const newPhaseDone = () => {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	onNewPhaseDone.push(resolve);
+	return promise;
+};
+
 const runView = async <T>(cb: () => T | Promise<T>) => {
-	// Loop in case another phase change starts before this gets a chance to run, like during auto play
 	while (locks.newPhase) {
-		const { promise, resolve } = Promise.withResolvers<void>();
-		onNewPhaseDone.push(resolve);
-		await promise;
+		await newPhaseDone();
 	}
 
 	numViewsRunning += 1;
@@ -52,7 +59,7 @@ let workerBusyInUI = false;
 // Is the worker doing something that takes a while? The UI spins the logo when
 // it is.
 const isWorkerBusy = () =>
-	locks.gameSim ||
+	sim.isActive() ||
 	locks.newPhase ||
 	locks.drafting ||
 	local.autoPlayUntil !== undefined ||
@@ -119,42 +126,7 @@ const set = async (name: keyof Locks, value: boolean) => {
 		}
 	}
 
-	if (name === "gameSim") {
-		if (value) {
-			local.undoLog.invalidate("advanceDay");
-		}
-
-		await toUI("updateLocal", [
-			{
-				gameSimInProgress: value,
-			},
-		]);
-	}
-
 	await updateWorkerBusy();
-};
-
-/**
- * Can new game simulations be started?
- *
- * Calls the callback function with either true or false. If games are in progress or any contract negotiation is in progress, false.
- *
- * @memberOf util.lock
- * @return {Promise.boolean}
- */
-const canStartGames = () => {
-	if (locks.newPhase) {
-		return false;
-	}
-
-	if (locks.gameSim) {
-		return false;
-	}
-
-	// Otherwise, doing it outside of this function would be a race condition if anything else async happened
-	set("gameSim", true);
-
-	return true;
 };
 
 /**
@@ -174,9 +146,9 @@ const unreadMessage = async () => {
 export default {
 	reset,
 	get,
+	newPhaseDone,
 	runView,
 	set,
-	canStartGames,
 	unreadMessage,
 	isWorkerBusy,
 	updateWorkerBusy,

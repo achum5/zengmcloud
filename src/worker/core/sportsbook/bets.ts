@@ -1,6 +1,6 @@
 import { PHASE } from "../../../common/constants.ts";
 import { legacyAwardPids } from "../../util/legacyAwards.ts";
-import { g, local, lock, toUI, logEvent } from "../../util/index.ts";
+import { g, local, lock, sim, toUI, logEvent } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
 	americanToDecimal,
@@ -1036,11 +1036,7 @@ export const settleBets = async (
 		if (anySettled) {
 			// Payouts are money too - flush them, but not mid-sim/phase-change
 			// (flushing then is unsafe/wasteful; those paths flush when they end).
-			if (
-				!lock.get("gameSim") &&
-				!lock.get("newPhase") &&
-				!local.autoPlayUntil
-			) {
+			if (!sim.isActive() && !lock.get("newPhase") && !local.autoPlayUntil) {
 				try {
 					await idb.cache.flush();
 				} catch {}

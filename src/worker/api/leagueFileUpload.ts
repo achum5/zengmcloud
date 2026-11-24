@@ -2,7 +2,7 @@ import type { ValidateFunction } from "ajv";
 import Ajv from "ajv";
 import { JSONParseStream, type JSONPath } from "json-web-streams";
 import schema from "../../../build/files/league-schema.json";
-import { helpers, toUI } from "../util/index.ts";
+import { helpers, toUIWithoutWaiting } from "../util/index.ts";
 import type { Conditions } from "../../common/types.ts";
 import { fetchUserURL } from "../../common/fetchUserURL.ts";
 import {
@@ -162,7 +162,7 @@ const getBasicInfo = async ({
 
 	const schemaErrors = [];
 
-	const reader = await stream.pipeThrough(parseJSON()).getReader();
+	const reader = stream.pipeThrough(parseJSON()).getReader();
 
 	const requiredPartsNotYetSeen = new Set();
 	for (const [key, { required }] of Object.entries(validators)) {
@@ -183,7 +183,7 @@ const getBasicInfo = async ({
 
 		if (leagueCreationID !== undefined && !basicInfo.keys.has(key)) {
 			basicInfo.keys.add(key);
-			toUI(
+			toUIWithoutWaiting(
 				"updateLocal",
 				[
 					{
@@ -270,7 +270,7 @@ const getBasicInfo = async ({
 		schemaErrors.push(message);
 	}
 
-	toUI(
+	toUIWithoutWaiting(
 		"updateLocal",
 		[
 			{
@@ -297,7 +297,7 @@ export const emitProgressStream = (
 	let sizeSoFar = 0;
 	return new TransformStream({
 		start() {
-			toUI(
+			toUIWithoutWaiting(
 				"updateLocal",
 				[
 					{
@@ -319,7 +319,7 @@ export const emitProgressStream = (
 				const percent = Math.round((sizeSoFar / sizeInBytes) * 100);
 
 				if (percent > lastPercentEmitted) {
-					toUI(
+					toUIWithoutWaiting(
 						"updateLocal",
 						[
 							{

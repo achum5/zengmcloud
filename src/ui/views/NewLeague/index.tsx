@@ -1,5 +1,8 @@
+import fastDeepEqual from "fast-deep-equal";
+import { OverlayTrigger, Popover } from "react-bootstrap";
 import { m, AnimatePresence } from "framer-motion";
 import {
+	Activity,
 	useState,
 	useReducer,
 	useCallback,
@@ -33,12 +36,14 @@ import type {
 	GetLeagueOptions,
 	Div,
 	Conf,
-	GameAttributesLeague,
 	Phase,
 	NonEmptyArray,
 } from "../../../common/types.ts";
 import clsx from "clsx";
-import { descriptions } from "../Settings/settings.tsx";
+import {
+	descriptions,
+	settings as settingsInfo,
+} from "../Settings/settings.tsx";
 import LeagueMenu from "./LeagueMenu.tsx";
 import LeaguePartPicker from "./LeaguePartPicker.tsx";
 import type { LeagueInfo, NewLeagueTeam } from "./types.ts";
@@ -46,12 +51,16 @@ import CustomizeSettings from "./CustomizeSettings.tsx";
 import CustomizeTeams, { makeTIDsSequential } from "./CustomizeTeams.tsx";
 import type { BasicInfo } from "../../../worker/api/leagueFileUpload.ts";
 import { SelectSeasonRange } from "./SelectSeasonRange.tsx";
+import { getHashOption } from "./getHashOption.ts";
 import { orderBy } from "../../../common/utils.ts";
 import { analyticsEventLocal } from "../../../common/analyticsEventLocal.ts";
 import { choice } from "../../../common/random.ts";
 import { generateRoomCode, roomCodeWarning } from "../../../common/roomCode.ts";
 import { realContinents } from "../../../common/geographicCoordinates.ts";
-import type { NewLeagueSettings } from "../../../worker/views/settings.ts";
+import type {
+	NewLeagueSettings,
+	Settings,
+} from "../../../worker/views/settings.ts";
 import { analyticsEvent } from "../../util/analyticsEvent.ts";
 import { ProgressBarText } from "../../components/ProgressBarText.tsx";
 import { PopText } from "../../components/PopText.tsx";
@@ -66,6 +75,8 @@ import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
 import { gameAttributesArrayToObject } from "../../../common/gameAttributesArrayToObject.ts";
 import { unwrapGameAttribute } from "../../../common/unwrapGameAttribute.ts";
+
+type Screen = "default" | "teams" | "settings";
 
 const animationVariants = {
 	visible: {
@@ -264,7 +275,13 @@ type State = {
 	allKeys: string[];
 	keptKeys: string[];
 	settings: NewLeagueSettings;
+
+	// Settings the user changed in the Customize Settings screen. These are kept separate from settings, which come from the league source (defaults, league file, etc.) and get replaced whenever that changes. The overrides are applied on top of whatever the source provides.
+	settingsOverrides: Partial<NewLeagueSettings>;
 	rebuildAbbrevPending?: string;
+
+	// League file URL from the page's URL hash, to prefill and load. Cleared once the user changes customize, so it doesn't get loaded again.
+	initialURL: string | undefined;
 };
 
 type Action =
@@ -281,6 +298,13 @@ type Action =
 	| {
 			type: "setCustomize";
 			customize: State["customize"];
+	  }
+	| {
+			type: "setSettings";
+			settings: Settings;
+	  }
+	| {
+			type: "resetCustomizedSettings";
 	  }
 	| {
 			type: "setDifficulty";
@@ -411,6 +435,26 @@ const getSettingsFromGameAttributes = (
 	return newSettings;
 };
 
+// The settings from the league source, with anything the user customized on top
+const getEffectiveSettings = (
+	state: Pick<State, "settings" | "settingsOverrides">,
+): NewLeagueSettings => ({
+	...state.settings,
+	...state.settingsOverrides,
+});
+
+// Customized settings that actually differ from what the league source provides
+const getCustomizedSettingKeys = (
+	state: Pick<State, "settings" | "settingsOverrides">,
+) => {
+	return helpers
+		.keys(state.settingsOverrides)
+		.filter(
+			(key) =>
+				!fastDeepEqual(state.settingsOverrides[key], state.settings[key]),
+		);
+};
+
 const reducer = (state: State, action: Action): State => {
 	switch (action.type) {
 		case "submit":
@@ -451,8 +495,40 @@ const reducer = (state: State, action: Action): State => {
 				...state,
 				customize: action.customize,
 				allKeys,
+				initialURL: undefined,
 			};
 		}
+
+		case "setSettings": {
+			const { settings: newSettings } = action;
+
+			// Only remember what the user actually changed, so everything else keeps following the league source
+			const currentSettings = getEffectiveSettings(state);
+			const settingsOverrides = { ...state.settingsOverrides };
+			for (const key of helpers.keys(state.settings)) {
+				// Difficulty is stored separately in state, and the form leaves out settings that are hidden for this type of league
+				if (key === "difficulty" || !Object.hasOwn(newSettings, key)) {
+					continue;
+				}
+
+				if (!fastDeepEqual(newSettings[key], currentSettings[key])) {
+					(settingsOverrides[key] as any) = newSettings[key];
+				}
+			}
+
+			return {
+				...state,
+				settingsOverrides,
+				difficulty: newSettings.difficulty,
+			};
+		}
+
+		case "resetCustomizedSettings":
+			// Difficulty is not included, it has its own control on the main screen
+			return {
+				...state,
+				settingsOverrides: {},
+			};
 
 		case "setDifficulty":
 			return {
@@ -662,30 +738,6 @@ const reducer = (state: State, action: Action): State => {
 	}
 };
 
-const getRebuildInfo = () => {
-	if (location.hash.startsWith("#rebuild=")) {
-		const rebuildSlug = location.hash.replace("#rebuild=", "");
-		const parts = rebuildSlug.split("_");
-		const abbrev = parts[1]?.toUpperCase();
-		const season = Number.parseInt(parts[2]!);
-		if (abbrev && !Number.isNaN(season)) {
-			return {
-				abbrev,
-				season,
-			};
-		}
-	}
-};
-
-const getGenderOverride = (): GameAttributesLeague["gender"] | undefined => {
-	if (location.hash.startsWith("#gender=")) {
-		const gender = location.hash.replace("#gender=", "");
-		if (gender === "male" || gender === "female") {
-			return gender;
-		}
-	}
-};
-
 const NewLeague = (props: View<"newLeague">) => {
 	const [startingSeason, setStartingSeason] = useState(
 		String(new Date().getFullYear()),
@@ -701,9 +753,15 @@ const NewLeague = (props: View<"newLeague">) => {
 	// engine the room runs - so it has to be asked, not inferred from whether
 	// the code happens to exist yet.
 	const [roomMode, setRoomMode] = useState<"none" | "create" | "join">("none");
-	const [currentScreen, setCurrentScreen] = useState<
-		"default" | "teams" | "settings"
-	>("default");
+	const [currentScreen, setCurrentScreen] = useState<Screen>("default");
+
+	// The main screen stays mounted (but hidden) while another screen is open, so nothing on it gets reset. It is only hidden after it finishes sliding out, hence this tracking which screen it was hidden for.
+	const [mainScreenHiddenFor, setMainScreenHiddenFor] = useState<
+		Screen | undefined
+	>();
+	const onMainScreen = currentScreen === "default";
+	const mainScreenHidden =
+		!onMainScreen && mainScreenHiddenFor === currentScreen;
 
 	const leagueCreationID = useId();
 	const { leagueCreation, leagueCreationPercent } = useLocal([
@@ -717,6 +775,12 @@ const NewLeague = (props: View<"newLeague">) => {
 		reducer,
 		props,
 		(props: View<"newLeague">): State => {
+			const hashOption = getHashOption();
+			const initialURL =
+				hashOption?.type === "url" && props.type === "custom" && !importing
+					? hashOption.url
+					: undefined;
+
 			let customize: State["customize"] = "default";
 			if (importing) {
 				customize = "custom-rosters";
@@ -727,6 +791,9 @@ const NewLeague = (props: View<"newLeague">) => {
 				props.type === "crossEra"
 			) {
 				customize = props.type;
+			}
+			if (initialURL !== undefined) {
+				customize = "custom-url";
 			}
 
 			const basicInfo = undefined;
@@ -740,7 +807,8 @@ const NewLeague = (props: View<"newLeague">) => {
 
 			let season;
 			let phase: Phase;
-			const rebuildInfo = getRebuildInfo();
+			const rebuildInfo =
+				hashOption?.type === "rebuild" ? hashOption : undefined;
 			if (rebuildInfo) {
 				season = rebuildInfo.season;
 				phase = PHASE.PRESEASON;
@@ -759,11 +827,10 @@ const NewLeague = (props: View<"newLeague">) => {
 			}
 
 			let settings;
-			const genderOverride = getGenderOverride();
-			if (genderOverride) {
+			if (hashOption?.type === "gender") {
 				settings = {
 					...props.defaultSettings,
-					gender: genderOverride,
+					gender: hashOption.gender,
 				};
 			} else {
 				settings = props.defaultSettings;
@@ -793,7 +860,9 @@ const NewLeague = (props: View<"newLeague">) => {
 				allKeys,
 				keptKeys,
 				settings,
+				settingsOverrides: {},
 				rebuildAbbrevPending: rebuildInfo?.abbrev,
+				initialURL,
 			};
 		},
 	);
@@ -812,6 +881,11 @@ const NewLeague = (props: View<"newLeague">) => {
 	} else {
 		title = "New Real Players League";
 	}
+
+	const effectiveSettings = getEffectiveSettings(state);
+	const customizedSettingNames = getCustomizedSettingKeys(state).map(
+		(key) => settingsInfo.find((setting) => setting.key === key)?.name ?? key,
+	);
 
 	const keptKeysIsAvailable = state.allKeys.length > 0;
 	const displayedTeams =
@@ -838,7 +912,7 @@ const NewLeague = (props: View<"newLeague">) => {
 
 		// If no settingsOverride, then use difficulty from state, since user may have selected a new value
 		const settings = settingsOverride ?? {
-			...state.settings,
+			...effectiveSettings,
 			difficulty: state.difficulty,
 		};
 
@@ -1127,7 +1201,7 @@ const NewLeague = (props: View<"newLeague">) => {
 	// Start loading historical stats before the league is actually created, since it's a large file
 	const prefetchRealPlayerStats =
 		state.customize === "real" &&
-		state.settings.realStats !== "none" &&
+		effectiveSettings.realStats !== "none" &&
 		state.keptKeys.includes("players");
 	useEffect(() => {
 		if (prefetchRealPlayerStats) {
@@ -1199,14 +1273,15 @@ const NewLeague = (props: View<"newLeague">) => {
 				exit="right"
 			>
 				<CustomizeSettings
-					onCancel={() => {
+					onBack={(settings) => {
+						dispatch({ type: "setSettings", settings });
 						setCurrentScreen("default");
 					}}
 					onSave={async (settings) => {
 						await createLeague(settings);
 					}}
 					initial={{
-						...state.settings,
+						...effectiveSettings,
 						numActiveTeams: displayedTeams.length,
 						difficulty: state.difficulty,
 						confs: state.confs,
@@ -1267,21 +1342,34 @@ const NewLeague = (props: View<"newLeague">) => {
 	const sortedDisplayedTeams = orderBy(displayedTeams, ["region", "name"]);
 
 	return (
-		<AnimatePresence mode="popLayout" initial={false}>
-			{subPage ? (
-				subPage
-			) : (
+		<>
+			<Activity mode={mainScreenHidden ? "hidden" : "visible"}>
 				<m.form
-					key="screen-main"
 					variants={animationVariants}
-					initial="left"
-					animate="visible"
-					exit="left"
+					initial={false}
+					animate={onMainScreen ? "visible" : "left"}
+					onAnimationStart={(definition) => {
+						if (definition === "visible") {
+							setMainScreenHiddenFor(undefined);
+						}
+					}}
+					onAnimationComplete={(definition) => {
+						if (definition === "left" && !onMainScreen) {
+							setMainScreenHiddenFor(currentScreen);
+						}
+					}}
 					onSubmit={async (event) => {
 						event.preventDefault();
 						await createLeague();
 					}}
-					style={{ maxWidth: 800 }}
+					style={{
+						maxWidth: 800,
+
+						// While another screen is open, take this out of the layout so that screen is not pushed down while they slide past each other
+						...(onMainScreen
+							? undefined
+							: { position: "absolute", width: "100%" }),
+					}}
 				>
 					{importing ? (
 						<>
@@ -1437,19 +1525,20 @@ const NewLeague = (props: View<"newLeague">) => {
 														season: Number.parseInt(value),
 														phase: value2,
 														randomDebuts:
-															state.settings.randomization === "debuts" ||
-															state.settings.randomization ===
+															effectiveSettings.randomization === "debuts" ||
+															effectiveSettings.randomization ===
 																"debutsKeepCurrent" ||
-															state.settings.randomization ===
+															effectiveSettings.randomization ===
 																"debutsForever" ||
-															state.settings.randomization ===
+															effectiveSettings.randomization ===
 																"debutsForeverKeepCurrent",
 														randomDebutsKeepCurrent:
-															state.settings.randomization ===
+															effectiveSettings.randomization ===
 																"debutsKeepCurrent" ||
-															state.settings.randomization ===
+															effectiveSettings.randomization ===
 																"debutsForeverKeepCurrent",
-														realDraftRatings: state.settings.realDraftRatings,
+														realDraftRatings:
+															effectiveSettings.realDraftRatings,
 														includePlayers: false,
 
 														// Adding historical seasons just screws up tid
@@ -1592,7 +1681,7 @@ const NewLeague = (props: View<"newLeague">) => {
 										Random
 									</button>
 								</div>
-								{!state.settings.equalizeRegions ? (
+								{!effectiveSettings.equalizeRegions ? (
 									<PopText
 										className="text-body-secondary"
 										tid={state.tid}
@@ -1697,6 +1786,42 @@ const NewLeague = (props: View<"newLeague">) => {
 									Customize settings
 								</button>
 							</div>
+
+							{customizedSettingNames.length > 0 ? (
+								<div className="text-center mt-3">
+									<OverlayTrigger
+										trigger="click"
+										placement="auto"
+										rootClose
+										overlay={
+											<Popover>
+												<Popover.Body>
+													<ul className="ps-3">
+														{customizedSettingNames.map((name) => (
+															<li key={name}>{name}</li>
+														))}
+													</ul>
+													<button
+														type="button"
+														className="btn btn-danger"
+														disabled={state.creating}
+														onClick={() => {
+															dispatch({ type: "resetCustomizedSettings" });
+														}}
+													>
+														Reset all
+													</button>
+												</Popover.Body>
+											</Popover>
+										}
+									>
+										<button type="button" className="btn btn-link p-0 border-0">
+											{customizedSettingNames.length} customized{" "}
+											{helpers.plural("setting", customizedSettingNames.length)}
+										</button>
+									</OverlayTrigger>
+								</div>
+							) : null}
 
 							{(state.file || state.url) &&
 							(leagueCreationPercent?.id === leagueCreationID ||
@@ -1889,6 +2014,7 @@ const NewLeague = (props: View<"newLeague">) => {
 														}}
 														onDone={handleNewLeagueFile}
 														enterURL={state.customize === "custom-url"}
+														initialURL={state.initialURL}
 													/>
 												</div>
 											) : null}
@@ -1907,8 +2033,11 @@ const NewLeague = (props: View<"newLeague">) => {
 						) : null}
 					</div>
 				</m.form>
-			)}
-		</AnimatePresence>
+			</Activity>
+			<AnimatePresence mode="popLayout" initial={false}>
+				{subPage}
+			</AnimatePresence>
+		</>
 	);
 };
 

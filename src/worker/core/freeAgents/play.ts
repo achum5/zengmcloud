@@ -4,12 +4,13 @@ import autoSign from "./autoSign.ts";
 import decreaseDemands from "./decreaseDemands.ts";
 import {
 	g,
-	lock,
+	sim,
 	updatePlayMenu,
 	updateStatus,
 	toUI,
 	helpers,
 } from "../../util/index.ts";
+import type { SimRun } from "../../util/sim.ts";
 import type { Conditions } from "../../../common/types.ts";
 import { collegeRecruitingDay } from "../college/recruiting.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
@@ -21,21 +22,11 @@ import {
 	holdRoomForAdvance,
 } from "../sync/advanceLease.ts";
 
-/**
- * Simulates one or more days of free agency.
- *
- * @memberOf core.freeAgents
- * @param {number} numDays An integer representing the number of days to be simulated. If numDays is larger than the number of days remaining, then all of free agency will be simulated up until the preseason starts.
- * @param {boolean} start Is this a new request from the user to simulate days (true) or a recursive callback to simulate another day (false)? If true, then there is a check to make sure simulating games is allowed. Default true.
- */
-async function play(
-	numDays: number,
-	conditions: Conditions,
-	start: boolean = true,
-) {
+// Simulates one day, then calls itself for the next day, until run is finished
+async function playDays(run: SimRun, numDays: number, conditions: Conditions) {
 	// This is called when there are no more days to play, either due to the user's request (e.g. 1 week) elapsing or at the end of free agency.
 	const cbNoDays = async () => {
-		await lock.set("gameSim", false);
+		await run.finish();
 		await updatePlayMenu();
 
 		// Check to see if free agency is over
@@ -71,21 +62,14 @@ async function play(
 				if (!g.get("college")) {
 					await trade.betweenAiTeams();
 				}
-				await play(numDays - 1, conditions, false);
+				await playDays(run, numDays - 1, conditions);
 			} else {
 				await cbNoDays();
 			}
 		};
 
-		// If we didn't just stop games, let's play
-		// Or, if we are starting games (and already passed the lock), continue even if stopGameSim was just seen
-		const stopGameSim = lock.get("stopGameSim");
-
-		if (numDays > 0 && (start || !stopGameSim)) {
-			if (stopGameSim) {
-				await lock.set("stopGameSim", false);
-			}
-
+		// Keep playing, unless a stop was requested
+		if (numDays > 0 && run.shouldContinue()) {
 			await cbYetAnother();
 		} else {
 			// If this is the last day, update play menu
@@ -93,35 +77,41 @@ async function play(
 		}
 	};
 
-	// If this is a request to start a new simulation... are we allowed to do
-	// that? If so, set the lock and update the play menu
-	if (start) {
-		const canStartGames = lock.canStartGames();
-
-		if (canStartGames) {
-			await updatePlayMenu();
-			// Bracket the whole run (all days + any phase change it chains into) as
-			// a capture window, and publish at the end. This matters most for
-			// autoplay, which dispatches freeAgents.play WITHOUT awaiting it (to
-			// break the promise chain): the originating action has long since
-			// resolved, so without this the free-agency days and the season
-			// rollover they end in - the biggest changeset of the year - would sit
-			// unpublished until some later unrelated action.
-			changeTracker.beginSim("playMenu.day");
-			// The room held busy from the first day to the last, however long
-			// after the call that started it - as game days are (game/play.ts).
-			beginRoomAdvance();
-			try {
-				await cbRunDay();
-			} finally {
-				changeTracker.endSim("playMenu.day");
-				endRoomAdvance();
-			}
-			await runAfterActionHook("playMenu", "day");
-		}
-	} else {
-		await cbRunDay();
-	}
+	await cbRunDay();
 }
+
+/**
+ * Simulates one or more days of free agency, if no other sim is running.
+ *
+ * @memberOf core.freeAgents
+ * @param {number} numDays An integer representing the number of days to be simulated. If numDays is larger than the number of days remaining, then all of free agency will be simulated up until the preseason starts.
+ */
+const play = async (numDays: number, conditions: Conditions) => {
+	let started = false;
+	await sim.run(async (run) => {
+		started = true;
+		await updatePlayMenu();
+		// Bracket the whole run (all days + any phase change it chains into) as
+		// a capture window, and publish at the end. This matters most for
+		// autoplay, which dispatches freeAgents.play WITHOUT awaiting it (to
+		// break the promise chain): the originating action has long since
+		// resolved, so without this the free-agency days and the season
+		// rollover they end in - the biggest changeset of the year - would sit
+		// unpublished until some later unrelated action.
+		changeTracker.beginSim("playMenu.day");
+		// The room held busy from the first day to the last, however long
+		// after the call that started it - as game days are (game/play.ts).
+		beginRoomAdvance();
+		try {
+			await playDays(run, numDays, conditions);
+		} finally {
+			changeTracker.endSim("playMenu.day");
+			endRoomAdvance();
+		}
+	});
+	if (started) {
+		await runAfterActionHook("playMenu", "day");
+	}
+};
 
 export default play;

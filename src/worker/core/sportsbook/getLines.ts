@@ -2,7 +2,7 @@ import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
-import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
+import { getPlayoffsByConf } from "../season/getPlayoffsByConf.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { injuryTicksUntil } from "../game/calendarTicks.ts";
 import { getInjuryClock } from "../game/classicDays.ts";

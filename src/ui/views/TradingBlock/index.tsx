@@ -1,58 +1,31 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { getCols } from "../../../common/getCols.ts";
 import { useLocal } from "../../util/local.ts";
 import { DataTable } from "../../components/DataTable/index.tsx";
-import type { Col } from "../../components/DataTable/index.tsx";
-import type { LocalStateUI, View } from "../../../common/types.ts";
-import type api from "../../../worker/api/index.ts";
-import clsx from "clsx";
+import type { View } from "../../../common/types.ts";
 import {
 	wrappedContractAmount,
 	wrappedContractExp,
 } from "../../components/contract.tsx";
 import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
-import { MissingAssets, OvrChange, OvrChangeHelp } from "../Trade/Summary.tsx";
-import { teamOvrDeltaSymbols } from "../../../common/teamRatings.ts";
+import { MissingAssets, OvrChangeHelp } from "../Trade/Summary.tsx";
 import type { MissingAsset } from "../../../worker/views/savedTrades.ts";
 import useTradeOffersSwitch from "../../hooks/useTradeOffersSwitch.tsx";
 import LookingFor from "./LookingFor.tsx";
 import useLookingForState from "./useLookingForState.ts";
 import { Dropdown, SplitButton } from "react-bootstrap";
 import type { FooterRow } from "../../components/DataTable/Footer.tsx";
-import { wrappedCurrency } from "../../components/wrappedCurrency.ts";
 import { orderBy } from "../../../common/utils.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
-import { SaveTrade } from "../../components/SaveTrade.tsx";
-import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { ActionButton } from "../../components/ActionButton.tsx";
 import { TradeNotAllowed } from "../../components/TradeNotAllowed.tsx";
 import { getTradeBlockedReason } from "../../../common/transactionPhases.ts";
-
-export type OfferType = Awaited<
-	ReturnType<(typeof api)["main"]["getTradingBlockOffers"]>
->[0] & {
-	missing?: MissingAsset[];
-	missingUser?: MissingAsset[];
-	willing?: boolean;
-};
-
-type OfferProps = {
-	children: ReactNode;
-	challengeNoRatings: boolean;
-	first: boolean;
-	hideTopTeamOvrs?: boolean;
-	onNegotiate: () => void;
-	onRemove?: () => void;
-	teamInfo: {
-		abbrev: string;
-		name: string;
-		region: string;
-	};
-} & OfferType &
-	Pick<LocalStateUI, "salaryCap" | "salaryCapType">;
+import { Offer, type OfferType } from "../../components/TradeOffers/Offer.tsx";
+import { OfferTable } from "../../components/TradeOffers/OfferTable.tsx";
+import { pickScore, playerScore } from "../../components/TradeOffers/scores.ts";
 
 const OfferPlayers = ({
 	className,
@@ -141,113 +114,6 @@ const OfferPlayers = ({
 	return null;
 };
 
-export const Offer = (props: OfferProps) => {
-	const {
-		challengeNoRatings,
-		children,
-		dpids,
-		dpidsUser,
-		first,
-		hideTopTeamOvrs,
-		onNegotiate,
-		onRemove,
-		payroll,
-		pids,
-		pidsUser,
-		salaryCap,
-		salaryCapType,
-		summary,
-		tid,
-		teamInfo,
-	} = props;
-
-	const salaryCapOrPayroll =
-		salaryCapType === "none" ? payroll : salaryCap - payroll;
-	const salaryCapOrPayrollText =
-		salaryCapType === "none" ? "payroll" : "cap space";
-
-	const { hideTeamRatings, userTid } = useLocal(["hideTeamRatings", "userTid"]);
-
-	if (!teamInfo) {
-		return null;
-	}
-
-	return (
-		<div className={first ? undefined : "mt-4"} style={{ maxWidth: 1125 }}>
-			<div className="d-flex align-items-center mb-2">
-				<h2 className="mb-0">
-					<a href={helpers.leagueUrl(["roster", `${teamInfo.abbrev}_${tid}`])}>
-						{teamInfo.region} {teamInfo.name}
-					</a>
-				</h2>
-				<SaveTrade
-					className="ms-4"
-					tradeTeams={[
-						{
-							pids: pidsUser,
-							dpids: dpidsUser,
-							tid: userTid,
-						},
-						{
-							pids,
-							dpids,
-							tid,
-						},
-					]}
-				/>
-				{onRemove ? (
-					<button
-						type="button"
-						className="btn-close ms-4"
-						title="Remove trade from list"
-						onClick={onRemove}
-					/>
-				) : null}
-			</div>
-			<div
-				className="mb-3 d-sm-flex justify-content-between"
-				style={{ maxWidth: 500 }}
-			>
-				<div>
-					{helpers.formatRecord(props)},{" "}
-					{helpers.formatCurrency(salaryCapOrPayroll / 1000, "M")}{" "}
-					{salaryCapOrPayrollText}
-				</div>
-				{!challengeNoRatings && !hideTopTeamOvrs ? (
-					<>
-						<div>
-							Your ovr{hideTeamRatings ? " change" : ""}:{" "}
-							<OvrChange
-								before={summary.teams[1].ovrBefore}
-								after={summary.teams[1].ovrAfter}
-							/>
-						</div>
-						<div>
-							{teamInfo.abbrev} ovr{hideTeamRatings ? " change" : ""}:{" "}
-							<OvrChange
-								before={summary.teams[0].ovrBefore}
-								after={summary.teams[0].ovrAfter}
-							/>
-						</div>
-					</>
-				) : null}
-			</div>
-			{children}
-			{summary.warning ? (
-				<p className="text-danger">{summary.warning}</p>
-			) : null}
-
-			<button
-				type="submit"
-				className="btn btn-light-bordered mb-4"
-				onClick={onNegotiate}
-			>
-				Negotiate
-			</button>
-		</div>
-	);
-};
-
 const pickCols = getCols(["", "Draft Picks"], {
 	"": {
 		sortSequence: [],
@@ -256,215 +122,6 @@ const pickCols = getCols(["", "Draft Picks"], {
 		width: "100%",
 	},
 });
-
-export const pickScore = (
-	picks: {
-		round: number;
-		pick: number;
-	}[],
-) => {
-	let score = 0;
-	for (const { round, pick } of picks) {
-		// Assume roughly 30 teams
-		const imputedPick = pick > 0 ? pick : 15;
-
-		// Assume no more than 20 rounds or 100 teams. Exponent is tuned so that you need about 4 second round picks to equal 1 first round pick.
-		score += (20 - round + (1 - imputedPick / 100)) ** 25;
-	}
-	return score;
-};
-
-export const playerScore = (
-	players: {
-		ratings: {
-			ovr: number;
-			pot: number;
-		};
-	}[],
-) => {
-	let score = 0;
-	for (const p of players) {
-		score = (p.ratings.pot + p.ratings.ovr) ** 2;
-	}
-	return score;
-};
-
-export const OfferTable = ({
-	assetCols,
-	challengeNoRatings,
-	getAssetColContents,
-	handleNegotiate,
-	handleRemove,
-	offers,
-	salaryCap,
-	salaryCapType,
-}: {
-	assetCols: Col[];
-	challengeNoRatings: boolean;
-	getAssetColContents: (offer: OfferType) => any[];
-	handleNegotiate: (tradeInfo: {
-		tid: number;
-		pids: number[];
-		pidsUser: number[];
-		dpids: number[];
-		dpidsUser: number[];
-	}) => void;
-	handleRemove?: (tid: number) => void;
-	offers: OfferType[];
-} & Pick<LocalStateUI, "salaryCap" | "salaryCapType">) => {
-	const { hideTeamRatings, teamInfoCache, userTid } = useLocal([
-		"hideTeamRatings",
-		"teamInfoCache",
-		"userTid",
-	]);
-
-	const offerCols = getCols(
-		[
-			"",
-			"Team",
-			"Record",
-			"Ovr",
-			"Ovr",
-			salaryCapType === "none" ? "Payroll" : "Cap Space",
-			"Cap",
-			"Actions",
-		],
-		{
-			"": {
-				width: "1px",
-			},
-			Actions: {
-				sortSequence: [],
-				width: "1px",
-			},
-		},
-	);
-	offerCols[3]!.title = hideTeamRatings ? "Your Δ" : "Your Ovr";
-	offerCols[3]!.desc = "Your team's change in ovr rating";
-	offerCols[4]!.title = hideTeamRatings ? "Other Δ" : "Other Ovr";
-	offerCols[4]!.desc = "Other team's change in ovr rating";
-	offerCols.splice(5, 0, ...assetCols);
-
-	// Sort by the CHANGE when ratings are hidden, so the column stays useful for
-	// "which of these offers helps me most" - sorting by the resulting rating
-	// would rank by how good the team already is, which is the hidden part.
-	const ovrCell = ({
-		ovrBefore,
-		ovrAfter,
-	}: {
-		ovrBefore: number;
-		ovrAfter: number;
-	}) => {
-		const diff = ovrAfter - ovrBefore;
-		return {
-			value: <OvrChange before={ovrBefore} after={ovrAfter} />,
-			// SORTING stays on the true change even while the cell shows bands, so
-			// "which of these offers helps me most" still orders correctly - and
-			// ordering a list of offers is a far weaker signal than reading an exact
-			// delta off a one-player swap, which is the leak the bands close.
-			sortValue: hideTeamRatings ? diff : ovrAfter,
-			// Searching has to match what is on screen, or typing "+++" finds
-			// nothing while typing the hidden number finds a row.
-			searchValue: hideTeamRatings
-				? teamOvrDeltaSymbols(diff)
-				: `${ovrBefore} ${ovrAfter}`,
-		};
-	};
-
-	const offerRows = offers.map((offer, i) => {
-		const salaryCapOrPayroll =
-			salaryCapType === "none" ? offer.payroll : salaryCap - offer.payroll;
-
-		const t = teamInfoCache[offer.tid];
-		if (!t) {
-			return {
-				key: i,
-				data: [],
-			};
-		}
-
-		return {
-			key: i,
-			data: [
-				<SaveTrade
-					tradeTeams={[
-						{
-							pids: offer.pidsUser,
-							dpids: offer.dpidsUser,
-							tid: userTid,
-						},
-						{
-							pids: offer.pids,
-							dpids: offer.dpids,
-							tid: offer.tid,
-						},
-					]}
-				/>,
-				<a href={helpers.leagueUrl(["roster", `${t.abbrev}_${offer.tid}`])}>
-					{t.abbrev}
-				</a>,
-				helpers.formatRecord(offer),
-				!challengeNoRatings ? ovrCell(offer.summary.teams[1]) : null,
-				!challengeNoRatings ? ovrCell(offer.summary.teams[0]) : null,
-				...getAssetColContents(offer),
-				wrappedCurrency(salaryCapOrPayroll / 1000, "M"),
-				{
-					value: offer.summary.warning ? (
-						<HelpPopover className="fs-4">{offer.summary.warning}</HelpPopover>
-					) : null,
-					sortValue: offer.summary.warningAmount ?? 0,
-					classNames: clsx(
-						"text-center",
-						offer.summary.warning ? "table-danger" : undefined,
-					),
-				},
-				<div className="d-flex align-items-center">
-					<button
-						type="submit"
-						className="btn btn-light-bordered"
-						onClick={() => {
-							handleNegotiate({
-								tid: offer.tid,
-								pids: offer.pids,
-								pidsUser: offer.pidsUser,
-								dpids: offer.dpids,
-								dpidsUser: offer.dpidsUser,
-							});
-						}}
-					>
-						Negotiate
-					</button>
-					{handleRemove ? (
-						<button
-							type="button"
-							className="btn-close ms-2 p-0"
-							title="Remove trade from list"
-							onClick={() => {
-								handleRemove(offer.tid);
-							}}
-						/>
-					) : null}
-				</div>,
-			],
-		};
-	});
-
-	if (offerRows.length === 0) {
-		return null;
-	}
-
-	return (
-		<DataTable
-			className="align-top-all"
-			clickable={false}
-			cols={offerCols}
-			defaultSort={[1, "asc"]}
-			name={`TradingBlock:Offers`}
-			rows={offerRows}
-			small={false}
-		/>
-	);
-};
 
 const WillingText = ({ willing }: { willing: boolean | undefined }) => {
 	if (willing === false) {

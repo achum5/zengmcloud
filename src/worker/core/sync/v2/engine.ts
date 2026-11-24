@@ -1,5 +1,5 @@
 import { foreignStepClaim } from "../stepClaim.ts";
-import { g, local, lock, logEvent, toUI } from "../../../util/index.ts";
+import { g, local, lock, logEvent, sim, toUI } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
 import { mergeOfferBoards } from "./offerBoardMerge.ts";
 import { outbox } from "../outbox.ts";
@@ -2889,7 +2889,7 @@ export class SyncEngineV2 {
 			!this.transport.commitV2Checkpoint ||
 			this.catchingUp ||
 			this.draining ||
-			lock.get("gameSim") ||
+			sim.isActive() ||
 			lock.get("newPhase") ||
 			local.autoPlayUntil
 		) {

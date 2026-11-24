@@ -98,9 +98,11 @@ import {
 	helpers,
 	local,
 	lock,
+	sim,
 	updatePlayMenu,
 	updateStatus,
 	toUI,
+	toUIWithoutWaiting,
 	updatePhase,
 	logEvent,
 } from "../util/index.ts";
@@ -110,7 +112,6 @@ import {
 	type Env,
 	type GameAttributesLeague,
 	type Local,
-	type LockName,
 	type Player,
 	type PlayerWithoutKey,
 	type UpdateEvent,
@@ -221,7 +222,7 @@ import {
 	type LeagueDB,
 	type LeagueDBStoreNames,
 } from "../db/connectLeague.ts";
-import playMenu from "./playMenu.ts";
+import playMenu, { getUntilFreeAgencyWarning } from "./playMenu.ts";
 import toolsMenu from "./toolsMenu.ts";
 import eightyTwoZeroDraft from "./eightyTwoZeroDraft.ts";
 import {
@@ -402,6 +403,7 @@ import {
 	unsignedDraftPick,
 } from "../core/realisticFrontOffice/offerScreen.ts";
 import { convertLegacyContracts } from "../core/contract/convertLegacyContracts.ts";
+import { randomizeContracts as randomizeContractsCore } from "../core/contract/randomizeContracts.ts";
 import {
 	addContract,
 	createContract,
@@ -424,6 +426,7 @@ import { checkCloudChanges } from "../util/checkCloudChanges.ts";
 import { findCity } from "../../common/teamLocation.ts";
 import { checkAccount } from "../util/checkAccount.ts";
 import { generateFace } from "../util/face.ts";
+import { getPlayoffsByConfFromSettings } from "../core/season/getPlayoffsByConf.ts";
 import { choice } from "../../common/random.ts";
 import { getNewLeagueLid } from "../util/getNewLeagueLid.ts";
 import { env } from "../util/env.ts";
@@ -1003,7 +1006,7 @@ const createLeague = async (
 	]) as Set<LeagueDBStoreNames>;
 
 	const setLeagueCreationStatus = (status: string) => {
-		toUI(
+		toUIWithoutWaiting(
 			"updateLocal",
 			[
 				{
@@ -1037,7 +1040,7 @@ const createLeague = async (
 	// the old league still needs to do; close it cleanly (flushes dirty cache)
 	// while it is still coherent.
 	if (g.get("lid") !== undefined) {
-		await league.close(true);
+		await league.close();
 		await toUI("resetLeague", []);
 	}
 
@@ -1100,7 +1103,7 @@ const createLeague = async (
 				}
 			}
 
-			// Definitley need this for realStats=="all", but maybe elsewhere too. This is needed because we don't know if we're keeping history or not when we call getLeagueInfo to display the team/settings in the UI.
+			// Definitely need this for realStats=="all", but maybe elsewhere too. This is needed because we don't know if we're keeping history or not when we call getLeagueInfo to display the team/settings in the UI.
 			fromFile.gameAttributes = realLeague.gameAttributes;
 			fromFile.startingSeason = realLeague.startingSeason;
 			fromFile.teams = realLeague.teams;
@@ -1231,7 +1234,7 @@ const createLeague = async (
 	} finally {
 		delete self.stream0;
 
-		toUI(
+		toUIWithoutWaiting(
 			"updateLocal",
 			[
 				{
@@ -1598,7 +1601,7 @@ const deleteScheduledEvents = async (type: string) => {
 
 const discardUnsavedProgress = async () => {
 	const lid = g.get("lid");
-	await league.close(true);
+	await league.close();
 	await beforeLeague(lid);
 };
 
@@ -2302,11 +2305,17 @@ const exportDraftClass = async ({
 	};
 };
 
+// For a player in the current league. The race comes from the league's player bio info, for the player's country.
 const generateFace2 = async (country: string | undefined) => {
 	const { race } = await player.name(
 		country ? helpers.getCountry(country) : undefined,
 	);
 	return generateFace({ race });
+};
+
+// Just to show off a team's jersey, so it doesn't need a realistic race, and it doesn't depend on any league's player bio info. That matters because it's also used before a league exists, on the new league page.
+const generateJerseyFace = () => {
+	return generateFace();
 };
 
 const getAutoPos = (ratings: any) => {
@@ -2835,7 +2844,7 @@ const makeFreeAgentOffer = async ({
 	if (!realisticFreeAgencyOn()) {
 		return "Not available in this league.";
 	}
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return "Stop game simulation first.";
 	}
 	const error = await realisticFrontOfficeMakeOffer(g.get("userTid"), {
@@ -2868,7 +2877,7 @@ const offerExtension = async ({
 	raise,
 	option,
 }: { pid: number } & ExtensionOffer) => {
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return "Stop game simulation first.";
 	}
 	const result = await realisticFrontOfficeOfferExtension(
@@ -2895,7 +2904,7 @@ const answerOfferSheet = async ({
 	pid: number;
 	match: boolean;
 }) => {
-	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
+	if (!realisticFreeAgencyOn() || sim.isActive()) {
 		return "Not now.";
 	}
 	const error = await realisticFrontOfficeAnswerOfferSheet(
@@ -2910,7 +2919,7 @@ const answerOfferSheet = async ({
 };
 
 const withdrawFreeAgentOffer = async (pid: number) => {
-	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
+	if (!realisticFreeAgencyOn() || sim.isActive()) {
 		return;
 	}
 	await realisticFrontOfficeWithdrawOffer(g.get("userTid"), pid);
@@ -2920,7 +2929,7 @@ const withdrawFreeAgentOffer = async (pid: number) => {
 // The user's offers in priority order: if two of them are accepted the same
 // day and both don't fit, the higher one signs.
 const rankFreeAgentOffers = async (pids: number[]) => {
-	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
+	if (!realisticFreeAgencyOn() || sim.isActive()) {
 		return;
 	}
 	await realisticFrontOfficeRankOffers(g.get("userTid"), pids);
@@ -2933,7 +2942,7 @@ const decideReSigningOffers = async () => {
 	if (!realisticFreeAgencyOn()) {
 		return [];
 	}
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return "Stop game simulation first.";
 	}
 	const userTid = g.get("userTid");
@@ -2960,7 +2969,7 @@ const submitReSigningOffer = async ({
 	if (!realisticFreeAgencyOn()) {
 		return "Not available in this league.";
 	}
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return "Stop game simulation first.";
 	}
 	const userTid = g.get("userTid");
@@ -2989,7 +2998,7 @@ const decideTeamOption = async ({
 	pid: number;
 	pickUp: boolean;
 }) => {
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return "Stop game simulation first.";
 	}
 	const error = await realisticFrontOfficeDecideTeamOption(
@@ -3112,7 +3121,7 @@ const getNegotiationProps = async (pid: number) => {
 	};
 };
 
-const getNumPlayoffTeams = async ({
+const getNumPlayoffTeams = ({
 	confs,
 	numRounds,
 	numPlayoffByes,
@@ -3125,9 +3134,7 @@ const getNumPlayoffTeams = async ({
 	playIn: boolean;
 	playoffsByConf: boolean;
 }) => {
-	// Season doesn't matter, since we provide overrides and skipPlayoffSeries
-	const byConf = await season.getPlayoffsByConf(Infinity, {
-		skipPlayoffSeries: true,
+	const byConf = getPlayoffsByConfFromSettings({
 		playoffsByConf,
 		confs,
 	});
@@ -3216,8 +3223,6 @@ const getPlayersCommandPalette = async () => {
 		attrs: ["pid", "firstName", "lastName", "abbrev", "age"],
 		ratings: ["pos", "ovr", "pot"],
 		season: g.get("season"),
-		showNoStats: true,
-		showRookies: true,
 		fuzz: true,
 	});
 };
@@ -4265,7 +4270,7 @@ const importPlayers = async ({
 			(p2 as any).real = p.real;
 		}
 
-		// Only add injury if the season wasn't chaned by the user. These variables copied from ImportPlayers init
+		// Only add injury if the season wasn't changed by the user. These variables copied from ImportPlayers init
 		const exportedSeason: number | undefined =
 			typeof p.exportedSeason === "number" ? p.exportedSeason : undefined;
 		const season2 =
@@ -4291,7 +4296,7 @@ const importPlayers = async ({
 					// No injuries from current season, if current season has not started yet
 					offset = -1;
 				} else if (key === "stats" && currentPhase <= PHASE.PLAYOFFS) {
-					// Don't include current season stats if the season has not started yet. Might be good to separate playoff stats and non-playoff stats and use differnet phase cutoffs, but whatever.
+					// Don't include current season stats if the season has not started yet. Might be good to separate playoff stats and non-playoff stats and use different phase cutoffs, but whatever.
 					offset = -1;
 				}
 			}
@@ -4521,7 +4526,7 @@ const init = async (inputEnv: Env, conditions: Conditions) => {
 		[
 			{
 				fullNames: options.fullNames,
-				gameSimInProgress: lock.get("gameSim"),
+				gameSimInProgress: sim.isActive(),
 				keyboardShortcuts,
 				units: options.units,
 				workerBusy: lock.isWorkerBusy(),
@@ -4542,10 +4547,6 @@ const loadRetiredPlayers = async () => {
 	});
 
 	return finalizePlayersRelativesList(playerNames);
-};
-
-const lockSet = async ([name, value]: [LockName, boolean]) => {
-	await lock.set(name, value);
 };
 
 const ovr = ({
@@ -4805,37 +4806,25 @@ const realtimeUpdate = async (updateEvents: UpdateEvents) => {
 	await toUI("realtimeUpdate", [updateEvents]);
 };
 
-const regenerateDraftClass = async (season: number, conditions: Conditions) => {
-	const proceed = await toUI(
-		"confirm",
-		[
-			"This will delete the existing draft class and replace it with a new one filled with randomly generated players. Are you sure you want to do that?",
-			{
-				okText: "Regenerate Draft Class",
-			},
-		],
-		conditions,
+// The UI confirms before calling this
+const regenerateDraftClass = async (season: number) => {
+	// Delete old players from draft class
+	const oldPlayers = await idb.cache.players.indexGetAll(
+		"playersByDraftYearRetiredYear",
+		[[season], [season, Infinity]],
 	);
 
-	if (proceed) {
-		// Delete old players from draft class
-		const oldPlayers = await idb.cache.players.indexGetAll(
-			"playersByDraftYearRetiredYear",
-			[[season], [season, Infinity]],
-		);
-
-		const toRemove = [];
-		for (const p of oldPlayers) {
-			if (p.tid === PLAYER.UNDRAFTED) {
-				toRemove.push(p.pid);
-			}
+	const toRemove = [];
+	for (const p of oldPlayers) {
+		if (p.tid === PLAYER.UNDRAFTED) {
+			toRemove.push(p.pid);
 		}
-		await player.remove(toRemove);
-
-		// Generate new players
-		await draft.genPlayers(season);
-		await toUI("realtimeUpdate", [["playerMovement"]]);
 	}
+	await player.remove(toRemove);
+
+	// Generate new players
+	await draft.genPlayers(season);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
 
 const regenerateSchedule = async (param: unknown, conditions: Conditions) => {
@@ -4877,6 +4866,7 @@ const releasePlayer = async ({ pids }: { pids: number[] }) => {
 		return `${notOnTeam.length} players are no longer on your team.`;
 	}
 
+	const undoFunctions: (() => Promise<boolean>)[] = [];
 	for (const p of players) {
 		const justDrafted = helpers.justDrafted(
 			{ draft: p.draft, contract: getContractSummaryOrThrow(p) },
@@ -4884,7 +4874,10 @@ const releasePlayer = async ({ pids }: { pids: number[] }) => {
 			g.get("season"),
 		);
 
-		await player.release(p, justDrafted);
+		const undo = await player.release(p, justDrafted);
+		if (undo) {
+			undoFunctions.push(undo);
+		}
 	}
 
 	await toUI("realtimeUpdate", [["playerMovement"]]);
@@ -4895,6 +4888,25 @@ const releasePlayer = async ({ pids }: { pids: number[] }) => {
 		type: "dummyExpiringContracts",
 		pids,
 	});
+
+	if (undoFunctions.length === 0) {
+		return;
+	}
+
+	return local.undoLog.add(async () => {
+		// One at a time: each revert re-sorts the roster he goes back to
+		let success = true;
+		for (const undo of undoFunctions) {
+			if (!(await undo())) {
+				success = false;
+			}
+		}
+
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+		await recomputeLocalUITeamOvrs();
+
+		return success;
+	}, ["advanceDay", "leagueChange", "newPhase", "transaction"]);
 };
 
 const expandVote = (
@@ -5281,24 +5293,16 @@ const retiredJerseyNumberUpsert = async ({
 	await toUI("realtimeUpdate", [["retiredJerseys", "playerMovement"]]);
 };
 
-const runBefore = async (
-	{
-		viewId,
-		params,
-		ctxBBGM,
-		updateEvents,
-		prevOutput,
-		prevInputs,
-	}: {
-		viewId: string;
-		params: unknown;
-		ctxBBGM: unknown;
-		updateEvents: ReadonlySet<UpdateEvent>;
-		prevOutput: unknown;
-		prevInputs: unknown;
-	},
-	conditions: Conditions,
-): Promise<void | {
+type RunBeforeArgs = {
+	viewId: string;
+	params: unknown;
+	ctxBBGM: unknown;
+	updateEvents: ReadonlySet<UpdateEvent>;
+	prevOutput: unknown;
+	prevInputs: unknown;
+};
+
+type RunBeforeResult = {
 	data: {
 		[key: string]: any;
 	};
@@ -5308,16 +5312,21 @@ const runBefore = async (
 
 	// Next time, prevOutput only needs to contain these properties
 	keepPrevOutputKeys?: string[];
-}> => {
-	// Special case for errors, so that the condition right below (when league is loading) does not cause no update
-	if (viewId === "error") {
-		return { data: {} };
-	}
+};
 
-	if (typeof g.get("lid") === "number" && !local.leagueLoaded) {
-		return;
-	}
-
+// Shared by runBeforeLeague and runBeforeGlobal. runLoad wraps the view's load function.
+const runBeforeView = async (
+	{
+		viewId,
+		params,
+		ctxBBGM,
+		updateEvents,
+		prevOutput,
+		prevInputs,
+	}: RunBeforeArgs,
+	conditions: Conditions,
+	runLoad: <T>(load: () => Promise<T>) => Promise<T>,
+): Promise<RunBeforeResult> => {
 	// https://github.com/microsoft/TypeScript/issues/21732
 	// @ts-expect-error
 	const view = views[viewId];
@@ -5335,7 +5344,7 @@ const runBefore = async (
 	}
 
 	if (view) {
-		const data = await lock.runView(() =>
+		const data = await runLoad(() =>
 			view.load({
 				inputs,
 				updateEvents,
@@ -5352,6 +5361,27 @@ const runBefore = async (
 	}
 
 	return { data: {}, inputs };
+};
+
+// For views in a league (URLs starting with /l/)
+const runBeforeLeague = async (
+	args: RunBeforeArgs,
+	conditions: Conditions,
+): Promise<RunBeforeResult | undefined> => {
+	if (typeof g.get("lid") === "number" && !local.leagueLoaded) {
+		return;
+	}
+
+	// A phase change leaves league data inconsistent until it's done, so wait for it
+	return await runBeforeView(args, conditions, lock.runView);
+};
+
+// For views outside of a league. These never read league data, so they don't need to wait for the league to load or for a phase change.
+const runBeforeGlobal = async (
+	args: RunBeforeArgs,
+	conditions: Conditions,
+): Promise<RunBeforeResult> => {
+	return await runBeforeView(args, conditions, (load) => load());
 };
 
 const setForceWin = async ({
@@ -5750,7 +5780,7 @@ const cancelExpansionDraft = async () => {
 		phase: g.get("nextPhase"),
 		nextPhase: undefined,
 	});
-	await updatePhase();
+	updatePhase();
 	await updatePlayMenu();
 };
 
@@ -5924,7 +5954,7 @@ const onLiveSimOver = async (report?: LiveOverReport) => {
 	// Backstop: guarantee the single-game-sim force-silent window is closed once
 	// the live game is done (normal close is in play.ts). Only while no sim is
 	// running, so it can't close the window of a game being simmed right now.
-	if (!lock.get("gameSim")) {
+	if (!sim.isActive()) {
 		resetSingleGameSims();
 	}
 
@@ -7656,7 +7686,7 @@ const upsertCustomizedPlayer = async (
 		player.addToFreeAgents(
 			p,
 			await getNumPlayersTradedAwayNormalizedAll(),
-			null,
+			"noContractToEnd",
 		);
 	}
 
@@ -8004,6 +8034,11 @@ const smartMarketNow = async () => {
 	return { signed, trades: made.length };
 };
 
+const randomizeContracts = async () => {
+	await randomizeContractsCore();
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 const toggleTradeDeadline = async () => {
 	const currentPhase = g.get("phase");
 	if (currentPhase === PHASE.AFTER_TRADE_DEADLINE) {
@@ -8051,7 +8086,7 @@ const validatePointsFormula = (pointsFormula: string) => {
 	}
 };
 
-const validatePlayoffSettings = async ({
+const validatePlayoffSettings = ({
 	numRounds,
 	numPlayoffByes,
 	numActiveTeams,
@@ -8066,9 +8101,7 @@ const validatePlayoffSettings = async ({
 	playoffsByConf: boolean;
 	confs: GameAttributesLeague["confs"];
 }) => {
-	// Season doesn't matter, since we provide overrides and skipPlayoffSeries
-	const byConf = await season.getPlayoffsByConf(Infinity, {
-		skipPlayoffSeries: true,
+	const byConf = getPlayoffsByConfFromSettings({
 		playoffsByConf,
 		confs,
 	});
@@ -9054,6 +9087,7 @@ const api = {
 		exportPlayerGamesCsv,
 		generateFace: generateFace2,
 		getAutoPlayPreview,
+		generateJerseyFace,
 		getAutoPos,
 		getAutoSimSafety: getSimSafety,
 		getBornLoc,
@@ -9148,6 +9182,7 @@ const api = {
 		applySyncRepair,
 		getTeamGraphStat,
 		getTradingBlockOffers,
+		getUntilFreeAgencyWarning,
 		ping,
 		prefetchRealPlayerStats,
 		handleUploadedDraftClass,
@@ -9158,7 +9193,6 @@ const api = {
 		init,
 		initGold,
 		loadRetiredPlayers,
-		lockSet,
 		makeFreeAgentOffer,
 		markSyncRequired,
 		offerExtension,
@@ -9190,8 +9224,10 @@ const api = {
 		revertTransaction: revertTransactionApi,
 		simIntrasquadGame,
 		retiredJerseyNumberDelete,
+		randomizeContracts,
 		retiredJerseyNumberUpsert,
-		runBefore,
+		runBeforeGlobal,
+		runBeforeLeague,
 		setForceWin,
 		setForceWinAll,
 		setGOATFormula,

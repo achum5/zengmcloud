@@ -6,6 +6,7 @@ import { getCurrentContract } from "../../../common/contracts.ts";
 import { isContractFullyPaid } from "../contract/index.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayNormalized.ts";
 import { revertBefore } from "./revertSnapshot.ts";
+import { revertMove } from "./revertTransaction.ts";
 
 /**
  * Release player.
@@ -15,7 +16,7 @@ import { revertBefore } from "./revertSnapshot.ts";
  * @memberOf core.player
  * @param {Object} p Player object.
  * @param {boolean} justDrafted True if the player was just drafted by his current team and the regular season hasn't started yet. False otherwise. If True, then the player can be released without paying his salary.
- * @return {Promise}
+ * @return {Promise<(() => Promise<boolean>) | undefined>} Resolves to a function that undoes the release, which resolves to true on success and false on failure (undefined in college, where a release can't be undone).
  */
 const release = async (p: Player, justDrafted: boolean) => {
 	// Everything this release changes, so God Mode can take it back.
@@ -43,7 +44,7 @@ const release = async (p: Player, justDrafted: boolean) => {
 		revert.deadMoney = true;
 	}
 
-	logEvent({
+	const eid = await logEvent({
 		type: "release",
 		text: `The <a href="${helpers.leagueUrl([
 			"roster",
@@ -66,6 +67,14 @@ const release = async (p: Player, justDrafted: boolean) => {
 		releasedByTid,
 	);
 	await idb.cache.players.put(p);
+
+	// Undo, right after: the same revert God Mode makes from the transaction
+	// log (revertTransaction.ts), which checks he is still unsigned and syncs
+	// the event's delete. Not in college, where moves carry nothing to revert.
+	if (g.get("college") || eid === undefined) {
+		return undefined;
+	}
+	return async () => (await revertMove(eid)) === undefined;
 };
 
 export default release;

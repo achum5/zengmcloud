@@ -12,7 +12,14 @@ import {
 	team,
 } from "../index.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
+import {
+	g,
+	helpers,
+	local,
+	logEvent,
+	toUI,
+	toUIWithoutWaiting,
+} from "../../util/index.ts";
 import type {
 	Conditions,
 	Contract,
@@ -328,11 +335,6 @@ const newPhasePreseason = async (
 
 		await idb.cache.teamSeasons.add(newTeamSeason);
 		await idb.cache.teamStats.add(team.genStatsRow(t.tid));
-
-		if (t.disabled) {
-			// Active teams are persisted below
-			await idb.cache.teams.put(t);
-		}
 	}
 
 	const activeTeams = teams.filter((t) => !t.disabled);
@@ -360,9 +362,10 @@ const newPhasePreseason = async (
 			t.autoTicketPrice = true;
 			t.keepRosterSorted = true;
 			t.playThroughInjuries = DEFAULT_PLAY_THROUGH_INJURIES;
-
-			await idb.cache.teams.put(t);
 		}
+
+		// Persist all active teams, including user teams, for the t.pop and t.stadiumCapacity changes in the loop above
+		await idb.cache.teams.put(t);
 	}
 
 	if (updatedTeams) {
@@ -668,7 +671,7 @@ const newPhasePreseason = async (
 
 	// No ads during multi season auto sim
 	if (env.enableLogging && !local.autoPlayUntil) {
-		toUI("showModal", [], conditions);
+		toUIWithoutWaiting("showModal", [], conditions);
 	}
 
 	return {

@@ -7,7 +7,7 @@ import {
 	g,
 	helpers,
 	local,
-	toUI,
+	toUIWithoutWaiting,
 	logEvent,
 } from "../../util/index.ts";
 import type {
@@ -545,7 +545,7 @@ const newPhaseBeforeDraft = async (
 	});
 
 	if (env.enableLogging) {
-		toUI(
+		toUIWithoutWaiting(
 			"analyticsEvent",
 			[
 				"completed_season",

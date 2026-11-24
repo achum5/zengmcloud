@@ -1352,7 +1352,7 @@ export const decideTeamOption = async (
 		player.addToFreeAgents(
 			p,
 			await getNumPlayersTradedAwayNormalizedAll(),
-			null,
+			"noContractToEnd",
 		);
 		await idb.cache.players.put(p);
 		const info = await contractNegotiation.create(p.pid, true, tid);

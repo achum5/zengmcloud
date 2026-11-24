@@ -7,16 +7,16 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
 import type { View } from "../../common/types.ts";
-import { useState } from "react";
 import Note from "./Player/Note.tsx";
 import { getDraftPicksColsAndRows } from "./DraftPicks.tsx";
 import { getWatchListColsAndRows } from "./WatchList.tsx";
 import { ActionButton } from "../components/ActionButton.tsx";
 import { useLocal } from "../util/local.ts";
+import { useAction } from "../util/useAction.ts";
 import { showUndoNotification } from "../components/UndoNotification.tsx";
 
 const Notes = (props: View<"notes">) => {
-	const [clearing, setClearing] = useState(false);
+	const { busy: clearing, run } = useAction();
 
 	useTitleBar({
 		title: "Notes",
@@ -359,18 +359,22 @@ const Notes = (props: View<"notes">) => {
 				<>
 					<ActionButton
 						className="mb-3"
-						onClick={async () => {
-							setClearing(true);
-							const undoKey = await toWorker("main", "clearNotes", props.type);
-							setClearing(false);
+						onClick={() =>
+							run(async () => {
+								const undoKey = await toWorker(
+									"main",
+									"clearNotes",
+									props.type,
+								);
 
-							if (undoKey !== undefined) {
-								showUndoNotification({
-									undoKey,
-									title: `Cleared ${typeName} notes`,
-								});
-							}
-						}}
+								if (undoKey !== undefined) {
+									showUndoNotification({
+										undoKey,
+										title: `Cleared ${typeName} notes`,
+									});
+								}
+							})
+						}
 						processing={clearing}
 						variant="danger"
 					>

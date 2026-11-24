@@ -10,14 +10,21 @@ test("a trade made during a phase change does not wait for the UI to refresh", a
 	// What the UI does with a realtimeUpdate. Fresh modules, since the test
 	// setup has already loaded the real toUI.
 	vi.resetModules();
-	vi.doMock("../../util/toUI.ts", () => ({
-		default: async (name: string) => {
+	vi.doMock("../../util/toUI.ts", () => {
+		const toUI = async (name: string) => {
 			if (name === "realtimeUpdate") {
 				const { default: lock } = await import("../../util/lock.ts");
 				await lock.runView(() => undefined);
 			}
-		},
-	}));
+		};
+		return {
+			toUI,
+			toUIWithoutWaiting: (name: string) => {
+				void toUI(name);
+			},
+			liveFlagShown: () => false,
+		};
+	});
 	try {
 		const { resetCache, resetG } = await import("../../../test/helpers.ts");
 		const { idb } = await import("../../db/index.ts");

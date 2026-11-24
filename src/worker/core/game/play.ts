@@ -65,12 +65,15 @@ import {
 	g,
 	helpers,
 	lock,
+	sim,
 	logEvent,
 	toUI,
+	toUIWithoutWaiting,
 	updatePlayMenu,
 	updateStatus,
 	local,
 } from "../../util/index.ts";
+import type { SimRun } from "../../util/sim.ts";
 import type {
 	Conditions,
 	GameResults,
@@ -113,24 +116,18 @@ import { advStats } from "../../util/advStats.ts";
 import { isAllStarGame } from "../../../common/specialGames.ts";
 import { formatGameDate } from "../../../common/calendarDates.ts";
 
-/**
- * Play one or more days of games.
- *
- * This also handles the case where there are no more games to be played by switching the phase to either the playoffs or before the draft, as appropriate.
- *
- * @memberOf core.game
- * @param {number} numDays An integer representing the number of days to be simulated. If numDays is larger than the number of days remaining, then all games will be simulated up until either the end of the regular season or the end of the playoffs, whichever happens first.
- * @param {boolean} start Is this a new request from the user to play games (true) or a recursive callback to simulate another day (false)? If true, then there is a check to make sure simulating games is allowed. Default true.
- * @param {number?} gidOneGame Game ID number if we just want to sim one game rather than the whole day. Must be defined if playByPlay is true.
- * @param {boolean?} playByPlay When true, an array of strings representing the play-by-play game simulation are included in the api.realtimeUpdate raw call.
- */
-const play = async (
+// Plays one day, then calls itself for the next day, until run is finished
+const playDays = async (
+	run: SimRun,
 	numDays: number,
 	conditions: Conditions,
-	start: boolean = true,
+	// The first day of this run (true) or a later one (false)
+	start: boolean,
 	gidOneGame?: number,
 	playByPlay?: boolean,
-) => {
+	// Closes this call's single-game-sim window (see beginSingleGameSim).
+	closeSingleGameSim?: () => void,
+): Promise<boolean> => {
 	// DID A LIVE PLAYBACK ACTUALLY REACH THE SCREEN?
 	//
 	// The live game page is navigated to BEFORE this runs, so it sits on
@@ -140,8 +137,6 @@ const play = async (
 	// sim, or the room's fence refuses the day. Every one of them used to leave
 	// that page loading forever. The caller needs a plain answer.
 	let liveSimDelivered = false;
-	// Closes this call's single-game-sim window (see beginSingleGameSim).
-	let closeSingleGameSim: (() => void) | undefined;
 	// This is called when there are no more games to play, either due to the user's request (e.g. 1 week) elapsing or at the end of the regular season
 	const cbNoGames = async (playoffsOver: boolean = false) => {
 		// Settle any sportsbook game bets whose games just finished (no-op if
@@ -156,7 +151,7 @@ const play = async (
 			console.error("Sportsbook settlement failed", error);
 		}
 
-		await lock.set("gameSim", false);
+		await run.finish();
 
 		// Check to see if the season is over
 		let schedule = await season.getSchedule();
@@ -192,7 +187,7 @@ const play = async (
 			newPhaseCalled = true;
 		}
 
-		if (!local.autoPlayUntil && !newPhaseCalled) {
+		if (!local.autoPlayUntil && !newPhaseCalled && idb.cache.dirty) {
 			await updateStatus("Saving...");
 			await idb.cache.flush();
 		}
@@ -202,7 +197,7 @@ const play = async (
 			const allStarNext = await allStar.nextGameIsAllStar(schedule);
 
 			if (allStarNext && gidOneGame === undefined) {
-				toUI(
+				toUIWithoutWaiting(
 					"realtimeUpdate",
 					[
 						[],
@@ -377,7 +372,7 @@ const play = async (
 			// Update playoff series W/L
 			await updatePlayoffSeries(results, conditions);
 		} else {
-			// Update clinchedPlayoffs, only if there are games left in the schedule. Otherwise, this would be inaccruate (not correctly accounting for tiebreakers) and redundant (going to be called again on phase change)
+			// Update clinchedPlayoffs, only if there are games left in the schedule. Otherwise, this would be inaccurate (not correctly accounting for tiebreakers) and redundant (going to be called again on phase change)
 			const schedule = await season.getSchedule();
 			if (schedule.length > 0) {
 				await team.updateClinchedPlayoffs(false, conditions);
@@ -592,7 +587,7 @@ const play = async (
 					await player.killOne(conditions);
 
 					if (g.get("stopOnInjury")) {
-						await lock.set("stopGameSim", true);
+						sim.requestStop();
 					}
 
 					updateEvents.push("playerMovement");
@@ -658,7 +653,7 @@ const play = async (
 		}
 
 		// More stuff for LeagueTopBar - update ovrs based on injuries, and (if user just played a game) update the score of the user's last game and add their next game
-		// This is safe to do down here because injuries have been processed (if necessay) and games have been deleted from the schedule
+		// This is safe to do down here because injuries have been processed (if necessary) and games have been deleted from the schedule
 		if (gameToUi) {
 			const gamesToUi = [gameToUi];
 
@@ -775,7 +770,7 @@ const play = async (
 		if (numDays - 1 <= 0 || playoffsOver) {
 			await cbNoGames(playoffsOver);
 		} else {
-			await play(numDays - 1, conditions, false);
+			await playDays(run, numDays - 1, conditions, false);
 		}
 	};
 
@@ -1050,7 +1045,7 @@ const play = async (
 						},
 						conditions,
 					);
-					await lock.set("stopGameSim", true);
+					sim.requestStop();
 				}
 			} else {
 				// Only do neutralSite when not forcing a win, since forcing a win uses homeCourtFactor and I don't want to worry about how that interacts with neutralSite
@@ -1269,7 +1264,7 @@ const play = async (
 			}
 			await season.deleteScheduledTradeDeadline(schedule[0]!.gid);
 			await phase.newPhase(PHASE.AFTER_TRADE_DEADLINE, conditions);
-			await play(numDays - 1, conditions, false);
+			await playDays(run, numDays - 1, conditions, false);
 		} else {
 			// This should also call cbNoGames after the playoffs end, because g.get("phase") will have been incremented by season.newSchedulePlayoffsDay after the previous day's games
 			// College: when the regular season runs out, the conference
@@ -1323,16 +1318,8 @@ const play = async (
 			await updatePlayMenu();
 
 			if (numDays > 0) {
-				// If we didn't just stop games, let's play
-				// Or, if we are starting games (and already passed the lock), continue even if stopGameSim was just seen
-				const stopGameSim = lock.get("stopGameSim");
-
-				if (start || !stopGameSim) {
-					// If start is set, then reset stopGames
-					if (stopGameSim) {
-						await lock.set("stopGameSim", false);
-					}
-
+				// Keep playing, unless a stop was requested
+				if (run.shouldContinue()) {
 					if (g.get("phase") !== PHASE.PLAYOFFS) {
 						await team.checkRosterSizes("other");
 					}
@@ -1350,7 +1337,7 @@ const play = async (
 				await cbNoGames(playoffsOver);
 			}
 		} else {
-			await lock.set("gameSim", false); // Counteract auto-start in lock.canStartGames
+			await run.finish();
 			await updatePlayMenu();
 			await updateStatus();
 			logEvent(
@@ -1368,89 +1355,119 @@ const play = async (
 		}
 	};
 
-	// If this is a request to start a new simulation... are we allowed to do
-	// that? If so, set the lock and update the play menu
-	if (start) {
-		// A single-game sim (gidOneGame set: a live sim or "Sim one game") must
-		// never push a phone notification - only a full day/week/month sim does.
-		// Flag the whole window up front (before any game is written or the live
-		// game navigates) so afterAction stays silent no matter what drains the
-		// changeset; a day sim (gidOneGame undefined) clears it so it notifies.
-		if (gidOneGame !== undefined) {
-			closeSingleGameSim = beginSingleGameSim();
-		} else {
-			resetSingleGameSims();
-		}
+	await cbRunDay();
 
-		// A game being WATCHED is different from one silently simmed: the room
-		// should hear about it, just not while the watcher is still on Q1. Hold
-		// its pushes here and release them when the playback ends. Without this
-		// they were dropped outright, which is why a playoff run watched game by
-		// game announced nothing to anyone.
-		if (gidOneGame !== undefined && playByPlay) {
-			beginLiveSimNotificationHold();
-		}
+	return liveSimDelivered;
+};
 
-		const canStartGames = lock.canStartGames();
+/**
+ * Play one or more days of games, if no other sim is running.
+ *
+ * This also handles the case where there are no more games to be played by switching the phase to either the playoffs or before the draft, as appropriate.
+ *
+ * @memberOf core.game
+ * @param {number} numDays An integer representing the number of days to be simulated. If numDays is larger than the number of days remaining, then all games will be simulated up until either the end of the regular season or the end of the playoffs, whichever happens first.
+ * @param {number?} gidOneGame Game ID number if we just want to sim one game rather than the whole day. Must be defined if playByPlay is true.
+ * @param {boolean?} playByPlay When true, an array of strings representing the play-by-play game simulation are included in the api.realtimeUpdate raw call.
+ * @returns Whether a live playback reached the screen (see liveSimDelivered).
+ */
+const play = async (
+	numDays: number,
+	conditions: Conditions,
+	gidOneGame?: number,
+	playByPlay?: boolean,
+): Promise<boolean> => {
+	// A single-game sim (gidOneGame set: a live sim or "Sim one game") must
+	// never push a phone notification - only a full day/week/month sim does.
+	// Flag the whole window up front (before any game is written or the live
+	// game navigates) so afterAction stays silent no matter what drains the
+	// changeset; a day sim (gidOneGame undefined) clears it so it notifies.
+	let closeSingleGameSim: (() => void) | undefined;
+	if (gidOneGame !== undefined) {
+		closeSingleGameSim = beginSingleGameSim();
+	} else {
+		resetSingleGameSims();
+	}
 
-		// A silently-refused sim reads as a broken button. Name the reason.
-		//
-		// Unconditional, not just in a synced room: the play menu disables itself
-		// while a sim runs, but the Watch/Sim buttons on the daily schedule do
-		// not, and auto play can take the lock between the page rendering and the
-		// click landing. That is now the most likely press to be refused, and it
-		// used to be refused in complete silence.
-		if (!canStartGames) {
-			syncDebugLog("sim:cannot-start", {
-				gameSim: lock.get("gameSim"),
-				newPhase: lock.get("newPhase"),
-			});
-			logEvent(
-				{
-					type: "error",
-					text: lock.get("newPhase")
-						? "Can't sim: a phase change is still finishing (or a previous one didn't finish cleanly). If this persists, reload the page."
-						: "Can't sim: a sim is already running (or a previous one didn't finish cleanly). If this persists, reload the page.",
-					persistent: true,
-				},
-				conditions,
-			);
-		}
+	// A game being WATCHED is different from one silently simmed: the room
+	// should hear about it, just not while the watcher is still on Q1. Hold
+	// its pushes here and release them when the playback ends. Without this
+	// they were dropped outright, which is why a playoff run watched game by
+	// game announced nothing to anyone.
+	if (gidOneGame !== undefined && playByPlay) {
+		beginLiveSimNotificationHold();
+	}
 
-		try {
-			if (canStartGames) {
-				// Bracket the whole sim (all days, including the recursive continuations
-				// nested inside cbRunDay) so a concurrent runSuppressed call can't swallow
-				// the sim's interleaved writes and leave its delta unpublished.
-				// (A whole day or more is a timeline advance, published as one -
-				// see changeTracker.advanceLabel.)
-				const advance = gidOneGame === undefined ? "playMenu.sim" : undefined;
-				changeTracker.beginSim(advance);
-				// The room held busy from the first day to the last, however long
-				// after the call that started it (advanceLease.ts).
+	// The same check sim.run makes before starting, made here first so a
+	// refused sim can say why. Nothing is awaited between here and sim.run.
+	const canStartGames = !lock.get("newPhase") && !sim.isActive();
+
+	// A silently-refused sim reads as a broken button. Name the reason.
+	//
+	// Unconditional, not just in a synced room: the play menu disables itself
+	// while a sim runs, but the Watch/Sim buttons on the daily schedule do
+	// not, and auto play can take the sim between the page rendering and the
+	// click landing. That is now the most likely press to be refused, and it
+	// used to be refused in complete silence.
+	if (!canStartGames) {
+		syncDebugLog("sim:cannot-start", {
+			sim: sim.getState(),
+			newPhase: lock.get("newPhase"),
+		});
+		logEvent(
+			{
+				type: "error",
+				text: lock.get("newPhase")
+					? "Can't sim: a phase change is still finishing (or a previous one didn't finish cleanly). If this persists, reload the page."
+					: "Can't sim: a sim is already running (or a previous one didn't finish cleanly). If this persists, reload the page.",
+				persistent: true,
+			},
+			conditions,
+		);
+	}
+
+	let liveSimDelivered = false;
+	try {
+		if (canStartGames) {
+			// Bracket the whole sim (all days, including the recursive continuations
+			// nested inside cbRunDay) so a concurrent runSuppressed call can't swallow
+			// the sim's interleaved writes and leave its delta unpublished.
+			// (A whole day or more is a timeline advance, published as one -
+			// see changeTracker.advanceLabel.)
+			const advance = gidOneGame === undefined ? "playMenu.sim" : undefined;
+			changeTracker.beginSim(advance);
+			// The room held busy from the first day to the last, however long
+			// after the call that started it (advanceLease.ts).
+			if (advance) {
+				beginRoomAdvance();
+			}
+			try {
+				await sim.run(async (run) => {
+					liveSimDelivered = await playDays(
+						run,
+						numDays,
+						conditions,
+						true,
+						gidOneGame,
+						playByPlay,
+						closeSingleGameSim,
+					);
+				});
+			} finally {
+				changeTracker.endSim(advance);
 				if (advance) {
-					beginRoomAdvance();
-				}
-				try {
-					await cbRunDay();
-				} finally {
-					changeTracker.endSim(advance);
-					if (advance) {
-						endRoomAdvance();
-					}
+					endRoomAdvance();
 				}
 			}
-		} finally {
-			// The force-silent window must NEVER outlive this call. Its normal end
-			// is in cbNoGames (right after the sim's silent drain), but a refused
-			// start (canStartGames false) or an error before cbNoGames used to
-			// leave the flag stuck on - silencing EVERY notification from this
-			// device (phase changes included) until a page refresh, while sync
-			// itself kept working so nothing looked wrong.
-			closeSingleGameSim?.();
 		}
-	} else {
-		await cbRunDay();
+	} finally {
+		// The force-silent window must NEVER outlive this call. Its normal end
+		// is in cbNoGames (right after the sim's silent drain), but a refused
+		// start (canStartGames false) or an error before cbNoGames used to
+		// leave the flag stuck on - silencing EVERY notification from this
+		// device (phase changes included) until a page refresh, while sync
+		// itself kept working so nothing looked wrong.
+		closeSingleGameSim?.();
 	}
 
 	return liveSimDelivered;

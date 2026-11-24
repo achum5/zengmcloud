@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { toWorker } from "../../util/toWorker.ts";
+import { useAction } from "../../util/useAction.ts";
 import { confirm } from "../../util/confirm.tsx";
 import { confirmPlayMenuAdvance } from "../../util/confirmPlayMenuAdvance.tsx";
 
@@ -22,7 +22,7 @@ export const DraftButtons = ({
 	mpBlocked: boolean;
 }) => {
 	// This doesn't capture everything, since things can be triggered from outside of this component, but it's something
-	const [running, setRunning] = useState(false);
+	const { busy: running, run } = useAction();
 
 	// The simmer drives the draft; a follower's advance buttons would just error
 	// out against the sim authority guard, so hide them entirely.
@@ -35,9 +35,8 @@ export const DraftButtons = ({
 			<button
 				className="btn btn-light-bordered"
 				disabled={(usersTurn && !spectator) || running}
-				onClick={async () => {
-					try {
-						setRunning(true);
+				onClick={() =>
+					run(async () => {
 						if (
 							!(await confirmPlayMenuAdvance({
 								id: "onePick",
@@ -47,19 +46,16 @@ export const DraftButtons = ({
 							return;
 						}
 						await toWorker("playMenu", "onePick", currentDpid);
-					} finally {
-						setRunning(false);
-					}
-				}}
+					})
+				}
 			>
 				Sim one pick
 			</button>
 			<button
 				className="btn btn-light-bordered"
 				disabled={(usersTurn && !spectator) || !userRemaining || running}
-				onClick={async () => {
-					try {
-						setRunning(true);
+				onClick={() =>
+					run(async () => {
 						if (
 							!(await confirmPlayMenuAdvance({
 								id: "untilYourNextPick",
@@ -69,19 +65,16 @@ export const DraftButtons = ({
 							return;
 						}
 						await toWorker("playMenu", "untilYourNextPick", undefined);
-					} finally {
-						setRunning(false);
-					}
-				}}
+					})
+				}
 			>
 				To your next pick
 			</button>
 			<button
 				className="btn btn-light-bordered"
 				disabled={running}
-				onClick={async () => {
-					try {
-						setRunning(true);
+				onClick={() =>
+					run(async () => {
 						if (
 							!(await confirmPlayMenuAdvance({
 								id: "untilEnd",
@@ -104,10 +97,8 @@ export const DraftButtons = ({
 							}
 						}
 						await toWorker("playMenu", "untilEnd", undefined);
-					} finally {
-						setRunning(false);
-					}
-				}}
+					})
+				}
 			>
 				To end of draft
 			</button>

@@ -18,7 +18,7 @@ import { CapStatus } from "../components/CapStatus.tsx";
 import { confirm } from "../util/confirm.tsx";
 import {
 	NegotiationModal,
-	useNegotiaionModal,
+	useNegotiationModal,
 } from "../components/NegotiationModal.tsx";
 import { useLocal } from "../util/local.ts";
 import clsx from "clsx";
@@ -43,7 +43,7 @@ const showReleaseUndo = ({
 	showUndoNotification({
 		actionName: "release",
 		undoKey,
-		title: `You released ${name}`,
+		title: `Released ${name}`,
 	});
 };
 
@@ -411,7 +411,7 @@ const NegotiationList = ({
 
 	useTitleBar({ title });
 
-	const negotiationModal = useNegotiaionModal();
+	const negotiationModal = useNegotiationModal();
 
 	// Realistic front offices: each player has an offer and his chance of
 	// taking it, instead of contracts to sign.

@@ -54,7 +54,7 @@ test.skipIf(!env.FA_LEAGUE)(
 			log(
 				`freed: ${p.firstName} ${p.lastName} ${p.ratings.at(-1).ovr} ${season - p.born.year}y from ${abbrev.get(p.tid)}`,
 			);
-			player.addToFreeAgents(p, {}, null);
+			player.addToFreeAgents(p, {}, "noContractToEnd");
 			await idb.cache.players.put(p);
 		}
 		const eventsBefore = (await idb.cache.events.getAll()).length;

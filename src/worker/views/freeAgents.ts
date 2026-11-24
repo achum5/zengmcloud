@@ -317,8 +317,6 @@ export default defineView({
 				ratings: ["pos"],
 				stats: [],
 				season: g.get("season"),
-				showNoStats: true,
-				showRookies: true,
 			});
 
 			// Multiplayer free-agency board: this team's current ranks plus the most

@@ -21,9 +21,7 @@ const getSeason = async (playersAll: Player[], season: number) => {
 			"watch",
 			"imgURL",
 		],
-		ratings: ["ovr", "pot", "skills", "fuzz", "pos"],
-		showNoStats: true,
-		showRookies: true,
+		ratings: ["ovr", "pot", "skills", "pos"],
 		fuzz: true,
 	});
 	players.sort((a, b) => b.valueFuzz - a.valueFuzz);

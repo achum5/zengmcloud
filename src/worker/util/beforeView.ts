@@ -13,7 +13,7 @@ import {
 import type { Conditions, League } from "../../common/types.ts";
 import {
 	ERROR_MESSAGE_ONE_TAB,
-	ERROR_MESSSAGE_LEAGUE_NOT_FOUND,
+	ERROR_MESSAGE_LEAGUE_NOT_FOUND,
 } from "../../common/constants.ts";
 import { env } from "./env.ts";
 import { initUILocalGames } from "./initUILocalGames.ts";
@@ -29,7 +29,7 @@ const getLeague = async (lid: number) => {
 	const l = await idb.meta.get("leagues", lid);
 
 	if (l === undefined) {
-		throw new Error(ERROR_MESSSAGE_LEAGUE_NOT_FOUND);
+		throw new Error(ERROR_MESSAGE_LEAGUE_NOT_FOUND);
 	}
 
 	return l;
@@ -41,19 +41,19 @@ const runHeartbeat = async (l: League) => {
 	await idb.meta.put("leagues", l);
 };
 
+const stopHeartbeat = () => {
+	clearInterval(heartbeatIntervalID);
+};
+
 const startHeartbeat = async (l: Awaited<ReturnType<typeof getLeague>>) => {
-	// First one within this transaction
 	await runHeartbeat(l);
 
-	// Then in new transaction
+	// Started right away rather than after a delay, so there's no pending timer that stopHeartbeat can't clear
+	stopHeartbeat();
 	const lid = l.lid;
-	setTimeout(() => {
-		clearInterval(heartbeatIntervalID); // Shouldn't be necessary, but just in case
-
-		heartbeatIntervalID = setInterval(async () => {
-			const l2 = await getLeague(lid);
-			await runHeartbeat(l2);
-		}, 1000);
+	heartbeatIntervalID = setInterval(async () => {
+		const l2 = await getLeague(lid);
+		await runHeartbeat(l2);
 	}, 1000);
 };
 
@@ -118,7 +118,7 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 		if (sessionLid !== undefined && sessionLid !== newLid) {
 			await teardownSharedLeague({ clearPersisted: false });
 		}
-		await league.close(true);
+		await league.close();
 	}
 
 	if (loadingNewLid !== newLid) {
@@ -129,7 +129,7 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	// If this is a Web Worker, only one tab of a league can be open at a time
 
 	if (!env.useSharedWorker) {
-		clearInterval(heartbeatIntervalID);
+		stopHeartbeat();
 		await checkHeartbeat(newLid);
 	}
 
@@ -148,14 +148,18 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 
 		// Confirm league exists before proceeding
 		await getLeague(newLid);
-		idb.league = await connectLeague(newLid);
+		const leagueDB = await connectLeague(newLid);
 
-		// Do this after connecting to league, in case there is an error during connection, the lid will stil be in sync between worker and ui
-		g.setWithoutSavingToDB("lid", newLid);
-
+		// Check before assigning idb.league, otherwise a slow connection to a league the user already navigated away from (like if it needed a slow upgrade) would replace the connection to the league they are actually viewing
 		if (loadingNewLid !== newLid) {
+			leagueDB.close();
 			return;
 		}
+
+		idb.league = leagueDB;
+
+		// Do this after connecting to league, in case there is an error during connection, the lid will still be in sync between worker and ui
+		g.setWithoutSavingToDB("lid", newLid);
 
 		// Reuse existing cache, if it was just created while generating a new league
 		// TEMP DISABLE WITH ESLINT 9 UPGRADE eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
@@ -170,7 +174,7 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 			try {
 				await idb.cache.fill();
 			} catch (error) {
-				// idb.cache.fill will throw an error in some situations, like if season is not in the database ("Undefined season"). In that case, we want to unset lid so the UI knows we are not in a league, otherwise it messes with error handling (see lid check in runBefore)
+				// idb.cache.fill will throw an error in some situations, like if season is not in the database ("Undefined season"). In that case, we want to unset lid so the UI knows we are not in a league, otherwise it messes with error handling (see lid check in runBeforeLeague)
 				// @ts-expect-error
 				g.setWithoutSavingToDB("lid", undefined);
 
@@ -213,7 +217,7 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	if (loadingNewLid !== newLid) {
 		return;
 	}
-	await updatePhase(conditions);
+	updatePhase(conditions);
 	if (loadingNewLid !== newLid) {
 		return;
 	}
@@ -234,11 +238,11 @@ export const beforeNonLeague = async (conditions: Conditions) => {
 	if (!beforeNonLeagueRunning) {
 		try {
 			beforeNonLeagueRunning = true;
-			await league.close(false);
+			await league.stopAndSave();
 			await toUI("resetLeague", [], conditions);
 
 			if (!env.useSharedWorker) {
-				clearInterval(heartbeatIntervalID);
+				stopHeartbeat();
 			}
 
 			beforeNonLeagueRunning = false;

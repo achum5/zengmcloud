@@ -8,7 +8,7 @@ import { PHASE } from "../../../common/constants.ts";
 import { player, team } from "../index.ts";
 import GameSim from "../GameSim.ts";
 import { processTeam } from "../game/loadTeams.ts";
-import createRandomPlayers from "../league/create/createRandomPlayers.ts";
+import { createRandomPlayers } from "../league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 
 const rng = (seed: number) => {

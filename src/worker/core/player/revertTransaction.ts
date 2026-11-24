@@ -1,7 +1,14 @@
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
-import { g, helpers, lock, toUI, updatePlayMenu } from "../../util/index.ts";
+import {
+	g,
+	helpers,
+	lock,
+	sim,
+	toUI,
+	updatePlayMenu,
+} from "../../util/index.ts";
 import type {
 	Contract,
 	EventBBGM,
@@ -437,7 +444,7 @@ export const planTransactionRevert = async (
 		return { error: NO_DATA };
 	}
 
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return { error: "Wait for the games in progress to finish." };
 	}
 
@@ -748,6 +755,12 @@ const revertTransaction = async (eid: number): Promise<string | undefined> => {
 		return "God Mode is required to revert a move.";
 	}
 
+	return revertMove(eid);
+};
+
+// The revert itself, without the God Mode check: also what the Undo button
+// shown right after a release runs.
+export const revertMove = async (eid: number): Promise<string | undefined> => {
 	const event = await idb.merged.events.get(eid);
 	if (!event) {
 		return "Move not found.";

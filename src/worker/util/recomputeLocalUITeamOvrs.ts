@@ -5,7 +5,7 @@ import { getPlannedPlayoffGames } from "./plannedPlayoffGames.ts";
 import { getUpcoming } from "../views/schedule.ts";
 import { nationalTags } from "../views/nationalBroadcast.ts";
 import g from "./g.ts";
-import toUI from "./toUI.ts";
+import { toUI } from "./toUI.ts";
 import { getLiveGate } from "./liveGameGate.ts";
 
 // How many nights past today the top bar shows on the NBA calendar.

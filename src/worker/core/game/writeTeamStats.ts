@@ -458,11 +458,10 @@ const writeTeamStats = async (results: GameResults) => {
 				teamSeason.tid,
 			);
 			const players = await player.formatAll(playersRaw, {
-				attrs: ["pid", "injury", "value"],
+				attrs: ["injury", "value"],
 				fuzz: true,
 				ratings: ["ovr", "pos", "ovrs"],
 				season: g.get("season"),
-				tid: teamSeason.tid,
 				// This is STORED on the team season, so it must be the real number -
 				// the display rounding belongs wherever it's shown.
 				coarsenRatings: false,

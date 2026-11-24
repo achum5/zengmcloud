@@ -45,7 +45,7 @@ import { PHASE } from "../../../common/constants.ts";
 import { player, team } from "../index.ts";
 import GameSim from "../GameSim.basketball/index.ts";
 import { processTeam } from "./loadTeams.ts";
-import createRandomPlayers from "../league/create/createRandomPlayers.ts";
+import { createRandomPlayers } from "../league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";

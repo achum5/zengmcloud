@@ -5,7 +5,7 @@ import { player, team } from "../core/index.ts";
 import { orderBy } from "../../common/utils.ts";
 import { PHASE } from "../../common/constants.ts";
 import { loadAbbrevs } from "./gameLog.ts";
-import getPlayoffsByConf from "../core/season/getPlayoffsByConf.ts";
+import { getPlayoffsByConf } from "../core/season/getPlayoffsByConf.ts";
 import { validateSeasonOnly } from "../util/processInputs.ts";
 import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 import { hideTeamOvr } from "../../common/teamRatings.ts";
@@ -80,7 +80,6 @@ export default defineView({
 				ratings: RATINGS,
 				season,
 				fuzz: true,
-				showNoStats: true,
 				// Every list on this page is chosen BY rating, and the team ratings are
 				// built from these too. Ranking on the display-rounded 0-10 values would
 				// make "Top Players" an arbitrary ten of everyone in the same decade, and

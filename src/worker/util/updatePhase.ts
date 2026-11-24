@@ -6,7 +6,7 @@ import {
 import { COLLEGE_PHASE_TEXT } from "../../common/college.ts";
 import g from "./g.ts";
 import local from "./local.ts";
-import toUI from "./toUI.ts";
+import { toUI, toUIWithoutWaiting } from "./toUI.ts";
 import type { Conditions } from "../../common/types.ts";
 import { league } from "../core/index.ts";
 
@@ -43,7 +43,7 @@ function updatePhase(conditions?: Conditions) {
 			season: g.get("season"),
 		});
 	} else if (conditions !== undefined) {
-		toUI(
+		toUIWithoutWaiting(
 			"updateLocal",
 			[
 				{

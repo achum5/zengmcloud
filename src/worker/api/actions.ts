@@ -1,7 +1,13 @@
 import { PHASE } from "../../common/constants.ts";
 import { draft, game, season, trade } from "../core/index.ts";
 import { idb } from "../db/index.ts";
-import { g, helpers, toUI, updateStatus } from "../util/index.ts";
+import {
+	g,
+	helpers,
+	toUI,
+	toUIWithoutWaiting,
+	updateStatus,
+} from "../util/index.ts";
 import type { Conditions, TradeTeams } from "../../common/types.ts";
 
 type TradeForOptions = {
@@ -112,7 +118,11 @@ const tradeFor = async (arg: TradeForOptions, conditions: Conditions) => {
 	// Start a new trade based on a list of pids and dpids, like from the trading block
 	if (teams) {
 		await trade.create(teams);
-		toUI("realtimeUpdate", [[], helpers.leagueUrl(["trade"])], conditions);
+		toUIWithoutWaiting(
+			"realtimeUpdate",
+			[[], helpers.leagueUrl(["trade"])],
+			conditions,
+		);
 	}
 };
 
@@ -147,7 +157,7 @@ const addToTradingBlock = (
 		  },
 	conditions: Conditions,
 ) => {
-	toUI(
+	toUIWithoutWaiting(
 		"realtimeUpdate",
 		[[], helpers.leagueUrl(["trading_block"]), param],
 		conditions,
@@ -173,7 +183,7 @@ const liveGame = async (gid: number, conditions: Conditions) => {
 	// caught-up device then read as "ahead of the room" and ground through
 	// full-log replays forever. The page navigation above has already happened,
 	// so awaiting costs the UI nothing.
-	const delivered = await game.play(1, conditions, true, gid, true);
+	const delivered = await game.play(1, conditions, gid, true);
 
 	// THE SIM DID NOT HAPPEN, AND THE PAGE IS ALREADY THERE.
 	//
@@ -194,7 +204,7 @@ const liveGame = async (gid: number, conditions: Conditions) => {
 };
 
 const simGame = async (gid: number, conditions: Conditions) => {
-	await game.play(1, conditions, true, gid);
+	await game.play(1, conditions, gid);
 };
 
 // TODAY'S GAMES WITHOUT A HUMAN TEAM IN THEM, simmed so the user games are
@@ -219,7 +229,7 @@ const simCpuGames = async (_param: unknown, conditions: Conditions) => {
 		if (!(await stillToPlay())) {
 			continue;
 		}
-		await game.play(1, conditions, true, gid);
+		await game.play(1, conditions, gid);
 		if (await stillToPlay()) {
 			break;
 		}

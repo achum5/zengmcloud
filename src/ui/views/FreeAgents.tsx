@@ -30,7 +30,7 @@ import { RosterSalarySummary } from "../components/RosterSalarySummary.tsx";
 import { CapStatus } from "../components/CapStatus.tsx";
 import {
 	NegotiationModal,
-	useNegotiaionModal,
+	useNegotiationModal,
 } from "../components/NegotiationModal.tsx";
 import {
 	formatChance,
@@ -695,7 +695,7 @@ const FreeAgents = ({
 	const [dataTableHandle, setDataTableHandle] =
 		useState<DataTableHandle | null>(null);
 
-	const negotiationModal = useNegotiaionModal();
+	const negotiationModal = useNegotiationModal();
 
 	const realistic = useRealisticFreeAgency();
 	const offerRanks = new Map(
@@ -756,7 +756,7 @@ const FreeAgents = ({
 
 	const showShowPlayersAffordButton = salaryCapType !== "none";
 
-	// These are used in showAffordablePlayersFilterApplied calculation every render, and then also in toggleShowAfforablePlayers when that is called
+	// These are used in showAffordablePlayersFilterApplied calculation every render, and then also in toggleShowAffordablePlayers when that is called
 	let askingForIndex = -1;
 	let askingForFilter = "";
 
@@ -777,7 +777,7 @@ const FreeAgents = ({
 		}
 	}
 
-	const toggleShowAfforablePlayers = () => {
+	const toggleShowAffordablePlayers = () => {
 		if (dataTableHandle) {
 			const enableFilters = dataTableHandle.getEnableFilters();
 
@@ -978,7 +978,7 @@ const FreeAgents = ({
 					{showShowPlayersAffordButton ? (
 						<button
 							className="btn btn-secondary mb-3 me-2"
-							onClick={toggleShowAfforablePlayers}
+							onClick={toggleShowAffordablePlayers}
 						>
 							{showAffordablePlayersFilterApplied
 								? "Show players with any asking price"

@@ -164,7 +164,7 @@ const PlayerGameLog = ({
 	customMenu,
 	jerseyNumberInfos,
 	noteTeammates,
-	numGamesPlayoffSeires,
+	numGamesPlayoffSeries,
 	player,
 	randomDebutsForeverPids,
 	retired,
@@ -340,7 +340,7 @@ const PlayerGameLog = ({
 
 	// Add separators to playoff series when there is one more than a single game
 	let striped;
-	if (numGamesPlayoffSeires.some((numGames) => numGames > 1)) {
+	if (numGamesPlayoffSeries.some((numGames) => numGames > 1)) {
 		striped = false;
 
 		let prevOppTid;

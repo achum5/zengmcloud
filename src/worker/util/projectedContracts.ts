@@ -1,5 +1,6 @@
 import { PHASE, PLAYER } from "../../common/constants.ts";
-import normalizeContractDemands, {
+import {
+	normalizeContractDemands,
 	getContractYears,
 } from "../core/freeAgents/normalizeContractDemands.ts";
 import genContract from "../core/player/genContract.ts";

@@ -3,7 +3,7 @@ import type { Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
-import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
+import { getPlayoffsByConf } from "../season/getPlayoffsByConf.ts";
 import type {
 	TradePlan,
 	TradeValueAsset,

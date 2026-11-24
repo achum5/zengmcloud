@@ -1,6 +1,6 @@
 import { PHASE } from "../../../common/constants.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, logEvent } from "../../util/index.ts";
+import { g, helpers, local, logEvent } from "../../util/index.ts";
 import type {
 	FlatContractInfo,
 	Phase,
@@ -74,6 +74,8 @@ const sign = async (
 	// history (realisticFrontOffice/history.ts).
 	how?: SigningHow,
 ) => {
+	local.undoLog.invalidate("transaction");
+
 	// Everything this signing changes, so God Mode can take it back.
 	const revert: TransactionRevert = {
 		phase,
@@ -84,7 +86,6 @@ const sign = async (
 	if (negotiation?.resigning) {
 		revert.negotiationTid = negotiation.tid;
 	}
-
 	const isRookie =
 		p.stats.length === 0 &&
 		p.draft.year === g.get("season") &&

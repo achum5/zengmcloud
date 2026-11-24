@@ -1,6 +1,7 @@
-import { useMemo } from "react";
 import type { FaceConfig } from "facesjs";
 import { Face } from "facesjs/react";
+import fastDeepEqual from "fast-deep-equal";
+import { useMemo, useState } from "react";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { parseUniform } from "../../common/uniform.ts";
 import { registerUniformJersey } from "../util/uniformJersey.ts";
@@ -62,15 +63,15 @@ export const MyFace = ({
 	jersey?: string;
 	lazy?: boolean;
 }) => {
-	// facesjs <Face> regenerates the whole face SVG (an imperative display() in a
-	// useLayoutEffect) whenever this `overrides` object changes identity. Building
-	// it fresh each render made every face re-generate on every re-render - most
-	// visibly during a live sim, where it competes with the on-court ball
-	// animation. Memoize it so the face only re-generates when colors/jersey
-	// actually change.
+	// Face redraws the whole SVG, which is slow, whenever face or overrides is a new object. Data from the worker is a new object on every update even if nothing changed, so keep the previous face while its contents are the same.
+	const [stableFace, setStableFace] = useState(face);
+	if (face !== stableFace && !fastDeepEqual(face, stableFace)) {
+		setStableFace(face);
+	}
+
 	// Stubble tinted to the hair (see stubbleShade). Keyed on the two inputs so
 	// a face facesjs has already merged the tint into does not re-render.
-	const shave = stubbleShave(face?.head?.shave, face?.hair?.color);
+	const shave = stubbleShave(stableFace?.head?.shave, stableFace?.hair?.color);
 
 	const overrides = useMemo(
 		() => faceOverrides(colors, jersey, shave),
@@ -82,7 +83,7 @@ export const MyFace = ({
 
 	return (
 		<Face
-			face={face}
+			face={stableFace}
 			ignoreDisplayErrors
 			lazy={lazy}
 			overrides={overrides}

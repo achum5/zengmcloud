@@ -9,10 +9,11 @@ import { useLocal } from "../../util/local.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import AutoSave from "./AutoSave.tsx";
+import { RandomizeContracts } from "./RandomizeContracts.tsx";
 import WorkerConsole from "./WorkerConsole.tsx";
 import { SimHereButton } from "../../components/SimHereButton.tsx";
 
-const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
+export const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 	useTitleBar({
 		title: "Danger Zone",
 	});
@@ -153,7 +154,7 @@ const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 					) : (
 						<button
 							type="button"
-							className="btn btn-god-mode border-0"
+							className="btn btn-god-mode"
 							disabled={phase !== PHASE.REGULAR_SEASON || !godMode}
 							onClick={() => {
 								toWorker("main", "toggleTradeDeadline", undefined);
@@ -188,7 +189,7 @@ const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 
 						<button
 							type="button"
-							className="btn btn-god-mode border-0"
+							className="btn btn-god-mode"
 							disabled={
 								(phase !== PHASE.REGULAR_SEASON &&
 									phase !== PHASE.AFTER_TRADE_DEADLINE) ||
@@ -290,6 +291,10 @@ const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 							</button>
 						</div>
 					) : null}
+
+					<div className="mt-5">
+						<RandomizeContracts godMode={godMode} />
+					</div>
 				</div>
 
 				<div className="col-md-6 mt-5 mt-sm-0">
@@ -487,5 +492,3 @@ const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 		</>
 	);
 };
-
-export default DangerZone;

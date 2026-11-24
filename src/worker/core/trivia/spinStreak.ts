@@ -2,7 +2,7 @@ import { PHASE } from "../../../common/constants.ts";
 import { helpers as commonHelpers } from "../../../common/helpers.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
-import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
+import { getPlayoffsByConf } from "../season/getPlayoffsByConf.ts";
 import { mergedSeasons } from "./criteria.ts";
 import { getTriviaPool, type TriviaPlayer, type TriviaPool } from "./pool.ts";
 import type { TeamSeason } from "../../../common/types.ts";

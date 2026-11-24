@@ -8,8 +8,7 @@ import {
 	local,
 	helpers,
 	updatePlayMenu,
-	lock,
-	toUI,
+	sim,
 } from "../util/index.ts";
 import { runDraft } from "./actions.ts";
 import { bySport } from "../../common/sportFunctions.ts";
@@ -185,7 +184,7 @@ const playAmount = async (
 	amount: "day" | "week" | "month" | "untilPreseason" | number,
 	conditions: Conditions,
 ) => {
-	if (lock.get("gameSim")) {
+	if (sim.isActive()) {
 		return;
 	}
 
@@ -236,16 +235,13 @@ const playAmount = async (
 	}
 };
 
+// The sim loop stops after its current day, and then it updates the status and play menu itself. Until then, the play menu needs to stop offering anything.
 const playStop = async () => {
-	await lock.set("stopGameSim", true);
-
-	if (g.get("phase") !== PHASE.FREE_AGENCY) {
-		// This is needed because we can't be sure if core.game.play will be called again
-		await updateStatus();
+	// If no sim is running, there's nothing to update. This matters because a persistent notification (like the changelog shown at startup) can request a stop before any league is loaded, when g isn't set and updating the play menu would throw.
+	const stopRequested = sim.requestStop();
+	if (stopRequested) {
+		await updatePlayMenu();
 	}
-
-	await lock.set("gameSim", false);
-	await updatePlayMenu();
 };
 
 const playMenu = {
@@ -352,52 +348,11 @@ const playMenu = {
 			await phase.newPhase(PHASE.RESIGN_PLAYERS, conditions);
 		}
 	},
+	// The UI confirms with getUntilFreeAgencyWarning before calling this
 	untilFreeAgency: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
-			const negotiations = await idb.cache.negotiations.getAll();
-			const numRemaining = negotiations.length; // Show warning dialog only if there are players remaining un-re-signed
-
-			let proceed = true;
-
-			if (numRemaining > 0 && realisticFreeAgencyOn()) {
-				// Realistic front offices: standing re-signing offers are decided as
-				// free agency opens.
-				const t = await idb.cache.teams.get(g.get("userTid"));
-				const offered = negotiations.filter((n) =>
-					t?.offerBoard?.some((offer) => offer.pid === n.pid),
-				).length;
-				proceed = await toUI(
-					"confirm",
-					[
-						`Proceed to free agency? ${offered} of your ${numRemaining} unsigned players will decide on your offers now, and the rest will become free agents.`,
-						{
-							okText: "Proceed",
-						},
-					],
-					conditions,
-				);
-			} else if (numRemaining > 0) {
-				// This function always returns a boolean if no defaultValue is supplied, but couldn't figure out how to get it to work correctly with TypeScript.
-				proceed = await toUI(
-					"confirm",
-					[
-						`Are you sure you want to proceed to free agency while ${numRemaining} of your players remain unsigned? If you do not re-sign them before free agency begins, they will be free to sign with any team${
-							g.get("salaryCapType") === "soft"
-								? ""
-								: ", and you won't be able to go over the salary cap to sign them"
-						}.`,
-						{
-							okText: "Proceed",
-						},
-					],
-					conditions,
-				);
-			}
-
-			if (proceed) {
-				await phase.newPhase(PHASE.FREE_AGENCY, conditions);
-				await updateStatus(helpers.daysLeft(true));
-			}
+			await phase.newPhase(PHASE.FREE_AGENCY, conditions);
+			await updateStatus(helpers.daysLeft(true));
 		}
 	},
 	untilPreseason: async (param: unknown, conditions: Conditions) => {
@@ -413,6 +368,35 @@ const playMenu = {
 		updatePlayMenu();
 		await playStop();
 	},
+};
+
+// Text for the UI to confirm with before untilFreeAgency, or undefined if there's nothing to warn about
+export const getUntilFreeAgencyWarning = async () => {
+	if (g.get("phase") !== PHASE.RESIGN_PLAYERS) {
+		return;
+	}
+
+	const negotiations = await idb.cache.negotiations.getAll();
+	const numRemaining = negotiations.length;
+	if (numRemaining === 0) {
+		return;
+	}
+
+	if (realisticFreeAgencyOn()) {
+		// Realistic front offices: standing re-signing offers are decided as
+		// free agency opens.
+		const t = await idb.cache.teams.get(g.get("userTid"));
+		const offered = negotiations.filter((n) =>
+			t?.offerBoard?.some((offer) => offer.pid === n.pid),
+		).length;
+		return `Proceed to free agency? ${offered} of your ${numRemaining} unsigned players will decide on your offers now, and the rest will become free agents.`;
+	}
+
+	return `Are you sure you want to proceed to free agency while ${numRemaining} of your players remain unsigned? If you do not re-sign them before free agency begins, they will be free to sign with any team${
+		g.get("salaryCapType") === "soft"
+			? ""
+			: ", and you won't be able to go over the salary cap to sign them"
+	}.`;
 };
 
 export default playMenu;

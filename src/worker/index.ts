@@ -87,7 +87,8 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// suppresses the entire creation.
 	"createLeague",
 	"beforeView",
-	"runBefore",
+	"runBeforeLeague",
+	"runBeforeGlobal",
 	// Sync room control/status calls do not mutate the league DB. They must remain
 	// available so reconnect/readiness recovery can work while the dot is red.
 	"claimSyncAuthority",
@@ -318,7 +319,7 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 	// @ts-expect-error
 	if (!api[type] || !Object.hasOwn(api[type], name)) {
 		throw new Error(
-			`API call to nonexistant worker function "${type}.${name}"`,
+			`API call to nonexistent worker function "${type}.${name}"`,
 		);
 	}
 

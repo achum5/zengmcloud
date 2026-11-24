@@ -1,6 +1,6 @@
 import { idb } from "../db/index.ts";
 import g from "./g.ts";
-import toUI from "./toUI.ts";
+import { toUI } from "./toUI.ts";
 import { formatEventText } from "./formatEventText.ts";
 import { types } from "../../common/transactionInfo.ts";
 import { formatAmerican } from "../../common/sportsbook.ts";

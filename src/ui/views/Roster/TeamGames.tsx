@@ -21,7 +21,7 @@ const load = async (
 	viewId: "calendar" | "gameLog" | "schedule",
 	params: object,
 ) => {
-	const got = await toWorker("main", "runBefore", {
+	const got = await toWorker("main", "runBeforeLeague", {
 		viewId,
 		params,
 		ctxBBGM: {},

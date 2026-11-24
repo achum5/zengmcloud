@@ -146,6 +146,7 @@ export const getPlayer = async <
 			"diedYear",
 			"contract",
 			"draft",
+			"draftAbbrev",
 			"face",
 			"appearances",
 			"injury",
@@ -582,23 +583,25 @@ export const getCommon = async (
 
 	const statSummary = Object.values(PLAYER_SUMMARY);
 
-	let statTables;
+	let statTablesKeys = Object.keys(PLAYER_STATS_TABLES);
 	if (__SPORT === "baseball" && (bestPos === "SP" || bestPos === "RP")) {
 		// Primarily a pitcher, so show pitching stats first - keep in sync with playerGameLog.ts
-		statTables = Object.keys(PLAYER_STATS_TABLES).map((type) => {
-			if (type === "pitching") {
-				return PLAYER_STATS_TABLES.batting!;
+		statTablesKeys = statTablesKeys.map((key) => {
+			if (key === "pitching") {
+				return "batting";
 			}
 
-			if (type === "batting") {
-				return PLAYER_STATS_TABLES.pitching!;
+			if (key === "batting") {
+				return "pitching";
 			}
 
-			return PLAYER_STATS_TABLES[type]!;
+			return key;
 		});
-	} else {
-		statTables = Object.values(PLAYER_STATS_TABLES);
 	}
+	const statTables = statTablesKeys.map((key) => ({
+		key,
+		...PLAYER_STATS_TABLES[key]!,
+	}));
 
 	let teamURL;
 	if (p.tid >= 0) {

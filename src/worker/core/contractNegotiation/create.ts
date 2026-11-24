@@ -1,7 +1,7 @@
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { player } from "../index.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, lock } from "../../util/index.ts";
+import { g, helpers, sim } from "../../util/index.ts";
 import { getSyncEngine } from "../sync/engineHolder.ts";
 import { canSignFreeAgentsInPhase } from "../../../common/transactionPhases.ts";
 
@@ -23,8 +23,8 @@ const create = async (
 		return "You're not allowed to sign free agents now.";
 	}
 
-	if (lock.get("gameSim")) {
-		return "You cannot initiate a new negotiaion while game simulation is in progress.";
+	if (sim.isActive()) {
+		return "You cannot initiate a new negotiation while game simulation is in progress.";
 	}
 
 	// In a synced multiplayer league, free agents during the free agency phase

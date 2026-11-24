@@ -38,7 +38,7 @@ import { helpers } from "../../../common/helpers.ts";
 import { formatGameDate } from "../../../common/calendarDates.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, local, lock, toUI } from "../../util/index.ts";
+import { g, local, lock, sim, toUI } from "../../util/index.ts";
 import getOrder from "../draft/getOrder.ts";
 import runPicks from "../draft/runPicks.ts";
 import newPhase from "../phase/newPhase.ts";
@@ -273,7 +273,7 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 				advance: async () => {
 					allowCrossingNextSimStop();
 					try {
-						await playGames(1, {}, true);
+						await playGames(1, {});
 					} finally {
 						clearCrossingNextSimStop();
 					}
@@ -1040,7 +1040,7 @@ const evaluate = async () => {
 		// Racing for the claim anyway means winning it and then being refused
 		// by the lock, which stalls the step for the whole room until the
 		// lease expires - let a device that can actually sim win instead.
-		lock.get("gameSim") ||
+		sim.isActive() ||
 		lock.get("newPhase") ||
 		// Someone in charge of simming is advancing the league right now (a
 		// sim, a phase change from the Play menu): the step it is taking may

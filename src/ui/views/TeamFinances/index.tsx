@@ -42,6 +42,7 @@ import { getAdjustedTicketPrice } from "../../../common/getAdjustedTicketPrice.t
 import { contractValueCell } from "../../util/contractValueCell.tsx";
 import { CapStatus } from "../../components/CapStatus.tsx";
 import { ABBREVS, optionAbbrev } from "../../../common/signingHow.ts";
+import { formatDecimal } from "../../../common/formatDecimal.ts";
 
 const paddingLeft85 = { paddingLeft: 85 };
 
@@ -56,13 +57,10 @@ const formatTicketPrice = (ticketPrice: number) => {
 type BudgetKey = "scouting" | "coaching" | "health" | "facilities";
 
 const roundEffect = (effect: number, includePlusSign: boolean) => {
-	return `${includePlusSign && effect >= 0 ? "+" : ""}${effect.toLocaleString(
-		"en-US",
-		{
-			maximumFractionDigits: 2,
-			minimumFractionDigits: 0,
-		},
-	)}`;
+	return `${includePlusSign && effect >= 0 ? "+" : ""}${formatDecimal(effect, {
+		maximumFractionDigits: 2,
+		minimumFractionDigits: 0,
+	})}`;
 };
 
 const GradientStyle = ({

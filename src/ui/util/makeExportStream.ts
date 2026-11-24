@@ -194,14 +194,14 @@ const makeExportStream = async (
 					}
 				}
 
-				await controller.enqueue(
+				controller.enqueue(
 					`{${newline}${tab}"version":${space}${LEAGUE_DATABASE_VERSION}`,
 				);
 
 				// The meta object is only read when importing: name sets the league
 				// name, syncCheckpoint fast-forwards the room catch-up (see above).
 				if (name || syncCheckpoint) {
-					await writeRootObject(controller, "meta", {
+					writeRootObject(controller, "meta", {
 						...(name ? { name } : {}),
 						...(syncCheckpoint ? { syncCheckpoint } : {}),
 					});
@@ -273,11 +273,7 @@ const makeExportStream = async (
 
 					const gameAttributesObject = gameAttributesArrayToObject(rows);
 
-					await writeRootObject(
-						controller,
-						"gameAttributes",
-						gameAttributesObject,
-					);
+					writeRootObject(controller, "gameAttributes", gameAttributesObject);
 
 					incrementNumRecordsSeen();
 				} else {
@@ -391,7 +387,7 @@ const makeExportStream = async (
 
 					if (storeIndex >= stores.length) {
 						// Done whole export!
-						await controller.enqueue(`${newline}}${newline}`);
+						controller.enqueue(`${newline}}${newline}`);
 
 						done();
 					}

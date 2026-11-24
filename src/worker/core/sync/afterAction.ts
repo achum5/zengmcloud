@@ -15,7 +15,7 @@ import {
 } from "./liveSimNotificationHold.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 import { idb } from "../../db/index.ts";
-import { g, local, lock } from "../../util/index.ts";
+import { g, local, lock, sim } from "../../util/index.ts";
 
 // Actions that sim a SINGLE game within a day (Sim one game / live game), as
 // opposed to advancing whole days. Their results must still sync, but they must
@@ -247,7 +247,7 @@ export const afterAction = async (
 			if (published) {
 				try {
 					if (
-						!lock.get("gameSim") &&
+						!sim.isActive() &&
 						!lock.get("newPhase") &&
 						!local.autoPlayUntil
 					) {

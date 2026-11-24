@@ -320,6 +320,7 @@ const getTeamsByRound = async (
 	draftPicksIndexed: DraftPickWithoutKey[][],
 ) => {
 	const allTeams = await team.getFormattedAll({
+		// draftLottery is needed by getLotteryChances, for COLA and nba2027
 		attrs: ["tid", "draftLottery"],
 		seasonAttrs: [...ORDER_TEAMS_SEASON_ATTRS, "playoffRoundsWon"],
 		stats: ORDER_TEAMS_STATS,

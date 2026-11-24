@@ -166,7 +166,7 @@ const TeamForm = ({
 
 	const ensureFace = async () => {
 		if (!face) {
-			setFace(await toWorker("main", "generateFace", undefined));
+			setFace(await toWorker("main", "generateJerseyFace", undefined));
 		}
 	};
 

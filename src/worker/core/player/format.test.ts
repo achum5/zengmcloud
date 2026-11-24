@@ -1,6 +1,6 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import { assert as typeAssert, type IsExact } from "conditional-type-checks";
-import { PLAYER } from "../../../common/constants.ts";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player } from "../index.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -571,6 +571,91 @@ test("careerStats works when player has no stats rows", async () => {
 		stats: [],
 		careerStats: { gp: 0, playoffs: false, bpm: 0 },
 	});
+});
+
+test("careerStatsByTeam sums stats for each team, in order of each team's first season", async () => {
+	const pf = await player.format(p, {
+		stats: ["gp", "fg"],
+		seasonType: ["regularSeason", "playoffs", "combined"],
+		statType: "totals",
+		careerStatsByTeam: true,
+	});
+
+	if (!pf) {
+		throw new Error("Missing player");
+	}
+
+	assert.deepStrictEqual(
+		pf.careerStatsByTeam.regularSeason.map(({ tid, numSeasons, stats }) => ({
+			tid,
+			numSeasons,
+			gp: stats.gp,
+			fg: stats.fg,
+		})),
+		[
+			{ tid: 4, numSeasons: 1, gp: 5, fg: 20 },
+			{ tid: 0, numSeasons: 1, gp: 8, fg: 56 },
+		],
+	);
+	assert.deepStrictEqual(
+		pf.careerStatsByTeam.playoffs.map(({ tid, stats }) => ({
+			tid,
+			gp: stats.gp,
+			fg: stats.fg,
+		})),
+		[{ tid: 4, gp: 3, fg: 30 }],
+	);
+
+	// Combined includes both regular season and playoffs
+	assert.deepStrictEqual(
+		pf.careerStatsByTeam.combined.map(({ tid, stats }) => ({
+			tid,
+			gp: stats.gp,
+			fg: stats.fg,
+		})),
+		[
+			{ tid: 4, gp: 8, fg: 50 },
+			{ tid: 0, gp: 8, fg: 56 },
+		],
+	);
+});
+
+test("careerStatsScaled scales totals to a full season, but not rates", async () => {
+	const pf = await player.format(p, {
+		stats: ["gp", "fg", "fgMax"],
+		seasonType: ["regularSeason", "playoffs"],
+		statType: "totals",
+		careerStatsScaled: {
+			test: { gamesStats: ["gp"], fullSeasonGames: 26 },
+		},
+	});
+
+	if (!pf) {
+		throw new Error("Missing player");
+	}
+
+	// 13 GP in the regular season, so everything is doubled
+	const regularSeason = pf.careerStatsScaled.test.regularSeason;
+	assert.strictEqual(regularSeason.gp, 26);
+	assert.strictEqual(regularSeason.fg, 152);
+	assert.deepStrictEqual(regularSeason.fgMax, pf.careerStats.fgMax);
+
+	// 3 GP in the playoffs, and whole number totals are rounded
+	const playoffs = pf.careerStatsScaled.test.playoffs;
+	assert.strictEqual(playoffs.gp, 26);
+	assert.strictEqual(playoffs.fg, 260);
+
+	// Per game stats are the same as without scaling
+	const pfPerGame = await player.format(p, {
+		stats: ["fg"],
+		careerStatsScaled: {
+			test: { gamesStats: ["gp"], fullSeasonGames: 26 },
+		},
+	});
+	assert.strictEqual(
+		pfPerGame?.careerStatsScaled.test.regularSeason.fg,
+		pfPerGame?.careerStats.fg,
+	);
 });
 
 describe("TypeScript", () => {
@@ -1240,4 +1325,48 @@ test("hideRatingsOnesDigit rounds per-position ratings maps too", async () => {
 		}
 	}
 	assert.strictEqual(coarse.ratings.ovr, Math.floor(full.ratings.ovr / 10));
+});
+
+test("salaries only include what was paid of a contract that ended early during the season with no team owing the rest", async () => {
+	const season = g.get("season");
+	const prevPhase = g.get("phase");
+	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+	const p2: Player = {
+		...p,
+		pid: 1,
+		tid: 4,
+		contractDemand: undefined,
+		contracts: [
+			// Replaced by a new contract during the season
+			{
+				type: "unknown",
+				start: season,
+				amounts: [1000],
+				payments: [{ season, tid: 4, amount: 100 }],
+				endedEarly: { season, phase: PHASE.REGULAR_SEASON },
+			},
+			{
+				type: "unknown",
+				start: season,
+				amounts: [2000, 2000],
+				payments: [],
+			},
+		],
+	};
+
+	const pf = await player.format(p2, {
+		attrs: ["salaries", "salariesTotal"],
+	});
+	g.setWithoutSavingToDB("phase", prevPhase);
+
+	assert.deepStrictEqual(
+		pf!.salaries.map((row) => [row.season, row.amount]),
+		[
+			[season, 0.1],
+			[season, 2],
+			[season + 1, 2],
+		],
+	);
+	assert.strictEqual(pf!.salariesTotal, 4.1);
 });

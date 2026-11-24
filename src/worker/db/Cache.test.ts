@@ -1,11 +1,4 @@
-import {
-	afterEach,
-	assert,
-	beforeAll,
-	beforeEach,
-	describe,
-	test,
-} from "vitest";
+import { assert, beforeAll, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../test/helpers.ts";
 import { player, team } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
@@ -63,11 +56,6 @@ describe("flush", () => {
 		await resetCache({}, { stubFlush: false });
 	});
 
-	afterEach(() => {
-		// @ts-expect-error
-		idb.league = undefined;
-	});
-
 	const mockLeague = ({
 		failPut,
 		failTransaction,
@@ -90,7 +78,7 @@ describe("flush", () => {
 			resolve();
 		}
 
-		idb.league = {
+		idb.cache._db = {
 			transaction: () => ({
 				abort: () => {
 					info.aborted = true;
@@ -129,7 +117,7 @@ describe("flush", () => {
 		const error = await errorPromise;
 		assert.strictEqual(error?.message, "Transaction failed");
 
-		assert(idb.cache._dirty);
+		assert(idb.cache.dirty);
 		assert.deepStrictEqual([...idb.cache._deletes.messages], [1]);
 		assert.deepStrictEqual([...idb.cache._dirtyRecords.messages], [2]);
 
@@ -141,7 +129,7 @@ describe("flush", () => {
 			info2.puts.map((record) => record.mid),
 			[2],
 		);
-		assert(!idb.cache._dirty);
+		assert(!idb.cache.dirty);
 		assert.strictEqual(idb.cache._deletes.messages.size, 0);
 		assert.strictEqual(idb.cache._dirtyRecords.messages.size, 0);
 	});
@@ -184,7 +172,7 @@ describe("flush", () => {
 		assert.strictEqual(error?.message, "Put failed");
 		assert(info.aborted);
 
-		assert(idb.cache._dirty);
+		assert(idb.cache.dirty);
 		assert.deepStrictEqual([...idb.cache._deletes.messages], [1]);
 		assert.deepStrictEqual([...idb.cache._dirtyRecords.messages], [2]);
 	});

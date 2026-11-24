@@ -63,7 +63,7 @@ const getExpiration = (
 // "includeExpiringContracts" - use this at the start of re-signing phase
 // "freeAgentsOnly" - use this at the start of free agency phase
 // "dummyExpiringContracts" - use this at beginning of regular season, or during season (like when releasing a player)
-const normalizeContractDemands = async ({
+export const normalizeContractDemands = async ({
 	type,
 	pids,
 	nextSeason,
@@ -301,9 +301,7 @@ const normalizeContractDemands = async ({
 	for (const info of playerInfosToUpdate) {
 		const p = info.p;
 		if (rookieSalaries && p.draft.year === season) {
-			const pickIndex =
-				(p.draft.round - 1) * g.get("numActiveTeams") + p.draft.pick - 1;
-			info.contractAmount = rookieSalaries[pickIndex] ?? rookieSalaries.at(-1)!;
+			info.contractAmount = draft.getRookieSalary(p.draft, rookieSalaries);
 		} else if (numRounds === 0) {
 			info.contractAmount = player.genContract(p, type === "newLeague").amount;
 		} else if (type === "newLeague") {
@@ -468,5 +466,3 @@ const normalizeContractDemands = async ({
 
 	return undefined;
 };
-
-export default normalizeContractDemands;

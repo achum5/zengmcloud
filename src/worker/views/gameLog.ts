@@ -731,7 +731,7 @@ export default defineView({
 				{},
 				await updateBoxScore(args),
 				await updateGamesList(args),
-				await updateTeamSeason(args.inputs),
+				updateTeamSeason(args.inputs),
 			),
 			await updateReactions(args),
 			await updateTeamNav(args),

@@ -31,7 +31,7 @@ const ViewPart = ({
 		let live = true;
 		(async () => {
 			try {
-				const got = await toWorker("main", "runBefore", {
+				const got = await toWorker("main", "runBeforeLeague", {
 					viewId,
 					params: JSON.parse(key),
 					ctxBBGM: {},

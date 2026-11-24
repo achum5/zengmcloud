@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import fastDeepEqual from "fast-deep-equal";
 import { useState, type ReactNode, type SubmitEvent, useEffect } from "react";
 import { ActionButton } from "../../components/ActionButton.tsx";
 import { helpers } from "../../util/helpers.ts";
@@ -264,6 +265,7 @@ const COLLEGE_HIDDEN_CATEGORIES = new Set<string>([
 ]);
 
 const SettingsForm = ({
+	onBack,
 	onCancel,
 	onCancelDefaultSetting,
 	onSave,
@@ -281,9 +283,11 @@ const SettingsForm = ({
 	isInsideModal,
 	hideGodModeToggle,
 }: {
+	// Like onCancel, but keeps the edits rather than discarding them. Only validates settings that were changed.
+	onBack?: (settings: Settings) => void | Promise<void>;
 	onCancel?: () => void;
 	onCancelDefaultSetting?: (key: Key) => void;
-	onSave: (settings: Settings) => void;
+	onSave: (settings: Settings) => void | Promise<void>;
 	onUpdateExtra?: () => void;
 	hasPlayers?: boolean;
 	newLeague?: boolean;
@@ -297,7 +301,7 @@ const SettingsForm = ({
 	isInsideModal?: boolean;
 	hideGodModeToggle?: boolean;
 
-	// Used to filter diplayed settings, for the DefaultSettings page
+	// Used to filter displayed settings, for the DefaultSettings page
 	settingsShown?: Readonly<Key[]>;
 }) => {
 	useEffect(() => {
@@ -428,8 +432,11 @@ const SettingsForm = ({
 
 	const [submitting, setSubmitting] = useState(false);
 
-	const handleFormSubmit = async (event: SubmitEvent) => {
-		event.preventDefault();
+	// Validates the form, then passes the parsed settings to the callback
+	const submitWith = async (
+		callback: (settings: Settings) => void | Promise<void>,
+		{ onlyValidateChanged = false } = {},
+	) => {
 		setSubmitting(true);
 
 		const output = {} as Settings;
@@ -483,7 +490,22 @@ const SettingsForm = ({
 		}
 
 		// Run validation functions at the end, so all values are available
-		for (const option of validatedSettings) {
+		let settingsToValidate = validatedSettings;
+		if (onlyValidateChanged) {
+			// Don't block on problems the user didn't cause, like the league file having settings that don't fit its teams
+			const changedKeys = new Set(
+				helpers
+					.keys(output)
+					.filter((key) => !fastDeepEqual(output[key], initialSettings[key])),
+			);
+			settingsToValidate = validatedSettings.filter(
+				(setting) =>
+					changedKeys.has(setting.key) ||
+					setting.validateWith?.some((key) => changedKeys.has(key)),
+			);
+		}
+
+		for (const option of settingsToValidate) {
 			const { key, name, validator } = option;
 
 			try {
@@ -503,7 +525,7 @@ const SettingsForm = ({
 		}
 
 		try {
-			await onSave(output);
+			await callback(output);
 		} catch (error) {
 			console.error(error);
 			setSubmitting(false);
@@ -516,6 +538,11 @@ const SettingsForm = ({
 		}
 
 		setSubmitting(false);
+	};
+
+	const handleFormSubmit = async (event: SubmitEvent) => {
+		event.preventDefault();
+		await submitWith(onSave);
 	};
 
 	const visibleCategories = getVisibleCategories({
@@ -681,9 +708,21 @@ const SettingsForm = ({
 						/>
 
 						<div className="d-flex gap-2">
+							{onBack ? (
+								<button
+									className="btn btn-secondary"
+									type="button"
+									disabled={submitting}
+									onClick={() => {
+										void submitWith(onBack, { onlyValidateChanged: true });
+									}}
+								>
+									Back
+								</button>
+							) : null}
 							{onCancel ? (
 								<button
-									className="btn btn-secondary text-nowrap"
+									className="btn btn-secondary"
 									type="button"
 									disabled={submitting}
 									onClick={onCancel}

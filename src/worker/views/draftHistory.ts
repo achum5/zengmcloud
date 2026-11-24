@@ -130,7 +130,6 @@ export default defineView({
 			ratings: ["ovr", "pot", "skills", "pos", "season"],
 			stats,
 			showNoStats: true,
-			showRookies: true,
 			fuzz: true,
 			// The "At Draft" columns ARE the scouting report from his draft class, so
 			// under the prospects exemption they stay exact.

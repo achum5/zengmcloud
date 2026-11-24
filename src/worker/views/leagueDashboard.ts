@@ -296,8 +296,6 @@ const updatePlayers = async ({ updateEvents }: ViewArgs) => {
 						"pid",
 						"firstName",
 						"lastName",
-						"abbrev",
-						"tid",
 						"age",
 						"contract",
 						"draft",

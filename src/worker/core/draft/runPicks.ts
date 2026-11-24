@@ -2,7 +2,7 @@ import { DRAFT_BY_TEAM_OVR, PHASE, PLAYER } from "../../../common/constants.ts";
 import afterPicks from "./afterPicks.ts";
 import { canBeDrafted } from "./canBeDrafted.ts";
 import getOrder from "./getOrder.ts";
-import selectPlayer from "./selectPlayer.ts";
+import { selectPlayer } from "./selectPlayer.ts";
 import { holdRoomForAdvance } from "../sync/advanceLease.ts";
 import { idb } from "../../db/index.ts";
 import { g, local, lock } from "../../util/index.ts";
@@ -106,116 +106,111 @@ const runPicks = async (
 		return [];
 	}
 
-	await lock.set("drafting", true);
 	const pids: number[] = [];
-	let draftPicks = await getOrder();
+	let draftPicks: Awaited<ReturnType<typeof getOrder>> = [];
 
-	if (
-		action.type === "onePick" &&
-		action.dpid !== undefined &&
-		draftPicks[0]?.dpid !== action.dpid
-	) {
-		await lock.set("drafting", false);
-		return pids;
-	}
+	await lock.set("drafting", true);
+	try {
+		draftPicks = await getOrder();
 
-	const expansionDraft = g.get("expansionDraft");
+		if (
+			action.type === "onePick" &&
+			action.dpid !== undefined &&
+			draftPicks[0]?.dpid !== action.dpid
+		) {
+			return pids;
+		}
 
-	let playersAll: Player[];
-	if (g.get("phase") === PHASE.FANTASY_DRAFT) {
-		playersAll = await idb.cache.players.indexGetAll(
-			"playersByTid",
-			PLAYER.UNDRAFTED,
-		);
-	} else if (expansionDraft.phase === "draft") {
-		playersAll = (
-			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
-		).filter(canBeDrafted);
-	} else {
-		playersAll = (
-			await idb.cache.players.indexGetAll("playersByDraftYearRetiredYear", [
-				[g.get("season")],
-				[g.get("season"), Infinity],
-			])
-		).filter(canBeDrafted);
-	}
-	playersAll.sort((a, b) => b.value - a.value);
+		const expansionDraft = g.get("expansionDraft");
 
-	// Called after either the draft is over or it's the user's pick
-	const afterDoneAuto = async () => {
-		await lock.set("drafting", false);
+		let playersAll: Player[];
+		if (g.get("phase") === PHASE.FANTASY_DRAFT) {
+			playersAll = await idb.cache.players.indexGetAll(
+				"playersByTid",
+				PLAYER.UNDRAFTED,
+			);
+		} else if (expansionDraft.phase === "draft") {
+			playersAll = (
+				await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+			).filter(canBeDrafted);
+		} else {
+			playersAll = (
+				await idb.cache.players.indexGetAll("playersByDraftYearRetiredYear", [
+					[g.get("season")],
+					[g.get("season"), Infinity],
+				])
+			).filter(canBeDrafted);
+		}
+		playersAll.sort((a, b) => b.value - a.value);
 
-		// Is draft over?
-		await afterPicks(draftPicks.length === 0, conditions);
-		return pids;
-	};
-
-	// This will actually draft "untilUserOrEnd"
-	const autoSelectPlayer = async (): Promise<number[]> => {
-		if (draftPicks[0]) {
-			const expansionDraft2 = g.get("expansionDraft"); // Get again, might have changed
-			if (
-				expansionDraft2.phase === "draft" &&
-				expansionDraft2.numPerTeam !== undefined
-			) {
-				// Keep logic in sync with draft.ts
-				const tidsOverLimit: number[] = [];
-				for (const [tidString, numPerTeam] of Object.entries(
-					expansionDraft2.numPerTeamDrafted,
-				)) {
-					if (numPerTeam >= expansionDraft2.numPerTeam) {
-						const tid = Number.parseInt(tidString);
-						tidsOverLimit.push(tid);
+		// This will actually draft "untilUserOrEnd"
+		const autoSelectPlayer = async (): Promise<void> => {
+			if (draftPicks[0]) {
+				const expansionDraft2 = g.get("expansionDraft"); // Get again, might have changed
+				if (
+					expansionDraft2.phase === "draft" &&
+					expansionDraft2.numPerTeam !== undefined
+				) {
+					// Keep logic in sync with draft.ts
+					const tidsOverLimit: number[] = [];
+					for (const [tidString, numPerTeam] of Object.entries(
+						expansionDraft2.numPerTeamDrafted,
+					)) {
+						if (numPerTeam >= expansionDraft2.numPerTeam) {
+							const tid = Number.parseInt(tidString);
+							tidsOverLimit.push(tid);
+						}
+					}
+					if (tidsOverLimit.length > 0) {
+						playersAll = playersAll.filter(
+							(p) => !tidsOverLimit.includes(p.tid),
+						);
 					}
 				}
-				if (tidsOverLimit.length > 0) {
-					playersAll = playersAll.filter((p) => !tidsOverLimit.includes(p.tid));
-				}
-			}
 
-			// If there are no players, delete the rest of the picks and draft is done
-			if (playersAll.length === 0) {
-				for (const dp of draftPicks) {
-					await idb.cache.draftPicks.delete(dp.dpid);
-				}
-				draftPicks = await getOrder();
-				return afterDoneAuto();
-			}
-
-			const dp = draftPicks[0];
-
-			const singleUserPickInSpectatorMode =
-				g.get("spectator") && action.type === "onePick";
-			const pauseForUserPick =
-				g.get("userTids").includes(dp.tid) &&
-				!local.autoPlayUntil &&
-				!singleUserPickInSpectatorMode &&
-				action.type !== "untilEnd" &&
-				action.type !== "untilPick";
-
-			const pauseForDpid =
-				action.type === "untilPick" && dp.dpid === action.dpid;
-
-			if (pauseForUserPick || pauseForDpid) {
-				return afterDoneAuto();
-			}
-
-			draftPicks.shift();
-
-			const teamPlayers = await idb.cache.players.indexGetAll(
-				"playersByTid",
-				dp.tid,
-			);
-			const teamOvrDiffs = await getTeamOvrDiffs(teamPlayers, playersAll);
-
-			const score = (p: Player, i: number) => {
-				if (DRAFT_BY_TEAM_OVR) {
-					return (teamOvrDiffs[i]! + 0.05 * p.value) ** 40;
+				// If there are no players, delete the rest of the picks and draft is done
+				if (playersAll.length === 0) {
+					for (const dp of draftPicks) {
+						await idb.cache.draftPicks.delete(dp.dpid);
+					}
+					draftPicks = await getOrder();
+					return;
 				}
 
-				return p.value ** 69;
-			};
-			/*let sum = 0;
+				const dp = draftPicks[0];
+
+				const singleUserPickInSpectatorMode =
+					g.get("spectator") && action.type === "onePick";
+				const pauseForUserPick =
+					g.get("userTids").includes(dp.tid) &&
+					!local.autoPlayUntil &&
+					!singleUserPickInSpectatorMode &&
+					action.type !== "untilEnd" &&
+					action.type !== "untilPick";
+
+				const pauseForDpid =
+					action.type === "untilPick" && dp.dpid === action.dpid;
+
+				if (pauseForUserPick || pauseForDpid) {
+					return;
+				}
+
+				draftPicks.shift();
+
+				const teamPlayers = await idb.cache.players.indexGetAll(
+					"playersByTid",
+					dp.tid,
+				);
+				const teamOvrDiffs = getTeamOvrDiffs(teamPlayers, playersAll);
+
+				const score = (p: Player, i: number) => {
+					if (DRAFT_BY_TEAM_OVR) {
+						return (teamOvrDiffs[i]! + 0.05 * p.value) ** 40;
+					}
+
+					return p.value ** 69;
+				};
+				/*let sum = 0;
 			for (const p of playersAll) {
 				sum += score(p);
 			}
@@ -225,37 +220,42 @@ const runPicks = async (
 			}
 			console.log(sum);*/
 
-			// (The room's busy mark renewed before a pick: the smart CPU's
-			// choice can take a while - sync/advanceLease.ts.)
-			await holdRoomForAdvance();
-			// Realistic front offices take the prospect worth the most to them,
-			// in a normal draft (vanilla+ drafts as stock does).
-			// The smart CPU takes the prospect worth the most to the team by
-			// its worth (smartCpu/draft.ts).
-			const selection =
-				(smartBrainOn() && g.get("phase") === PHASE.DRAFT
-					? (await smartDraftChoice(dp, playersAll)).choice
-					: realisticTradesOn() && g.get("phase") === PHASE.DRAFT
-						? await realisticFrontOfficeBestProspect(dp, playersAll)
-						: undefined) ?? choice(playersAll, score);
+				// (The room's busy mark renewed before a pick: the smart CPU's
+				// choice can take a while - sync/advanceLease.ts.)
+				await holdRoomForAdvance();
+				// Realistic front offices take the prospect worth the most to them,
+				// in a normal draft (vanilla+ drafts as stock does).
+				// The smart CPU takes the prospect worth the most to the team by
+				// its worth (smartCpu/draft.ts).
+				const selection =
+					(smartBrainOn() && g.get("phase") === PHASE.DRAFT
+						? (await smartDraftChoice(dp, playersAll)).choice
+						: realisticTradesOn() && g.get("phase") === PHASE.DRAFT
+							? await realisticFrontOfficeBestProspect(dp, playersAll)
+							: undefined) ?? choice(playersAll, score);
 
-			const pid = selection.pid;
-			await selectPlayer(dp, pid);
-			pids.push(pid);
-			if (realisticTradesOn() || smartBrainOn()) {
-				await realisticFrontOfficeAfterPick();
+				const pid = selection.pid;
+				await selectPlayer(dp, pid);
+				pids.push(pid);
+				if (realisticTradesOn() || smartBrainOn()) {
+					await realisticFrontOfficeAfterPick();
+				}
+				playersAll = playersAll.filter((p) => p !== selection); // Delete from the list of undrafted players
+
+				if (action.type !== "onePick") {
+					return autoSelectPlayer();
+				}
 			}
-			playersAll = playersAll.filter((p) => p !== selection); // Delete from the list of undrafted players
+		};
 
-			if (action.type !== "onePick") {
-				return autoSelectPlayer();
-			}
-		}
+		await autoSelectPlayer();
+	} finally {
+		await lock.set("drafting", false);
+	}
 
-		return afterDoneAuto();
-	};
-
-	return autoSelectPlayer();
+	// Called after either the draft is over or it's the user's pick
+	await afterPicks(draftPicks.length === 0, conditions);
+	return pids;
 };
 
 export default runPicks;

@@ -1,6 +1,6 @@
 import { useCallback, type MouseEvent } from "react";
 import { Dropdown, Nav } from "react-bootstrap";
-import { toWorker } from "../util/toWorker.ts";
+import { runPlayMenuOption } from "../util/runPlayMenuOption.ts";
 import { router } from "../router/index.ts";
 import { local, useLocal } from "../util/local.ts";
 import type { Option } from "../../common/types.ts";
@@ -64,7 +64,7 @@ const PlayMenu = ({
 					if (!(await confirmPlayMenuAdvance(option))) {
 						return;
 					}
-					void toWorker("playMenu", option.id as any, undefined);
+					void runPlayMenuOption(option.id);
 				}
 			},
 			[options],
@@ -77,7 +77,7 @@ const PlayMenu = ({
 			if (!(await confirmPlayMenuAdvance(option))) {
 				return;
 			}
-			toWorker("playMenu", option.id as any, undefined);
+			void runPlayMenuOption(option.id);
 		}
 	};
 

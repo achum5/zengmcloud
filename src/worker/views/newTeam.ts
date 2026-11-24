@@ -11,12 +11,9 @@ import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 export const getTeamOvr = async (tid: number) => {
 	const playersAll = await idb.cache.players.indexGetAll("playersByTid", tid);
 	const players = await player.formatAll(playersAll, {
-		attrs: ["injury", "pid", "value"],
-		ratings: ["ovr", "pot", "ovrs", "pos"],
+		attrs: ["injury", "value"],
+		ratings: ["ovr", "ovrs", "pos"],
 		season: g.get("season"),
-		tid,
-		showNoStats: true,
-		showRookies: true,
 		fuzz: true,
 		// Feeds team.ovr, never a screen.
 		coarsenRatings: false,
@@ -58,20 +55,10 @@ const addHistoryAndPicksAndPlayers = async <T extends { tid: number }>(
 		);
 		const players = orderBy(
 			await player.formatAll(playersRaw, {
-				attrs: [
-					"pid",
-					"firstName",
-					"lastName",
-					"age",
-					"watch",
-					"value",
-					"draft",
-				],
-				ratings: ["ovr", "pot", "dovr", "dpot", "pos", "skills", "ovrs"],
+				attrs: ["pid", "firstName", "lastName", "age", "watch", "value"],
+				ratings: ["ovr", "pot", "pos", "skills"],
 				season: g.get("season"),
 				fuzz: true,
-				showNoStats: true,
-				showRookies: true,
 			}),
 			"value",
 			"desc",

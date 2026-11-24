@@ -16,7 +16,7 @@ import { PHASE } from "../common/constants.ts";
 import { player, team } from "../worker/core/index.ts";
 import GameSim from "../worker/core/GameSim.ts";
 import { processTeam } from "../worker/core/game/loadTeams.ts";
-import createRandomPlayers from "../worker/core/league/create/createRandomPlayers.ts";
+import { createRandomPlayers } from "../worker/core/league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../common/budgetLevels.ts";
 import type { Game } from "../common/types.ts";
 

@@ -3,7 +3,7 @@ import { daysOutForNewInjury } from "./classicDays.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import { finances, player } from "../index.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, local, lock, logEvent } from "../../util/index.ts";
+import { g, helpers, local, logEvent, sim } from "../../util/index.ts";
 import type { Conditions, GameResults, Player } from "../../../common/types.ts";
 import stats from "../player/stats.ts";
 import { statsRowIsCurrent } from "../player/statsRowIsCurrent.ts";
@@ -549,7 +549,7 @@ const writePlayerStats = async (
 					ratingsLoss = output.ratingsLoss;
 
 					if (output.stopPlay && !stopPlay) {
-						await lock.set("stopGameSim", true);
+						sim.requestStop();
 						stopPlay = true;
 					}
 				}

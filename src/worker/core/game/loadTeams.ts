@@ -352,7 +352,7 @@ export const processTeam = async (
 						);
 					}
 
-					p2.compositeRating[k] *= await getNumConsecutiveGamesGFactor(
+					p2.compositeRating[k] *= getNumConsecutiveGamesGFactor(
 						numConsecutiveGamesG,
 						playoffs,
 						game6EliminationGameOrGame7,
