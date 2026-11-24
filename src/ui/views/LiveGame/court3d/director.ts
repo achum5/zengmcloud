@@ -145,7 +145,11 @@ import { type Attacker, attackerOf } from "./possession/offense.ts";
 import { type Follow, followWith } from "./possession/follow.ts";
 import { inchesOf, type OwnGait } from "./possession/gait.ts";
 import { signatureOf } from "./possession/signature.ts";
-import { throughPasses, throughPullUps } from "./possession/through.ts";
+import {
+	throughContests,
+	throughPasses,
+	throughPullUps,
+} from "./possession/through.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
 	floorRoll,
@@ -1914,11 +1918,11 @@ const needed = (
 // How far along a run he is, as a share of it, u of the way through its
 // time: getting going and pulling up as the evaluator has him (see
 // motion.ts) - from and to the pace it says, where it says, from and to a
-// standstill where not. (Worked out once a run, again if its times or paces
-// change.)
+// standstill where not. (Worked out once a run, again if its times, paces
+// or length change.)
 const runShapes = new WeakMap<
 	Move,
-	{ t0: number; t1: number; v0?: number; v1?: number; r: RunShape }
+	{ t0: number; t1: number; v0?: number; v1?: number; L: number; r: RunShape }
 >();
 const shareAlong = (m: Move, u: number): number => {
 	const L = dist(m.from, m.to);
@@ -1931,13 +1935,15 @@ const shareAlong = (m: Move, u: number): number => {
 		got.t0 !== m.t0 ||
 		got.t1 !== m.t1 ||
 		got.v0 !== m.v0 ||
-		got.v1 !== m.v1
+		got.v1 !== m.v1 ||
+		got.L !== L
 	) {
 		got = {
 			t0: m.t0,
 			t1: m.t1,
 			v0: m.v0,
 			v1: m.v1,
+			L,
 			r: runShape(L, (m.t1 - m.t0) / 1000, m.v0 ?? 0, m.v1 ?? 0),
 		};
 		runShapes.set(m, got);
@@ -31689,11 +31695,13 @@ class Director {
 		// all that - then kept off each other, the ball's way kept clear and
 		// the rest, as he goes.
 		if (this.step) {
-			// (The new sim: a pass thrown and caught on the move, and a
-			// pull-up gathered into, not stood for - see possession/through.ts.)
+			// (The new sim: a pass thrown and caught on the move, a pull-up
+			// gathered into, a closeout still coming as the shot goes up - not
+			// stood for: see possession/through.ts.)
 			if (this.possession) {
 				throughPasses(this.tracks, this.ball, this.spacing);
 				throughPullUps(this.tracks, this.ball, this.spacing);
+				throughContests(this.tracks, this.ball);
 			}
 			stepTimeline(
 				{
