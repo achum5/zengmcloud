@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 522,
+		date: "2026-11-24",
+		text: "NBA calendar: checked across dozens of generated seasons. Opening night and Christmas matchups no longer add any three-in-threes, cross-country back-to-backs or extra travel to anyone's schedule, and the defending champion now hosts opening night far more often.",
+	},
+	{
 		n: 521,
 		date: "2026-11-24",
 		text: "Team page (refreshed look), Schedule section: on the NBA calendar it's now the team's month calendar, each game on its date, instead of numbered games.",

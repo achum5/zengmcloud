@@ -11,9 +11,10 @@ import {
 
 const key = (game: DatedGame) => `${game.homeTid}@${game.awayTid}`;
 
-// What a move must keep: the same games, each night as many as it had, no
-// team twice in a night, and no more crowded stretches than before (three
-// in three nights, four in five).
+// What a move must keep: the same games, opening night, Christmas and the
+// last night as many as they had, no team twice in a night, and no more
+// crowded stretches than before (three in three nights, four in five, each
+// counted on its own).
 const checkSame = (before: DatedGame[], after: DatedGame[]) => {
 	assert.deepStrictEqual(
 		before.map(key).sort(),
@@ -25,9 +26,21 @@ const checkSame = (before: DatedGame[], after: DatedGame[]) => {
 		for (const game of games) {
 			out.set(game.date, (out.get(game.date) ?? 0) + 1);
 		}
-		return [...out.entries()].sort();
+		return out;
 	};
-	assert.deepStrictEqual(sizes(before), sizes(after), "same nights");
+	const dates = [...sizes(before).keys()].sort();
+	const fixed = [
+		dates[0]!,
+		dates.at(-1)!,
+		...dates.filter((date) => date.endsWith("-12-25")),
+	];
+	for (const date of fixed) {
+		assert.strictEqual(
+			sizes(after).get(date),
+			sizes(before).get(date),
+			`${date} keeps its games`,
+		);
+	}
 	const crowded = (games: DatedGame[]) => {
 		const nights = new Map<number, number[]>();
 		for (const game of games) {
@@ -37,22 +50,23 @@ const checkSame = (before: DatedGame[], after: DatedGame[]) => {
 				nights.set(tid, list);
 			}
 		}
-		let count = 0;
+		const count = { three: 0, four: 0 };
 		for (const list of nights.values()) {
 			list.sort((a, b) => a - b);
 			for (let i = 0; i < list.length; i++) {
 				assert.notStrictEqual(list[i], list[i + 1], "a team twice a night");
-				if (
-					(i + 2 < list.length && list[i + 2]! - list[i]! <= 2) ||
-					(i + 3 < list.length && list[i + 3]! - list[i]! <= 4)
-				) {
-					count += 1;
+				if (i + 2 < list.length && list[i + 2]! - list[i]! <= 2) {
+					count.three += 1;
+				}
+				if (i + 3 < list.length && list[i + 3]! - list[i]! <= 4) {
+					count.four += 1;
 				}
 			}
 		}
 		return count;
 	};
-	assert.isAtMost(crowded(after), crowded(before));
+	assert.isAtMost(crowded(after).three, crowded(before).three);
+	assert.isAtMost(crowded(after).four, crowded(before).four);
 };
 
 // Eight teams playing each other home and away, each round over two nights

@@ -214,11 +214,12 @@ const newCalendarSchedule = (
 	const locationOf = (t: CalendarScheduleTeam) =>
 		teamLocation({ region: t.seasonAttrs.region, homeCity: t.homeCity });
 
+	const locations = new Map(teams.map((t) => [t.tid, locationOf(t)]));
 	const featured = <
 		T extends { homeTid: number; awayTid: number; date: string },
 	>(
 		games: T[],
-	) => (marquee ? featureMarquee(games, marquee) : games);
+	) => (marquee ? featureMarquee(games, marquee, locations) : games);
 
 	const real = getRealSchedule(
 		teams.map((t) => ({
