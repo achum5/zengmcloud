@@ -496,21 +496,8 @@ export const MonthCalendar = ({
 				} as CSSProperties
 			}
 		>
+			{/* The month between its arrows, itself a menu of the season's months. */}
 			<div className="lc-head">
-				<div className="lc-title" role="heading" aria-level={compact ? 3 : 2}>
-					{formatMonth(firstOfMonth(month))}
-				</div>
-				{todayMonth !== undefined &&
-				todayMonth !== month &&
-				months.includes(todayMonth) ? (
-					<button
-						type="button"
-						className="lc-today-button"
-						onClick={() => setChosenMonth(todayMonth)}
-					>
-						Today
-					</button>
-				) : null}
 				<div className="lc-nav">
 					<button
 						type="button"
@@ -530,6 +517,20 @@ export const MonthCalendar = ({
 							/>
 						</svg>
 					</button>
+					<div className="lc-title" role="heading" aria-level={compact ? 3 : 2}>
+						<select
+							className="lc-title-select"
+							value={month}
+							onChange={(event) => setChosenMonth(event.target.value)}
+							aria-label="Month"
+						>
+							{months.map((m) => (
+								<option key={m} value={m}>
+									{formatMonth(firstOfMonth(m))}
+								</option>
+							))}
+						</select>
+					</div>
 					<button
 						type="button"
 						className="lc-arrow"
@@ -549,6 +550,17 @@ export const MonthCalendar = ({
 						</svg>
 					</button>
 				</div>
+				{todayMonth !== undefined &&
+				todayMonth !== month &&
+				months.includes(todayMonth) ? (
+					<button
+						type="button"
+						className="lc-today-button"
+						onClick={() => setChosenMonth(todayMonth)}
+					>
+						Today
+					</button>
+				) : null}
 			</div>
 
 			{monthChips ? (

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 518,
+		date: "2026-11-24",
+		text: "NBA calendar month view: the arrows now sit on either side of the month, and the month itself is a menu to jump to any month of the season.",
+	},
+	{
 		n: 517,
 		date: "2026-11-24",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): the man with the ball no longer stands on his spot. On the dribble he works his defender, going side to side, attacking him a few dribbles and backing out, giving ground when crowded and sizing him up, all within a few steps of where the play has him. Once he picks it up, his feet stay put: no walking with the ball.",
