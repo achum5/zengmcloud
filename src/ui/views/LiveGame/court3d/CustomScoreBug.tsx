@@ -1,6 +1,7 @@
 import {
 	useEffect,
 	useLayoutEffect,
+	useRef,
 	type CSSProperties,
 	type ReactNode,
 } from "react";
@@ -120,6 +121,38 @@ export const CustomScoreBug = ({
 
 	const W = style.width;
 	const H = style.height;
+
+	// Laid out a pixel to a unit, then shrunk to the bug's size: drawn small,
+	// a font's height rounds to whole pixels, and letters centered on a big
+	// screen sat a pixel off on a phone.
+	const stage = useRef<HTMLDivElement>(null);
+	const radius = style.radius;
+	useLayoutEffect(() => {
+		const st = stage.current;
+		const box = st?.parentElement;
+		if (!st || !box) {
+			return;
+		}
+		const fit = (width: number) => {
+			st.style.transform = `scale(${width / W})`;
+			// (Its corners in its units too.)
+			box.style.borderRadius =
+				radius === undefined ? "" : `${(radius * width) / W}px`;
+		};
+		fit(box.clientWidth);
+		if (typeof ResizeObserver === "undefined") {
+			return;
+		}
+		const observer = new ResizeObserver(([entry]) => {
+			if (entry) {
+				fit(entry.contentRect.width);
+			}
+		});
+		observer.observe(box);
+		return () => {
+			observer.disconnect();
+		};
+	}, [W, radius]);
 	// A length in the bug's units, as a share of its width.
 	const u = (n: number) => `${(n / W) * 100}cqw`;
 	const team = (side: "away" | "home") => (side === "away" ? away : home);
@@ -542,21 +575,29 @@ export const CustomScoreBug = ({
 					position: "relative",
 					width: "100%",
 					aspectRatio: `${W} / ${H}`,
-					containerType: "inline-size",
 					background: style.image
 						? `center / 100% 100% no-repeat url("${style.image.replaceAll('"', "%22")}")${style.background ? `, ${color(style.background)}` : ""}`
 						: color(style.background),
-					borderRadius:
-						style.radius === undefined
-							? undefined
-							: `${(style.radius / W) * 100}cqw`,
 					overflow: "hidden",
 					lineHeight: 1,
 					fontFamily: family(style.font) ?? FONT,
 					boxShadow: color(style.shadow) ?? "0 3px 10px rgba(0,0,0,.5)",
 				}}
 			>
-				{style.pieces.map(piece)}
+				<div
+					ref={stage}
+					style={{
+						position: "absolute",
+						left: 0,
+						top: 0,
+						width: W,
+						height: H,
+						transformOrigin: "0 0",
+						containerType: "inline-size",
+					}}
+				>
+					{style.pieces.map(piece)}
+				</div>
 			</div>
 		</div>
 	);

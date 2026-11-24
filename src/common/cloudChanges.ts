@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 546,
+		date: "2026-11-24",
+		text: "Score bugs from a team looks file, and the National TV bug, now look the same on a phone as on a big screen. On small screens the scores and other lettering could sit a little high, and thin lines like the ring around a logo came out too thick.",
+	},
+	{
 		n: 545,
 		date: "2026-11-24",
 		text: "3D games, a step toward a smooth 60 fps: the background helpers that draw the players now hand back each player's picture finished, head and all, so the page itself spends about a tenth of the time it did on them each frame. Players look the same.",
@@ -29,7 +34,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 542,
 		date: "2026-11-24",
-		text: "No more \"Watch live?\" popup when a league mate starts a live game. It shows up in the header's live scores like any other, and you tap it there to watch.",
+		text: 'No more "Watch live?" popup when a league mate starts a live game. It shows up in the header\'s live scores like any other, and you tap it there to watch.',
 	},
 	{
 		n: 541,

@@ -35,7 +35,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Score`,
 		x: x + 250,
-		y: -1.5,
+		y: -2.5,
 		w: 166,
 		h: 96,
 		color: `${who}Ink`,
@@ -46,7 +46,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Record`,
 		x: x + 20,
-		y: 97.7,
+		y: 96,
 		w: 400,
 		h: 54,
 		color: LIGHT,
@@ -70,7 +70,7 @@ const side = (who: "away" | "home", x: number): ScoreBugPiece[] => [
 	{
 		show: `${who}Bonus`,
 		x: x + 240,
-		y: 97.7,
+		y: 96,
 		w: 180,
 		h: 54,
 		color: "#ffcc4d",
@@ -136,7 +136,7 @@ const scoreBug: ScoreBugStyle = {
 		{
 			show: "clock",
 			x: 1186,
-			y: 2.6,
+			y: 0.5,
 			w: 250,
 			h: 96,
 			color: "#ffffff",
@@ -171,7 +171,7 @@ const scoreBug: ScoreBugStyle = {
 		{
 			show: "series",
 			x: 1076,
-			y: 98.5,
+			y: 96.5,
 			w: 500,
 			h: 54,
 			color: LIGHT,
