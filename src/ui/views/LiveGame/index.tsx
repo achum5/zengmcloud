@@ -576,6 +576,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// Live-sim events are loosely shaped objects (each sport has its own), and the
 	// court staging below peeks at their fields directly.
 	const events = useRef<any[] | undefined>(undefined);
+	// The one pending auto-play timer. Two running at once would play the game
+	// out twice and count its result in the records twice.
+	const playbackTimeoutId = useRef<number | undefined>(undefined);
+	const clearPlaybackTimeout = useCallback(() => {
+		window.clearTimeout(playbackTimeoutId.current);
+		playbackTimeoutId.current = undefined;
+	}, []);
 	const sportState = useRef(
 		DEFAULT_SPORT_STATE ? { ...DEFAULT_SPORT_STATE } : undefined,
 	);
@@ -942,7 +949,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// fast-forward has no beats to hold).
 	const scheduleNextBeat = (ms: number) => {
 		if (!pausedRef.current && !followerRef.current) {
-			setTimeout(() => {
+			clearPlaybackTimeout();
+			playbackTimeoutId.current = window.setTimeout(() => {
 				processToNextPause();
 				setPlayIndex((prev) => prev + 1);
 			}, ms);
@@ -1856,7 +1864,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 			if (
 				!componentIsMounted.current ||
 				(pausedRef.current && !force) ||
-				!events.current
+				!events.current ||
+				boxScore.current.gameOver
 			) {
 				return 0;
 			}
@@ -2136,7 +2145,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 				// A follower never self-schedules: its playback is stepped only by the
 				// simmer's cursor (see the follower effect below), so it can't run ahead.
 				if (!pausedRef.current && !followerRef.current && !court3dRef.current) {
-					setTimeout(() => {
+					clearPlaybackTimeout();
+					playbackTimeoutId.current = window.setTimeout(() => {
 						processToNextPauseInner();
 						setPlayIndex((prev) => prev + 1);
 					}, speedToMs(speedRef.current));
@@ -2180,7 +2190,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const elapsedSeconds = startSeconds - endSeconds;
 			return elapsedSeconds;
 		},
-		[props.confetti, props.otl, setDirty],
+		[clearPlaybackTimeout, props.confetti, props.otl, setDirty],
 	);
 
 	useEffect(() => {
@@ -2188,6 +2198,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 		return () => {
 			componentIsMounted.current = false;
+			clearPlaybackTimeout();
 			// Release the deterministic stream: it is module-global, and anything
 			// else that invents court positions (the team court editor's preview)
 			// wants ordinary randomness.
@@ -2197,7 +2208,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				onLeaveBroadcast(leaveBroadcastGidRef.current);
 			}
 		};
-	}, []);
+	}, [clearPlaybackTimeout]);
 
 	const startLiveGame = useCallback(
 		(events2: unknown[]) => {
@@ -2206,12 +2217,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 				// The 3D court asks for the first line once the floor is set.
 				return;
 			}
-			setTimeout(() => {
+			clearPlaybackTimeout();
+			playbackTimeoutId.current = window.setTimeout(() => {
 				processToNextPause();
 				setPlayIndex((prev) => prev + 1);
 			}, speedToMs(DEFAULT_SPEED));
 		},
-		[processToNextPause],
+		[clearPlaybackTimeout, processToNextPause],
 	);
 
 	useEffect(() => {
@@ -2443,12 +2455,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const handlePause = useCallback(() => {
 		setPaused(true);
 		pausedRef.current = true;
-	}, []);
+		clearPlaybackTimeout();
+	}, [clearPlaybackTimeout]);
 
 	const handlePlay = useCallback(() => {
 		setPaused(false);
 
-		// Without pausedRef check, this was a race condition and could lead to incorrect post-game records (counting as 2 or more wins)
+		// Only restart playback if it was actually paused, otherwise there would be two timers running
 		if (pausedRef.current) {
 			pausedRef.current = false;
 			// The 3D court picks the animation back up and asks for the next

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 530,
+		date: "2026-11-24",
+		text: "Fixes from BBGM: dropdown menus are readable again in dark mode on the newest Chrome, pausing and playing a live game can no longer count its result twice in the standings, the top bar shows your next game right after the trade deadline, and undoing a trade gives players back their playing time settings.",
+	},
+	{
 		n: 529,
 		date: "2026-11-24",
 		text: "3D game: smoother on most phones and computers. The players' new poses are drawn in the background again instead of holding up each frame, which devices with a graphics card had been doing for every player.",

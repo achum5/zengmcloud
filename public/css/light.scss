@@ -2603,7 +2603,8 @@ tr.table-warning:hover > td {
 	font-size: 13px;
 
 	option {
-		color: #000;
+		background-color: $white;
+		color: $black;
 	}
 }
 @include media-breakpoint-up(md) {

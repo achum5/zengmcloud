@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
+import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { confirm } from "../../util/confirm.tsx";
 import { useLocal } from "../../util/local.ts";
@@ -222,11 +223,19 @@ const Trade = (props: View<"trade">) => {
 			prevTeams: undefined,
 		}));
 
-		const { changed, message } = await toWorker(
-			"main",
-			"tradeCounterOffer",
-			undefined,
-		);
+		let result;
+		try {
+			result = await toWorker("main", "tradeCounterOffer", undefined);
+		} catch (error) {
+			setState((prevState) => ({ ...prevState, asking: false }));
+			showNotification({
+				type: "error",
+				text: error.message,
+			});
+			return;
+		}
+
+		const { changed, message } = result;
 
 		if (!changed) {
 			newPrevTeams = undefined;
@@ -389,7 +398,7 @@ const Trade = (props: View<"trade">) => {
 				}
 				summaryText.current.style.maxHeight = `${newHeight}px`;
 			} else if (summaryText.current.style.maxHeight !== "") {
-				summaryText.current.style.removeProperty("height");
+				summaryText.current.style.removeProperty("max-height");
 			}
 		}
 	}, [userTids]);

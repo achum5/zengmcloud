@@ -1,4 +1,5 @@
 import addDaysToSchedule from "./addDaysToSchedule.ts";
+import deleteScheduledTradeDeadline from "./deleteScheduledTradeDeadline.ts";
 import genPlayoffSeeds from "./genPlayoffSeeds.ts";
 import genPlayoffSeries from "./genPlayoffSeries.ts";
 import getCalendarDate from "./getCalendarDate.ts";
@@ -20,6 +21,7 @@ import validatePlayoffSettings from "./validatePlayoffSettings.ts";
 
 export default {
 	addDaysToSchedule,
+	deleteScheduledTradeDeadline,
 	genPlayoffSeeds,
 	genPlayoffSeries,
 	getCalendarDate,

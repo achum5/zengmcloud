@@ -441,15 +441,16 @@ export const getText = (
 					? [
 							`${he} hits a deep fly ball.. and it's gone!`,
 							`${he} rockets one down the line... and it's fair!`,
-							"He blasts one way over the fence!",
+							`${he} blasts one way over the fence!`,
 							"Home run!",
 						]
 					: [
 							`${he} hits a deep fly ball.. and it falls short.`,
 							`${he} rockets one down the line... and it's foul.`,
 							"A swing and a miss",
-							"He makes contact, but it falls short",
-						])[event.flavor]
+							`${he} makes contact, but it falls short`,
+						]
+				)[event.flavor]
 			}`;
 			break;
 		}
