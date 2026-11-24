@@ -795,3 +795,93 @@ describe("a playoff rating is less certain than a regular-season one", () => {
 		assert.isAbove(honest.get(3)!, tight.get(3)!);
 	});
 });
+
+describe("the play-in", () => {
+	const team = (tid: number, cid: number) => ({ tid, cid, won: 0 });
+	// 1 v 8 and 2 v 7 in one conference, the 7 and 8 slots still pending.
+	const matchups = [
+		{ home: team(1, 0), away: { ...team(8, 0), pending: true } },
+		{ home: team(2, 0), away: { ...team(7, 0), pending: true } },
+	];
+	const ratings = new Map([
+		[1, 3],
+		[2, 2],
+		[7, 0],
+		[8, 0],
+		[9, 0],
+		[10, 0],
+	]);
+
+	test("prices the 9th and 10th seeds while it is being played", () => {
+		const result = simulatePlayoffBracket({
+			matchups,
+			startRound: 1,
+			numGamesPlayoffSeries: [7, 7, 7],
+			ratings,
+			iterations: 2000,
+			playIns: [
+				[
+					{ home: { tid: 7, cid: 0 }, away: { tid: 8, cid: 0 } },
+					{ home: { tid: 9, cid: 0 }, away: { tid: 10, cid: 0 } },
+				],
+			],
+		});
+		assert.ok((result.titleProb.get(9) ?? 0) > 0);
+		assert.ok((result.titleProb.get(10) ?? 0) > 0);
+		let sum = 0;
+		for (const p of result.titleProb.values()) {
+			sum += p;
+		}
+		assert.closeTo(sum, 1, 1e-9);
+	});
+
+	test("a team knocked out of it has no chance left", () => {
+		const result = simulatePlayoffBracket({
+			matchups,
+			startRound: 1,
+			numGamesPlayoffSeries: [7, 7, 7],
+			ratings,
+			iterations: 2000,
+			playIns: [
+				[
+					{ home: { tid: 7, cid: 0 }, away: { tid: 8, cid: 0 }, winner: 7 },
+					{
+						home: { tid: 9, cid: 0 },
+						away: { tid: 10, cid: 0 },
+						winner: 9,
+					},
+				],
+			],
+		});
+		assert.strictEqual(result.titleProb.get(10) ?? 0, 0);
+		assert.ok((result.titleProb.get(9) ?? 0) > 0);
+		assert.ok((result.titleProb.get(8) ?? 0) > 0);
+	});
+});
+
+describe("the season sim's play-in", () => {
+	test("gives a 9th seed a way in", () => {
+		const teams = Array.from({ length: 12 }, (_, i) => ({
+			tid: i,
+			cid: 0,
+			did: 0,
+			won: 60 - 3 * i,
+			gamesRemaining: 0,
+			rating: 0,
+		}));
+		const without = simulateFutures({
+			teams,
+			numGamesPlayoffSeries: [7, 7, 7],
+			iterations: 1500,
+		});
+		const withPlayIn = simulateFutures({
+			teams,
+			numGamesPlayoffSeries: [7, 7, 7],
+			iterations: 1500,
+			playIn: true,
+		});
+		assert.strictEqual(without.titleProb.get(8), 0);
+		assert.ok((withPlayIn.titleProb.get(8) ?? 0) > 0);
+		assert.strictEqual(withPlayIn.titleProb.get(10), 0);
+	});
+});

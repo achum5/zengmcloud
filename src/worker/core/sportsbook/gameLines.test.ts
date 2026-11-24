@@ -381,6 +381,9 @@ describe("one spread per game, everywhere", () => {
 				roundHalf(priced.margin),
 				"the schedule pages and the sportsbook are quoting different lines",
 			);
+			// And the line the book posts IS that number (home's line is the
+			// negated spread), not a half point off it.
+			assert.strictEqual(priced.spread.line, -upcoming!.spread! + 0);
 		} finally {
 			for (const row of await idb.cache.schedule.getAll()) {
 				await idb.cache.schedule.delete(row.gid);
@@ -424,9 +427,9 @@ describe("playoff games price off the playoff model", () => {
 			const playoffLine = playoffs.priceGame(matchup)!;
 
 			// Same scoring rates, playoff scoring factor applied: the total drops
-			// by ~6.6% (a 208-point pace loses ~14 points).
+			// by 4% (a 208-point pace loses ~8 points).
 			assert.ok(
-				regularLine.total.line - playoffLine.total.line > 8,
+				regularLine.total.line - playoffLine.total.line > 6,
 				`total ${regularLine.total.line} -> ${playoffLine.total.line}`,
 			);
 			// And the margin comes off the playoff coefficients - checked against

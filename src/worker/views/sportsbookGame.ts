@@ -4,6 +4,8 @@ import { defineView, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { getGameProps } from "../core/sportsbook/getGameProps.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../common/sportsbook.ts";
+import { walletBeforeLiveGames } from "../core/sportsbook/liveHold.ts";
+import { getLiveGate } from "../util/liveGameGate.ts";
 
 // The "click into a game" prop board - one specific game's full player/team/
 // game props, computed on demand (see getGameProps.ts for why this is kept
@@ -24,7 +26,8 @@ const updateSportsbookGame = async ({
 		updateEvents.has("newPhase") ||
 		updateEvents.has("playerMovement") ||
 		updateEvents.has("gameAttributes") ||
-		updateEvents.has("watchList")
+		updateEvents.has("watchList") ||
+		updateEvents.has("liveGames")
 	) {
 		let board: Awaited<ReturnType<typeof getGameProps>>;
 		try {
@@ -39,7 +42,15 @@ const updateSportsbookGame = async ({
 		const sb = t?.sportsbook;
 		const wallet = {
 			tid: userTid,
-			balance: sb?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
+			// (Without what a game still shown live paid - see liveHold.ts.)
+			balance: walletBeforeLiveGames(
+				{
+					balance: sb?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
+					bets: sb?.bets ?? [],
+					history: sb?.history ?? [],
+				},
+				(await getLiveGate()).hidden,
+			).balance,
 		};
 
 		return {

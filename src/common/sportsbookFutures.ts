@@ -113,6 +113,8 @@ export const simulateFutures = ({
 	playoffsNeutral = false,
 	finalsNeutral = false,
 	playoffRatings,
+	playIn = false,
+	byConf = true,
 }: {
 	teams: FuturesTeam[];
 	// Best-of lengths per playoff round, first round first (e.g. [7,7,7,7]).
@@ -151,13 +153,21 @@ export const simulateFutures = ({
 	// differs from the regular-season one (basketball: synergy counts double).
 	// Missing entries (or the whole map) fall back to the team's rating.
 	playoffRatings?: Map<number, number>;
+	// The league plays a play-in for its last two playoff places: the four
+	// teams just inside and outside the line play the 7-8 / 9-10 / last-chance
+	// games for them, so a 9th or 10th seed has a way in and a 7th or 8th can
+	// still miss out.
+	playIn?: boolean;
+	// Playoffs seeded by conference (each sends its top teams to its own
+	// bracket); false is one league-wide field, the conferences ignored.
+	byConf?: boolean;
 }): FuturesResult => {
 	const rounds = Math.max(1, numGamesPlayoffSeries.length);
 	const cids = [...new Set(teams.map((t) => t.cid))];
 	const dids = [...new Set(teams.map((t) => t.did))];
 	const perConfCap = Math.max(
 		1,
-		Math.round(2 ** rounds / Math.max(1, cids.length)),
+		Math.round(2 ** rounds / Math.max(1, byConf ? cids.length : 1)),
 	);
 
 	const rand = mulberry32(seed);
@@ -228,11 +238,20 @@ export const simulateFutures = ({
 
 	// The best-of for a series when `fieldLen` teams remain ANYWHERE in the
 	// bracket path: a field of 2 in a conference is the conference finals
-	// (second-to-last round overall), the finals themselves are the last entry.
-	const bestOfForField = (fieldLen: number, isFinals: boolean): number => {
-		const idx = isFinals
-			? rounds - 1
-			: Math.min(rounds - 1, Math.max(0, rounds - 1 - Math.log2(fieldLen)));
+	// (second-to-last round overall), the finals themselves are the last entry,
+	// and in one league-wide field a field of 2 is the finals.
+	type BracketKind = "conf" | "finals" | "league";
+	const bestOfForField = (fieldLen: number, kind: BracketKind): number => {
+		const idx =
+			kind === "finals"
+				? rounds - 1
+				: Math.min(
+						rounds - 1,
+						Math.max(
+							0,
+							rounds - (kind === "conf" ? 1 : 0) - Math.log2(fieldLen),
+						),
+					);
 		return numGamesPlayoffSeries[idx] ?? 7;
 	};
 
@@ -244,11 +263,12 @@ export const simulateFutures = ({
 	// game with the real home pattern (the better seed - here, the better
 	// simulated record - holds home court). Field must be a power of 2, sorted
 	// best-first.
-	const runBracket = (field: SimTeam[], isFinals: boolean): SimTeam => {
+	const runBracket = (field: SimTeam[], kind: BracketKind): SimTeam => {
 		while (field.length > 1) {
-			const bestOf = bestOfForField(field.length, isFinals);
+			const bestOf = bestOfForField(field.length, kind);
 			const seriesHca =
-				playoffsNeutral || (isFinals && field.length === 2 && finalsNeutral)
+				playoffsNeutral ||
+				(kind !== "conf" && field.length === 2 && finalsNeutral)
 					? 0
 					: basePlayoffHca;
 			const next: SimTeam[] = [];
@@ -333,27 +353,53 @@ export const simulateFutures = ({
 			}
 		}
 
-		// 3. Conference playoffs.
-		const confChamps: SimTeam[] = [];
-		for (const cid of cids) {
-			const confTeams = simTeams
-				.filter((t) => t.cid === cid)
-				.sort((a, b) => b.simWins - a.simWins);
-			if (confTeams.length === 0) {
-				continue;
+		// 3. Conference playoffs (or one league-wide field), the last two places
+		// through the play-in where there is one.
+		const seeded = (sorted: SimTeam[], K: number): SimTeam[] => {
+			if (!playIn || K < 2 || sorted.length < K + 2) {
+				return sorted.slice(0, K);
 			}
-			const K = largestPowerOfTwoAtMost(Math.min(perConfCap, confTeams.length));
-			confChamps.push(runBracket(confTeams.slice(0, K), false));
-		}
-		for (const champ of confChamps) {
-			bump(confCount, champ.tid);
+			const single = (home: SimTeam, away: SimTeam) =>
+				rand() <
+				marginToWinProb(
+					home.playoffRating - away.playoffRating + basePlayoffHca,
+					sigma,
+				)
+					? [home, away]
+					: [away, home];
+			const [w78, l78] = single(sorted[K - 2]!, sorted[K - 1]!);
+			const [w910] = single(sorted[K]!, sorted[K + 1]!);
+			const [wLast] = single(l78!, w910!);
+			return [...sorted.slice(0, K - 2), w78!, wLast!];
+		};
+		const confChamps: SimTeam[] = [];
+		if (byConf) {
+			for (const cid of cids) {
+				const confTeams = simTeams
+					.filter((t) => t.cid === cid)
+					.sort((a, b) => b.simWins - a.simWins);
+				if (confTeams.length === 0) {
+					continue;
+				}
+				const K = largestPowerOfTwoAtMost(
+					Math.min(perConfCap, confTeams.length),
+				);
+				confChamps.push(runBracket(seeded(confTeams, K), "conf"));
+			}
+			for (const champ of confChamps) {
+				bump(confCount, champ.tid);
+			}
 		}
 
-		// 4. Finals between the conference champions.
-		if (confChamps.length > 0) {
+		// 4. Finals between the conference champions (or the whole field).
+		if (!byConf) {
+			const all = [...simTeams].sort((a, b) => b.simWins - a.simWins);
+			const K = largestPowerOfTwoAtMost(Math.min(perConfCap, all.length));
+			bump(titleCount, runBracket(seeded(all, K), "league").tid);
+		} else if (confChamps.length > 0) {
 			const field = [...confChamps].sort((a, b) => b.simWins - a.simWins);
 			const fieldPow2 = field.slice(0, largestPowerOfTwoAtMost(field.length));
-			bump(titleCount, runBracket(fieldPow2, true).tid);
+			bump(titleCount, runBracket(fieldPow2, "finals").tid);
 		}
 	}
 
@@ -422,7 +468,22 @@ export type BracketTeam = {
 	cid: number;
 	// Series wins so far in the CURRENT round's matchup.
 	won: number;
+	// A first-round slot still waiting on the play-in: `tid` is whoever holds
+	// it for now, and the play-in decides who really does (see PlayInState).
+	pending?: boolean;
 };
+
+// One play-in tournament as it stands: the 7-8 game, the 9-10 game, and the
+// game between the 7-8 loser and the 9-10 winner once it is set. A game with
+// a `winner` has been played. The 7-8 winner takes the slot held by the 7-8
+// game's home team, the last game's winner the one held by its away team -
+// exactly as updatePlayoffSeries fills them.
+export type PlayInGame = {
+	home: { tid: number; cid: number };
+	away: { tid: number; cid: number };
+	winner?: number;
+};
+export type PlayInState = [PlayInGame, PlayInGame, PlayInGame?];
 
 export type BracketMatchup = {
 	home: BracketTeam;
@@ -513,6 +574,7 @@ export const simulatePlayoffBracket = ({
 	sigma = MARGIN_SIGMA,
 	finalsNeutral = false,
 	seedOrder,
+	playIns = [],
 }: {
 	// The in-progress round's matchups, in bracket order (winners of matchups
 	// 2i and 2i+1 meet next round - BBGM's fill order; with reseeding enabled the
@@ -538,6 +600,10 @@ export const simulatePlayoffBracket = ({
 	// rule - instead of whoever sat higher in the bracket. Omitted: bracket
 	// position decides, the old approximation.
 	seedOrder?: Map<number, number>;
+	// The play-in, while it is being played: it fills the pending first-round
+	// slots in each simulated world, so its teams are priced (they used to be
+	// left off the board, and the teams holding the slots treated as in).
+	playIns?: PlayInState[];
 }): BracketFuturesResult => {
 	const rand = mulberry32(seed);
 	const titleCount = new Map<number, number>();
@@ -549,10 +615,23 @@ export const simulatePlayoffBracket = ({
 	// teams with an explicit 0 only for participants; absent tids are simply not
 	// in the market.
 	const allTids: number[] = [];
+	const addTid = (tid: number) => {
+		if (!allTids.includes(tid)) {
+			allTids.push(tid);
+		}
+	};
 	for (const m of matchups) {
-		allTids.push(m.home.tid);
+		addTid(m.home.tid);
 		if (m.away) {
-			allTids.push(m.away.tid);
+			addTid(m.away.tid);
+		}
+	}
+	for (const playIn of playIns) {
+		for (const game of playIn) {
+			if (game) {
+				addTid(game.home.tid);
+				addTid(game.away.tid);
+			}
 		}
 	}
 
@@ -589,7 +668,44 @@ export const simulatePlayoffBracket = ({
 			);
 		}
 
+		// Play out what is left of the play-in, then seat its winners.
 		let field = matchups;
+		if (playIns.length > 0) {
+			const seat = new Map<number, { tid: number; cid: number }>();
+			const playGame = (game: PlayInGame) => {
+				if (game.winner !== undefined) {
+					return game.winner === game.home.tid
+						? { winner: game.home, loser: game.away }
+						: { winner: game.away, loser: game.home };
+				}
+				const homeWins =
+					rand() <
+					marginToWinProb(
+						simRating.get(game.home.tid)! -
+							simRating.get(game.away.tid)! +
+							hcaPoints,
+						sigma,
+					);
+				return homeWins
+					? { winner: game.home, loser: game.away }
+					: { winner: game.away, loser: game.home };
+			};
+			for (const [first, second, last] of playIns) {
+				const a = playGame(first);
+				const b = playGame(second);
+				const c = playGame(last ?? { home: a.loser, away: b.winner });
+				seat.set(first.home.tid, a.winner);
+				seat.set(first.away.tid, c.winner);
+			}
+			const fill = (t: BracketTeam): BracketTeam => {
+				const into = t.pending ? seat.get(t.tid) : undefined;
+				return into ? { tid: into.tid, cid: into.cid, won: 0 } : t;
+			};
+			field = matchups.map((m) => ({
+				home: fill(m.home),
+				away: m.away ? fill(m.away) : undefined,
+			}));
+		}
 		let round = startRound;
 		let finalists: BracketTeam[] = [];
 		while (field.length > 0) {

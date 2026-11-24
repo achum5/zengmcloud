@@ -6,6 +6,7 @@ import {
 	BASKETBALL_PLAYOFF_TOTAL_FACTOR,
 	gameLengthFactor,
 	getGameSpread,
+	roundHalf,
 } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 import { PHASE } from "../../../common/constants.ts";
@@ -14,21 +15,26 @@ import {
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
 import {
-	DEFAULT_GAME_TOTAL,
+	BASKETBALL_MARGIN_KEY_SIGMA,
+	coverProbs,
 	expectedTotalFromRates,
 	leagueAvgGameTotal,
 	MARGIN_SIGMA,
 	marginToWinProb,
+	normalCdf,
 	overProb,
+	probIgnoringPush,
 	regressedScoring,
 	toHalfPointLine,
+	totalsPrior,
+	type TotalsPrior,
 } from "../../../common/sportsbookOdds.ts";
 import {
 	getTeamSpreadBias,
 	spreadBiasAdjustment,
 	type SpreadBiasEntry,
 } from "../../util/getTeamSpreadBias.ts";
-import { player } from "../index.ts";
+import { player, team } from "../index.ts";
 import { rosterAtTipoff } from "../team/rosterAtTipoff.ts";
 
 // The moneyline / spread / total for a single upcoming game.
@@ -43,7 +49,12 @@ import { rosterAtTipoff } from "../team/rosterAtTipoff.ts";
 // an honest bet bounce as "that line has moved".
 //
 // The SPREAD is the closed-form model plus one thing the model cannot know,
-// and the MONEYLINE falls out of it so the two can never disagree.
+// and the MONEYLINE falls out of it so the two can never disagree. The line
+// posted is that margin to the nearest half point - the same number ScoreBox,
+// the hub and the game's page show, and the one stored on the game when it is
+// played - and both sides are priced off the shape of the engine's final
+// margins (marginDistribution), so a line near the 7-8 point pile-up carries
+// the juice it deserves instead of a flat -110.
 //
 // That one thing is the team itself. The model reads a roster's overall and
 // its lineup synergy; measured against the engine those two leave about 1.5
@@ -110,6 +121,63 @@ type Matchup = {
 const priceOdds = (prob: number) =>
 	probToAmerican(prob, { maxAmerican: SPORTSBOOK_MAX_AMERICAN });
 
+// Win/push/lose for the side that wins when (its margin + line) > 0, given its
+// expected margin. Basketball reads the engine's real margin shape; the other
+// sports a normal curve, a push being a final within half a point of the line.
+export const sideProbs = (
+	margin: number,
+	line: number,
+	sigma: number,
+): { win: number; push: number; lose: number } => {
+	if (__SPORT === "basketball") {
+		return coverProbs(margin, line, sigma);
+	}
+	const hi = normalCdf((line + margin - 0.5) / sigma);
+	const lo = normalCdf((line + margin + 0.5) / sigma);
+	if (line % 1 !== 0) {
+		const win = normalCdf((line + margin) / sigma);
+		return { win, push: 0, lose: 1 - win };
+	}
+	return { win: hi, push: lo - hi, lose: 1 - lo };
+};
+
+// Last season's league-average game total, the guess a new season's totals
+// start from (see totalsPrior) - scaled if the game got longer or shorter
+// since. The sport default when there is no last season to read.
+export const getTotalsPrior = async (season: number): Promise<TotalsPrior> => {
+	const lengthNow = gameLengthFactor(
+		g.get("numPeriods"),
+		g.get("quarterLength"),
+	);
+	let lastSeasonAvg: number | undefined;
+	if (season > g.get("startingSeason")) {
+		try {
+			const teams = await team.getFormattedAll({
+				attrs: ["tid"],
+				stats: ["pts", "gp"],
+				season: season - 1,
+			});
+			let points = 0;
+			let teamGames = 0;
+			for (const t of teams) {
+				const s = t.stats as { gp?: number; pts?: number } | undefined;
+				if (s?.gp && s.gp > 0 && typeof s.pts === "number") {
+					points += s.pts * s.gp;
+					teamGames += s.gp;
+				}
+			}
+			if (teamGames > 0) {
+				const lengthThen = gameLengthFactor(
+					g.get("numPeriods", season - 1),
+					g.get("quarterLength", season - 1),
+				);
+				lastSeasonAvg = ((2 * points) / teamGames) * (lengthNow / lengthThen);
+			}
+		} catch {}
+	}
+	return totalsPrior(lastSeasonAvg, lengthNow);
+};
+
 export const buildGameLinePricer = async ({
 	activeTeams,
 	season,
@@ -140,7 +208,8 @@ export const buildGameLinePricer = async ({
 	// through scales only with the square root of the minutes, so a short-game
 	// league's favorites are better bets than the raw margin suggests.
 	const sigma =
-		MARGIN_SIGMA * Math.sqrt(gameLengthFactor(numPeriods, quarterLength));
+		(__SPORT === "basketball" ? BASKETBALL_MARGIN_KEY_SIGMA : MARGIN_SIGMA) *
+		Math.sqrt(gameLengthFactor(numPeriods, quarterLength));
 
 	const teamByTid = new Map(activeTeams.map((t) => [t.tid, t]));
 
@@ -223,7 +292,7 @@ export const buildGameLinePricer = async ({
 	};
 	const leagueAvgTotal = leagueAvgGameTotal(
 		activeTeams.map(statsOf),
-		DEFAULT_GAME_TOTAL,
+		await getTotalsPrior(season),
 	);
 
 	// team.getFormattedAll returns PER-GAME stats by default, so pts/oppPts are
@@ -284,17 +353,19 @@ export const buildGameLinePricer = async ({
 				modelMargin +
 				spreadBiasAdjustment(biases, matchup.homeTid, matchup.awayTid);
 
-			const pHome = marginToWinProb(margin2, sigma);
+			const pHome =
+				__SPORT === "basketball"
+					? probIgnoringPush(sideProbs(margin2, 0, sigma))
+					: marginToWinProb(margin2, sigma);
 			// The scoring rates feeding the total are regular-season numbers, and
-			// the engine scores ~6.6% fewer points under playoff parameters
-			// (measured - see BASKETBALL_PLAYOFF_TOTAL_FACTOR). Without this every
-			// playoff total sat ~14 points high and the under was nearly free.
+			// playoff games score less (measured - see
+			// BASKETBALL_PLAYOFF_TOTAL_FACTOR).
 			const playoffTotalFactor =
 				playoffs && __SPORT === "basketball"
 					? BASKETBALL_PLAYOFF_TOTAL_FACTOR
 					: 1;
 			// (The same formula the live game's header quotes the line by - see
-			// liveGameLine.ts.)
+			// totalAsOf in views/liveGameInfo.ts.)
 			const expectedTotal = expectedTotalFromRates({
 				home: statsOf(home),
 				away: statsOf(away),
@@ -303,9 +374,14 @@ export const buildGameLinePricer = async ({
 			});
 			const totalLine = toHalfPointLine(expectedTotal);
 			const pOver = overProb(expectedTotal, totalLine);
-			// Home spread: home favored by `margin2`, so the line is -margin2.
-			const spreadLine =
-				toHalfPointLine(Math.abs(margin2)) * (margin2 >= 0 ? -1 : 1);
+			// Home spread: home favored by `margin2`, so the line is -margin2,
+			// to the nearest half point like every other place it is shown.
+			// (Rounded as the home margin, exactly as the stored spread is - a
+			// quarter point rounds the other way negated. + 0 turns -0 into 0.)
+			const spreadLine = -roundHalf(margin2) + 0;
+			const pHomeCovers = probIgnoringPush(
+				sideProbs(margin2, spreadLine, sigma),
+			);
 
 			return {
 				margin: margin2,
@@ -317,8 +393,8 @@ export const buildGameLinePricer = async ({
 				},
 				spread: {
 					line: spreadLine,
-					home: priceOdds(0.5),
-					away: priceOdds(0.5),
+					home: priceOdds(pHomeCovers),
+					away: priceOdds(1 - pHomeCovers),
 				},
 				total: {
 					line: totalLine,

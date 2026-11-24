@@ -47,7 +47,7 @@ const TEAM_PROP_LABELS: Record<string, string> = {
 	tp: "3-Pointers Made",
 };
 
-const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+const signed = (n: number) => (n === 0 ? "PK" : n > 0 ? `+${n}` : `${n}`);
 
 // A team's logo by tid - module level, so it isn't re-created (and its image
 // reset) on every render.

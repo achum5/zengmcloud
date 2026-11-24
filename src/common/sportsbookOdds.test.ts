@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	capTopProb,
 	awardProbsFromScores,
 	combineIndependentSigmas,
 	eventProb,
@@ -23,6 +24,12 @@ import {
 	tierMembershipProbs,
 	toHalfPointLine,
 	winTotalOverProb,
+	coverProbs,
+	leagueAvgGameTotal,
+	marginDistribution,
+	probIgnoringPush,
+	regressedScoring,
+	totalsPrior,
 } from "./sportsbookOdds.ts";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -119,6 +126,24 @@ describe("strengthProbs", () => {
 		for (const p of probs) {
 			assert.ok(Math.abs(p - 0.25) < 1e-9);
 		}
+	});
+});
+
+describe("capTopProb", () => {
+	test("caps the favourite, the rest keep their order and the sum", () => {
+		const out = capTopProb([0.024, 0.96, 0.012, 0.004], 0.9);
+		assert.closeTo(out[1]!, 0.9, 1e-12);
+		assert.closeTo(
+			out.reduce((a, b) => a + b, 0),
+			1,
+			1e-12,
+		);
+		assert.closeTo(out[0]! / out[2]!, 2, 1e-12);
+		assert.isAbove(out[2]!, out[3]!);
+	});
+	test("a field under the cap is left alone", () => {
+		const probs = [0.5, 0.3, 0.2];
+		assert.strictEqual(capTopProb(probs, 0.9), probs);
 	});
 });
 
@@ -518,5 +543,76 @@ describe("marginToWinProb with a custom sigma", () => {
 		const short = marginToWinProb(6, 26);
 		const normal = marginToWinProb(6, 13);
 		assert.ok(short > 0.5 && short < normal);
+	});
+});
+
+describe("the shape of a final margin", () => {
+	test("is a distribution with no ties and the 7-8 point pile-up", () => {
+		const d = marginDistribution(2);
+		let sum = 0;
+		for (let k = d.from; k <= d.to; k++) {
+			sum += d.probOf(k);
+		}
+		assert.closeTo(sum, 1, 1e-9);
+		assert.strictEqual(d.probOf(0), 0);
+		// A 7 is far likelier than a 6 or a 9, a 1 rarer than a 3.
+		assert.ok(d.probOf(7) > 1.5 * d.probOf(6));
+		assert.ok(d.probOf(7) > 1.5 * d.probOf(9));
+		assert.ok(d.probOf(1) < d.probOf(3));
+	});
+
+	test("a small favourite covers more often than half, a big one less", () => {
+		// The audit's finding, which a flat normal curve priced at 50/50.
+		assert.ok(probIgnoringPush(coverProbs(2.5, -2.5)) > 0.52);
+		assert.ok(probIgnoringPush(coverProbs(8.5, -8.5)) < 0.495);
+		assert.ok(probIgnoringPush(coverProbs(13.5, -13.5)) < 0.49);
+	});
+
+	test("a whole-number line can push; a half-point one cannot", () => {
+		assert.ok(coverProbs(7, -7).push > 0.05);
+		assert.strictEqual(coverProbs(7, -6.5).push, 0);
+		const { win, push, lose } = coverProbs(3, -3);
+		assert.closeTo(win + push + lose, 1, 1e-9);
+	});
+
+	test("the two sides of a line are mirror images", () => {
+		const home = coverProbs(4, -4.5);
+		const away = coverProbs(-4, 4.5);
+		assert.closeTo(home.win, away.lose, 1e-9);
+	});
+});
+
+describe("game totals before the season says much", () => {
+	test("start from last season's average, which fades as games arrive", () => {
+		const prior = totalsPrior(210);
+		assert.strictEqual(leagueAvgGameTotal([], prior), 210);
+		// One night of 15 high-scoring games barely moves it...
+		const night = Array.from({ length: 30 }, () => ({
+			gp: 1,
+			pts: 115,
+			oppPts: 115,
+		}));
+		const early = leagueAvgGameTotal(night, prior);
+		assert.ok(early > 210 && early < 213, `${early}`);
+		// ...a season of them does.
+		const season = night.map((r) => ({ ...r, gp: 60 }));
+		assert.ok(leagueAvgGameTotal(season, prior) > 225);
+	});
+
+	test("with no last season, the default is a weak guess", () => {
+		const prior = totalsPrior(undefined);
+		const night = Array.from({ length: 30 }, () => ({
+			gp: 1,
+			pts: 106,
+			oppPts: 106,
+		}));
+		// One night of 212s takes the 215 default half the way there.
+		assert.closeTo(leagueAvgGameTotal(night, prior), 213.5, 1e-9);
+	});
+
+	test("a team's scoring is trusted by how many games it rests on", () => {
+		// 8 games used to be full trust; now it is a fifth of the way.
+		const r = regressedScoring(120, 8, 210)!;
+		assert.closeTo(r, 105 + 15 * (8 / 40), 1e-9);
 	});
 });

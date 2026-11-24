@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 510,
+		date: "2026-11-24",
+		text: "Sportsbook, checked against hundreds of simulated seasons and fixed where it missed: spreads price the margins games really end on (some now come at -120 or +100), opening-night and playoff totals are no longer 6 points off, futures and award odds are sharper (the MVP and rookie-of-the-year leaders were priced far too long), and a bet on a game still being shown live stays open until it ends there.",
+	},
+	{
 		n: 509,
 		date: "2026-11-24",
 		text: 'Shared leagues: the "Reconnecting to the shared league" warning shows once and fades, instead of stacking up several at a time.',

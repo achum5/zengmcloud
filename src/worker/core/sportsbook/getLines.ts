@@ -6,19 +6,23 @@ import getPlayoffsByConf from "../season/getPlayoffsByConf.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { injuryTicksUntil } from "../game/calendarTicks.ts";
 import { getInjuryClock } from "../game/classicDays.ts";
-import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
-import { getAwardCandidates } from "../awards/getAwardCandidates.ts";
-import {
+import getAwardRaceOdds, {
+	legacyAwardKey,
 	playerName,
 	playerTalent,
 	projectPlayers,
-	type AwardRace,
 } from "../season/getAwardRaceOdds.ts";
+import { getAwardCandidates } from "../awards/getAwardCandidates.ts";
 import {
 	getTeamAtsRecords,
 	formatAtsRecord,
 } from "../../util/getTeamAtsRecords.ts";
-import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
+import {
+	PHASE,
+	PLAYER,
+	RATINGS,
+	TEAM_AWARD_INFO,
+} from "../../../common/constants.ts";
 import {
 	BASKETBALL_PLAYOFF_HCA_FACTOR,
 	gameLengthFactor,
@@ -27,30 +31,70 @@ import {
 import {
 	futuresTailVig,
 	probToAmerican,
+	probToAmericanOnOdds,
 	SPORTSBOOK_FUTURES_VIG,
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
 import {
+	BASKETBALL_MARGIN_SHRINK,
+	capTopProb,
 	MARGIN_SIGMA,
 	mcShade,
+	mulberry32,
+	normalSample,
 	softCapMargin,
 	strengthProbs,
 	tierMembershipProbs,
 } from "../../../common/sportsbookOdds.ts";
+import { isAllStarGame } from "../../../common/specialGames.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
-import { getTeamSpreadBias } from "../../util/getTeamSpreadBias.ts";
+import {
+	getTeamSpreadBias,
+	SPREAD_BIAS_SD,
+	spreadBiasPriorGames,
+} from "../../util/getTeamSpreadBias.ts";
 import {
 	bracketMarketsOpen,
 	simulateFutures,
 	simulatePlayoffBracket,
 	type BracketMatchup,
+	type PlayInGame,
+	type PlayInState,
 } from "../../../common/sportsbookFutures.ts";
 import { player, team } from "../index.ts";
+import { getLinesModelRatings } from "./futuresRatings.ts";
+import { offBoardWhileLive } from "./liveHold.ts";
+import { getLiveGate } from "../../util/liveGameGate.ts";
 
-// The 3 tiers an All-League/All-Defensive Team splits into, 5 players each -
-// matches worker/core/season/doAwards.basketball.ts's makeTeams().
-const TEAM_AWARD_TIER_SIZES = [5, 5, 5];
 const TEAM_AWARD_TIER_TITLES = ["First Team", "Second Team", "Third Team"];
+
+// How many teams the league's own award settings name for a team award - "ALL"
+// All-League, "DEF" All-Defensive, "ALR" All-Rookie, the abbrevs bets settle
+// by (see legacyAwardPids) - or undefined when there is no single league-wide
+// one to price (none in the settings, or picked by conference or division).
+// The board used to assume three All-Defensive teams of five where the
+// league names two (every Third Team bet a loser) and one All-Rookie team
+// where it names two (ten men make it, priced as if five did).
+const teamAwardNumTeams = (shortName: string): number | undefined => {
+	const award = (
+		g.get("awards") as {
+			shortName: string;
+			numTeams?: number;
+			group?: unknown;
+		}[]
+	).find((a) => a.shortName === shortName);
+	if (!award || award.numTeams === undefined || award.group !== undefined) {
+		return undefined;
+	}
+	return award.numTeams;
+};
+const tierSizesFor = (shortName: string): number[] =>
+	Array.from({ length: teamAwardNumTeams(shortName) ?? 0 }, () =>
+		TEAM_AWARD_INFO.byPos ? 5 : TEAM_AWARD_INFO.numPlayersPerTeam,
+	);
+// Players on the All-Rookie team(s), the parlay cap and the board size.
+export const allRookieSpots = (): number =>
+	tierSizesFor("ALR").reduce((a, b) => a + b, 0);
 
 // Order a board the way a book prints one: shortest price at the top. American
 // odds already sort that way numerically - the bigger the favorite the more
@@ -59,30 +103,6 @@ const TEAM_AWARD_TIER_TITLES = ["First Team", "Second Team", "Third Team"];
 export const sortedByPrice = <T extends { americanOdds: number }>(
 	rows: T[],
 ): T[] => [...rows].sort((a, b) => a.americanOdds - b.americanOdds);
-
-// Which of the sportsbook's award markets a race is. Awards are user-defined
-// now, so a renamed one is recognized by the role it acts as (actAs) and an
-// unchanged one by the shortName every default award carries.
-const legacyAwardKey = (race: {
-	shortName: string;
-	actAs?: "mvp" | "roy";
-	group?: AwardRace["group"];
-}): "mvp" | "dpoy" | "roy" | "smoy" | "mip" | undefined => {
-	if (race.group !== undefined) {
-		return undefined;
-	}
-	const byShortName: Record<string, "mvp" | "dpoy" | "roy" | "smoy" | "mip"> = {
-		MVP: "mvp",
-		DPOY: "dpoy",
-		ROY: "roy",
-		SMOY: "smoy",
-		MIP: "mip",
-	};
-	return (
-		byShortName[race.shortName] ??
-		(race.actAs === "mvp" ? "mvp" : race.actAs === "roy" ? "roy" : undefined)
-	);
-};
 
 type TierCandidate = {
 	pid: number;
@@ -174,34 +194,6 @@ const FUTURES_UNCERTAINTY_END = 1;
 // what keeps a mid-season trade priced in immediately instead of dragged down
 // by forty games of the old roster's results. Exported for the EV harness.
 export const FUTURES_MOV_PRIOR_GAMES = 100;
-
-// THE BASKETBALL FUTURES SCALE, MEASURED AGAINST THE ENGINE ITSELF: 133
-// random leagues, every one priced preseason and at each quarter of the
-// season and then played out - regular season, play-in, playoffs, injuries
-// and all - by the real sim, its boards scored against what happened.
-//
-//   - A team's regular-season strength is 0.3 points of margin per point of
-//     team overall - the engine's own scale, the one the nightly spread prices
-//     with (getGameSpread's ovr-only model) - blended with its real point
-//     differential as games arrive (FUTURES_MOV_PRIOR_GAMES), over the games
-//     it actually has left, and nothing else: no soft cap, no preseason shade
-//     toward the field. At the old 0.6 with both, preseason win totals ran a
-//     third too far from .500 (actual wins came in at 0.75 of the line's
-//     distance from it) and missed by 7.0 wins, against 6.25 now.
-//   - In the playoffs the same strength counts for more - the engine plays
-//     them with its stars on the floor longer and fit counting double - by
-//     FUTURES_PLAYOFF_SCALE, with the playoff home edge on top. Fitted on the
-//     title market: the preseason favourite is now priced at 47.5% and won
-//     47.4% of its seasons, and at midseason 52.7% against 52.6%. The old
-//     board offered that favourite as a 23% shot - it won twice as often - and
-//     once the playoffs began, as a 19% shot that won 55%.
-//   - Who is hurt counts for the games he misses: the regular season is
-//     priced on the team as it will be across the days it has left (each man
-//     back when his injury is up), the playoffs on the team as it will be when
-//     they start. The board used to rate every roster at full health - a star
-//     out for the year counted in full.
-export const FUTURES_OVR_SLOPE = 15 / 50;
-export const FUTURES_PLAYOFF_SCALE = 1.4;
 
 // Exported for the EV harness, so it jitters exactly as much as the board.
 export const futuresRatingUncertainty = (seasonProgress: number) =>
@@ -300,10 +292,8 @@ const FUTURES_ITERATIONS = 4000;
 // in-progress bracket. The heuristic ratings above are a coarse read of a
 // roster, and this is the figure they were always priced with; the shared
 // default in sportsbookFutures moved on and this did not follow it.
+// (Basketball's is measured - see linesFuturesUncertainty.)
 const LEGACY_BRACKET_UNCERTAINTY = 3.5;
-// Basketball's, at the playoff scale - see FUTURES_PLAYOFF_SCALE. Measured
-// against the engine's own playoffs (sportsbook/engineCalibration).
-export const FUTURES_BRACKET_UNCERTAINTY = 1;
 
 // No futures price shorter than this is ever offered - the outcome is treated
 // as settled and its row comes off the board, like a real book pulling a
@@ -349,17 +339,29 @@ export const priceFuture = (
 	iterations = FUTURES_ITERATIONS,
 	maxAmerican = SPORTSBOOK_MAX_AMERICAN,
 ) => {
-	const shaded = mcShade(prob, iterations);
-	return probToAmerican(shaded, {
+	const shaded = Math.min(1, mcShade(prob, iterations));
+	return probToAmericanOnOdds(shaded, {
 		vig: futuresTailVig(shaded, SPORTSBOOK_FUTURES_VIG),
 		maxAmerican,
 	});
 };
 
-// Power for the preseason overall-rating award projections (MVP/DPOY/ROY). Higher
-// than the in-season AWARD_POWER so the top-rated players are clear, heavy
-// favorites before any games separate the field.
-const PRESEASON_AWARD_POWER = 1.8;
+// How sharply each preseason award board (projected, before a game is
+// played) leans to the top of its field - fitted on the winners of 50 audited
+// seasons and 48 first seasons of new leagues. MVP goes to the best player
+// about as often as 1.8 says. ROY goes to the best rookie far more often (76%
+// of seasons, where 1.8 priced him at 49%, so backing him returned +35%).
+// DPOY far less, being won on blocks and steals the ratings only half see:
+// with last season's race to go on as well (see below), 1.3; on ratings
+// alone, 0.8. And nothing is a lock before the season: no favourite past
+// 90%, or an injury-free year is taken for granted.
+const PRESEASON_AWARD_POWER = {
+	mvp: 1.8,
+	dpoy: 1.3,
+	dpoyRatingsOnly: 0.8,
+	roy: 3.2,
+};
+const PRESEASON_AWARD_MAX_PROB = 0.9;
 
 // A player's overall rating, from either an array of season ratings (getPlayers)
 // or a single season's ratings object (player.formatAll with a fixed season).
@@ -398,44 +400,8 @@ const projectedScore =
 		return s + earlyWeight * ovrCoef * ovrOf(p);
 	};
 
-// Team ovr (0-100) for every active team, the strength that drives every
-// futures market. Mirrors how the Power Rankings page rates teams.
-export const getTeamOvrs = async (
-	teams: { tid: number }[],
-	season: number,
-): Promise<Map<number, number>> => {
-	const ratings = [
-		"ovr",
-		"pos",
-		"ovrs",
-		...(__SPORT === "basketball" ? RATINGS : []),
-	] as const;
-
-	const ovrByTid = new Map<number, number>();
-	for (const t of teams) {
-		const rawPlayers = await idb.cache.players.indexGetAll(
-			"playersByTid",
-			t.tid,
-		);
-		const teamPlayers = await player.formatAll(rawPlayers, {
-			attrs: ["tid", "injury", "value"],
-			ratings,
-			stats: ["season", "tid"],
-			season,
-			showNoStats: true,
-			showRookies: true,
-			fuzz: false,
-			// Feeds team.ovr, so it needs the real ratings - the display rounding
-			// would put the whole league in a handful of ties.
-			coarsenRatings: false,
-			tid: t.tid,
-		});
-		ovrByTid.set(t.tid, teamOvr(teamPlayers as any, {}));
-	}
-	return ovrByTid;
-};
-
-// Team overall for the futures board, injuries counted: averaged over the days
+// Team overall for the futures board (sports other than basketball - see
+// linesFuturesUncertainty for basketball's), injuries counted: averaged over the days
 // of the regular season still to play - each man in it for the days he is fit
 // for (or playing through, at that discount) - and as the team will be when
 // the playoffs start. Real ratings (no fuzz): the book knows its business.
@@ -477,8 +443,8 @@ export const getFuturesTeamOvrs = async (
 			tid: t.tid,
 		})) as any[];
 		const pti = getActualPlayThroughInjuries(t);
-		// (The regular-season formula either way - see FUTURES_PLAYOFF_SCALE for
-		// what the playoffs add - with the playoff play-through setting there.)
+		// (The regular-season formula either way, with the playoff
+		// play-through setting there.)
 		const at = (numDaysInFuture: number, playoffs: boolean) =>
 			teamOvr(teamPlayers, {
 				accountForInjuredPlayers: {
@@ -499,6 +465,163 @@ export const getFuturesTeamOvrs = async (
 		});
 	}
 	return out;
+};
+
+// THE BASKETBALL FUTURES ARE PRICED ON THE GAME LINES' OWN SCALE
+// (futuresRatings.ts): each team's strength is exactly what tonight's spread
+// reads - overall and lineup synergy at the measured coefficients, injuries
+// for the days they last, plus the per-team form correction - instead of the
+// overall-only rating above blended with raw point differential. Graded over
+// twenty audited seasons (linesAudit.test.ts), snapshot by snapshot from
+// preseason to the finals, it called the champion and the conference winners
+// clearly better (log loss 1.49 against 1.63, and 1.35 against 1.46) and set
+// win totals closer (3.8 wins off at the end against 4.1).
+//
+// How unsure it is of a team is then measured, not tuned: the part of a team
+// the formula cannot see is the per-team offset getTeamSpreadBias measures
+// (spread SPREAD_BIAS_SD across teams), and after gp games the book's
+// estimate of it is off by SPREAD_BIAS_SD * sqrt(K / (K + gp)) - K being that
+// correction's own prior weight. In a playoff game the translation adds its
+// own independent miss (FUTURES_PLAYOFF_MODEL_ERROR is the whole of it).
+const linesFuturesUncertainty = (meanGp: number) =>
+	SPREAD_BIAS_SD *
+	Math.sqrt(spreadBiasPriorGames() / (spreadBiasPriorGames() + meanGp));
+const LINES_FUTURES_PLAYOFF_EXTRA = Math.sqrt(
+	Math.max(0, FUTURES_PLAYOFF_MODEL_ERROR ** 2 - SPREAD_BIAS_SD ** 2),
+);
+
+// THE ALL-STAR BOARD. The roster is picked on All-Star night: the top of the
+// league by 2.5 * EWA + WS at that moment (allStar/create.ts), and a man hurt
+// that night is still named - he is replaced, and his bet still wins. So each
+// player is projected to that night: what he has, plus a per-game rate times
+// the games he will play before it. The rate is a Bayesian blend of his own
+// and what his overall says (0.073 a game per point over 55, worth 5.4
+// games), and the remaining games carry their noise (0.6 per root game, and
+// the rate's own doubt on top). A Monte Carlo then picks the roster the way
+// the game does, top healthy players to the roster size with anyone hurt on
+// the night riding along (9% of the field, as measured).
+//
+// Fitted on 27 audited seasons and graded snapshot by snapshot: priced and
+// made-it rates agree in every band from preseason to the eve of the game.
+// The board it replaced left every injured player off (named anyway when good
+// enough, so their bets were never on offer), read raw season totals plus an
+// overall term that faded over the whole season rather than the first half,
+// and was so wide early that backing the field returned +51% preseason.
+const ALL_STAR_RATE_PER_OVR = 0.073;
+const ALL_STAR_RATE_FLOOR_OVR = 55;
+const ALL_STAR_PRIOR_GAMES = 5.4;
+const ALL_STAR_GAME_NOISE = 0.6;
+const ALL_STAR_RATE_NOISE = 0.245;
+const ALL_STAR_HURT_ON_NIGHT = 0.09;
+const ALL_STAR_ITERATIONS = 3000;
+const allStarBoard = ({
+	pool,
+	schedule,
+	numGames,
+	allStarNum,
+	byConf,
+	seed,
+}: {
+	pool: any[];
+	schedule: { day: number; homeTid: number; awayTid: number }[];
+	numGames: number;
+	allStarNum: number;
+	// tid -> cid when each conference picks its own allStarNum.
+	byConf: Map<number, number> | undefined;
+	seed: number;
+}) => {
+	// Each team's games before All-Star night, from the schedule; before there
+	// is one, where the night falls in a season (the engine places it after
+	// allStarGame of the season's games: ~0.63 of a team's games at 0.7, as
+	// measured).
+	const night = schedule.find((m) => isAllStarGame(m.homeTid, m.awayTid));
+	const gamesBefore = new Map<number, number>();
+	if (night) {
+		for (const m of schedule) {
+			if (m.day < night.day && m.homeTid >= 0 && m.awayTid >= 0) {
+				gamesBefore.set(m.homeTid, (gamesBefore.get(m.homeTid) ?? 0) + 1);
+				gamesBefore.set(m.awayTid, (gamesBefore.get(m.awayTid) ?? 0) + 1);
+			}
+		}
+	}
+	const fallbackLeft = Math.round(
+		0.9 * Math.max(0, g.get("allStarGame") ?? 0.7) * numGames,
+	);
+	const field = pool
+		.map((p: any) => {
+			const score = 2.5 * (p.stats?.ewa ?? 0) + (p.stats?.ws ?? 0);
+			const gp = p.stats?.gp ?? 0;
+			const left =
+				p.tid < 0
+					? 0
+					: night
+						? (gamesBefore.get(p.tid) ?? 0)
+						: Math.max(0, fallbackLeft - gp);
+			const injured = p.injury?.gamesRemaining ?? 0;
+			const games = Math.max(0, left - injured);
+			const prior =
+				ALL_STAR_RATE_PER_OVR * Math.max(0, ovrOf(p) - ALL_STAR_RATE_FLOOR_OVR);
+			const shrink = ALL_STAR_PRIOR_GAMES / (gp + ALL_STAR_PRIOR_GAMES);
+			const rate =
+				(score + ALL_STAR_PRIOR_GAMES * prior) / (gp + ALL_STAR_PRIOR_GAMES);
+			return {
+				pid: p.pid as number,
+				name: p.name as string,
+				tid: p.tid as number,
+				abbrev: p.abbrev as string,
+				projection: score + rate * games,
+				sd: Math.sqrt(
+					ALL_STAR_GAME_NOISE ** 2 * games +
+						(ALL_STAR_RATE_NOISE * games) ** 2 * shrink,
+				),
+				// Out past the night itself: named, but not one of the healthy
+				// roster spots.
+				outOnNight: injured > left,
+				group: byConf ? (byConf.get(p.tid) ?? -1) : 0,
+			};
+		})
+		.filter((p) => !byConf || p.group >= 0)
+		.sort((a, b) => b.projection - a.projection)
+		.slice(0, 100);
+	const groups = [...new Set(field.map((p) => p.group))];
+	const spots = byConf ? allStarNum : 2 * allStarNum;
+	const made = field.map(() => 0);
+	const rand = mulberry32(seed);
+	const values = field.map(() => 0);
+	const healthy = field.map(() => true);
+	for (let iter = 0; iter < ALL_STAR_ITERATIONS; iter++) {
+		for (const [i, p] of field.entries()) {
+			values[i] = p.projection + normalSample(rand) * p.sd;
+			healthy[i] = !p.outOnNight && rand() >= ALL_STAR_HURT_ON_NIGHT;
+		}
+		for (const group of groups) {
+			const healthyValues = field
+				.map((p, i) =>
+					p.group === group && healthy[i] ? values[i]! : -Infinity,
+				)
+				.sort((x, y) => y - x);
+			const cutoff = healthyValues[spots - 1] ?? -Infinity;
+			for (const [i, p] of field.entries()) {
+				if (p.group === group && values[i]! >= cutoff) {
+					made[i]! += 1;
+				}
+			}
+		}
+	}
+	return notSettled(
+		sortedByPrice(
+			field.map((p, i) => ({
+				pid: p.pid,
+				name: p.name,
+				tid: p.tid,
+				abbrev: p.abbrev,
+				americanOdds: priceFuture(
+					made[i]! / ALL_STAR_ITERATIONS,
+					ALL_STAR_ITERATIONS,
+				),
+			})),
+		),
+	).slice(0, 40);
 };
 
 // The whole live odds board, computed from current league state.
@@ -566,6 +689,10 @@ export const getLines = async () => {
 	};
 	// --- Game lines -------------------------------------------------------
 	const schedule = await getSchedule();
+	// A game still being played out live: what it decided is in the league
+	// already, so the markets it moves are off the board till it is over on
+	// screen (see liveHold.ts).
+	const gate = await getLiveGate();
 
 	// Shared with the per-game prop board, so a spread/moneyline/total quoted on
 	// a game's page is the same number this board carries - see gameLines.ts.
@@ -581,6 +708,9 @@ export const getLines = async () => {
 	for (const matchup of schedule) {
 		if (matchup.homeTid < 0 || matchup.awayTid < 0) {
 			continue; // All-Star / special games
+		}
+		if (offBoardWhileLive(gate, matchup)) {
+			continue;
 		}
 		const home = teamByTid.get(matchup.homeTid);
 		const away = teamByTid.get(matchup.awayTid);
@@ -638,7 +768,16 @@ export const getLines = async () => {
 		g.get("numPeriods"),
 		g.get("quarterLength"),
 	);
-	const futuresSigma = MARGIN_SIGMA * Math.sqrt(lengthFactor);
+	// (Basketball: a game's result comes in at 0.96 of the lines model's margin
+	// - BASKETBALL_MARGIN_SHRINK, as its moneyline is priced - so every margin
+	// the futures play out is read on that scale too. Across 31,600 audited
+	// games results came in at 0.96-0.97 of the model's margin from the second
+	// week to the playoffs (0.89 in the first), and without the shrink the win
+	// totals ran too far from the middle: on opening night actual wins came in
+	// at 0.90 of a line's distance from it.)
+	const futuresSigma =
+		(MARGIN_SIGMA * Math.sqrt(lengthFactor)) /
+		(__SPORT === "basketball" ? BASKETBALL_MARGIN_SHRINK : 1);
 	// Each team's overall for the futures, injuries counted (getFuturesTeamOvrs):
 	// over the regular-season days still to play - its schedule, or a season's
 	// worth of games before there is one - and, once the playoffs are on, over
@@ -660,16 +799,21 @@ export const getLines = async () => {
 			Math.max(0, playoffSeries?.currentRound ?? 0),
 	);
 	const inPlayoffs = phase === PHASE.PLAYOFFS;
-	const futuresOvrs = await getFuturesTeamOvrs(
-		activeTeams,
-		season,
-		inPlayoffs
-			? 6 * roundsLeft
-			: phase < PHASE.REGULAR_SEASON || scheduleDays === 0
-				? numGames
-				: scheduleDays,
-		inPlayoffs,
-	);
+	const futuresDaysLeft = inPlayoffs
+		? 6 * roundsLeft
+		: phase < PHASE.REGULAR_SEASON || scheduleDays === 0
+			? numGames
+			: scheduleDays;
+	// (Basketball replaces these below with the game lines' own ratings.)
+	const futuresOvrs =
+		__SPORT === "basketball"
+			? new Map<number, { season: number; playoffs: number }>()
+			: await getFuturesTeamOvrs(
+					activeTeams,
+					season,
+					futuresDaysLeft,
+					inPlayoffs,
+				);
 	const meanOf = (key: "season" | "playoffs") =>
 		activeTeams.reduce((s, t) => s + (futuresOvrs.get(t.tid)?.[key] ?? 50), 0) /
 		Math.max(1, activeTeams.length);
@@ -682,16 +826,6 @@ export const getLines = async () => {
 	const ratingFrom = (tid: number, ovr: number, mean: number) => {
 		const s = statsOf(teamByTid.get(tid));
 		const actualMOV = s.gp > 0 ? s.pts - s.oppPts : 0; // per-game differential
-		if (__SPORT === "basketball") {
-			// Measured against the engine - see FUTURES_OVR_SLOPE. A Bayesian blend
-			// at the measured error sizes (FUTURES_MOV_PRIOR_GAMES), no cap and no
-			// preseason shade: the engine's margins are linear in the rating gap
-			// and it plays preseason rosters at face value.
-			const model = FUTURES_OVR_SLOPE * (ovr - mean) * lengthFactor;
-			const w = s.gp / (s.gp + FUTURES_MOV_PRIOR_GAMES);
-			return model * (1 - w) + actualMOV * w;
-		}
-
 		// Other sports: the Power Rankings heuristic, as it always was (only the
 		// injuries are new). Trust what the team has actually done more and more
 		// as the sample grows: by ~30 games the real point differential carries
@@ -711,18 +845,28 @@ export const getLines = async () => {
 		// ...and however big the gap, a sustained point differential has a ceiling.
 		return softCapMargin(blended) * evidence;
 	};
-	const ratingOf = (tid: number) =>
+	let ratingOf = (tid: number) =>
 		ratingFrom(tid, futuresOvrs.get(tid)?.season ?? meanOvr, meanOvr);
-	// In PLAYOFF games: the team as it will be then, and (basketball) the gaps
-	// opened up the way the engine's playoffs open them - FUTURES_PLAYOFF_SCALE.
-	const playoffRatingOf = (tid: number) => {
-		const r = ratingFrom(
+	// In PLAYOFF games: the team as it will be then.
+	let playoffRatingOf = (tid: number) =>
+		ratingFrom(
 			tid,
 			futuresOvrs.get(tid)?.playoffs ?? meanPlayoffOvr,
 			meanPlayoffOvr,
 		);
-		return __SPORT === "basketball" ? FUTURES_PLAYOFF_SCALE * r : r;
-	};
+	if (__SPORT === "basketball") {
+		// See linesFuturesUncertainty: basketball reads the game lines' model.
+		const lm = await getLinesModelRatings({
+			teams: activeTeams,
+			season,
+			daysLeft: futuresDaysLeft,
+			inPlayoffs,
+			spreadBiases,
+			lengthFactor,
+		});
+		ratingOf = (tid) => lm.get(tid)?.season ?? 0;
+		playoffRatingOf = (tid) => lm.get(tid)?.playoffs ?? 0;
+	}
 
 	// Home court in a playoff series, as the engine plays it (basketball's is
 	// measured bigger than the regular season's) - none on a neutral floor.
@@ -768,14 +912,27 @@ export const getLines = async () => {
 
 	// How unsure the book is about each team's true strength, in points of
 	// margin, scaled by how much season is still to come.
-	const futuresUncertainty = futuresRatingUncertainty(seasonProgress);
+	const meanGp =
+		activeTeams.reduce((sum, t) => sum + gamesPlayedOf(t), 0) /
+		Math.max(1, activeTeams.length);
+	const futuresUncertainty =
+		__SPORT === "basketball"
+			? linesFuturesUncertainty(meanGp)
+			: futuresRatingUncertainty(seasonProgress);
 
+	// Only where the playoffs are played by conference does "wins the
+	// conference" name a series (otherwise both finalists can come from one).
+	const byConf = (await getPlayoffsByConf(season)) !== false;
 	const sim = simulateFutures({
 		teams: futuresTeams,
+		playIn: g.get("playIn"),
+		byConf,
 		numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
 		iterations: FUTURES_ITERATIONS,
 		seed,
 		ratingUncertainty: futuresUncertainty,
+		playoffRatingExtraUncertainty:
+			__SPORT === "basketball" ? LINES_FUTURES_PLAYOFF_EXTRA : 0,
 		sigma: futuresSigma,
 		...(__SPORT === "basketball"
 			? {
@@ -818,17 +975,38 @@ export const getLines = async () => {
 	let marketsOpen: ReturnType<typeof bracketMarketsOpen> | undefined;
 	if (regularSeasonOver && !playoffsOver) {
 		try {
-			// currentRound is -1 while the play-in runs; round 0's matchups exist
-			// then with provisional play-in slots, an acceptable approximation for
-			// the day or two it lasts.
+			// currentRound is -1 while the play-in runs: round 0's matchups exist
+			// then with the play-in's slots held provisionally, and the play-in
+			// itself is simulated into them (see PlayInState).
 			const rnd = Math.max(0, playoffSeries?.currentRound ?? 0);
 			const roundMatchups = playoffSeries?.series[rnd] ?? [];
+			const slot = (t: (typeof roundMatchups)[number]["home"]) => ({
+				tid: t.tid,
+				cid: t.cid,
+				won: t.won ?? 0,
+				...(t.pendingPlayIn ? { pending: true } : {}),
+			});
 			const matchups: BracketMatchup[] = roundMatchups.map((m) => ({
-				home: { tid: m.home.tid, cid: m.home.cid, won: m.home.won ?? 0 },
-				away: m.away
-					? { tid: m.away.tid, cid: m.away.cid, won: m.away.won ?? 0 }
-					: undefined,
+				home: slot(m.home),
+				away: m.away ? slot(m.away) : undefined,
 			}));
+			const playIns: PlayInState[] =
+				playoffSeries?.currentRound === -1
+					? (playoffSeries.playIns ?? []).map((playIn) => {
+							const game = (m: (typeof playIn)[number]): PlayInGame => ({
+								home: { tid: m.home.tid, cid: m.home.cid },
+								away: { tid: m.away.tid, cid: m.away.cid },
+								...(m.home.won + m.away.won > 0
+									? { winner: m.home.won > 0 ? m.home.tid : m.away.tid }
+									: {}),
+							});
+							return [
+								game(playIn[0]),
+								game(playIn[1]),
+								playIn[2] ? game(playIn[2]) : undefined,
+							];
+						})
+					: [];
 			if (matchups.length > 0) {
 				marketsOpen = bracketMarketsOpen({
 					matchups,
@@ -846,11 +1024,24 @@ export const getLines = async () => {
 							m.home.tid * 3 +
 							(m.away?.tid ?? 0));
 				}
+				for (const [i, game] of playIns.flat().entries()) {
+					if (game?.winner !== undefined) {
+						bracketSeed += (i + 1) * 101 * (game.winner + 1);
+					}
+				}
 				const ratings = new Map<number, number>();
 				for (const m of matchups) {
 					ratings.set(m.home.tid, playoffRatingOf(m.home.tid));
 					if (m.away) {
 						ratings.set(m.away.tid, playoffRatingOf(m.away.tid));
+					}
+				}
+				for (const playIn of playIns) {
+					for (const game of playIn) {
+						if (game) {
+							ratings.set(game.home.tid, playoffRatingOf(game.home.tid));
+							ratings.set(game.away.tid, playoffRatingOf(game.away.tid));
+						}
 					}
 				}
 				// Home court in a round still to come goes to the better regular
@@ -871,11 +1062,17 @@ export const getLines = async () => {
 					ratings,
 					iterations: FUTURES_ITERATIONS,
 					seed: bracketSeed % 2147483647,
+					// The season's remaining doubt about each team and the
+					// playoff translation's own miss, together.
 					ratingUncertainty:
 						__SPORT === "basketball"
-							? FUTURES_BRACKET_UNCERTAINTY
+							? Math.hypot(
+									linesFuturesUncertainty(meanGp),
+									LINES_FUTURES_PLAYOFF_EXTRA,
+								)
 							: LEGACY_BRACKET_UNCERTAINTY,
 					sigma: futuresSigma,
+					playIns,
 					...(__SPORT === "basketball"
 						? {
 								hcaPoints: playoffsNeutral ? 0 : playoffHca,
@@ -925,7 +1122,6 @@ export const getLines = async () => {
 	// leaving the market up made either finalist a guaranteed payout.
 	// Only where the playoffs are played by conference: otherwise "wins the
 	// conference" names no series at all - both finalists can come from one.
-	const byConf = (await getPlayoffsByConf(season)) !== false;
 	const conferences =
 		playoffsOver || !byConf
 			? []
@@ -1042,7 +1238,7 @@ export const getLines = async () => {
 			projectionPool = await player.formatAll(rawPlayers, {
 				attrs: ["pid", "name", "tid", "abbrev", "injury", "draft"],
 				ratings: ["ovr", "diq"],
-				stats: ["ewa", "ws"],
+				stats: ["ewa", "ws", "gp"],
 				season,
 				mergeStats: "totOnly",
 				showNoStats: true,
@@ -1065,14 +1261,18 @@ export const getLines = async () => {
 			abbrev: string;
 			score: number;
 		}[],
+		power: number,
 	): AwardCandidateRow[] => {
 		const top = [...field].sort((a, b) => b.score - a.score).slice(0, 20);
 		if (top.length === 0) {
 			return [];
 		}
-		const probs = strengthProbs(
-			top.map((p) => p.score),
-			PRESEASON_AWARD_POWER,
+		const probs = capTopProb(
+			strengthProbs(
+				top.map((p) => p.score),
+				power,
+			),
+			PRESEASON_AWARD_MAX_PROB,
 		);
 		return openUnlessDecided(
 			sortedByPrice(
@@ -1094,6 +1294,10 @@ export const getLines = async () => {
 		// source of truth - so the Sportsbook and that page never disagree. (This
 		// replaced an older Sportsbook-only overall-blend model that ran badly
 		// inflated favorites vs. the award page.)
+		// Races whose winner is as good as known: pulled, and NOT refilled by the
+		// preseason projection below (which used to put a board back up without
+		// the winner on it - every bet on it a loser).
+		const decided = new Set<string>();
 		try {
 			const raceOdds = await getAwardRaceOdds(season);
 			awards = raceOdds
@@ -1101,6 +1305,9 @@ export const getLines = async () => {
 					const key = legacyAwardKey(race);
 					if (!key) {
 						return undefined;
+					}
+					if (race.players.some((p) => p.odds <= SETTLED_PRICE)) {
+						decided.add(key);
 					}
 					return {
 						award: key,
@@ -1140,36 +1347,112 @@ export const getLines = async () => {
 		// Races page exactly.
 		if (__SPORT === "basketball") {
 			const emptyAward = (key: "mvp" | "dpoy" | "roy") =>
-				awards.find((a) => a.award === key)?.candidates.length === 0 ||
-				!awards.some((a) => a.award === key);
+				!decided.has(key) &&
+				(awards.find((a) => a.award === key)?.candidates.length === 0 ||
+					!awards.some((a) => a.award === key));
 			if (emptyAward("mvp") || emptyAward("dpoy") || emptyAward("roy")) {
 				try {
 					const pool = await getProjectionPool();
-					const healthy = pool.filter(
-						(p: any) => (p.injury?.gamesRemaining ?? 0) === 0,
-					);
 					const ids = (p: any) => ({
 						pid: p.pid,
 						name: p.name,
 						tid: p.tid,
 						abbrev: p.abbrev,
 					});
+					// A man hurt for part of the year is still a candidate, marked
+					// down for the share of it he misses (a fifth of the season costs
+					// about one field-spread of overall, five times less likely; half of
+					// it, out of the running). Leaving him off entirely made his win a
+					// result nobody could have bet.
+					const missShare = (p: any) =>
+						Math.min(
+							1,
+							(p.injury?.gamesRemaining ?? 0) / Math.max(1, numGames),
+						);
+					const field = pool
+						.filter((p: any) => missShare(p) < 0.6)
+						.map((p: any) => ({
+							...p,
+							ratings: { ...p.ratings, ovr: ovrOf(p) - 25 * missShare(p) },
+						}));
+					// DPOY is won with blocks, steals and defensive win shares, which
+					// ratings read poorly: on overall plus defensive IQ alone the
+					// preseason board missed so often a bettor backing all of it made
+					// money. Last season's DPOY race is the better guide, as it is to
+					// a real book - so a returning candidate is read on that and his
+					// ratings together, everyone else on ratings a step behind.
+					const lastDpoy = new Map<number, number>();
+					if (emptyAward("dpoy") && season > g.get("startingSeason")) {
+						try {
+							const lastRaces = (
+								await getAwardCandidates(season - 1, undefined, {
+									numPlayersPerIndividualAward: 40,
+								})
+							).awardCandidates.flat();
+							const race = lastRaces.find(
+								(r) => r.numTeams === undefined && legacyAwardKey(r) === "dpoy",
+							);
+							for (const p of race?.players ?? []) {
+								const score = p.currentStats.score;
+								if (typeof score === "number" && Number.isFinite(score)) {
+									lastDpoy.set(p.pid, score);
+								}
+							}
+						} catch {}
+					}
+					const dpoyScores = (() => {
+						const rated = field.map((p: any) => ({
+							p,
+							rating: ovrOf(p) + 0.5 * ratingVal(p, "diq"),
+						}));
+						const z = (values: number[]) => {
+							const mean = values.reduce((a, b) => a + b, 0) / values.length;
+							const sd =
+								Math.sqrt(
+									values.reduce((a, b) => a + (b - mean) ** 2, 0) /
+										values.length,
+								) || 1;
+							return (v: number) => (v - mean) / sd;
+						};
+						const top = [...rated]
+							.sort((a, b) => b.rating - a.rating)
+							.slice(0, 40)
+							.map((x) => x.rating);
+						const zRating = z(top.length > 0 ? top : [0]);
+						const last = [...lastDpoy.values()];
+						const zLast = z(last.length > 0 ? last : [0]);
+						const floor =
+							last.length > 0 ? Math.min(...last.map(zLast)) - 0.5 : 0;
+						return rated.map(({ p, rating }) => {
+							const prev = lastDpoy.get(p.pid);
+							return {
+								...ids(p),
+								score:
+									last.length === 0
+										? rating
+										: 0.6 * (prev === undefined ? floor : zLast(prev)) +
+											0.4 * zRating(rating) -
+											5 * missShare(p),
+							};
+						});
+					})();
 					const boards: Record<"mvp" | "dpoy" | "roy", AwardCandidateRow[]> = {
 						mvp: projectedAwardBoard(
-							healthy.map((p: any) => ({ ...ids(p), score: ovrOf(p) })),
+							field.map((p: any) => ({ ...ids(p), score: ovrOf(p) })),
+							PRESEASON_AWARD_POWER.mvp,
 						),
-						// Tilt DPOY toward defensive rating so it isn't an MVP clone.
 						dpoy: projectedAwardBoard(
-							healthy.map((p: any) => ({
-								...ids(p),
-								score: ovrOf(p) + 0.5 * ratingVal(p, "diq"),
-							})),
+							dpoyScores,
+							lastDpoy.size > 0
+								? PRESEASON_AWARD_POWER.dpoy
+								: PRESEASON_AWARD_POWER.dpoyRatingsOnly,
 						),
 						// Rookies only (drafted the prior offseason - see royFilter).
 						roy: projectedAwardBoard(
-							healthy
+							field
 								.filter((p: any) => p.draft?.year === season - 1)
 								.map((p: any) => ({ ...ids(p), score: ovrOf(p) })),
+							PRESEASON_AWARD_POWER.roy,
 						),
 					};
 					const names: Record<"mvp" | "dpoy" | "roy", string> = {
@@ -1245,7 +1528,7 @@ export const getLines = async () => {
 				const mvpField = field("mvp", 40);
 				allLeague = buildTierBoard(
 					mvpField,
-					TEAM_AWARD_TIER_SIZES,
+					tierSizesFor("ALL"),
 					seed + 101,
 					tierNoiseFactor,
 				);
@@ -1253,15 +1536,21 @@ export const getLines = async () => {
 				const dpoyField = field("dpoy", 40);
 				allDefensive = buildTierBoard(
 					dpoyField,
-					TEAM_AWARD_TIER_SIZES,
+					tierSizesFor("DEF"),
 					seed + 202,
 					tierNoiseFactor,
 				);
 
-				const royField = field("roy", 20);
+				const rookieSpots = allRookieSpots();
 				allRookie =
-					buildTierBoard(royField, [5], seed + 303, tierNoiseFactor)[0]
-						?.candidates ?? [];
+					rookieSpots === 0
+						? []
+						: (buildTierBoard(
+								field("roy", rookieSpots + 15),
+								[rookieSpots],
+								seed + 303,
+								tierNoiseFactor,
+							)[0]?.candidates ?? []);
 			} catch (error) {
 				console.error("Sportsbook award-team odds unavailable", error);
 			}
@@ -1284,59 +1573,40 @@ export const getLines = async () => {
 			// Same pool as the real selection (worker/core/allStar/create.ts) -
 			// includes free agents.
 			const pool = await getProjectionPool();
-			const allStarEarly = 1 - seasonProgress;
-			const rosterSize = g.get("allStarNum") * 2;
-
-			// The overall projection, on the same scale as the ewa/ws production it
-			// hands off to: a star projects like a star, and everyone below
-			// replacement level (~45 ovr) projects at 0, so the field spreads out
-			// instead of bunching. Blended with real ewa/ws, which take over as games
-			// are played.
-			const ovrProjection = (p: any) => Math.max(0, ovrOf(p) - 45) * 1.3;
-			const scored = pool
-				.filter((p: any) => (p.injury?.gamesRemaining ?? 0) === 0)
-				.map((p: any) => ({
-					pid: p.pid,
-					name: p.name,
-					tid: p.tid,
-					abbrev: p.abbrev,
-					awardScore:
-						2.5 * (p.stats?.ewa ?? 0) +
-						(p.stats?.ws ?? 0) +
-						allStarEarly * ovrProjection(p),
-				}))
-				// Restrict to the genuine contenders (the roster plus a buffer of
-				// bubble players). Feeding the whole ~400-player league to the
-				// tier-membership Monte Carlo inflated the score spread so much that
-				// the noise washed out the separation - leaving stars barely favored
-				// and role players near even. With a contender-sized field, the elite
-				// sit far above the cutoff and price like the locks they are.
-				.sort((a, b) => b.awardScore - a.awardScore)
-				.slice(0, rosterSize + 24);
-
-			// Low noise so the clear top players are heavy favorites (not coin flips)
-			// while the bubble spots stay competitive.
-			allStar =
-				buildTierBoard(scored, [rosterSize], seed + 404, 0.4)[0]?.candidates ??
-				[];
+			allStar = allStarBoard({
+				pool,
+				schedule,
+				numGames,
+				allStarNum: g.get("allStarNum"),
+				byConf:
+					g.get("allStarType") === "byConf" && confs.length === 2
+						? new Map(activeTeams.map((t) => [t.tid, t.cid]))
+						: undefined,
+				seed: seed + 404,
+			});
 		} catch (error) {
 			console.error("Sportsbook All-Star odds unavailable", error);
 		}
 	}
 
+	// Every futures and award price moves with a game's result.
+	const liveHold = gate.hidden.size > 0;
 	return {
 		games,
-		championship,
-		conferences,
-		divisions,
-		winTotals,
-		awards,
-		allLeague,
-		allDefensive,
-		allRookie,
-		allStar,
+		championship: liveHold ? [] : championship,
+		conferences: liveHold ? [] : conferences,
+		divisions: liveHold ? [] : divisions,
+		winTotals: liveHold ? [] : winTotals,
+		awards: liveHold ? [] : awards,
+		allLeague: liveHold ? [] : allLeague,
+		allDefensive: liveHold ? [] : allDefensive,
+		allRookie: liveHold ? [] : allRookie,
+		allStar: liveHold ? [] : allStar,
+		liveHold,
 		// How many players make the All-Star team (both rosters), so the UI can
 		// block parlaying more "makes the All-Star team" legs than fit.
 		allStarRosterSize: g.get("allStarNum") * 2,
+		// The same for the All-Rookie team(s).
+		allRookieSpots: allRookieSpots(),
 	};
 };

@@ -1,6 +1,8 @@
 import { assert, describe, test } from "vitest";
 import {
+	awardSharpness,
 	awardWinProbs,
+	sharpenProbs,
 	cumulativeAwardStats,
 	projectedGamesPlayed,
 	talentWeight,
@@ -246,5 +248,30 @@ describe("cumulativeAwardStats", () => {
 		for (const rate of ["per", "pts", "trb", "ast"]) {
 			assert.ok(!cumulative.has(rate), `${rate} must not be scaled`);
 		}
+	});
+});
+
+describe("sharpenProbs", () => {
+	test("the leader gains, the order and the total hold", () => {
+		const out = sharpenProbs([0.5, 0.3, 0.2], 2);
+		assert.closeTo(
+			out.reduce((a, b) => a + b, 0),
+			1,
+			1e-12,
+		);
+		assert.isAbove(out[0]!, 0.5);
+		assert.isAbove(out[1]!, out[2]!);
+		assert.isBelow(out[2]!, 0.2);
+	});
+
+	test("a power of 1 changes nothing", () => {
+		const probs = [0.6, 0.4];
+		assert.strictEqual(sharpenProbs(probs, 1), probs);
+	});
+
+	test("the rookie race firms up as the season goes; others stay put", () => {
+		assert.isAbove(awardSharpness("roy", 0.8), awardSharpness("roy", 0.1));
+		assert.strictEqual(awardSharpness("dpoy", 0.5), 1);
+		assert.strictEqual(awardSharpness(undefined, 0.5), 1);
 	});
 });

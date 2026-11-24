@@ -93,6 +93,26 @@ export const probToAmerican = (
 	return rounded;
 };
 
+// A futures or award price: the hold applied to the ODDS of an outcome
+// (p / (1 - p)), not to its probability. Multiplying the probability by 1.12
+// is fine for a longshot (2% becomes 2.24%) but runs out of room on a
+// favourite: 88% became 98.6%, past the -9000 at which a market is pulled as
+// decided - so an 88% Finals favourite took the whole title market down with
+// it, an 89% MVP leader his whole race, and every big favourite still up was
+// priced like a lock (85% at -2000, where a book hangs about -650). On the
+// odds the same hold moves a longshot exactly as before - for a small p the
+// odds and the probability are the same thing - and leaves a favourite a
+// price it can be bet at: 88% goes up at -820 and 95% at -2100.
+export const probToAmericanOnOdds = (
+	probTrue: number,
+	opts: { vig: number; maxAmerican?: number },
+): number => {
+	const p = Math.min(1, Math.max(0, probTrue));
+	const r = 1 + opts.vig;
+	const held = (p * r) / (1 - p + p * r);
+	return probToAmerican(held, { vig: 0, maxAmerican: opts.maxAmerican });
+};
+
 // American odds → decimal multiplier (total return per $1 staked, incl. stake).
 export const americanToDecimal = (american: number): number => {
 	if (american === 0) {
@@ -178,6 +198,8 @@ export const parlayConflict = (
 		// parlaying more than that many "makes the All-Star team" legs is caught as
 		// impossible. Omitted (e.g. on a page with no futures) = don't cap it here.
 		allStarRosterSize?: number;
+		// Players on the All-Rookie team(s) - 5 a team. Omitted: one team.
+		allRookieSpots?: number;
 	},
 ): string | undefined => {
 	// Exact duplicate legs.
@@ -278,7 +300,7 @@ export const parlayConflict = (
 			return { key: `all-defensive:${m.season}:${m.tier}`, cap: 5 };
 		}
 		if (m.type === "allRookieTeam") {
-			return { key: `all-rookie:${m.season}`, cap: 5 };
+			return { key: `all-rookie:${m.season}`, cap: opts?.allRookieSpots ?? 5 };
 		}
 		if (m.type === "allStarTeam") {
 			return {

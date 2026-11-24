@@ -62,7 +62,7 @@ export const OddsCell = ({
 // there's no cross-page shared slip, so navigating away clears it.
 export const useBetSlip = (
 	tid: number,
-	opts?: { allStarRosterSize?: number },
+	opts?: { allStarRosterSize?: number; allRookieSpots?: number },
 ) => {
 	const [picks, setPicks] = useState<Pick[]>([]);
 	const [stakes, setStakes] = useState<Record<string, string>>({});
@@ -120,6 +120,7 @@ export const useBetSlip = (
 				picks.map((p) => p.market),
 				{
 					allStarRosterSize: opts?.allStarRosterSize,
+					allRookieSpots: opts?.allRookieSpots,
 				},
 			)
 		: undefined;

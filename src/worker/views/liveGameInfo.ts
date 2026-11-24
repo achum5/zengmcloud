@@ -13,12 +13,13 @@ import { season as seasonCore } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { Game, PlayoffSeries } from "../../common/types.ts";
 import {
-	DEFAULT_GAME_TOTAL,
 	expectedTotalFromRates,
 	leagueAvgGameTotal,
 	toHalfPointLine,
 	type ScoringRate,
+	type TotalsPrior,
 } from "../../common/sportsbookOdds.ts";
+import { getTotalsPrior } from "../core/sportsbook/gameLines.ts";
 import { BASKETBALL_PLAYOFF_TOTAL_FACTOR } from "../../common/getGameSpread.ts";
 
 export type SeriesGame = {
@@ -269,6 +270,8 @@ export const totalAsOf = (
 	// Each side's regular-season games going into it (its record), box
 	// score order - what the games found have to add up to.
 	gpAtTip: [number, number],
+	// What the season's totals start from (see getTotalsPrior).
+	prior: TotalsPrior,
 ): number | undefined => {
 	const sameDay = (p: Played) =>
 		p.day !== undefined && game.day !== undefined && p.day === game.day;
@@ -312,7 +315,7 @@ export const totalAsOf = (
 		expectedTotalFromRates({
 			home,
 			away,
-			leagueAvgTotal: leagueAvgGameTotal(rates.values(), DEFAULT_GAME_TOTAL),
+			leagueAvgTotal: leagueAvgGameTotal(rates.values(), prior),
 			factor:
 				game.playoffs && __SPORT === "basketball"
 					? BASKETBALL_PLAYOFF_TOTAL_FACTOR
@@ -553,7 +556,7 @@ export const gamecastInfo = async (
 					(t.otl ?? 0) -
 					(game.playoffs ? 0 : 1),
 		) as [number, number];
-		total = totalAsOf(game, played, gpAtTip);
+		total = totalAsOf(game, played, gpAtTip, await getTotalsPrior(game.season));
 	}
 
 	return {

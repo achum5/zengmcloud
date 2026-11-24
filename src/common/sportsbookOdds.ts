@@ -94,6 +94,95 @@ export const marginToWinProb = (
 	return Math.min(0.995, Math.max(0.005, p));
 };
 
+// THE SHAPE OF A BASKETBALL GAME'S FINAL MARGIN. A normal curve gets the
+// average right and the shape wrong, and a spread bet is decided by the shape.
+// The engine's trailing team fouls on purpose when it is down 1 to 6 in the
+// last 27 seconds (GameSim.basketball shouldIntentionalFoul), so close games
+// are pushed out of the 1-6 band and pile up just past it: across 61,500 regular-season
+// games of the owner's league settings, 9% of all games ended 7 apart and
+// 6.8% 8 apart, against about 4.5% for their neighbours, and a 1-point game
+// is rarer than a 3-point one. Priced on a plain normal curve, a 2.5-point
+// favourite covered 53% of the time (a bettor's edge at -110) and a 7.5-point
+// favourite 49%.
+//
+// So the book prices a basketball line off a normal curve reshaped by how
+// often each final margin actually happens: the chance of a margin of k is
+// proportional to phi((k - SHRINK * mean) / sigma) times the weight below for
+// |k|, and 0 for a tie. Fitted by maximum likelihood (all 50 seasons of the
+// audit, linesAudit.test.ts) and checked on seasons it was not fitted on:
+// predicted cover rates by line sit within sampling noise of the actual ones.
+// SHRINK is what the same fit found the quoted margin is worth - a forecast
+// that leans slightly too far, the usual price of an estimate.
+export const BASKETBALL_MARGIN_KEY_WEIGHTS = [
+	0.633, 0.84, 1.051, 0.936, 0.98, 0.87, 1.905, 1.483, 1.018, 1.051, 0.965,
+	0.978, 0.968, 1.003, 0.946, 1.021,
+];
+export const BASKETBALL_MARGIN_SHRINK = 0.96;
+export const BASKETBALL_MARGIN_KEY_SIGMA = 13.1;
+
+// The chance of each whole-number final margin (home minus away) for a game
+// expected to finish `mean` apart, basketball. `sigma` scales with game length
+// like MARGIN_SIGMA does (the fouling band does not: it is in points).
+export const marginDistribution = (
+	mean: number,
+	sigma: number = BASKETBALL_MARGIN_KEY_SIGMA,
+): { probOf: (k: number) => number; from: number; to: number } => {
+	const center = BASKETBALL_MARGIN_SHRINK * mean;
+	const reach = Math.ceil(6 * sigma) + 1;
+	const from = Math.floor(center) - reach;
+	const to = Math.ceil(center) + reach;
+	const weights: number[] = [];
+	let sum = 0;
+	for (let k = from; k <= to; k++) {
+		const z = (k - center) / sigma;
+		const a = Math.abs(k);
+		const w =
+			k === 0
+				? 0
+				: Math.exp(-0.5 * z * z) * (BASKETBALL_MARGIN_KEY_WEIGHTS[a - 1] ?? 1);
+		weights.push(w);
+		sum += w;
+	}
+	return {
+		probOf: (k: number) =>
+			k < from || k > to ? 0 : (weights[k - from] ?? 0) / sum,
+		from,
+		to,
+	};
+};
+
+// Win, push and lose chances for a side that wins when (its margin + line)
+// is positive - a moneyline is line 0. `margin` is that side's expected margin.
+export const coverProbs = (
+	margin: number,
+	line: number,
+	sigma?: number,
+): { win: number; push: number; lose: number } => {
+	const dist = marginDistribution(margin, sigma);
+	let win = 0;
+	let push = 0;
+	for (let k = dist.from; k <= dist.to; k++) {
+		const v = k + line;
+		if (v > 0) {
+			win += dist.probOf(k);
+		} else if (v === 0) {
+			push += dist.probOf(k);
+		}
+	}
+	return { win, push, lose: Math.max(0, 1 - win - push) };
+};
+
+// A side's fair probability once a push (stake back) is set aside - what its
+// price is set from. A bet paying d per unit breaks even when
+// win * (d - 1) = lose, i.e. at a probability of win / (win + lose).
+export const probIgnoringPush = ({
+	win,
+	lose,
+}: {
+	win: number;
+	lose: number;
+}): number => (win + lose > 0 ? win / (win + lose) : 0.5);
+
 // Which game of a playoff series the better seed hosts, 0-indexed - the exact
 // scheduling rule the engine uses (worker/core/season/newSchedulePlayoffsDay.ts
 // imports THIS function, so the book and the schedule can never disagree).
@@ -147,9 +236,13 @@ export const expectedGameTotal = ({
 	return homePts + awayPts;
 };
 
-// A game total when nobody in the league has played yet.
+// A game total when nobody in the league has played yet and there is no
+// season before this one to go on. At the default game length - scale by
+// gameLengthFactor for anything else. (Basketball's: the owner's league
+// settings averaged 212.9 a game over 50 audited seasons, season to season
+// within 1.4; the old 220 opened every league's first night 7 points high.)
 export const DEFAULT_GAME_TOTAL = bySport({
-	basketball: 220,
+	basketball: 215,
 	football: 45,
 	baseball: 9,
 	hockey: 6,
@@ -158,26 +251,55 @@ export const DEFAULT_GAME_TOTAL = bySport({
 // A team's regular-season scoring, per game: what a game total is set from.
 export type ScoringRate = { gp: number; pts: number; oppPts: number };
 
-// The league's average game total (both teams), from every team's per-game
-// scoring - teams yet to play left out; `fallback` when nobody has played.
-export const leagueAvgGameTotal = (
-	rates: Iterable<ScoringRate>,
-	fallback: number,
-): number => {
-	let totalPtsPerGame = 0;
-	let teamsWithGames = 0;
-	for (const s of rates) {
-		if (s.gp > 0) {
-			totalPtsPerGame += s.pts;
-			teamsWithGames += 1;
-		}
-	}
-	return teamsWithGames > 0 ? (2 * totalPtsPerGame) / teamsWithGames : fallback;
+// What the league's game total is before this season's games say anything,
+// and how many games that guess is worth. Last season's league average is a
+// good guess - basketball's moved by 1.4 a game season to season, while the
+// first night's fifteen games carry nearly 5 of noise - so it is worth 150
+// games: it still leads the number through the first ten days and fades out
+// over the first month. The sport's default is a weak guess, worth a single
+// night. (Other sports keep their old rule: the season's own average the
+// moment it has one.)
+export type TotalsPrior = { total: number; games: number };
+export const totalsPrior = (
+	lastSeasonAvg: number | undefined,
+	lengthFactor = 1,
+): TotalsPrior => {
+	const known = lastSeasonAvg !== undefined && Number.isFinite(lastSeasonAvg);
+	return {
+		total: known ? lastSeasonAvg : DEFAULT_GAME_TOTAL * lengthFactor,
+		games: __SPORT === "basketball" ? (known ? 150 : 15) : 0,
+	};
 };
 
-// A per-game rate pulled toward the league mean early in the season (fully
-// trusted after ~8 games) so a hot opening week doesn't swing totals wildly.
-// Undefined for a team yet to play.
+// The league's average game total (both teams), from every team's per-game
+// scoring and the prior above - teams yet to play left out. A bare number is
+// a prior worth nothing (used only when nobody has played).
+export const leagueAvgGameTotal = (
+	rates: Iterable<ScoringRate>,
+	prior: number | TotalsPrior,
+): number => {
+	const p = typeof prior === "number" ? { total: prior, games: 0 } : prior;
+	let points = 0;
+	let teamGames = 0;
+	for (const s of rates) {
+		if (s.gp > 0) {
+			points += s.pts * s.gp;
+			teamGames += s.gp;
+		}
+	}
+	const games = teamGames / 2;
+	return games + p.games > 0
+		? (p.total * p.games + points) / (games + p.games)
+		: p.total;
+};
+
+// A team's per-game rate pulled toward the league mean by how little of the
+// season it rests on. Basketball: a Bayesian weight of gp / (gp + 32), the
+// size that predicted the audit's game totals best (from 8 to 48 tried; 24-48
+// all within a hair). It used to trust a team fully after 8 games, which let
+// one hot fortnight move a total by four points. Undefined for a team yet to
+// play.
+export const TEAM_SCORING_PRIOR_GAMES = 32;
 export const regressedScoring = (
 	perGame: number,
 	gp: number,
@@ -187,7 +309,10 @@ export const regressedScoring = (
 		return undefined;
 	}
 	const halfLeague = leagueAvgTotal / 2;
-	const w = Math.min(1, gp / 8);
+	const w =
+		__SPORT === "basketball"
+			? gp / (gp + TEAM_SCORING_PRIOR_GAMES)
+			: Math.min(1, gp / 8);
 	return halfLeague + (perGame - halfLeague) * w;
 };
 
@@ -295,6 +420,23 @@ export const strengthProbs = (strengths: number[], power: number): number[] => {
 	const weights = strengths.map((s) => Math.exp((power * (s - mean)) / sd));
 	const sum = weights.reduce((a, b) => a + b, 0);
 	return weights.map((w) => w / sum);
+};
+
+// A field's chances with no one past `max`: the favourite's excess shared
+// out among the rest in proportion to their own.
+export const capTopProb = (probs: number[], max: number): number[] => {
+	let top = 0;
+	for (const [i, p] of probs.entries()) {
+		if (p > probs[top]!) {
+			top = i;
+		}
+	}
+	const excess = (probs[top] ?? 0) - max;
+	const rest = probs.reduce((s, p, i) => (i === top ? s : s + p), 0);
+	if (excess <= 0 || rest <= 0) {
+		return probs;
+	}
+	return probs.map((p, i) => (i === top ? max : p + (p / rest) * excess));
 };
 
 // Probability a team's season win total lands OVER a line, from its projected

@@ -105,6 +105,7 @@ const Sportsbook = ({
 	const [slipOpenMobile, setSlipOpenMobile] = useState(false);
 	const slip = useBetSlip(wallet.tid, {
 		allStarRosterSize: board.allStarRosterSize,
+		allRookieSpots: board.allRookieSpots,
 	});
 
 	// Catch up any bet whose outcome is already known but that a missed hook
@@ -144,7 +145,7 @@ const Sportsbook = ({
 		return selectedKeys.has(pick.key);
 	};
 
-	const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+	const signed = (n: number) => (n === 0 ? "PK" : n > 0 ? `+${n}` : `${n}`);
 
 	// (Drawn last, once every tab has filled in `live` - see below.)
 	const betslip = () => (
@@ -420,7 +421,11 @@ const Sportsbook = ({
 			keyPrefix,
 		);
 
-	const futuresTab = (
+	const liveHoldNote = emptyState("Off the board while a game is live.");
+
+	const futuresTab = board.liveHold ? (
+		liveHoldNote
+	) : (
 		<div className="row g-3">
 			<div className="col-xl-6">
 				<div className="mb-3">
@@ -588,7 +593,9 @@ const Sportsbook = ({
 		</>
 	);
 
-	const awardsTab = !hasAnyAwardMarket ? (
+	const awardsTab = board.liveHold ? (
+		liveHoldNote
+	) : !hasAnyAwardMarket ? (
 		emptyState(
 			phase >= PHASE.PLAYOFFS
 				? "Award futures are closed for the season — they lock when the regular season ends."

@@ -8,6 +8,7 @@ import {
 	formatSportsbookMoney,
 	parlayConflict,
 	probToAmerican,
+	probToAmericanOnOdds,
 	SPORTSBOOK_VIG,
 } from "./sportsbook.ts";
 import type { SportsbookMarket } from "./types.ts";
@@ -303,5 +304,26 @@ describe("formatting", () => {
 		assert.strictEqual(formatSportsbookMoney(12_500), "$12.5K");
 		assert.strictEqual(formatSportsbookMoney(500), "$500");
 		assert.strictEqual(formatSportsbookMoney(-2_000_000), "-$2M");
+	});
+});
+
+describe("a futures price holds on the odds", () => {
+	test("a heavy favourite gets a price, not a pulled market", () => {
+		// 88% with a 12% hold: the old probability markup made it -7000+.
+		const price = probToAmericanOnOdds(0.88, { vig: 0.12 });
+		assert.ok(price < -700 && price > -950, `${price}`);
+	});
+
+	test("a longshot is held as before", () => {
+		const onOdds = probToAmericanOnOdds(0.02, { vig: 0.12 });
+		const onProb = probToAmerican(0.02, { vig: 0.12 });
+		assert.ok(Math.abs(onOdds - onProb) <= 100, `${onOdds} vs ${onProb}`);
+	});
+
+	test("every price still carries a house edge", () => {
+		for (const p of [0.05, 0.2, 0.5, 0.8, 0.95]) {
+			const price = probToAmericanOnOdds(p, { vig: 0.12 });
+			assert.ok(americanToImpliedProb(price) > p, `${p} -> ${price}`);
+		}
 	});
 });

@@ -6,13 +6,15 @@ import { g, helpers } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import { PHASE } from "../../../common/constants.ts";
 import {
+	awardSharpness,
 	awardWinProbs,
+	sharpenProbs,
 	cumulativeAwardStats,
 	projectedGamesPlayed,
 } from "../../../common/awardOdds.ts";
 import {
 	longshotVig,
-	probToAmerican,
+	probToAmericanOnOdds,
 	SPORTSBOOK_FUTURES_VIG,
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
@@ -59,6 +61,30 @@ export const raceKey = (race: AwardRace): string =>
 					? `div${race.group.did}`
 					: `series${race.group.tids.join("-")}`
 	}`;
+
+// Which of the classic awards a race is, if any. Awards are user-defined
+// now, so a renamed one is recognized by the role it acts as (actAs) and an
+// unchanged one by the shortName every default award carries.
+export const legacyAwardKey = (race: {
+	shortName: string;
+	actAs?: "mvp" | "roy";
+	group?: AwardRace["group"];
+}): "mvp" | "dpoy" | "roy" | "smoy" | "mip" | undefined => {
+	if (race.group !== undefined) {
+		return undefined;
+	}
+	const byShortName: Record<string, "mvp" | "dpoy" | "roy" | "smoy" | "mip"> = {
+		MVP: "mvp",
+		DPOY: "dpoy",
+		ROY: "roy",
+		SMOY: "smoy",
+		MIP: "mip",
+	};
+	return (
+		byShortName[race.shortName] ??
+		(race.actAs === "mvp" ? "mvp" : race.actAs === "roy" ? "roy" : undefined)
+	);
+};
 
 export const playerName = (p: { firstName: string; lastName: string }) =>
 	`${p.firstName} ${p.lastName}`.trim();
@@ -178,15 +204,20 @@ const getAwardRaceOdds = async (season: number) => {
 	}
 
 	return races.map((race): PricedRace => {
-		const probs = awardWinProbs(
-			race.players.map((p) => ({
-				score: p.awardScore,
-				talent: playerTalent(p),
-			})),
-			{
-				fractionComplete,
-				seed: `${season}|${raceKey(race)}`,
-			},
+		const probs = sharpenProbs(
+			awardWinProbs(
+				race.players.map((p) => ({
+					score: p.awardScore,
+					talent: playerTalent(p),
+				})),
+				{
+					fractionComplete,
+					seed: `${season}|${raceKey(race)}`,
+				},
+			),
+			__SPORT === "basketball"
+				? awardSharpness(legacyAwardKey(race), fractionComplete)
+				: 1,
 		);
 
 		const players = race.players.map((p, i) => ({
@@ -194,7 +225,7 @@ const getAwardRaceOdds = async (season: number) => {
 			// Award bets carry the heavier futures hold and the same cap as every
 			// other bet. The Award Races page and the Sportsbook both read this, so
 			// they show identical (taxed) prices.
-			odds: probToAmerican(probs[i] ?? 0, {
+			odds: probToAmericanOnOdds(probs[i] ?? 0, {
 				// Longshots carry the heavier hold, so backing the whole back half of
 				// a race is no longer close to free money.
 				vig: longshotVig(probs[i] ?? 0, SPORTSBOOK_FUTURES_VIG),

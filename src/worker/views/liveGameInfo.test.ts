@@ -260,24 +260,30 @@ describe("the over/under at the tip", () => {
 			rate([100, 120], [110, 118]), // 3
 			rate([105, 99], [95, 101]), // 4
 		];
+		const prior = { total: 212, games: 150 };
 		const expected = toHalfPointLine(
 			expectedTotalFromRates({
 				home: rates[0]!,
 				away: rates[1]!,
-				leagueAvgTotal: leagueAvgGameTotal(rates, 220),
+				leagueAvgTotal: leagueAvgGameTotal(rates, prior),
 			}),
 		);
-		assert.strictEqual(totalAsOf(watched, played, [2, 2]), expected);
+		assert.strictEqual(totalAsOf(watched, played, [2, 2], prior), expected);
 		assert.strictEqual(expected % 1, 0.5);
 	});
 
 	test("no line when the games found don't add up to a team's record", () => {
 		// (An old season's box scores deleted.)
-		assert.isUndefined(totalAsOf(watched, played, [5, 2]));
+		assert.isUndefined(
+			totalAsOf(watched, played, [5, 2], { total: 212, games: 150 }),
+		);
 	});
 
-	test("the first night of the season: the league's default total", () => {
+	test("the first night of the season: the season's starting guess", () => {
 		const first = game(1, 1, [1, 0], [2, 0]);
-		assert.strictEqual(totalAsOf(first, [first], [0, 0]), 220.5);
+		assert.strictEqual(
+			totalAsOf(first, [first], [0, 0], { total: 212.2, games: 150 }),
+			212.5,
+		);
 	});
 });

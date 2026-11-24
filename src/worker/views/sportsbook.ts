@@ -3,7 +3,9 @@ import { idb } from "../db/index.ts";
 import type { SportsbookBet } from "../../common/types.ts";
 import { defineView, keepType, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
-import { getLines } from "../core/sportsbook/getLines.ts";
+import { allRookieSpots, getLines } from "../core/sportsbook/getLines.ts";
+import { walletBeforeLiveGames } from "../core/sportsbook/liveHold.ts";
+import { getLiveGate } from "../util/liveGameGate.ts";
 import {
 	marketGid,
 	SPORTSBOOK_PRESEASON_GRANT,
@@ -38,7 +40,9 @@ const updateSportsbook = async ({
 		updateEvents.has("playerMovement") ||
 		updateEvents.has("gameAttributes") ||
 		// Bets placed/settled bump this so the wallet + open bets refresh.
-		updateEvents.has("watchList");
+		updateEvents.has("watchList") ||
+		// A game shown live started or finished (see core/sportsbook/liveHold.ts).
+		updateEvents.has("liveGames");
 
 	// Switching tabs changes only the URL, so without this the view returns
 	// undefined, the UI keeps the props it already had, and the page stays on
@@ -90,48 +94,58 @@ const updateSportsbook = async ({
 				allRookie: [],
 				allStar: [],
 				allStarRosterSize: g.get("allStarNum") * 2,
+				allRookieSpots: allRookieSpots(),
+				liveHold: false,
 			};
 		}
 
 		const userTid = g.get("userTid");
 		const teams = await idb.cache.teams.getAll();
 
-		const walletFor = (tid: number) => {
-			const t = teams.find((team) => team.tid === tid);
-			return t?.sportsbook;
+		// Bets graded on a game still being played out live are shown open, and
+		// their payouts not in the balances yet.
+		const { hidden } = await getLiveGate();
+		const sbOf = (t: (typeof teams)[number] | undefined) => {
+			const sb = t?.sportsbook;
+			return walletBeforeLiveGames(
+				{
+					balance: sb?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
+					bets: sb?.bets ?? [],
+					history: sb?.history ?? [],
+				},
+				hidden,
+			);
 		};
 
 		// The device's own team is the one that bets. A team with no wallet yet
 		// (e.g. a league imported mid-season, before its first preseason grant) is
 		// shown holding the standard grant; it's persisted the first time a bet is
 		// placed.
-		const sb = walletFor(userTid);
+		const sb = sbOf(teams.find((team) => team.tid === userTid));
 		const wallet = {
 			tid: userTid,
-			balance: sb?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
-			bets: sb?.bets ?? [],
-			history: (sb?.history ?? []).slice(0, 40),
+			balance: sb.balance,
+			bets: sb.bets,
+			history: sb.history.slice(0, 40),
 		};
 
 		// The human-managed teams' balances, just for fun (a little leaderboard).
 		const userTids = new Set(g.get("userTids"));
-		const balances = teams
+		const userWallets = teams
 			.filter((t) => userTids.has(t.tid))
-			.map((t) => ({
-				tid: t.tid,
-				balance: t.sportsbook?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
-			}))
+			.map((t) => ({ tid: t.tid, sb: sbOf(t) }));
+		const balances = userWallets
+			.map(({ tid, sb }) => ({ tid, balance: sb.balance }))
 			.sort((a, b) => b.balance - a.balance);
 
 		// Every user team's slips, so league-mates can sweat each other's bets.
 		// Bets live on the (synced) team record, so this is just a read.
-		const leagueBets = teams
-			.filter((t) => userTids.has(t.tid))
-			.map((t) => ({
-				tid: t.tid,
-				balance: t.sportsbook?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
-				open: t.sportsbook?.bets ?? [],
-				settled: (t.sportsbook?.history ?? []).slice(0, 10),
+		const leagueBets = userWallets
+			.map(({ tid, sb }) => ({
+				tid,
+				balance: sb.balance,
+				open: sb.bets,
+				settled: sb.history.slice(0, 10),
 			}))
 			.sort((a, b) => b.balance - a.balance);
 
@@ -167,6 +181,9 @@ const updateSportsbook = async ({
 		const teamInfoCache = g.get("teamInfoCache");
 		const gameLinks: Record<number, { abbrevTid: string; season: number }> = {};
 		for (const gid of gidsReferenced) {
+			if (hidden.has(gid)) {
+				continue; // its box score would give the final away
+			}
 			const game = await idb.merged.games.get(gid);
 			if (!game || !game.won || !game.lost) {
 				continue; // not played yet, or box score pruned - nothing to link to

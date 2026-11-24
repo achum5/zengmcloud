@@ -10,7 +10,7 @@ import {
 	parlayConflict,
 	SPORTSBOOK_PRESEASON_GRANT,
 } from "../../../common/sportsbook.ts";
-import { getLines } from "./getLines.ts";
+import { allRookieSpots, getLines } from "./getLines.ts";
 import { getGameProps } from "./getGameProps.ts";
 import { getSyncEngine } from "../sync/engineHolder.ts";
 import type {
@@ -401,7 +401,10 @@ export const placeBetSlip = async ({
 			}
 			const conflict = parlayConflict(
 				picks.map((p) => p.market),
-				{ allStarRosterSize: g.get("allStarNum") * 2 },
+				{
+					allStarRosterSize: g.get("allStarNum") * 2,
+					allRookieSpots: allRookieSpots(),
+				},
 			);
 			if (conflict) {
 				throw new Error(conflict);

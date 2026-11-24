@@ -22,6 +22,8 @@ import {
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
 import { team } from "../index.ts";
+import { offBoardWhileLive } from "./liveHold.ts";
+import { getLiveGate } from "../../util/liveGameGate.ts";
 
 // Per-game player/team prop odds - the "click into a game" deep board. Kept
 // SEPARATE from getLines()'s whole-league board on purpose: this prices ONE
@@ -187,6 +189,10 @@ export const getGameProps = async (gid: number) => {
 	const schedule = await getSchedule();
 	const matchup = schedule.find((gm) => gm.gid === gid);
 	if (!matchup || matchup.homeTid < 0 || matchup.awayTid < 0) {
+		return undefined;
+	}
+	// Off the board while a game it follows is live, like the main board.
+	if (offBoardWhileLive(await getLiveGate(), matchup)) {
 		return undefined;
 	}
 

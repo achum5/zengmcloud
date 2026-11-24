@@ -1,9 +1,9 @@
 import { bySport } from "./sportFunctions.ts";
 import { defaultGameAttributes } from "./defaultGameAttributes.ts";
 
-// Every spread SHOWN outside the sportsbook lands on a whole or half point.
-// (The book's own lines go through toHalfPointLine instead, which forces the
-// half so a bet can't push.)
+// Every spread shown lands on a whole or half point - the sportsbook's line
+// included, so the board, ScoreBox, the hub and the game's own page all quote
+// the same number (a whole-number line can push; the book prices for it).
 export const roundHalf = (x: number) => Math.round(x * 2) / 2;
 
 // The pregame point spread from the HOME team's (teams[0]) perspective:
@@ -47,10 +47,15 @@ export const BASKETBALL_PLAYOFF_SYNERGY_COEF = 17.7;
 export const BASKETBALL_PLAYOFF_OVR_SLOPE = 0.37;
 // Playoff home court / regular home court, basketball (4.909 / 3.3504).
 export const BASKETBALL_PLAYOFF_HCA_FACTOR = 1.465;
-// The engine scores about 6.6% fewer points under playoff parameters (mean
-// total 208.7 -> 194.3 and 208.6 -> 195.5 on the same rosters), so a playoff
-// total built from regular-season scoring rates has to come down by this.
-export const BASKETBALL_PLAYOFF_TOTAL_FACTOR = 0.934;
+// A playoff game scores less than the two teams' regular-season rates say, so
+// a playoff total built from those rates comes down by this. Measured on real
+// playoffs, not on the same rosters replayed: 2,073 playoff games over 24
+// audited seasons (linesAudit.test.ts), with the team rates regressed as the
+// lines read them, came in at 0.966 of the rates' total. (Replaying a
+// regular-season matchup under playoff parameters gives 0.934, which is what
+// this used to be - but real playoff teams play their stars more and the drop
+// is smaller, so the over hit 61% of the time.)
+export const BASKETBALL_PLAYOFF_TOTAL_FACTOR = 0.966;
 
 // Home-court advantage in points at a given league setting (default setting is
 // 1), before game-length scaling. The basketball number is measured against the
