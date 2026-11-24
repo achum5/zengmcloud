@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 563,
+		date: "2026-11-24",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): players catch and throw passes on the move. A man running to a pass no longer pulls up and waits on his spot for it. He catches it in stride and gathers into his shot, his dribble or his next pass, and the man with the ball passes off the dribble instead of stopping first.",
+	},
+	{
 		n: 562,
 		date: "2026-11-24",
 		text: 'Game recaps read like a wire story now. They open with the home city ("DENVER — ") and end with Takeaways (one line on what the game means for each team, like a streak, a season high or where they sit in the standings), the Key moment, the Key stat, and Up next (who each team plays next, with the day of the week when the league uses the NBA calendar). On the Daily Schedule and every box score.',

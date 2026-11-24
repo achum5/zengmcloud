@@ -118,9 +118,29 @@ describe("3D possession sim: the man with the ball", () => {
 				dribbling: true,
 				man: manOff(m, 6),
 				mates: [],
-				home: { at: shotAt, in: up - t },
+				home: { at: shotAt, in: up - t, v: { x: 0, y: 0 } },
 			}));
 			assert.isBelow(dist(steps.at(-1)!, shotAt), 0.75, `pid ${pid}`);
+		}
+	});
+
+	test("the play taking him into a pass on the move, he picks it up still going with it", () => {
+		const set = { x: 30, y: 25 };
+		const up = 4000;
+		// (The play has him going 5 ft/s across the floor as he picks it up.)
+		const v = { x: 0, y: 5 };
+		const at = { x: 29, y: 28 };
+		for (const pid of [3, 9, 21]) {
+			const steps = run(guard(pid, 0.9), pid, set, up, (t, m) => ({
+				set,
+				dribbling: true,
+				man: manOff(m, 6),
+				mates: [],
+				home: { at, in: up - t, v },
+			}));
+			const last = steps.at(-1)!;
+			assert.isBelow(dist(last, at), 1.5, `pid ${pid}`);
+			assert.isAbove(last.vy, 3, `pid ${pid}`);
 		}
 	});
 
