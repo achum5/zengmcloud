@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 550,
+		date: "2026-11-24",
+		text: "Team schedule: the players' stat lines on upcoming games no longer get cut off when Upcoming and Completed Games sit side by side. The team names make the room instead, and a national TV logo stays at the end of the team names, clear of the players.",
+	},
+	{
 		n: 549,
 		date: "2026-11-24",
 		text: "When a league mate plays a game live, your header keeps showing the season and the score bar and ticker keep going, instead of \"Live game in progress\". That's only shown to whoever is playing the game or watching it. Leaving a league mate's game you're watching no longer warns that you'll lose the play-by-play; leaving your own live game still does.",

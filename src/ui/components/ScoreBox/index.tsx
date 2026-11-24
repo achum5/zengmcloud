@@ -157,13 +157,35 @@ export const ScoreBox = memo(
 
 		const final = winner !== undefined;
 
+		// The player beside each team: an upcoming game's top player, or a
+		// played one's best line.
+		const rowPlayers = ([0, 1] as const).map((i) => {
+			const upcomingPlayer = playersUpcoming?.[i];
+			if (upcomingPlayer) {
+				return { p: upcomingPlayer, best: undefined };
+			}
+			const players = game.teams[i].players;
+			if (final && players) {
+				const best = getBestPlayerBoxScore(players);
+				if (best) {
+					return { p: best.p, best };
+				}
+			}
+			return undefined;
+		});
+		// A players' column keeps its width (.score-box-player) and the teams'
+		// column takes what's left, so a box squeezed by its page shortens
+		// the team names before it cuts off a player's line.
+		const playersColumn =
+			!small && (rowPlayers[0] !== undefined || rowPlayers[1] !== undefined);
+
 		const national = !final ? game.national : undefined;
 		// (Big, at the end of the teams' column, where the scores go once it's
 		// played - till it's under way.)
 		const nationalBig = !small && !livePts ? national : undefined;
 		// (The teams' column that much wider - keep in step with
-		// .score-box-national - and the players' that much narrower to start
-		// from, where its page has no more room.)
+		// .score-box-national. Beside a players' column it's wider by whatever
+		// its box has left over, up to that much where its page makes room.)
 		const room = nationalBig || (nationalRoom && !small) ? NATIONAL_ROOM : 0;
 
 		const hasOvrs =
@@ -271,7 +293,14 @@ export const ScoreBox = memo(
 					)}
 				>
 					{nationalBig ? (
-						<NationalTag className="score-box-national" tag={nationalBig} />
+						<NationalTag
+							className={
+								playersColumn
+									? "score-box-national score-box-national-beside-players"
+									: "score-box-national"
+							}
+							tag={nationalBig}
+						/>
 					) : null}
 					{tradeDeadline ? (
 						<div
@@ -363,10 +392,10 @@ export const ScoreBox = memo(
 							const userTeamClass =
 								t.tid === userTid && final ? "user-team" : undefined;
 
-							let p;
+							const rowPlayer = rowPlayers[i];
+							const p = rowPlayer?.p;
 							let playerStatText;
-							if (playersUpcoming?.[i]) {
-								p = playersUpcoming?.[i];
+							if (rowPlayer && !rowPlayer.best) {
 								playerStatText = (
 									<>
 										{playersUpcomingAbbrev ? (
@@ -391,31 +420,28 @@ export const ScoreBox = memo(
 										})}
 									</>
 								);
-							} else if (final && t.players) {
-								const best = getBestPlayerBoxScore(t.players);
-								if (best) {
-									p = best.p;
-									playerStatText = best.statTexts.map((stat, i) => {
-										const col = getCol(`stat:${stat}`);
+							} else if (rowPlayer?.best) {
+								const best = rowPlayer.best;
+								playerStatText = best.statTexts.map((stat, i) => {
+									const col = getCol(`stat:${stat}`);
 
-										let title = col.title;
-										// Add back in prefix for some football ones
-										if (__SPORT === "football") {
-											if (!stat.startsWith("def")) {
-												title = helpers.upperCaseFirstLetter(stat);
-											}
+									let title = col.title;
+									// Add back in prefix for some football ones
+									if (__SPORT === "football") {
+										if (!stat.startsWith("def")) {
+											title = helpers.upperCaseFirstLetter(stat);
 										}
+									}
 
-										return (
-											<React.Fragment key={stat}>
-												{i > 0 ? ", " : null}
-												<span title={col.desc}>
-													{best.processedStats[stat]} {title}
-												</span>
-											</React.Fragment>
-										);
-									});
-								}
+									return (
+										<React.Fragment key={stat}>
+											{i > 0 ? ", " : null}
+											<span title={col.desc}>
+												{best.processedStats[stat]} {title}
+											</span>
+										</React.Fragment>
+									);
+								});
 							}
 
 							const WINNER_ARROW_WIDTH = 6;
@@ -444,12 +470,13 @@ export const ScoreBox = memo(
 											"d-flex align-items-center score-box-left-wrapper",
 											{
 												"flex-grow-1": small,
+												"score-box-teams-flex": playersColumn,
 											},
 										)}
 										style={
 											!small
 												? {
-														width: 210 + room,
+														width: playersColumn ? 210 : 210 + room,
 													}
 												: undefined
 										}
@@ -601,14 +628,17 @@ export const ScoreBox = memo(
 									</div>
 									{p ? (
 										<div
-											className="score-box-player align-self-stretch border-start ps-2 flex-grow-1 text-body-secondary d-none d-sm-flex align-items-center overflow-hidden text-nowrap"
+											className={clsx(
+												"score-box-player align-self-stretch border-start ps-2 text-body-secondary d-none d-sm-flex align-items-center overflow-hidden text-nowrap",
+												small ? "flex-grow-1" : "score-box-player-fixed pe-2",
+											)}
 											style={{
 												backgroundColor: "var(--bs-white)",
-												width: 200 - room,
+												width: small ? 200 : undefined,
 											}}
 										>
-											<div>
-												<div>
+											<div className="score-box-player-lines">
+												<div className="text-truncate">
 													<PlayerNameLabels
 														pid={p.pid}
 														injury={p.injury}
@@ -617,9 +647,16 @@ export const ScoreBox = memo(
 														legacyName={p.name}
 													/>
 												</div>
-												<div>{playerStatText}</div>
+												<div className="text-truncate">{playerStatText}</div>
 											</div>
 										</div>
+									) : playersColumn ? (
+										// (Its column kept, empty, to line up with the other
+										// team's.)
+										<div
+											className="score-box-player score-box-player-fixed align-self-stretch border-start d-none d-sm-block"
+											style={{ backgroundColor: "var(--bs-white)" }}
+										/>
 									) : null}
 								</div>
 							);

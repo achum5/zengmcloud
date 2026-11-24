@@ -2739,6 +2739,25 @@ $score-box-national-width: 56px;
 	padding-right: $score-box-national-width + 8px !important;
 }
 
+// A box's players' column keeps its width, so a player's line always fits,
+// and its teams' column (basis 210, see ScoreBox) grows into whatever the box
+// has left or gives up what it lacks - the team names shorten first. A
+// network's logo then sits at the end of that column, beside the players'.
+$score-box-player-width: 200px;
+@include media-breakpoint-up(sm) {
+	.score-box-player-fixed {
+		flex: 0 0 $score-box-player-width;
+		width: $score-box-player-width;
+	}
+	.score-box-national-beside-players {
+		left: auto;
+		right: $score-box-player-width + 4px;
+	}
+}
+.score-box-player-lines {
+	min-width: 0;
+}
+
 // At the end of a national game's small score box, inside it, both teams
 // high.
 .score-box-national-small {
@@ -2787,6 +2806,11 @@ $score-box-national-width: 56px;
 @include media-breakpoint-up(sm) {
 	.score-box-left-wrapper {
 		flex-grow: 0;
+	}
+	// (Beside a players' column: see .score-box-player-fixed.)
+	.score-box-teams-flex {
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 }
 
