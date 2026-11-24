@@ -46,7 +46,12 @@ import {
 } from "./resolution.ts";
 import { FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
-import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
+import {
+	glReady,
+	makeScratch,
+	makeSpriteCache,
+	releaseSprites,
+} from "./sprite.ts";
 import {
 	buildClocks,
 	formatGameClock,
@@ -70,7 +75,7 @@ const MESH_HEAD = MESH_KINDS.includes("head");
 const MESH_FIXED = 0.6;
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { makeJumbotron } from "./jumbotron.ts";
-import { crowdFaces, type CrowdFace } from "./crowdFaces.ts";
+import { crowdFaces, crowdFacesMade, type CrowdFace } from "./crowdFaces.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
 import { courtRosterOf, courtTeamsOf, introKindOf } from "./courtInput.ts";
 import { dressKit } from "./kitArt.ts";
@@ -508,8 +513,9 @@ const Court3D = ({
 
 	// The building, painted once a game.
 	// Faces for the crowd, made in the background (see crowdFaces): the stands
-	// painted again once they are ready, the same fans with faces now.
-	const [fans, setFans] = useState<CrowdFace[]>();
+	// painted again once they are ready, the same fans with faces now - or
+	// with them from the start, if they were made for a court before.
+	const [fans, setFans] = useState<CrowdFace[] | undefined>(crowdFacesMade);
 	useEffect(() => {
 		let alive = true;
 		void crowdFaces().then((f) => {
@@ -1934,3 +1940,14 @@ const Court3D = ({
 };
 
 export default Court3D;
+
+// What the first court of a visit sets up for itself, done ahead of it (the
+// Nightly Recap's, while its poster is up): the crowd's faces made, a face
+// at a time, and - `all`, with nothing on the screen moving for it to hold
+// up - the card that draws the men checked against the page. Once a visit.
+export const warmCourt = (all: boolean) => {
+	void crowdFaces();
+	if (all) {
+		glReady();
+	}
+};

@@ -2,12 +2,12 @@ import type { DraftPick, Player } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { getContractDemand } from "../contract/index.ts";
-import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
 import { contractOf } from "../realisticFrontOffice/contractOf.ts";
 import { ensureRetention } from "../realisticFrontOffice/outlook.ts";
 import { timed } from "./clock.ts";
+import { smartTradable } from "./tradeRules.ts";
 import { fairToSeller, marketSettings, standing, teamsOf } from "./market.ts";
 import { signedOn, smartSigningPrice } from "./signing.ts";
 import { tradedAwayCount, type Holdings, type SmartView } from "./worth.ts";
@@ -171,7 +171,7 @@ export const roomToSign = (
 		const h = await view.holdingsOf(tid);
 		const payroll = view.payrollNow(tid, h);
 		const tradable = h.players.filter(
-			(p) => !isUntradable(p).untradable && contractOf(p).amount > 0,
+			(p) => smartTradable(p) && contractOf(p).amount > 0,
 		);
 		// What each would cost it to send, priced only once a free agent is
 		// worth clearing for: priced for every team every free agency day, it

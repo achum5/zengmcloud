@@ -15,8 +15,10 @@ import { coarsenRating } from "../../../common/coarsenRating.ts";
 import { collegeFinalSeason } from "../../../common/college.ts";
 import { revertBefore } from "./revertSnapshot.ts";
 import { addContract, createContract } from "../contract/index.ts";
-import { daysOut } from "../game/calendarTicks.ts";
+import { daysOut, nbaCalendarLeague } from "../game/calendarTicks.ts";
 import { currentDayClock } from "../game/classicDays.ts";
+import { coolOffForSigning } from "../game/tradableOn.ts";
+import getPayroll from "../team/getPayroll.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -89,9 +91,48 @@ const sign = async (
 		p.draft.year === g.get("season") &&
 		p.draft.tid === tid;
 
+	// A re-signing for over 20% more, above the minimum, that leaves his team
+	// over the cap (on Bird rights): on the NBA calendar, tradable a month
+	// later than the rest (game/tradableOn.ts).
+	const bigRaise = async () => {
+		// (A CPU team's re-signing has no negotiation: he is its own already.)
+		const resigning = negotiation?.resigning || revert.before.tid === tid;
+		if (!resigning || !nbaCalendarLeague()) {
+			return false;
+		}
+		const was = revert.before.contract;
+		if (
+			!(contractInput.amount > 1.2 * was.amount) ||
+			!(contractInput.amount > g.get("minContract"))
+		) {
+			return false;
+		}
+		// (His old deal, run out, isn't in the payroll to come.)
+		const old = was.exp > g.get("season") ? was.amount : 0;
+		return (
+			(await getPayroll(tid)) - old + contractInput.amount > g.get("salaryCap")
+		);
+	};
+
 	p.tid = tid;
 	p.numDaysFreeAgent = 0;
-	p.gamesUntilTradable = isRookie ? 0 : Math.round(0.17 * g.get("numGames")); // 14 for basketball, 3 for football
+	// 14 games for basketball, 3 for football; on the NBA calendar, the NBA's
+	// dates (game/tradableOn.ts).
+	if (isRookie) {
+		p.gamesUntilTradable = 0;
+		delete p.tradableOn;
+	} else {
+		const wait = await coolOffForSigning({
+			phase,
+			bigRaise: await bigRaise(),
+		});
+		p.gamesUntilTradable = wait.games;
+		if (wait.on === undefined) {
+			delete p.tradableOn;
+		} else {
+			p.tradableOn = wait.on;
+		}
+	}
 	// On the NBA calendar, the days that comes to (see refreshCalendarDays.ts).
 	const dayClock =
 		p.gamesUntilTradable > 0 ? await currentDayClock() : undefined;

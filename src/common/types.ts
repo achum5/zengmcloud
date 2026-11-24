@@ -353,6 +353,7 @@ export type TransactionRevert = {
 		gamesUntilTradable: number;
 		// On the NBA calendar: the calendar days gamesUntilTradable comes to.
 		daysUntilTradable?: number;
+		tradableOn?: string;
 		ptModifier: number;
 		yearsFreeAgent: number;
 		jerseyNumber?: string;
@@ -2177,6 +2178,9 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	gamesUntilTradable: number;
 	// On the NBA calendar: the calendar days gamesUntilTradable comes to.
 	daysUntilTradable?: number;
+	// On the NBA calendar: the night he can first be traded, by the NBA's
+	// dates ("YYYY-MM-DD", game/tradableOn.ts).
+	tradableOn?: string;
 	hgt: number;
 	hof?: 1; // Would rather be boolean, but can't index boolean
 	imgURL: string;

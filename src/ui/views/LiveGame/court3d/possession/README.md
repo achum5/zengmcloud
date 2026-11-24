@@ -84,10 +84,14 @@ looks better.
    length. Then stops, plant-and-cut and slides (built: real footsteps,
    `footsteps.ts` - each step a spot on the floor, planned off the path
    he takes, and his legs reach for it), judged in the movement lab
-   (`tools/court3d-tape/lab.test.ts`) beside real footage. A foot down
-   slides on 5.6% of its time over a game (LAB_MEASURE footSliding), from
-   28% on the old step cycles; what is left is mostly going into and out
-   of a shot or a jump.
+   (`tools/court3d-tape/lab.test.ts`) beside real footage. His steps go on
+   through whatever he does on the floor (a screen, a jab, setting his feet
+   for a shot), stepping to where that move has his feet; his legs are the
+   move's own only up in a jump (handed over in the air, both ways) and in
+   moves that take them their own way (sat down, knocked over). A foot down
+   slides on 1.6% of its time over a game (LAB_MEASURE footSliding), from
+   28% on the old step cycles (5.6% before shots, jumps and screens were
+   stepped through).
 5. Defense (built), the first of the ten deciding for themselves. The facts, the
    planner's first pieces and the per-possession loop come in with it, in
    this folder, and today's defensive patch passes are off under the switch.

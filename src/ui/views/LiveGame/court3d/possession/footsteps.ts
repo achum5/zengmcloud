@@ -50,8 +50,15 @@ export type StepIn = {
 	// How tall he is (feet).
 	height: number;
 	// Where his feet are as it starts, if he is coming out of something
-	// (otherwise under him, set).
+	// (otherwise under him, set) - and whether he comes down on both as it
+	// starts, under way or not (landing from a jump), rather than in stride.
 	feet?: [Pt, Pt];
+	set?: boolean;
+	// Where what he is doing has his feet, stood (his right, his left), if it
+	// has a stance of its own: a screen wide, his triple threat with one foot
+	// back, a jab step out at his man and back. Stood, he steps to them - up
+	// as it takes a foot, down where it sets it.
+	own?: (t: number) => [Pt, Pt] | undefined;
 };
 
 const G = 32.17;
@@ -103,9 +110,22 @@ const SET_STEP = 260;
 // Stepping any way but running, a foot stays to its own side of the other,
 // at least this far (feet, for a man 6 ft 6 in).
 const SIDE_LEAST = 0.3;
+// Stood in a stance of his move's own (see StepIn.own): a foot further than
+// this from where it has it (feet, for a man 6 ft 6 in) steps there - looked
+// at so far ahead (ms), as a step takes that long to get there. It comes down
+// once his move has it still (moving under OWN_STILL feet a second), a swing
+// at least on (ms), and no later than so long. And a foot down stays down at
+// least so long (ms) before it steps again.
+const OWN_OFF = 0.35;
+const OWN_AHEAD = 100;
+const OWN_STILL = 1;
+const OWN_SWING = [150, 320] as const;
+const OWN_STAY = 120;
 // Pulling up, his last step going comes down this far (feet) out in front of
 // where he stops - the other then set as far behind it.
 const STAGGER = 0.55;
+// (No further out from under him than this, feet, as it comes down.)
+const STAGGER_REACH = 1.9;
 // Sliding, his steps a second: so many, and more the quicker he goes (a
 // second for each foot a second), up to so many.
 const SLIDE_RATE = [2.4, 0.36, 5.5] as const;
@@ -180,6 +200,20 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	const stanceAt = (t: number) => {
 		const i = idx(t);
 		return (S[i] ??= x.stance(T(i)));
+	};
+	// (And where his move has his feet - null for none.)
+	const O: ([Pt, Pt] | null)[] = [];
+	const ownAt = (t: number): [Pt, Pt] | undefined => {
+		if (!x.own) {
+			return undefined;
+		}
+		const i = idx(t);
+		let o = O[i];
+		if (o === undefined) {
+			o = x.own(T(i)) ?? null;
+			O[i] = o;
+		}
+		return o ?? undefined;
 	};
 	const span = (k: number) => Math.max(1, Math.round(k / GRID));
 	const velAt = (t: number): Pt => {
@@ -338,11 +372,14 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	let next: 0 | 1 = 0;
 	let t = from;
 	let landed = from;
-	const going = x.feet ? "stand" : modeAt(from);
+	const going = x.feet || x.set ? "stand" : modeAt(from);
 	if (going === "stand") {
 		// Set as it starts.
 		for (const foot of [0, 1] as const) {
-			const at = x.feet?.[foot] ?? spotFor(foot, from, from, "stand");
+			const at =
+				x.feet?.[foot] ??
+				ownAt(from)?.[foot] ??
+				spotFor(foot, from, from, "stand");
 			put({
 				foot,
 				t0: from,
@@ -472,7 +509,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 					const o = steps[last[f === 0 ? 1 : 0]]!;
 					const at = keepSide(
 						f,
-						spotFor(f, land, land + 400, "stand"),
+						ownAt(land)?.[f] ?? spotFor(f, land, land + 400, "stand"),
 						o,
 						rightAt(land, "stand"),
 						SIDE_LEAST * scale,
@@ -487,10 +524,65 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 					});
 					landed = Math.max(landed, land);
 				}
-				// ... and a step only to stay over his feet: his weight off them,
-				// or turned from the way they point.
 				const R = steps[last[0]]!;
 				const L = steps[last[1]]!;
+				// ... in a stance of his move's own, a step to where it has a foot
+				// he is too far off (the further off of the two) - when it takes it.
+				const own = ownAt(Math.min(to, t + OWN_AHEAD));
+				if (own) {
+					const off = ([R, L] as const).map((s, f) =>
+						s.t0 <= t && t - s.t0 >= OWN_STAY
+							? Math.hypot(own[f]!.x - s.x, own[f]!.y - s.y)
+							: 0,
+					);
+					const foot: 0 | 1 = off[0]! >= off[1]! ? 0 : 1;
+					if (
+						off[foot]! > OWN_OFF * scale &&
+						t + OWN_SWING[0] < to &&
+						t - landed >= OWN_STAY
+					) {
+						// (Down once his move has it still - or as late as a step
+						// takes.)
+						let land = t + OWN_SWING[0];
+						const most = Math.min(to, t + OWN_SWING[1]);
+						for (; land + GRID <= most; land += GRID) {
+							const a = ownAt(land)?.[foot];
+							const b = ownAt(land + GRID)?.[foot];
+							if (
+								!a ||
+								!b ||
+								Math.hypot(b.x - a.x, b.y - a.y) < (OWN_STILL * GRID) / 1000
+							) {
+								break;
+							}
+						}
+						const o = foot === 0 ? L : R;
+						const at = keepSide(
+							foot,
+							ownAt(land)?.[foot] ?? own[foot]!,
+							o,
+							rightAt(land, "stand"),
+							(SIDE_LEAST / 2) * scale,
+						);
+						steps[last[foot]]!.t1 = t;
+						put({
+							foot,
+							t0: land,
+							t1: Infinity,
+							x: at.x,
+							y: at.y,
+							yaw: toeAt(land, "stand", foot),
+						});
+						landed = land;
+						next = foot === 0 ? 1 : 0;
+						t = land;
+						continue;
+					}
+					t += GRID * 2;
+					continue;
+				}
+				// ... and otherwise a step only to stay over his feet: his weight
+				// off them, or turned from the way they point.
 				const c = posAt(Math.min(to, t + 150));
 				const mid = { x: (R.x + L.x) / 2, y: (R.y + L.y) / 2 };
 				const off = Math.hypot(c.x - mid.x, c.y - mid.y) / scale;
@@ -542,6 +634,12 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 			const R = steps[last[0]]!;
 			const L = steps[last[1]]!;
 			const setOff = R.t1 === Infinity && L.t1 === Infinity;
+			if (setOff && paceAt(t) < STOOD / 2 && t + GRID < to) {
+				// (Set off as he gets going - not a foot up a moment before he
+				// moves, to come down as he only starts to.)
+				t += GRID;
+				continue;
+			}
 			const r = rightAt(t, mode);
 			if (setOff) {
 				const v = velAt(t + 100);
@@ -576,9 +674,22 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 				const lift = prev.t1 === Infinity || prev.t1 > t ? t : prev.t1;
 				prev.t1 = Math.max(prev.t0, lift);
 				const set = Math.min(to, Math.max(rest, prev.t1 + swingLeast));
-				const c = posAt(set);
-				// (His weight between them: as far the other side of him.)
-				let at: Pt = { x: 2 * c.x - o.x, y: 2 * c.y - o.y };
+				// (Where his move has it, if it has a stance of its own - or under
+				// him, at its side: behind him as far as the other is out in front
+				// braking, up to a stagger, so his weight is between them. A foot
+				// left behind steps up after, to stay over his feet.)
+				let at: Pt | undefined = ownAt(set)?.[next];
+				if (!at) {
+					at = spotFor(next, set, set + 400, "stand");
+					const c = posAt(set);
+					const v = velAt(Math.max(from, set - 150));
+					const p = Math.hypot(v.x, v.y);
+					if (p > 0.1) {
+						const ahead = ((o.x - c.x) * v.x + (o.y - c.y) * v.y) / p;
+						const k = Math.min(Math.max(0, ahead), STAGGER * scale) / p;
+						at = { x: at.x - v.x * k, y: at.y - v.y * k };
+					}
+				}
 				at = keepSide(
 					next,
 					at,
@@ -604,6 +715,8 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 			let at = spotFor(foot, land, land + down, mode);
 			// (Stood before the next would come: this one's his last going - out
 			// in front of where he pulls up, a short stagger, out to its side.)
+			// (Not if that is further out in front of him than such a step goes:
+			// a long way yet to where he stops, he steps on toward it.)
 			const stops = restBy(land, land + beat);
 			if (stops !== undefined) {
 				const c = posAt(stops);
@@ -612,10 +725,14 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 				const rr = rightAt(stops, "stand");
 				const w = SPREAD.stand * scale * (foot === 0 ? 1 : -1);
 				const ahead = p > 0.1 ? (STAGGER * scale) / p : 0;
-				at = {
+				const last = {
 					x: c.x + v.x * ahead + rr.x * w,
 					y: c.y + v.y * ahead + rr.y * w,
 				};
+				const c0 = posAt(land);
+				if (Math.hypot(last.x - c0.x, last.y - c0.y) <= STAGGER_REACH * scale) {
+					at = last;
+				}
 			}
 			if (mode !== "run") {
 				// Never across the other foot, stepping any way but running: if it

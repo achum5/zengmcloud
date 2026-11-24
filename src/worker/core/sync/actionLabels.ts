@@ -87,6 +87,7 @@ export const MAIN_SIM_AUTHORITY_LOCKED = new Set([
 	"updateExpansionDraftSetup",
 	"setScheduleFromEditor",
 	"toggleTradeDeadline",
+	"smartMarketNow",
 	"allStarGameNow",
 	"updatePlayoffTeams",
 	"setForceWin",

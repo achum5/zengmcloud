@@ -12,6 +12,31 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 502,
+		date: "2026-11-24",
+		text: "Smart CPU GMs: a CPU team now passes on a trade if a clearly better one will open up once recently signed players can be traded. CPU teams also never trade a player they just signed, even with God Mode on.",
+	},
+	{
+		n: 501,
+		date: "2026-11-24",
+		text: "NBA calendar leagues: a player who signs now can't be traded until the NBA's real dates. That's December 15 for summer signings (it was 14 games, around mid-November), January 15 for a re-signing with a raise over 20% while over the cap, and three months after signing for anyone signed in the preseason or during the season. This summer's signings move to December 15 when the season starts. Classic leagues keep 14 games.",
+	},
+	{
+		n: 500,
+		date: "2026-11-24",
+		text: "Smart CPU: the Danger Zone (God Mode) has a button that runs the CPU teams' trade market now, while re-signing players or in the preseason. It's for a league that turned Smart CPU on after that market would have met. Only the person in charge of simming can run it.",
+	},
+	{
+		n: 499,
+		date: "2026-11-24",
+		text: "3D game, New sim: players' feet stay planted through shots, jumps, screens and jab steps too. A shooter steps into his shot and leaves the floor from where his feet are, comes down on the feet his jump puts down, and a jab step is a real step out and back.",
+	},
+	{
+		n: 498,
+		date: "2026-11-23",
+		text: "Nightly Recap: smoother into each game. The GAME RECAP card no longer stutters as it comes up; the 3D court is set up behind it once it's still, and the arena is painted once instead of twice.",
+	},
+	{
 		n: 497,
 		date: "2026-11-23",
 		text: "NBA calendar month view: home games are a plain fill in your team's color (no stripe on top), and the small calendar on the dashboard now shows each game's score.",

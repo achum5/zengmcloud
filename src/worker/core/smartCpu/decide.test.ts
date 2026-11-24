@@ -453,12 +453,22 @@ test(
 			}
 			const out = { pids: [best.pid], dpids: [] };
 			const inn = { pids: [worst.pid], dpids: [] };
+			// Only where the team's own read has him for the human's worst as
+			// a loss: one it would lose for nothing anyway (his deal ending, no
+			// chance of re-signing him, nothing to play for) is no loss to it.
+			const read = await view.verdict(seller, human, out, inn, {
+				market: false,
+			});
+			if (!(read.worth < 0)) {
+				note("humanVanillaFleece", `${label(best)}: no loss`, read.worth);
+				continue;
+			}
 			tried += 1;
 			g.setWithoutSavingToDB("difficulty", 0);
 			const guard = await smartGuardOffer(seller, human, out, inn);
 			note("humanVanillaFleece", label(best), guard.worth ?? 0);
 			if (guard.ok) {
-				wrong.push(`${label(best)} for ${label(worst)}`);
+				wrong.push(`${label(best)} for ${label(worst)}: ${read.worth}`);
 			}
 			g.setWithoutSavingToDB("difficulty", -0.25);
 			const onEasy = await smartGuardOffer(seller, human, out, inn);

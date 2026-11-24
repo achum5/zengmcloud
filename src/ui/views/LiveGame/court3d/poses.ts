@@ -14016,6 +14016,8 @@ const NECK_DOWN_LEAN = [45, 70] as const;
 // to it rather than where his pose has it (0 to 1), and whether it is down
 // on the floor (or swinging through). His legs reach for them (see
 // reachFeet).
+// (Up in the air with him in a jump, `air`: as high as his pose has it -
+// only where it is over the floor is the plan's.)
 export type FootAt = {
 	f: number;
 	s: number;
@@ -14024,6 +14026,7 @@ export type FootAt = {
 	roll: number;
 	w: number;
 	down: boolean;
+	air?: boolean;
 };
 export type Posed = Pose & { feetAt?: readonly [FootAt, FootAt] };
 // (Sunk at the hips no further than this, feet, to reach a foot planned
@@ -14047,7 +14050,7 @@ const reachFeet = (
 		return v3(
 			o.f + (p.f - o.f) * w,
 			o.s + (p.s - o.s) * w,
-			o.u + (b.ankleH + p.lift - o.u) * w,
+			p.air ? o.u : o.u + (b.ankleH + p.lift - o.u) * w,
 		);
 	});
 	let sink = 0;
@@ -15750,7 +15753,14 @@ export const holdBall = (
 	left = false,
 ): { sk: Skeleton; ball: V3 } => {
 	if (left) {
-		const h = holdBall(b, mirror(q0), anim, carry);
+		// (His planned feet the other way round with him: his right foot's
+		// where his left's would be.)
+		const feet = (q0 as Posed).feetAt;
+		const flip = (p: FootAt): FootAt => ({ ...p, s: -p.s, yaw: -p.yaw });
+		const q1: Posed = feet
+			? { ...mirror(q0), feetAt: [flip(feet[1]), flip(feet[0])] }
+			: mirror(q0);
+		const h = holdBall(b, q1, anim, carry);
 		return { sk: mirrorSkeleton(h.sk), ball: flipV(h.ball) };
 	}
 	const q = carry ? carried(q0, anim) : q0;
