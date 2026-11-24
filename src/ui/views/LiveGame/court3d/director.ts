@@ -2052,6 +2052,9 @@ const HEAVE_REACH = 7;
 const HEAVE_FRONT = 5.5;
 const HEAVE_BEHIND = 4;
 const HEAVE_BACK_OFF = 12;
+// Fouling him on it, how far off to the side of him, and back of him, the
+// man who does is (feet).
+const HEAVE_FOUL = { side: 1.7, back: 1.0 };
 // Up the floor with him, the rest no nearer the ball's way than this
 // (feet).
 const HEAVE_LANE = 9;
@@ -12081,6 +12084,9 @@ class Director {
 		// No shot at the end of it (the period run out on him): on the run
 		// with it till the horn, still dribbling - see playOutClock.
 		shoot = true,
+		// Who comes after him (his own man, unless somebody else fouls him
+		// on it).
+		chaser = this.defenderOf(shooter),
 	): number {
 		const t0 = t;
 		const rim = rimPt(team);
@@ -12164,7 +12170,7 @@ class Director {
 		// is coming from - behind him, chasing, or still in front of him,
 		// backing off it (off where he comes down from it, on through it:
 		// see HEAVE_ON) - never through him.
-		const d = this.defenderOf(shooter);
+		const d = chaser;
 		if (d !== undefined) {
 			const G = this.posAt(d, start);
 			const off = dist(G, S) > 0.5 ? unitVec(S, G) : { x: -u.x, y: -u.y };
@@ -13665,7 +13671,19 @@ class Director {
 		if (lob !== undefined) {
 			t = this.setUpLob(team, shooter, lob, t);
 		} else if (heaveSecs !== undefined && !putback) {
-			t = this.raceToHeave(team, shooter, t, gap);
+			// (Fouled on it, it is the man who fouls him who comes after him.)
+			t = this.raceToHeave(
+				team,
+				shooter,
+				t,
+				gap,
+				true,
+				plan.kind === "make" &&
+					plan.fouler !== undefined &&
+					this.teamOf(plan.fouler) !== team
+					? plan.fouler
+					: undefined,
+			);
 		} else if (!putback || this.holder !== shooter) {
 			let run: Running | undefined;
 			if (!putback) {
@@ -14994,7 +15012,11 @@ class Director {
 				) {
 					room = 2;
 				}
-				if (heave) {
+				if (heave && andOne) {
+					// Fouled as he heaves it, and in anyway: the man who fouls
+					// him on him as it goes.
+					this.foulHeave(onHim!, shooter, release);
+				} else if (heave) {
 					// After him up the floor, not set in front of him: a hand up
 					// at it from behind, if he has caught him.
 					this.chaseHeave(onHim, shooter, release);
@@ -15522,6 +15544,42 @@ class Director {
 			look: { ...P },
 			jump: [0.525 - half / D, 0.525 + half / D, peak],
 			...(this.leftToBall(G, shooter, P) ? { mirror: true as const } : {}),
+		});
+	}
+
+	// A heave he is fouled on, and in anyway: the man who fouls him right
+	// on him as he lets it go - up beside him on the side he comes from, a
+	// touch behind him (the shooter going on through it, not into him) -
+	// and a swipe at his arm as he throws it.
+	private foulHeave(f: number, shooter: number, release: number) {
+		const P = this.posAt(shooter, release);
+		const u = unitVec(P, rimPt(this.teamOf(shooter)));
+		const G = this.posAt(f, release - 600);
+		const side = Math.sign((G.x - P.x) * -u.y + (G.y - P.y) * u.x) || 1;
+		const F = clampPt({
+			x: P.x - u.y * side * HEAVE_FOUL.side - u.x * HEAVE_FOUL.back,
+			y: P.y + u.x * side * HEAVE_FOUL.side - u.y * HEAVE_FOUL.back,
+		});
+		// (Getting there from wherever he is, setting off in time to.)
+		const by = release - 180;
+		let from = release - 700;
+		for (let n = 0; n < 4; n++) {
+			const need = runMs(dist(this.posAt(f, from), F), SPRINT, 0, BURST) + 60;
+			if (by - from >= need) {
+				break;
+			}
+			from = by - need;
+		}
+		if ((this.free.get(f) ?? 0) > from) {
+			this.cutShort(f, from);
+		}
+		this.goBy(f, F, from, by, "run", undefined, BURST);
+		this.ownRun(f, by, from - 1500);
+		this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
+			face: (P.x >= F.x ? 1 : -1) as 1 | -1,
+			look: { ...P },
+			jump: HACK_JUMP,
+			...(this.leftToBall(F, shooter, P) ? { mirror: true as const } : {}),
 		});
 	}
 

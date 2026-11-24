@@ -152,4 +152,55 @@ describe("3D heaves at the buzzer", () => {
 			assert.isAbove(seen, 0);
 		},
 	);
+
+	test(
+		"fouled on it and in anyway, the man who fouls him is on him as he lets it go, a swipe at his arm",
+		{ timeout: 60_000 },
+		() => {
+			for (const [k, { events: plain, players }] of buzzerCases().entries()) {
+				for (const fouler of [1, 3, 5]) {
+					// The same heave, made, and him fouled on it.
+					const at = plain.findIndex((e) => e.type === "missTp");
+					const shooter = plain[at]!.pid as number;
+					const t = plain[at]!.t as 0 | 1;
+					const events: RawEvent[] = [
+						...plain.slice(0, at),
+						{ type: "tpAndOne", t, pid: shooter, clock: 0, pidFoul: fouler },
+						{ type: "stat", t: 1 - t, pid: fouler, s: "pf", amt: 1 },
+						{ type: "ft", t, pid: shooter, clock: 0 },
+						...plain.slice(at + 1),
+					];
+					const tl = compileCourt({ events, players, gid: 7 + k });
+					const shot = tl.beats.find((b) => events[b.i]!.desperation === true)!;
+					// (Up from deep - a heave, or a jumper if it is in range.)
+					const up = tl.tracks
+						.get(shooter)!
+						.acts.find(
+							(a) =>
+								(a.anim === "heave" || a.anim === "shoot") &&
+								a.t0 >= shot.actionStart - 50,
+						);
+					assert.isDefined(up, `case ${k}: his shot`);
+					const hack = tl.tracks
+						.get(fouler)!
+						.acts.find(
+							(a) => a.anim === "hack" && a.t1 > up!.t0 && a.t0 < up!.t1,
+						);
+					assert.isDefined(
+						hack,
+						`case ${k}, fouled by ${fouler}: a swipe at him as it goes`,
+					);
+					// (As it leaves his hand: a quarter of a second into the swipe.)
+					const when = hack!.t0 + 250;
+					const S = evalPlayer(tl, shooter, when, bodyFor);
+					const F = evalPlayer(tl, fouler, when, bodyFor);
+					assert.isBelow(
+						Math.hypot(S.x - F.x, S.y - F.y),
+						3.5,
+						`case ${k}, fouled by ${fouler}: on him (${up!.anim})`,
+					);
+				}
+			}
+		},
+	);
 });

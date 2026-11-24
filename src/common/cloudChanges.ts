@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 544,
+		date: "2026-11-24",
+		text: "3D games: an and-one on a shot from way out at the buzzer now shows the foul. The man who fouled him is right on him as he lets it go, swiping at his arm, instead of nowhere near him.",
+	},
+	{
 		n: 543,
 		date: "2026-11-24",
 		text: "Shared leagues: when the auto-play scheduler or a league mate sims a day, your screen now keeps up without a reload. The date at the top, the Play menu, today on the scores bar, the ticker's next games, the calendar on a team's page and the Auto Play schedule all move to the new day.",
