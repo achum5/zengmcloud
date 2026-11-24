@@ -763,3 +763,32 @@ export const scoreBugForGame = (
 	const mine = teams.find((t) => t.tid === userTid);
 	return mine?.scoreBug ?? teams[0]?.scoreBug ?? league ?? null;
 };
+
+// A GAME ON ITS TEAMS' OWN BROADCASTS, either one to watch it on: each
+// team's bug (its own, or the league's - null for the default), home first,
+// and `tid`, whose the game is on until the viewer picks (the one
+// scoreBugForGame gives). Nothing to pick when no team has a bug of its own,
+// or both look the same.
+export type LocalBroadcasts = {
+	tid: number;
+	bugs: { tid: number; scoreBug: ScoreBugStyle | null }[];
+};
+
+export const localBroadcasts = (
+	league: ScoreBugStyle | null | undefined,
+	teams: { tid: number; scoreBug?: ScoreBugStyle }[],
+	userTid: number | undefined,
+): LocalBroadcasts | undefined => {
+	if (teams.length !== 2 || !teams.some((t) => t.scoreBug)) {
+		return undefined;
+	}
+	const bugs = teams.map((t) => ({
+		tid: t.tid,
+		scoreBug: t.scoreBug ?? league ?? null,
+	}));
+	if (JSON.stringify(bugs[0]!.scoreBug) === JSON.stringify(bugs[1]!.scoreBug)) {
+		return undefined;
+	}
+	const mine = teams.find((t) => t.tid === userTid && t.scoreBug);
+	return { tid: (mine ?? teams[0]!).tid, bugs };
+};

@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	dayText,
 	FOOTBALL_SCORE_BUG_PRESETS,
+	localBroadcasts,
 	mapScoreBugURLs,
 	NOT_TEAM_LOOKS,
 	parseScoreBug,
@@ -307,6 +308,74 @@ describe("scoreBugForGame", () => {
 		assert.strictEqual(
 			scoreBugForGame(null, [{ tid: 1 }, { tid: 2 }], 1),
 			null,
+		);
+	});
+});
+
+describe("localBroadcasts", () => {
+	const league = { ...ok, width: 1 };
+	const homeBug = { ...ok, width: 2 };
+	const awayBug = { ...ok, width: 3 };
+
+	test("each team's, home first, on the one scoreBugForGame picks", () => {
+		const teams = [
+			{ tid: 1, scoreBug: homeBug },
+			{ tid: 2, scoreBug: awayBug },
+		];
+		for (const userTid of [1, 2, 9]) {
+			const local = localBroadcasts(league, teams, userTid)!;
+			assert.deepStrictEqual(local.bugs, [
+				{ tid: 1, scoreBug: homeBug },
+				{ tid: 2, scoreBug: awayBug },
+			]);
+			assert.strictEqual(
+				local.bugs.find((b) => b.tid === local.tid)!.scoreBug,
+				scoreBugForGame(league, teams, userTid),
+			);
+		}
+		assert.strictEqual(localBroadcasts(league, teams, 2)!.tid, 2);
+		assert.strictEqual(localBroadcasts(league, teams, 9)!.tid, 1);
+	});
+
+	test("a team with no bug of its own: the league's, or the default", () => {
+		for (const teams of [
+			[{ tid: 1 }, { tid: 2, scoreBug: awayBug }],
+			[{ tid: 1, scoreBug: homeBug }, { tid: 2 }],
+		]) {
+			for (const lg of [league, null]) {
+				for (const userTid of [1, 2, 9]) {
+					const local = localBroadcasts(lg, teams, userTid)!;
+					assert.strictEqual(
+						local.bugs.find((b) => b.tid === local.tid)!.scoreBug,
+						scoreBugForGame(lg, teams, userTid),
+					);
+				}
+			}
+		}
+		assert.deepStrictEqual(
+			localBroadcasts(null, [{ tid: 1 }, { tid: 2, scoreBug: awayBug }], 2)!
+				.bugs,
+			[
+				{ tid: 1, scoreBug: null },
+				{ tid: 2, scoreBug: awayBug },
+			],
+		);
+	});
+
+	test("nothing to pick when both look the same", () => {
+		assert.isUndefined(localBroadcasts(league, [{ tid: 1 }, { tid: 2 }], 1));
+		assert.isUndefined(
+			localBroadcasts(
+				league,
+				[
+					{ tid: 1, scoreBug: homeBug },
+					{ tid: 2, scoreBug: { ...homeBug } },
+				],
+				1,
+			),
+		);
+		assert.isUndefined(
+			localBroadcasts(league, [{ tid: 1, scoreBug: league }, { tid: 2 }], 1),
 		);
 	});
 });

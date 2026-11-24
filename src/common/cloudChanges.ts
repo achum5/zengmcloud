@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 554,
+		date: "2026-11-24",
+		text: "3D game settings (the gear) are tidier. In a game on the teams' own local broadcasts, you can pick which team's broadcast to watch, and its score bug, right there. The list of play types to put in Key Plays is gone: every kind of big play is always in the reel.",
+	},
+	{
 		n: 553,
 		date: "2026-11-24",
 		text: "3D games: players' shorts are as long as they were worn in the season being played. Mid-thigh in the 1940s to 60s, short and tight from the 70s through the late 80s, longer through the 90s, baggy down to the knee in the 2000s, and today's length since. Uniform pictures stretch or shrink to fit.",

@@ -9,43 +9,30 @@ import {
 import { CAMERA_ZOOM, getCamera, setCamera } from "./court3d/cameraSetting.ts";
 import { setPacing, usePacing } from "./court3d/pacing.ts";
 
-// WHAT THE KEY PLAYS SHOW, picked beside them: a close finish shown in full
-// (within so many points, so many minutes from the end), and what else
-// makes the reel - saved on this device.
+// THE 3D GAME'S SETTINGS, under the gear: whose broadcast it's on (a game on
+// its teams' own), how far in the camera is, whether to fast-forward to the
+// action, and when a game counts as close - every play of a close finish
+// shown on top of the key plays' length. Every kind of big play always
+// makes the reel (see getKeyPlays). Saved on this device - the broadcast,
+// for this game only.
 
-type Toggle = keyof Pick<
-	KeyPlaySettings,
-	| "dunks"
-	| "threes"
-	| "blocks"
-	| "steals"
-	| "andOnes"
-	| "leadChanges"
-	| "buzzer"
-	| "baskets"
-	| "swings"
-	| "mine"
-	| "closeOnTop"
->;
-const TOGGLES: [Toggle, string, boolean][] = [
-	// (Which, its label, and whether football's reel counts it too.)
-	["dunks", "Dunks", false],
-	["threes", "Threes", false],
-	["blocks", "Blocks", false],
-	["steals", "Steals", false],
-	["andOnes", "And-ones", false],
-	["buzzer", "Buzzer beaters", false],
-	["leadChanges", "Lead changes", true],
-	["swings", "Big swings", true],
-	["baskets", "Other baskets", false],
-	["mine", "My team first", true],
-];
+// One setting to a line: its name, and what it's set to beside it.
+const ROW = "d-flex align-items-center justify-content-between gap-3 py-2";
+
+export type BroadcastPick = {
+	// The game's teams, visitors first.
+	teams: { tid: number; abbrev: string; name: string }[];
+	// Whose broadcast it's on.
+	tid: number;
+	onChange: (tid: number) => void;
+};
 
 const KeyPlaysSettings = ({
 	value,
 	onChange,
 	picker,
 	label,
+	broadcast,
 }: {
 	value: KeyPlaySettings;
 	onChange: (value: KeyPlaySettings) => void;
@@ -54,6 +41,8 @@ const KeyPlaysSettings = ({
 	picker?: ReactNode;
 	// Beside the gear (the key plays' length, when they're on).
 	label?: ReactNode;
+	// A game on its teams' own broadcasts: whose to watch it on.
+	broadcast?: BroadcastPick;
 }) => {
 	const [show, setShow] = useState(false);
 	// What is typed in each number box, while it is being typed - so the box
@@ -69,18 +58,18 @@ const KeyPlaysSettings = ({
 	};
 	const number = (
 		key: "closePoints" | "closeMinutes",
-		label: string,
+		unit: string,
+		title: string,
 		step: number,
 	) => (
-		<div className="col-6">
-			<label className="form-label mb-1" htmlFor={`kp-${key}`}>
-				{label}
-			</label>
+		<div className="input-group input-group-sm flex-fill w-auto">
 			<input
 				id={`kp-${key}`}
 				type="number"
 				inputMode={step < 1 ? "decimal" : "numeric"}
-				className="form-control form-control-sm"
+				className="form-control"
+				title={title}
+				aria-label={title}
 				min={KEY_PLAY_LIMITS[key][0]}
 				max={KEY_PLAY_LIMITS[key][1]}
 				step={step}
@@ -98,6 +87,7 @@ const KeyPlaysSettings = ({
 					setTyped((t) => ({ ...t, [key]: undefined }));
 				}}
 			/>
+			<span className="input-group-text">{unit}</span>
 		</div>
 	);
 	const football = __SPORT === "football";
@@ -132,20 +122,52 @@ const KeyPlaysSettings = ({
 				<Modal.Header closeButton>
 					<Modal.Title>{football ? "Key plays" : "Settings"}</Modal.Title>
 				</Modal.Header>
-				<Modal.Body>
-					{picker ? <div className="mb-3">{picker}</div> : null}
+				<Modal.Body className="py-2">
+					{broadcast ? (
+						<div className={ROW}>
+							<span id="c3d-broadcast">Broadcast</span>
+							<div
+								className="btn-group btn-group-sm"
+								role="group"
+								aria-labelledby="c3d-broadcast"
+							>
+								{broadcast.teams.map((t) => (
+									<button
+										key={t.tid}
+										type="button"
+										className={
+											t.tid === broadcast.tid
+												? "btn btn-primary"
+												: "btn btn-outline-secondary"
+										}
+										aria-pressed={t.tid === broadcast.tid}
+										title={`${t.name} broadcast`}
+										onClick={() => broadcast.onChange(t.tid)}
+									>
+										{t.abbrev}
+									</button>
+								))}
+							</div>
+						</div>
+					) : null}
+					{picker ? (
+						<div className={ROW}>
+							<span>Plays</span>
+							{picker}
+						</div>
+					) : null}
 					{football ? null : (
-						<div className="mb-3">
-							<label className="fw-bold mb-1" htmlFor="c3d-zoom">
-								Camera zoom{" "}
-								<span className="fw-normal text-body-secondary">
+						<div className="py-2">
+							<div className="d-flex justify-content-between">
+								<label htmlFor="c3d-zoom">Camera zoom</label>
+								<span className="text-body-secondary">
 									{zoom.toFixed(2).replace(/0$/, "")}x
 								</span>
-							</label>
+							</div>
 							<input
 								id="c3d-zoom"
 								type="range"
-								className="form-range"
+								className="form-range d-block"
 								min={CAMERA_ZOOM.min}
 								max={CAMERA_ZOOM.max}
 								step={CAMERA_ZOOM.step}
@@ -159,56 +181,38 @@ const KeyPlaysSettings = ({
 						</div>
 					)}
 					{football ? null : (
-						<div className="form-check form-switch mb-3">
-							<input
-								id="c3d-skip"
-								type="checkbox"
-								role="switch"
-								className="form-check-input"
-								checked={!whole}
-								onChange={(e) => {
-									setPacing({ whole: !e.target.checked });
-								}}
-							/>
-							<label className="form-check-label" htmlFor="c3d-skip">
-								Fast-forward to the action
-							</label>
+						<div className={ROW}>
+							<label htmlFor="c3d-skip">Fast-forward to the action</label>
+							<div className="form-switch d-flex">
+								<input
+									id="c3d-skip"
+									type="checkbox"
+									role="switch"
+									className="form-check-input m-0"
+									checked={!whole}
+									onChange={(e) => {
+										setPacing({ whole: !e.target.checked });
+									}}
+								/>
+							</div>
 						</div>
 					)}
-					<div className="fw-bold mb-1">Close game</div>
-					<div className="row g-2 mb-2">
-						{number("closePoints", "Within (pts)", 1)}
-						{number("closeMinutes", "Minutes left", 0.5)}
+					<div
+						className={
+							picker || !football ? "border-top mt-2 pt-3 pb-2" : "py-2"
+						}
+					>
+						<div className="mb-2">Close game</div>
+						<div className="d-flex gap-2">
+							{number("closePoints", "pts", "Within this many points", 1)}
+							{number(
+								"closeMinutes",
+								"min left",
+								"With this many minutes left",
+								0.5,
+							)}
+						</div>
 					</div>
-					<div className="form-check mb-3">
-						<input
-							id="kp-closeOnTop"
-							type="checkbox"
-							className="form-check-input"
-							checked={value.closeOnTop}
-							onChange={(e) => set({ closeOnTop: e.target.checked })}
-						/>
-						<label className="form-check-label" htmlFor="kp-closeOnTop">
-							Close finish on top of the length
-						</label>
-					</div>
-					<div className="fw-bold mb-1">In the reel</div>
-					{TOGGLES.filter(([, , both]) => !football || both).map(
-						([key, label]) => (
-							<div key={key} className="form-check">
-								<input
-									id={`kp-${key}`}
-									type="checkbox"
-									className="form-check-input"
-									checked={value[key]}
-									onChange={(e) => set({ [key]: e.target.checked })}
-								/>
-								<label className="form-check-label" htmlFor={`kp-${key}`}>
-									{label}
-								</label>
-							</div>
-						),
-					)}
 				</Modal.Body>
 				<Modal.Footer>
 					<button

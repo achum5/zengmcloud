@@ -1,5 +1,6 @@
 import {
 	homeCourtForGame,
+	localBroadcastsOfGame,
 	resolveCourt,
 	resolveScoreBug,
 	resolveStadium,
@@ -545,6 +546,11 @@ export default defineView({
 			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
 				national?.scoreBug ?? (await scoreBugOfGame(boxScore.teams)),
 			);
+			// Or each team's own, for the viewer to pick from.
+			if (!national && __SPORT === "basketball") {
+				(out.initialBoxScore as any).localBroadcasts =
+					await localBroadcastsOfGame(boxScore.teams);
+			}
 			// And its logo, for the header.
 			if (national && __SPORT === "basketball") {
 				try {
