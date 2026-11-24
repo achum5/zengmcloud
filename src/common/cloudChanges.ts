@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 567,
+		date: "2026-11-24",
+		text: "A team's Schedule page opens with its season game by game: a bar for every game, up for a win and down for a loss, as tall as the margin, in the team's color. The longest winning streak is shaded and the playoffs follow a line. Tap a bar for its box score.",
+	},
+	{
 		n: 566,
 		date: "2026-11-24",
 		text: "Every playoff series has its own page. Tap the games won on the Playoffs bracket, or the series score on a box score: it shows where the series stands, every game with its recap and the games still to come, the series leaders, both teams' stats side by side, their regular season meetings and every other time they met in the playoffs.",

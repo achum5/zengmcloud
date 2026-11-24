@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { SeasonStrip } from "../components/SeasonStrip.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
@@ -70,6 +71,7 @@ const Schedule = ({
 	return (
 		<>
 			<MoreLinks type="team" page="schedule" tid={tid} />
+			<SeasonStrip games={completed} tid={tid} season={season} />
 			{godMode ? (
 				<Dropdown className="mb-3">
 					<Dropdown.Toggle
