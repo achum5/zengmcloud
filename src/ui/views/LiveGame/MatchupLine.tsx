@@ -57,35 +57,39 @@ export const MatchupLine = ({ boxScore }: { boxScore: MatchupBoxScore }) => {
 	const seedOf = (t: Team) =>
 		boxScore.playoffs ? (playIn?.seeds[t.tid] ?? t.playoffs?.seed) : undefined;
 	const facts = real ? matchupFacts(boxScore) : [];
+	// (The teams and the facts break onto two lines when they don't fit on
+	// one; the network stays at the right of them either way.)
 	return (
 		<div className="live-matchup">
-			<h1 className="live-matchup-teams">
-				<MatchupTeam
-					t={away}
-					seed={seedOf(away)}
-					showRecord={real && !boxScore.playoffs}
-				/>
-				<span className="live-matchup-at">@</span>
-				<MatchupTeam
-					t={home}
-					seed={seedOf(home)}
-					showRecord={real && !boxScore.playoffs}
-				/>
-			</h1>
+			<div className="live-matchup-main">
+				<h1 className="live-matchup-teams">
+					<MatchupTeam
+						t={away}
+						seed={seedOf(away)}
+						showRecord={real && !boxScore.playoffs}
+					/>
+					<span className="live-matchup-at">@</span>
+					<MatchupTeam
+						t={home}
+						seed={seedOf(home)}
+						showRecord={real && !boxScore.playoffs}
+					/>
+				</h1>
+				{facts.length > 0 ? (
+					<div className="live-matchup-facts">
+						{facts.map((fact, i) => (
+							<span key={i} className="live-matchup-fact">
+								{fact}
+							</span>
+						))}
+					</div>
+				) : null}
+			</div>
 			{boxScore.national ? (
 				<NationalTag
 					className="live-matchup-national"
 					tag={boxScore.national}
 				/>
-			) : null}
-			{facts.length > 0 ? (
-				<div className="live-matchup-facts">
-					{facts.map((fact, i) => (
-						<span key={i} className="live-matchup-fact">
-							{fact}
-						</span>
-					))}
-				</div>
 			) : null}
 		</div>
 	);

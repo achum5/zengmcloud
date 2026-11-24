@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 524,
+		date: "2026-11-24",
+		text: "Daily Schedule on a phone: the Scores tab now comes first, before Recap and Standings. Live game: the line, total and season series above the court no longer run over the team names. When they don't fit beside the names, they drop to a line underneath.",
+	},
+	{
 		n: 523,
 		date: "2026-11-24",
 		text: "NBA calendar: the defending champion now always opens the season at home on opening night. To fit it in, a couple of nearby games can trade nights, and nobody ends up with a tougher stretch than before.",

@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
-// THE HUB ON A PHONE, IN TABS: the night's recap, its scores and the
+// THE HUB ON A PHONE, IN TABS: the night's scores, its recap and the
 // standings, each about a screen, picked in a row pinned under the navbar.
 // (On a wider screen the hub is one page and there are no tabs.)
 

@@ -548,9 +548,9 @@ const DailySchedule = ({
 		</>
 	);
 
-	// On a phone, the hub in tabs: the night's recap once it's played, its
-	// scores, the standings.
-	const hubTabs: HubTabId[] = [];
+	// On a phone, the hub in tabs: the night's scores, its recap once it's
+	// played, the standings.
+	const hubTabs: HubTabId[] = ["scores"];
 	if (
 		completed.length > 0 &&
 		(dayNote !== undefined ||
@@ -559,7 +559,6 @@ const DailySchedule = ({
 	) {
 		hubTabs.push("recap");
 	}
-	hubTabs.push("scores");
 	if (hub.standings) {
 		hubTabs.push("standings");
 	}
