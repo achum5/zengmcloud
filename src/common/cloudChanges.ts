@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 558,
+		date: "2026-11-24",
+		text: 'Trading Block: while CPU teams think over your offer, the button shows how far along it is, like "Processing 42%", with a bar filling along its bottom edge.',
+	},
+	{
 		n: 557,
 		date: "2026-11-24",
 		text: "3D games: jerseys fit like real ones. They cover the whole chest out to the shoulders, with proper straps and trim round the armholes, instead of hanging like a loose tank top. Shorts are less baggy, and the short shorts of the 70s and 80s have a clean hem instead of a ragged one.",
