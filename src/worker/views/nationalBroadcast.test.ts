@@ -224,4 +224,30 @@ describe("national broadcasts", () => {
 			);
 		}
 	});
+
+	test("a game watched live, played ahead of its night: the night's other games still count", async () => {
+		// Opening night played; Wednesday's worst game (0 v 1) watched live,
+		// played alone, the night's two bigger ones still to play.
+		const opening = [game(1, 1, 5, 4), game(2, 1, 2, 3)];
+		const watched = game(3, 2, 0, 1);
+		const left = [
+			{ gid: 4, day: 2, homeTid: 5, awayTid: 2 },
+			{ gid: 5, day: 2, homeTid: 4, awayTid: 3 },
+		];
+		await setup([...opening, watched]);
+		for (const s of left) {
+			await idb.cache.schedule.put(s);
+		}
+		assert.strictEqual(await nationalBroadcastOf(watched), undefined);
+		const picks = await nationalSchedule(left);
+		assert.deepStrictEqual(
+			[...picks].map(([gid, n]) => [gid, n.network]),
+			[[4, "ESPN"]],
+		);
+		// (And the night's last games, played: the same.)
+		const rest = left.map((s) => game(s.gid, s.day, s.homeTid, s.awayTid));
+		await setup([...opening, watched, ...rest]);
+		assert.strictEqual((await nationalBroadcastOf(rest[0]))?.network, "ESPN");
+		assert.strictEqual(await nationalBroadcastOf(watched), undefined);
+	});
 });
