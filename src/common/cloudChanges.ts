@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 547,
+		date: "2026-11-24",
+		text: "When a league mate plays a game live, your header keeps showing the season and the score bar and ticker keep going, instead of \"Live game in progress\". That's only shown to whoever is playing the game or watching it. Leaving a league mate's game you're watching no longer warns that you'll lose the play-by-play; leaving your own live game still does.",
+	},
+	{
 		n: 546,
 		date: "2026-11-24",
 		text: "Score bugs from a team looks file, and the National TV bug, now look the same on a phone as on a big screen. On small screens the scores and other lettering could sit a little high, and thin lines like the ring around a logo came out too thick.",

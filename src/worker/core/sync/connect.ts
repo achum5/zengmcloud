@@ -657,13 +657,15 @@ const isWatchingABroadcast = () =>
 // How long after a league-mate's live sim its broadcast can still be on its
 // way (ms): it goes live only once the whole play-by-play has uploaded.
 const BROADCAST_LEAD_MS = 2 * 60 * 1000;
+// (Without the follower hold: a league mate's game nobody here is watching
+// says nothing in the header, and freezes nothing. The wait only keeps its
+// result out of sight - the spoiler gate's `watching` set, and a repaint
+// held - for the few seconds till the game's broadcast is in the room, where
+// the room gate takes over: see handleLiveGames. Alex, 2026-11-24: "Live game
+// in progress" is for the one playing it or watching it.)
 const liveResultWait = createLiveResultWait({
-	take: () => {
-		followerHold.take();
-	},
-	release: () => {
-		releaseFollowerHold("live-result-unwatched");
-	},
+	take: () => {},
+	release: () => {},
 	isFollowing: (gid) => followedBroadcast?.gid === gid,
 	isWatching: isWatchingABroadcast,
 	worthWaiting: (gid, liveAt) => {
@@ -761,11 +763,13 @@ export const recheckLiveSpoilers = (force = false) => {
 		flushDeferredRefreshAfterLive();
 	}
 };
+// (Any game still on in the room: the regular season's last one too, whose
+// tip-off ended the regular season.)
 setPhasePaintHold(() => {
 	const now = Date.now();
 	const wokeAt = wakeClock.wokeAt();
 	for (const game of roomLiveGames.values()) {
-		if (game.playoffs && roomGameLive(game, now, wokeAt)) {
+		if (roomGameLive(game, now, wokeAt)) {
 			return true;
 		}
 	}
@@ -1601,6 +1605,20 @@ const handleLiveGames = async (
 		endedLiveGids.delete(gid);
 	}
 	roomLiveGames = next;
+
+	// A result held for its broadcast is the room's to hide now (see
+	// liveResultWait): what the regular season shows once the league plays
+	// past it, nothing frozen meanwhile.
+	let settled = false;
+	for (const gid of liveResultWait.awaitedGids()) {
+		if (next.has(gid)) {
+			liveResultWait.settle(gid);
+			settled = true;
+		}
+	}
+	if (settled) {
+		flushDeferredRefreshAfterLive();
+	}
 
 	const focus = chooseFocusGame(
 		[...next.values()],

@@ -1836,6 +1836,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 		boxScore.current.exhibition,
 		isReplay,
 	);
+	// Watching a league mate's game (or done following one): leaving loses
+	// nothing - it is theirs, played on their screen - so no warning. Only
+	// your own live sim warns.
+	const watchingMate = isFollower || followedGid !== undefined;
 
 	const { setDirty } = useBlocker({
 		message: navigateWarning,
@@ -1847,16 +1851,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// nothing ever arrives. Arming the blocker on mount turned that into a
 		// trap: "Loading..." forever, and a warning about losing play-by-play
 		// results that do not exist standing between the user and any way out.
-		initialDirty: !isReplay && props.events !== undefined,
+		initialDirty: !isReplay && !watchingMate && props.events !== undefined,
 	});
 
 	// Arm it the moment the playback does arrive - `initialDirty` is only read
-	// once, and the events usually land after the first render.
+	// once, and the events usually land after the first render. (A page that
+	// turns out to be following - marked a moment after it opens - lets go.)
 	useEffect(() => {
-		if (!isReplay && props.events !== undefined) {
+		if (watchingMate) {
+			setDirty(false);
+		} else if (!isReplay && props.events !== undefined) {
 			setDirty(true);
 		}
-	}, [isReplay, props.events, setDirty]);
+	}, [isReplay, props.events, setDirty, watchingMate]);
 
 	// Make sure to call setPlayIndex after calling this! Can't be done inside because React is not always smart enough to batch renders
 	const processToNextPause = useCallback(
