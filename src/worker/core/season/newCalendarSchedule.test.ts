@@ -140,4 +140,25 @@ describe("newCalendarSchedule", () => {
 		assert.isTrue(isTradeDeadline(...tids[1]!));
 		assert.isTrue(isAllStarGame(...tids[4]!));
 	});
+
+	test("the default deadline is the NBA's, the Thursday 10 days before the All-Star Game", () => {
+		const thursdays = ["2027-01-21", "2027-01-28", "2027-02-04", "2027-02-11"];
+		const games = [...thursdays, "2027-02-18"].map((date, i) => ({
+			homeTid: i % 2,
+			awayTid: 2 + (i % 2),
+			date,
+		}));
+		const deadlineDate = (tradeDeadline: number) => {
+			const { tids, dates } = assembleDatedSchedule(
+				games,
+				"2027-02-14",
+				tradeDeadline,
+			);
+			return dates[tids.findIndex((pair) => isTradeDeadline(...pair))];
+		};
+		assert.strictEqual(deadlineDate(0.6), "2027-02-04");
+		// A custom one stays where it's set.
+		assert.strictEqual(deadlineDate(0.68), "2027-02-11");
+		assert.strictEqual(deadlineDate(0.2), "2027-01-28");
+	});
 });

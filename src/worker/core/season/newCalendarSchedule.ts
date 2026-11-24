@@ -91,9 +91,23 @@ const realAllStarSunday = (dates: string[]) => {
 	return addDays(best.from, 1);
 };
 
+// BBGM's default trade deadline. Close to it, the calendar has the NBA's:
+// the Thursday a week and a half before the All-Star Game (Feb 9 in 2023,
+// two thirds of the way through the games).
+const DEFAULT_TRADE_DEADLINE = 0.6;
+
+const nbaTradeDeadline = (nights: Set<string>, allStarDate: string) => {
+	for (let back = 8; back <= 21; back++) {
+		const date = addDays(allStarDate, -back);
+		if (weekdayOf(date) === 4 && nights.has(date)) {
+			return date;
+		}
+	}
+};
+
 // The trade deadline at its usual point in the schedule, moved to the
 // nearest Thursday with games when there is one within three nights before
-// the All-Star Game.
+// the All-Star Game - or, with the default setting, the NBA's.
 const tradeDeadlineDate = (
 	sortedDates: string[],
 	fraction: number,
@@ -101,6 +115,15 @@ const tradeDeadlineDate = (
 ) => {
 	if (sortedDates.length === 0) {
 		return;
+	}
+	if (
+		allStarDate !== undefined &&
+		Math.abs(fraction - DEFAULT_TRADE_DEADLINE) <= 0.05
+	) {
+		const nba = nbaTradeDeadline(new Set(sortedDates), allStarDate);
+		if (nba !== undefined) {
+			return nba;
+		}
 	}
 	const index = Math.min(
 		sortedDates.length - 1,
