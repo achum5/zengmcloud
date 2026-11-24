@@ -4,10 +4,16 @@
 // home days filled black, W/L coins, today in red.
 
 // Like the classic bar (light.scss .league-top-bar), just taller for the
-// days.
-.league-top-bar-calendar {
+// days: their full height, with room under them for the scrollbar that
+// shows on hover (and never a scrollbar up and down).
+.league-top-bar.league-top-bar-calendar {
 	height: auto;
 	margin-bottom: 0.25rem;
+	overflow-y: hidden;
+
+	@include media-breakpoint-up(sm) {
+		min-height: calc(64px + 7px);
+	}
 }
 
 .tbd-track {

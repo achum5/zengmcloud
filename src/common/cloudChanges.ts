@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 527,
+		date: "2026-11-24",
+		text: "NBA calendar: the scores bar at the top no longer gets its bottom row cut off when a scrollbar shows.",
+	},
+	{
 		n: 526,
 		date: "2026-11-24",
 		text: "NBA calendar: on a team's calendar, every day now opens that day's Daily Schedule, not just the days the team plays.",
