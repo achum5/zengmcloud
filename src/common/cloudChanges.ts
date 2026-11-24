@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 534,
+		date: "2026-11-24",
+		text: "NBA calendar: the scores bar starts on opening night, even when your team was off that night.",
+	},
+	{
 		n: 533,
 		date: "2026-11-24",
 		text: "3D game: the court floor is drawn at twice the detail, so wood planks, paint and floor pictures look sharper. Real players leagues: Real Team Info (Global Settings) can now also set each team's 3D jerseys, court and score bug season by season, put on automatically each new season.",

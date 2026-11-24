@@ -97,6 +97,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		leagueTickerVisible: false,
 		gameOver: false,
 		calendarDate: undefined,
+		calendarOpeningNight: undefined,
 		gameSimInProgress: false,
 		games: [],
 		gender: defaultGameAttributes.gender,
@@ -243,6 +244,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 
 					// Controller.tsx relies on this being undefined (or at least different than the new lid) to trigger calling beforeView.league
 					calendarDate: undefined,
+					calendarOpeningNight: undefined,
 					lid: undefined,
 					liveGameInProgress: false,
 					nbaCalendar: defaultGameAttributes.nbaCalendar,

@@ -1792,6 +1792,9 @@ export type LocalStateUI = {
 	// Today on the league's calendar ("YYYY-MM-DD"), for the top bar: the
 	// night of the next games, on an NBA calendar. See getCalendarDate.
 	calendarDate: string | undefined;
+	// The season's opening night on the calendar, where the scores bar
+	// starts. See getOpeningNight.
+	calendarOpeningNight: string | undefined;
 	// Realistic front offices' contract rules (CBA-lite, free agency in
 	// stages) are on in this league: the Contract Rules page and the cap status
 	// on the money pages.
