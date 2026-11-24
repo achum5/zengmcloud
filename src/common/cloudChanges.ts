@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 541,
+		date: "2026-11-24",
+		text: "Daily Schedule: the Nightly Recap video now sits at the top of the right-hand column, above Top Performers, so the night's story and the scores move up. On a phone it's still first in the Recap tab.",
+	},
+	{
 		n: 540,
 		date: "2026-11-24",
 		text: 'NBA calendar: the month calendar no longer labels back-to-backs with "B2B".',

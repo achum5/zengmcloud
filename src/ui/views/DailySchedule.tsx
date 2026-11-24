@@ -616,24 +616,15 @@ const DailySchedule = ({
 						ref={gridRef}
 					>
 						<div className="lh-main">
-							{completed.length > 0 ? (
+							{completed.length > 0 && dayNote ? (
 								<div className={pane("recap", 1)}>
-									{/* The night's recap video on top, then its story. */}
-									{/* (Fetched again when a game played live goes final.) */}
-									<NightlyRecap
-										key={completed.length}
-										season={season}
+									<LeadStory
 										day={day}
+										links={recapLinks}
+										note={dayNote}
+										season={season}
+										sentenceGames={sentenceGames}
 									/>
-									{dayNote ? (
-										<LeadStory
-											day={day}
-											links={recapLinks}
-											note={dayNote}
-											season={season}
-											sentenceGames={sentenceGames}
-										/>
-									) : null}
 								</div>
 							) : null}
 							<div className={pane("scores", 3, "lh-scores")}>
@@ -646,6 +637,19 @@ const DailySchedule = ({
 							</div>
 						</div>
 						<div className="lh-rail">
+							{/* The night's recap video: atop the side column, its
+							    width, over the day's leaders - first of all on a
+							    phone. (Fetched again when a game played live goes
+							    final.) */}
+							{completed.length > 0 ? (
+								<div className={pane("recap", 0, "lh-video")}>
+									<NightlyRecap
+										key={completed.length}
+										season={season}
+										day={day}
+									/>
+								</div>
+							) : null}
 							{hub.performers.length > 0 ? (
 								<div className={pane("recap", 2)}>
 									<TopPerformers performers={hub.performers} season={season} />
