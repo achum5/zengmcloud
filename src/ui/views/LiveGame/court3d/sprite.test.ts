@@ -8,6 +8,7 @@ import {
 	makeScratch,
 	makeSpriteCache,
 	prepareSprites,
+	pxForScale,
 	startFrame,
 } from "./sprite.ts";
 
@@ -515,7 +516,10 @@ test("his lettering is laid out once, however many sizes he is drawn at", () => 
 	}
 	assert.strictEqual(lettered, once);
 	// In closer than any of that: laid out at that size.
-	at(14);
+	at(17);
+	assert.strictEqual(lettered, once * 2);
+	// And closer still, drawn coarser (see pxForScale): at no size bigger.
+	at(9);
 	assert.strictEqual(lettered, once * 2);
 });
 
@@ -671,4 +675,54 @@ test("a planted foot turned is a picture of its own, not one with it straight", 
 		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
 	}
 	assert.equal(cache.kept.size, 5);
+});
+
+test("in close, a man's picture is made coarser: never bigger than the picture", () => {
+	// The game's own men, and further off, at full detail.
+	for (const k of [4, 12, 30, 60]) {
+		assert.strictEqual(pxForScale(Math.round(Math.log(k) / Math.log(1.04))), 1);
+	}
+	// In close on a man in the line at the starting lineups (see
+	// pregameShow.ts), on a big picture: each of his picture's pixels two of
+	// the screen's, and his picture no bigger than the game's men take.
+	const cam = makeCamera({ x: 47, y: 13, z: 5.9, width: 9.4 }, 1280, 720, {
+		back: 0,
+		high: 0,
+		slide: 0,
+		upright: false,
+		at: { x: 49.5, y: 24.5, z: 5.4 },
+	});
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[0],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	startFrame(cache);
+	const st = {
+		pid: 1,
+		team: 1,
+		shown: true,
+		x: 47,
+		y: 13,
+		z: 0,
+		yaw: Math.PI / 2,
+		anim: "ready",
+		phase: 0,
+		moving: false,
+	} as PlayerState;
+	prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+	drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+	assert.strictEqual(cache.kept.size, 1);
+	const [key] = [...cache.kept.keys()];
+	assert.include(key, "|2|");
+	const kept = [...cache.kept.values()][0]!;
+	assert.isBelow(Math.max(kept.w, kept.h), 600);
 });
