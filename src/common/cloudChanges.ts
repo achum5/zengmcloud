@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 529,
+		date: "2026-11-24",
+		text: "3D game: smoother on most phones and computers. The players' new poses are drawn in the background again instead of holding up each frame, which devices with a graphics card had been doing for every player.",
+	},
+	{
 		n: 528,
 		date: "2026-11-24",
 		text: "3D Game Sim (Global Settings): players look more natural. Defenders away from the ball stand and walk upright instead of crouching in a stance, and the man guarding the ball sits in a lighter stance. Running and walking strides fit the players' legs now, so no more wide, spidery splits.",

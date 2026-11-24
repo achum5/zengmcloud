@@ -1990,8 +1990,11 @@ export const prepareSprites = (
 	cache: SpriteCache,
 ) => {
 	// (Made on the graphics card, a new picture is quicker made here and now
-	// than asked of a hand and waited for.)
-	const farm = glReady() ? undefined : cache.farm;
+	// than asked of a hand and waited for. A man drawn as one never is - see
+	// glKeep - and a hand still takes him: sculpted on the page, ten of him
+	// a frame were most of the frame.)
+	const gl = glReady();
+	const farm = cache.farm;
 	if (farm) {
 		took(cache, farm, scratch);
 	}
@@ -2010,19 +2013,20 @@ export const prepareSprites = (
 		planned,
 		farm &&
 			((man, plan) =>
-				farm.busy(cache, plan.key!) ||
-				farm.ask(
-					cache,
-					plan.key!,
-					jobOf(plan, cam, man.st, man.body, px),
-					man.look,
-					{
-						id: plan.who,
-						frame: cache.frame,
-						scale: plan.scale,
-						held: plan.held,
-					},
-				)),
+				(!gl || man.look.real === true) &&
+				(farm.busy(cache, plan.key!) ||
+					farm.ask(
+						cache,
+						plan.key!,
+						jobOf(plan, cam, man.st, man.body, px),
+						man.look,
+						{
+							id: plan.who,
+							frame: cache.frame,
+							scale: plan.scale,
+							held: plan.held,
+						},
+					))),
 		(man, plan) => {
 			make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
 		},
