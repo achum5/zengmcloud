@@ -116,15 +116,20 @@ export const seasonStartClock = async () => {
 // The highest Play Through Injuries setting.
 const PLAY_THROUGH_MAX = 10;
 
-// For the Play Through Injuries sliders on the NBA calendar: for each setting
-// (0 to 10 classic days, for the regular season and the playoffs), the most
-// days left a player can show and still play. The setting itself stays in
-// classic days, so it plays exactly as in a classic league; everyone's days
-// count on the same clock, so right now a player plays through exactly when
-// his days are at most this. Undefined off the calendar.
-export const playThroughDays = async (): Promise<
-	[number[], number[]] | undefined
-> => {
+// A Play Through Injuries slider on the NBA calendar: up to `max` days, a day
+// at a time, the performance prorated by `rate` (see
+// playThroughInjuriesDayFactor); `days`, the team's setting.
+export type PlayThroughCalendar = { max: number; rate: number; days: number };
+
+// For the Play Through Injuries sliders on the NBA calendar (regular season,
+// playoffs): days instead of classic games, as far as the classic setting
+// goes (10 classic days - about 19 days in the regular season). Before a team
+// picks days, its classic setting as days: the most days left a player can
+// show and still play. Undefined off the calendar.
+export const playThroughCalendar = async (t: {
+	playThroughInjuries: [number, number];
+	playThroughInjuryDays?: [number, number];
+}): Promise<[PlayThroughCalendar, PlayThroughCalendar] | undefined> => {
 	const now = await currentDayClock();
 	if (!now) {
 		return;
@@ -134,15 +139,40 @@ export const playThroughDays = async (): Promise<
 		? { clock: await seasonStartClock(), tonight: "" }
 		: now;
 	const post = playoffs ? now : { clock: PLAYOFF_START_CLOCK, tonight: "" };
-	const labels = ({
-		clock,
-		tonight,
-	}: {
-		clock: CalendarClock;
-		tonight: string;
-	}) =>
-		Array.from({ length: PLAY_THROUGH_MAX + 1 }, (_, v) =>
-			daysOut(v, clock, tonight),
-		);
-	return [labels(regular), labels(post)];
+	const slider = (
+		{ clock, tonight }: { clock: CalendarClock; tonight: string },
+		i: 0 | 1,
+	): PlayThroughCalendar => {
+		const asDays = (v: number) => daysOut(v, clock, tonight);
+		const days =
+			t.playThroughInjuryDays?.[i] ?? asDays(t.playThroughInjuries[i]);
+		return {
+			max: Math.max(asDays(PLAY_THROUGH_MAX), days),
+			rate: clock.rate,
+			days,
+		};
+	};
+	return [slider(regular, 0), slider(post, 1)];
+};
+
+// The user's team's setting in days, for tonight's game (see processTeam):
+// on the calendar, once it's been set in days. Its rate prorates the
+// performance (playThroughInjuriesDayFactor).
+export const playThroughDaysTonight = async (
+	t: { tid: number; playThroughInjuryDays?: [number, number] },
+	playoffs: boolean,
+) => {
+	const days = t.playThroughInjuryDays?.[playoffs ? 1 : 0];
+	if (
+		days === undefined ||
+		g.get("spectator") ||
+		!g.get("userTids").includes(t.tid)
+	) {
+		return;
+	}
+	const now = await getInjuryClock();
+	if (!now) {
+		return;
+	}
+	return { days, rate: now.clock.rate };
 };

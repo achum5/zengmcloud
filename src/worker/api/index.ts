@@ -1,4 +1,7 @@
-import { currentDayClock } from "../core/game/classicDays.ts";
+import {
+	currentDayClock,
+	playThroughCalendar,
+} from "../core/game/classicDays.ts";
 import {
 	applyCalendarDays,
 	refreshCalendarDaysForNewSeason,
@@ -6443,20 +6446,38 @@ const updateOptions = async (
 	await toUI("realtimeUpdate", [["options"]]);
 };
 
+// `days`: on the NBA calendar, the setting in days (see
+// playThroughCalendar), and the classic one as near as it goes, for a league
+// off the calendar again and for the projections that count in classic days.
 const updatePlayThroughInjuries = async ({
 	tid,
 	value,
 	playoffs,
+	days,
 }: {
 	tid: number;
 	value: number;
 	playoffs?: boolean;
+	days?: boolean;
 }) => {
 	const index = playoffs ? 1 : 0;
 
 	const t = await idb.cache.teams.get(tid);
 	if (t) {
-		t.playThroughInjuries[index] = value;
+		const calendar = days ? await playThroughCalendar(t) : undefined;
+		if (calendar) {
+			const byDays: [number, number] = t.playThroughInjuryDays
+				? [...t.playThroughInjuryDays]
+				: [calendar[0].days, calendar[1].days];
+			byDays[index] = value;
+			t.playThroughInjuryDays = byDays;
+			t.playThroughInjuries[index] = Math.min(
+				10,
+				Math.round(value * calendar[index].rate),
+			);
+		} else {
+			t.playThroughInjuries[index] = value;
+		}
 		await idb.cache.teams.put(t);
 
 		// So roster re-renders, which is needed to maintain state on mobile when the panel is closed

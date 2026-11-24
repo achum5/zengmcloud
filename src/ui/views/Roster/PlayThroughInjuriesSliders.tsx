@@ -2,7 +2,10 @@ import { AnimatePresence, m } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Dropdown } from "react-bootstrap";
 import { timeBetweenGames } from "../../../common/timeBetweenGames.ts";
-import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
+import playThroughInjuriesFactor, {
+	playThroughInjuriesDayFactor,
+} from "../../../common/playThroughInjuriesFactor.ts";
+import type { PlayThroughCalendar } from "../../../worker/core/game/classicDays.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import CollapseArrow from "../../components/CollapseArrow.tsx";
 import { helpers } from "../../util/helpers.ts";
@@ -13,28 +16,32 @@ const Slider = ({
 	className,
 	initialValue,
 	playoffs,
-	days,
+	calendar,
 	tid,
 }: {
 	className?: string;
 	initialValue: number;
 	playoffs?: boolean;
-	// On the NBA calendar: for each setting, the most days left a player can
-	// show and still play.
-	days?: number[];
+	// On the NBA calendar: days, a day at a time (initialValue ignored).
+	calendar?: PlayThroughCalendar;
 	tid: number;
 }) => {
-	const [value, setValue] = useState(initialValue);
+	const start = calendar ? calendar.days : initialValue;
+	const [value, setValue] = useState(start);
 
 	// Reflect external changes to this setting (e.g. a teammate changing it in a
 	// synced multiplayer league) - local state alone would ignore the new prop.
 	useEffect(() => {
-		setValue(initialValue);
-	}, [initialValue]);
+		setValue(start);
+	}, [start]);
 
 	const id = `play-through-injury-${playoffs ? "playoffs" : "regular-season"}`;
 
-	const percent = 100 * playThroughInjuriesFactor(value);
+	const percent =
+		100 *
+		(calendar
+			? playThroughInjuriesDayFactor(value, calendar.rate)
+			: playThroughInjuriesFactor(value));
 
 	const rounded = Number.isInteger(percent)
 		? String(percent)
@@ -51,7 +58,7 @@ const Slider = ({
 				id={id}
 				value={value}
 				min="0"
-				max="10"
+				max={calendar ? calendar.max : 10}
 				step="1"
 				onChange={async (event) => {
 					const parsed = Number.parseInt(event.target.value);
@@ -61,6 +68,7 @@ const Slider = ({
 							tid,
 							value: parsed,
 							playoffs,
+							days: calendar !== undefined,
 						});
 					}
 				}}
@@ -70,13 +78,13 @@ const Slider = ({
 					"Only play fully healthy players"
 				) : (
 					<>
-						{days?.[value] === undefined ? (
+						{calendar ? (
 							<>
-								{value} {timeBetweenGames(value)}
+								{value} {helpers.plural("day", value)}
 							</>
 						) : (
 							<>
-								{days[value]} {helpers.plural("day", days[value])}
+								{value} {timeBetweenGames(value)}
 							</>
 						)}{" "}
 						<span className="text-body-secondary">
@@ -116,8 +124,8 @@ const InjuriesHelp = ({ gender }: { gender: "male" | "female" }) => (
 type InjuriesTeam = {
 	tid: number;
 	playThroughInjuries: [number, number];
-	// On the NBA calendar (regular season, playoffs; see Slider's days).
-	playThroughDays?: [number[], number[]];
+	// On the NBA calendar (regular season, playoffs; see Slider).
+	playThroughCalendar?: [PlayThroughCalendar, PlayThroughCalendar];
 };
 
 // THE REFRESHED LOOK'S: a small button by the roster's other buttons, its
@@ -163,13 +171,13 @@ export const PlayThroughInjuriesMenu = ({ t }: { t: InjuriesTeam }) => {
 				<Slider
 					className="mb-3"
 					initialValue={t.playThroughInjuries[0]}
-					days={t.playThroughDays?.[0]}
+					calendar={t.playThroughCalendar?.[0]}
 					tid={t.tid}
 				/>
 				<Slider
 					playoffs
 					initialValue={t.playThroughInjuries[1]}
-					days={t.playThroughDays?.[1]}
+					calendar={t.playThroughCalendar?.[1]}
 					tid={t.tid}
 				/>
 			</Dropdown.Menu>
@@ -218,13 +226,13 @@ const PlayThroughInjuriesSliders = ({ t }: { t: InjuriesTeam }) => {
 						<Slider
 							className="mb-3"
 							initialValue={t.playThroughInjuries[0]}
-							days={t.playThroughDays?.[0]}
+							calendar={t.playThroughCalendar?.[0]}
 							tid={t.tid}
 						/>
 						<Slider
 							playoffs
 							initialValue={t.playThroughInjuries[1]}
-							days={t.playThroughDays?.[1]}
+							calendar={t.playThroughCalendar?.[1]}
 							tid={t.tid}
 						/>
 					</m.form>

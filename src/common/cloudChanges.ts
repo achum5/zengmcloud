@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 520,
+		date: "2026-11-24",
+		text: "NBA calendar: the Play Through Injuries sliders now go a day at a time (1 day, 2 days, 3 days...). Performance is prorated by days left, so a player plays exactly as well as he would with the same time left in a league off the calendar.",
+	},
+	{
 		n: 519,
 		date: "2026-11-24",
 		text: "NBA calendar: national TV now follows the NBA's real TV schedule. Tuesdays and Wednesdays are doubleheaders, Thursdays get games from mid-January, Fridays double up from January, and weekend games start in January and February. Every game on opening night and Christmas is national, MLK Day has four, and Rivals Week (the week after MLK Day) features division rivals. Starting next season, the champion hosts opening night, and the biggest matchups land on opening night and Christmas. The calendar marks all these nights.",

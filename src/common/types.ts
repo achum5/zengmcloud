@@ -3093,6 +3093,9 @@ export type Team = {
 
 	// [regular season, playoffs]
 	playThroughInjuries: [number, number];
+	// On the NBA calendar, the user's choice in days instead - set once the
+	// slider moves there (see playThroughCalendar).
+	playThroughInjuryDays?: [number, number];
 
 	// Optional because no upgrade
 	autoTicketPrice?: boolean;

@@ -8,7 +8,8 @@ import {
 	DEFAULT_PLAY_THROUGH_INJURIES,
 	PHASE,
 } from "../../../common/constants.ts";
-import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
+import { playingThroughInjury } from "../../../common/playThroughInjuriesFactor.ts";
+import { playThroughDaysTonight } from "./classicDays.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last, assertDefined } from "../../../common/utils.ts";
 import {
@@ -151,6 +152,7 @@ export const processTeam = async (
 	teamInput: {
 		tid: number;
 		playThroughInjuries: [number, number];
+		playThroughInjuryDays?: [number, number];
 		depth?: unknown;
 		rotation?: TeamRotation;
 	},
@@ -263,6 +265,9 @@ export const processTeam = async (
 	};
 
 	const playThroughInjuries = actualPlayThroughInjuries[playoffs ? 1 : 0];
+	// On the NBA calendar, the user's setting in days, if set that way: who
+	// plays by the days he has left, and how well prorated by them.
+	const byDays = await playThroughDaysTonight(teamInput, playoffs);
 
 	let game6EliminationGameOrGame7: boolean | undefined;
 	const compositeWeights = Object.entries(COMPOSITE_WEIGHTS);
@@ -282,7 +287,11 @@ export const processTeam = async (
 	}
 
 	for (const p of players) {
-		const injuryFactor = playThroughInjuriesFactor(p.injury.gamesRemaining);
+		const { playingThrough, factor: injuryFactor } = playingThroughInjury(
+			p.injury,
+			playThroughInjuries,
+			byDays,
+		);
 
 		// p.jerseyNumber fallback is for exhibition game players for the current season with no stats
 		const jerseyNumber =
@@ -304,11 +313,9 @@ export const processTeam = async (
 			skills: rating.skills,
 			injury: {
 				...p.injury,
-				playingThrough:
-					p.injury.gamesRemaining > 0 &&
-					p.injury.gamesRemaining <= playThroughInjuries,
+				playingThrough,
 			},
-			injured: p.injury.gamesRemaining > playThroughInjuries,
+			injured: p.injury.gamesRemaining > 0 && !playingThrough,
 			jerseyNumber,
 			ptModifier: p.ptModifier,
 			ovrs: rating.ovrs,
