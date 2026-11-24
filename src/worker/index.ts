@@ -22,6 +22,7 @@ import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
+import { waitForCatchUp } from "./core/sync/catchUpWait.ts";
 import { stillSyncOwner } from "./core/sync/instanceOwner.ts";
 import type { Conditions } from "../common/types.ts";
 import { getLeaguePosition } from "./core/sync/leaguePosition.ts";
@@ -212,6 +213,26 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getLiveGamePlayByPlay",
 	"getLiveGameChat",
 	"hasLiveGameReplay",
+	// Reads fired by a play button or as a panel shows: the 3D press
+	// conference, draft-night scenes and clock, a replay's plays, player
+	// recaps, graphs, the player page's stat footers, cards' prompts. Turned
+	// away mid-catch-up, the press conference's play button answered "Still
+	// catching up to the cloud" (2026-11-24).
+	"getPressConference",
+	"getHeadlineScene",
+	"getDraftClock",
+	"getReplayFeed",
+	"getPlayerRecapData",
+	"getProjectedAttendance",
+	"getPlayerGraphStat",
+	"getTeamGraphStat",
+	"getPlayerSelectedStats",
+	"getPlayerTeamStats",
+	"getGoatBreakdown",
+	"getTradingCardOptions",
+	"getTradingCardPrompts",
+	"getAchievementCardData",
+	"getAchievementCardPrompts",
 	// Read-only sync-checkpoint lookup for league exports.
 	"getSyncCheckpoint",
 	// Trivia games: pure reads that generate a puzzle/round from league
@@ -477,7 +498,15 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				return undefined;
 			}
 
-			if (!syncEngine.isCaughtUp()) {
+			// Behind the room: a league mate's change is still arriving. It
+			// takes a moment, so wait for it rather than turning the tap away
+			// (catchUpWait.ts).
+			if (
+				!syncEngine.isCaughtUp() &&
+				!(await waitForCatchUp(syncEngine, {
+					current: () => getSyncEngine() === syncEngine,
+				}))
+			) {
 				syncDebugLog("api:guard-refused", { type, name, step: "caught-up" });
 				showRefusal(
 					{
@@ -563,13 +592,17 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 			// (core/sync/draftReady.ts), force a real change-log drain to the head here.
 			// catchUp() returns true ONLY when this pass reached the head; false means a
 			// fetch failed, more pages remain, or another drain is already in flight - in
-			// any of those the device isn't provably current, so refuse to advance and
-			// let the user retry once caught up (the backstop poll keeps draining). Only
-			// timeline advances pay this extra round-trip; ordinary edits are
-			// durable-first deltas that can't re-derive shared state from stale reads.
+			// any of those the device isn't provably current, so it doesn't advance:
+			// it runs passes until one reaches the head, and only refuses if none has
+			// by the end of the wait (catchUpWait.ts). Only timeline advances pay this
+			// extra round-trip; ordinary edits are durable-first deltas that can't
+			// re-derive shared state from stale reads.
 			if (simAuthorityLocked) {
-				const drained = await syncEngine.catchUp();
-				if (!drained || !syncEngine.isCaughtUp()) {
+				const drained = await waitForCatchUp(syncEngine, {
+					drain: true,
+					current: () => getSyncEngine() === syncEngine,
+				});
+				if (!drained) {
 					syncDebugLog("api:guard-refused", {
 						type,
 						name,
@@ -643,8 +676,24 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 	// sim's results (or lose the edit) under last-write-wins. Skipped for the
 	// sim authority itself, which is the one doing the advancing.
 	// An undo rewrites the same records its action did, so it is gated the same.
-	if ((type === "main" && SIM_CONFLICT_GATED.has(name)) || type === "undoLog") {
+	// (Not an undo entry dropped as its message times out: bookkeeping only.)
+	if (
+		(type === "main" && SIM_CONFLICT_GATED.has(name)) ||
+		(type === "undoLog" && name !== "remove")
+	) {
 		const syncEngine = getSyncEngine();
+		// Only behind (a change arrived since the wait above): wait again.
+		if (
+			syncEngine &&
+			!syncEngine.isAuthority() &&
+			!syncEngine.isRoomBusy() &&
+			!syncEngine.stepClaimedElsewhere() &&
+			!syncEngine.isCaughtUp()
+		) {
+			await waitForCatchUp(syncEngine, {
+				current: () => getSyncEngine() === syncEngine,
+			});
+		}
 		if (
 			syncEngine &&
 			((!syncEngine.isAuthority() &&

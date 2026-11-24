@@ -1247,6 +1247,17 @@ export class SyncEngineV2 {
 		return this.catchingUp;
 	}
 
+	// A catch-up pass, unless one is running or there is nothing to catch up
+	// on. For the pre-action guard's wait (catchUpWait.ts), which looks again
+	// every few seconds while behind: a pass queued behind a running one would
+	// only re-read the room's head for nothing.
+	kickCatchUp(): void {
+		if (this.stopped || this.catchingUp || this.isCaughtUp()) {
+			return;
+		}
+		void this.catchUp(this.roomState);
+	}
+
 	async waitUntilIdle(timeoutMs: number): Promise<boolean> {
 		const deadline = Date.now() + timeoutMs;
 		while (this.catchingUp || this.draining) {
