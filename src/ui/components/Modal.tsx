@@ -1,4 +1,5 @@
 import type { ContainerState } from "@restart/ui/ModalManager";
+import { createContext, useContext } from "react";
 import { Modal as BaseModal } from "react-bootstrap";
 import BootstrapModalManager from "react-bootstrap/BootstrapModalManager";
 import { PINNED_CLASS } from "../util/stickyHeaderPin.ts";
@@ -150,12 +151,22 @@ class MyModalManager extends BootstrapModalManager {
 
 const manager = new MyModalManager();
 
+// Where a modal opens, if not at the foot of the page: a picture shown full
+// size (see pictureControls.tsx), where nothing outside it is seen.
+export const ModalContainer = createContext<HTMLElement | null>(null);
+
 export const Modal = ({
 	children,
 	...props
 }: Parameters<typeof BaseModal>[0]) => {
+	const container = useContext(ModalContainer);
 	return (
-		<BaseModal animation={animation} manager={manager} {...props}>
+		<BaseModal
+			animation={animation}
+			manager={manager}
+			container={container ?? undefined}
+			{...props}
+		>
 			{children}
 		</BaseModal>
 	);

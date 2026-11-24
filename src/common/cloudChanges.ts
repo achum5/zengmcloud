@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 547,
+		n: 548,
 		date: "2026-11-24",
 		text: "When a league mate plays a game live, your header keeps showing the season and the score bar and ticker keep going, instead of \"Live game in progress\". That's only shown to whoever is playing the game or watching it. Leaving a league mate's game you're watching no longer warns that you'll lose the play-by-play; leaving your own live game still does.",
+	},
+	{
+		n: 547,
+		date: "2026-11-24",
+		text: "Live games and replays: the buttons over the 3D court (pause, skip, speed, settings) now stay out of the way like the Nightly Recap's, and show when you hover over or tap the court. A new full size button beside them fills the screen with the game.",
 	},
 	{
 		n: 546,

@@ -3482,6 +3482,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 						boxScore={boxScore.current}
 						entries={playByPlayEntries.current}
 						court={courtNode}
+						paused={paused}
+						fullSize={court3d}
 						shots={shots}
 						cursor={initialEventCount.current - (events.current?.length ?? 0)}
 						clipGame={
