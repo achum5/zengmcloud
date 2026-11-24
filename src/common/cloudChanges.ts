@@ -12,9 +12,19 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 563,
+		n: 565,
 		date: "2026-11-24",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players catch and throw passes on the move. A man running to a pass no longer pulls up and waits on his spot for it. He catches it in stride and gathers into his shot, his dribble or his next pass, and the man with the ball passes off the dribble instead of stopping first.",
+	},
+	{
+		n: 564,
+		date: "2026-11-24",
+		text: 'Game recaps know players\' careers and the race now. They call a career high one ("a career-high 34 points"), note a first career triple-double or 30-point game, a rookie\'s debut and where he was drafted, a player\'s first game for a new team or against the team that traded him. They say where a team is on a road trip or homestand ("finished their five-game trip 3-2"), and when a team clinches a playoff spot, the best record, a play-in spot, gets eliminated, or becomes the first team to 50 wins. The Key stat can be offensive rebounds too.',
+	},
+	{
+		n: 563,
+		date: "2026-11-24",
+		text: 'Game notifications now start the title with the date, like "11/12/25 - Lakers 110 vs. Celtics 86", instead of putting it on its own line under the title.',
 	},
 	{
 		n: 562,
