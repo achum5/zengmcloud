@@ -215,3 +215,36 @@ describe("rows exempt from the coarsening", () => {
 		]);
 	});
 });
+
+// A blanksLast column (Draft History's Redraft) keeps its empty cells at the
+// bottom in both directions.
+describe("blanksLast", () => {
+	const redraftCols: Col[] = [
+		{ key: "Name", title: "Name" },
+		{ key: "Redraft", title: "Redraft", sortType: "number", blanksLast: true },
+	];
+	const redraftRows: DataTableRow[] = [
+		{ key: 1, data: ["Blank", { value: null, sortValue: null }] },
+		{ key: 2, data: ["Third", { value: 3, sortValue: 3 }] },
+		{ key: 3, data: ["First", { value: 1, sortValue: 1 }] },
+		{ key: 4, data: ["Second", { value: 2, sortValue: 2 }] },
+	];
+	const sorted = (order: "asc" | "desc") =>
+		processRows({
+			coarseRatings: false,
+			cols: redraftCols,
+			rows: redraftRows,
+			state: {
+				...state([[1, order]]),
+				colOrder: redraftCols.map((_, colIndex) => ({ colIndex })),
+			} as State,
+		}).map((row) => row.data[0]);
+
+	test("ascending", () => {
+		assert.deepEqual(sorted("asc"), ["First", "Second", "Third", "Blank"]);
+	});
+
+	test("descending", () => {
+		assert.deepEqual(sorted("desc"), ["Third", "Second", "First", "Blank"]);
+	});
+});

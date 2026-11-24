@@ -25,7 +25,6 @@ import { SeasonNoteButton } from "../components/SeasonNoteButton.tsx";
 import { splitPlayerNote } from "../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../util/linkifyRecap.ts";
 import { DraftWalkButton } from "../components/DraftWalkButton.tsx";
-import { Redraft } from "../components/Redraft.tsx";
 
 const Summary = ({
 	players,
@@ -506,13 +505,6 @@ const DraftHistory = ({
 			) : null}
 
 			<Summary key={season} players={players} summaryStat={summaryStat} />
-
-			<Redraft
-				players={players}
-				season={season}
-				summaryStat={summaryStat}
-				teamsByTid={teamsByTid}
-			/>
 
 			<p>
 				Players drafted by your team are{" "}

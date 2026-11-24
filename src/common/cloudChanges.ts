@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 575,
+		date: "2026-11-24",
+		text: "Draft History no longer has the Redraft card. The Redraft column stays, and players with no redraft pick now stay at the bottom whichever way you sort it.",
+	},
+	{
 		n: 574,
 		date: "2026-11-24",
 		text: "Any two teams have a page of their own: who leads the all-time regular season series, every time they met in the playoffs, the record season by season, their totals side by side and their latest games. Tap a team on a Head-to-Head page, or All-time on a playoff series page.",
