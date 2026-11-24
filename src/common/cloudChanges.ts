@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 526,
+		date: "2026-11-24",
+		text: "NBA calendar: on a team's calendar, every day now opens that day's Daily Schedule, not just the days the team plays.",
+	},
+	{
 		n: 525,
 		date: "2026-11-24",
 		text: "Player names no longer underline when you hover them, anywhere: tables, Daily Schedule game cards, top performers, the news feed and recaps (a recap sentence gets a faint shade instead). A player's face now opens the player page too, wherever it sits next to the name.",

@@ -229,7 +229,8 @@ $lc-dark: lightness($white) < 50%;
 
 	// The whole night is the link.
 	td:has(> .lc-game[href]):hover,
-	td:has(> .lc-game > .lc-cover):hover {
+	td:has(> .lc-game > .lc-cover):hover,
+	td:has(> .lc-cover):hover {
 		box-shadow: inset 0 0 0 2px var(--lc-ring);
 	}
 
@@ -516,6 +517,11 @@ $lc-dark: lightness($white) < 50%;
 	a {
 		color: inherit;
 		text-decoration: underline;
+	}
+
+	// (Only its link above the night's.)
+	&:not(:has(a)) {
+		pointer-events: none;
 	}
 }
 

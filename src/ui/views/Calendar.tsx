@@ -9,6 +9,7 @@ import { useLocal } from "../util/local.ts";
 const Calendar = ({
 	games,
 	keyDates,
+	nightDays,
 	nbaCalendar,
 	season,
 	tid,
@@ -58,6 +59,7 @@ const Calendar = ({
 			<MonthCalendar
 				games={games}
 				keyDates={keyDates}
+				nightDays={nightDays}
 				monthChips
 				season={season}
 				tid={tid}

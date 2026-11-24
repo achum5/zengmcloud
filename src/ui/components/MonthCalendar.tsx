@@ -349,6 +349,7 @@ export const MonthCalendar = ({
 	games,
 	keyDates,
 	monthChips = false,
+	nightDays,
 	season,
 	selected,
 	tid,
@@ -358,6 +359,8 @@ export const MonthCalendar = ({
 	compact?: boolean;
 	games: CalendarGame[];
 	keyDates: CalendarKeyDate[];
+	// Each night's day, so a team's nights off open the league's games too.
+	nightDays?: Record<string, number>;
 	// Month buttons along the top, with a team's record in each.
 	monthChips?: boolean;
 	season: number;
@@ -650,6 +653,17 @@ export const MonthCalendar = ({
 													})
 												: null}
 										</div>
+										{isTeam && !game && nightDays?.[date] !== undefined ? (
+											<a
+												className="lc-cover"
+												href={helpers.leagueUrl([
+													"daily_schedule",
+													season,
+													nightDays[date],
+												])}
+												aria-label={`Games on ${formatGameDate(date, "full")}`}
+											/>
+										) : null}
 										{game && isTeam ? (
 											<TeamNight
 												compact={compact}

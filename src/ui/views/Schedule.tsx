@@ -105,6 +105,7 @@ const Schedule = ({
 					className="mb-4"
 					games={calendar.games}
 					keyDates={calendar.keyDates}
+					nightDays={calendar.nightDays}
 					monthChips
 					season={season}
 					tid={tid}

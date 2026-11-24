@@ -122,6 +122,7 @@ export const TeamGames = ({
 			<MonthCalendar
 				games={games.calendar.games}
 				keyDates={games.calendar.keyDates}
+				nightDays={games.calendar.nightDays}
 				monthChips
 				season={season}
 				tid={tid}

@@ -59,6 +59,9 @@ export type CalendarKeyDate = {
 export type CalendarData = {
 	games: CalendarGame[];
 	keyDates: CalendarKeyDate[];
+	// Every night with games and its day, for the Daily Schedule link (on a
+	// team's calendar, its nights off too).
+	nightDays: Record<string, number>;
 	// The next night to be played, in the current season.
 	today: string | undefined;
 	// Games on classic numbered days, before the league went on the
@@ -90,6 +93,14 @@ export const getCalendarData = async (
 
 	// Every regular season night, with its day.
 	const regularNights = new Map<string, number | undefined>();
+	// Every night's day: its games', not the deadline's or the All-Star
+	// Game's alone.
+	const nightDays: Record<string, number> = {};
+	const addNight = (date: string, day: number | undefined, special = false) => {
+		if (day !== undefined && (!special || nightDays[date] === undefined)) {
+			nightDays[date] = day;
+		}
+	};
 
 	const played = await idb.merged.games.getAll({ season });
 	for (const game of played) {
@@ -98,6 +109,7 @@ export const getCalendarData = async (
 			continue;
 		}
 		const [home, away] = game.teams;
+		addNight(game.date, game.day, isAllStarGame(home.tid, away.tid));
 		if (!game.playoffs && !isAllStarGame(home.tid, away.tid)) {
 			regularNights.set(game.date, game.day);
 		}
@@ -169,6 +181,12 @@ export const getCalendarData = async (
 			if (gate?.dayCutoff !== undefined && game.day > gate.dayCutoff) {
 				continue;
 			}
+			addNight(
+				game.date,
+				game.day,
+				isTradeDeadline(game.homeTid, game.awayTid) ||
+					isAllStarGame(game.homeTid, game.awayTid),
+			);
 			if (isTradeDeadline(game.homeTid, game.awayTid)) {
 				keyDates.push({
 					date: game.date,
@@ -240,7 +258,7 @@ export const getCalendarData = async (
 
 	games.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-	return { games, keyDates, today, undated };
+	return { games, keyDates, nightDays, today, undated };
 };
 
 // For pages that show the calendar only when the season has dates.

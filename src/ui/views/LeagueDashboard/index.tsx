@@ -266,6 +266,7 @@ const LeagueDashboard = ({
 								compact
 								games={calendar.games}
 								keyDates={calendar.keyDates}
+								nightDays={calendar.nightDays}
 								season={season}
 								tid={userTid}
 								today={calendar.today}

@@ -232,6 +232,7 @@ const MonthDropdown = ({
 						compact
 						games={calendar.games}
 						keyDates={calendar.keyDates}
+						nightDays={calendar.nightDays}
 						season={season}
 						selected={date}
 						tid="all"
