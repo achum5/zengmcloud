@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 503,
+		date: "2026-11-24",
+		text: "NBA calendar: the trade deadline now falls when the NBA's does, on the Thursday about 10 days before the All-Star Game (early February). It starts with next season's schedule. A league with its own Trade Deadline setting keeps it.",
+	},
+	{
 		n: 502,
 		date: "2026-11-24",
 		text: "Smart CPU GMs: a CPU team now passes on a trade if a clearly better one will open up once recently signed players can be traded. CPU teams also never trade a player they just signed, even with God Mode on.",
