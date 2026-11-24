@@ -64,6 +64,13 @@ import {
 } from "./recapBeats.ts";
 import { shotName, winningShotKind, withSettledLead } from "./recapFinish.ts";
 import { wireOf, withWire } from "./recapWire.ts";
+import {
+	careerHighOf,
+	careerNote,
+	careerWeight,
+	raceNote,
+	stretchNote,
+} from "./recapPeople.ts";
 import { gameHeadline, writeDayRecap } from "./recapDay.ts";
 import {
 	composeCast,
@@ -3524,11 +3531,19 @@ const buildGameRecap = (game: RecapGame, wire = false): string => {
 		star,
 		othersOf(star),
 	);
-	writtenSoFar = [written1, ...cast.winners].join(" ");
+	// (After the fold, so a "career-high 34" in the lede is not told again.)
+	writtenSoFar = [headline.text, ...para1, ...storyPara, ...cast.winners].join(
+		" ",
+	);
 	// What his night was against his season: the career arc first - it is
 	// the rarest note and the one a season high or an against-his-average
 	// line would otherwise crowd out. One note; two for a night that big.
+	const starTeam = shape.winner.players.includes(star)
+		? shape.winner
+		: shape.loser;
 	const starColour = [
+		() =>
+			game.playoffs ? undefined : careerNote(star, starTeam, rng, writtenSoFar),
 		() => careerArcNote(star, game.playoffs, rng),
 		() =>
 			vsAverageNote(
@@ -3623,6 +3638,24 @@ const buildGameRecap = (game: RecapGame, wire = false): string => {
 				: undefined,
 		3,
 	);
+	// Anyone else's career high goes into his line, where his line is on
+	// the page: "Franz Owens added a career-high 21 points".
+	for (const p of everyone) {
+		if (
+			p !== star &&
+			p !== loserBest &&
+			careerHighOf(p) &&
+			foldSeasonHigh([para1, storyPara, winners, losers], p, othersOf(p))
+		) {
+			writtenSoFar = [
+				headline.text,
+				...para1,
+				...storyPara,
+				...winners,
+				...losers,
+			].join(" ");
+		}
+	}
 	// One note of colour from the box score - a block party, a man fouling
 	// out, 48 minutes - in the paragraph of the side it is about.
 	const plusMinusTold = winners.some((t) =>
@@ -3685,6 +3718,22 @@ const buildGameRecap = (game: RecapGame, wire = false): string => {
 		}
 	}
 	const seriesCount = context.length;
+	// What the night settled in the race: a clinch, an elimination, the
+	// first team to a round number of wins - the result's meaning, first.
+	if (!game.playoffs) {
+		addContext(() => {
+			for (const [t, won] of [
+				[shape.winner, true],
+				[shape.loser, false],
+			] as const) {
+				const text = raceNote(t, { S: `The ${nick(t)}`, one: false }, won);
+				if (text) {
+					return text;
+				}
+			}
+			return undefined;
+		});
+	}
 	// What the lede and the story told, and the body so far - without the
 	// headline, whose streak is the body's to tell too.
 	const story1 = writtenSoFar.slice(headline.text.length);
@@ -3710,6 +3759,25 @@ const buildGameRecap = (game: RecapGame, wire = false): string => {
 	addContext(() => standingsBeat(beatCtx, rng));
 	addContext(() => teamHighBeat(beatCtx, rng));
 	addContext(() => formNote(shape, rng, beatCtx.written));
+	// Who someone else was tonight: a first triple-double, a top pick's
+	// debut, a man's first game against the club that traded him.
+	const peopleNote = (min: number) => () => {
+		if (game.playoffs) {
+			return undefined;
+		}
+		const men = everyone
+			.filter((p) => careerWeight(p) >= min)
+			.sort((a, b) => careerWeight(b) - careerWeight(a) || b.pts - a.pts);
+		for (const p of men) {
+			const t = shape.winner.players.includes(p) ? shape.winner : shape.loser;
+			const text = careerNote(p, t, rng, beatCtx.written);
+			if (text) {
+				return text;
+			}
+		}
+		return undefined;
+	};
+	addContext(peopleNote(3));
 	for (const beat of shuffle(rng, [
 		() => spreadNote(game, shape, rng),
 		() => scoringNormBeat(beatCtx, rng),
@@ -3719,6 +3787,18 @@ const buildGameRecap = (game: RecapGame, wire = false): string => {
 		() => returnBeat(beatCtx, rng),
 		() => homeRoadBeat(beatCtx, rng),
 		() => benchBeat(beatCtx, rng),
+		peopleNote(1),
+		() =>
+			game.playoffs
+				? undefined
+				: (stretchNote(shape.winner, {
+						S: `The ${nick(shape.winner)}`,
+						one: false,
+					}) ??
+					stretchNote(shape.loser, {
+						S: `The ${nick(shape.loser)}`,
+						one: false,
+					})),
 	])) {
 		addContext(beat);
 	}
@@ -4018,6 +4098,22 @@ export const teamOpeners = (
 			/^\s*\n/.test(cur) ||
 			!cur.trimStart().startsWith(`The ${team} `) ||
 			nicks.some((n) => n !== team && prev.includes(n))
+		) {
+			continue;
+		}
+		// "The Trail Blazers' Ausar Turner went past 500 assists" loses its
+		// club when Turner was named before (he is "Turner" the second time),
+		// and a "They" after "Turner went past 500 assists" has nobody to be.
+		const owned = new RegExp(
+			String.raw`^\s*The ${team}(?:'s?) ((?:\p{Lu}[\p{L}'.-]*)(?: \p{Lu}[\p{L}'.-]*)+)`,
+			"u",
+		).exec(prev);
+		if (
+			owned &&
+			parts
+				.slice(0, i - 1)
+				.join("")
+				.includes(owned[1]!)
 		) {
 			continue;
 		}

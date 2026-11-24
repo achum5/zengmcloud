@@ -1,4 +1,20 @@
 import { runsOf, type RecapRuns } from "./recapRuns.ts";
+import {
+	draftSlotOf,
+	formerTeamOf,
+	newTeamOf,
+	playerPast,
+	standingsNewsOf,
+	stretchOf,
+	type DraftSlot,
+	type PlayerPast,
+	type RaceRow,
+	type StandingsNews,
+	type Stretch,
+	type TeamMove,
+} from "./recapCareer.ts";
+import getNumPlayoffTeams from "../core/season/getNumPlayoffTeams.ts";
+import { getPlayoffsByConf } from "../core/season/getPlayoffsByConf.ts";
 import type { GameFlow } from "../../common/gameFlow.ts";
 import type { Game } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
@@ -41,6 +57,7 @@ import {
 import {
 	DEFAULT_RECAP_MAX_GAMES,
 	DEFAULT_RECAP_MAX_DAYS,
+	PHASE,
 } from "../../common/constants.ts";
 
 // Per-game averages we compute for a player (this season, career, playoffs).
@@ -92,6 +109,8 @@ export type RecapPlayer = {
 	fta: number;
 	pf: number;
 	pm?: number;
+	// Offensive rebounds (older box scores lack them).
+	orb?: number;
 	// Started the game, when the box score says so (older games do not).
 	starter?: boolean;
 	// What he brought into the game this season: games, highs, totals and
@@ -113,6 +132,14 @@ export type RecapPlayer = {
 	// scoring): his age this season, and whether it is his first.
 	age?: number;
 	rookie?: boolean;
+	// Also for them: his career before tonight (regular season, when the
+	// league holds all of it), where he was drafted (first two seasons), his
+	// first game for this club after another, and his first against the club
+	// he left. See recapCareer.ts.
+	past?: PlayerPast;
+	draft?: DraftSlot;
+	newTeam?: RecapMove;
+	formerTeam?: RecapMove;
 	// Set when a player who PLAYED was hurt this game or played through an injury.
 	injury?: {
 		type: string;
@@ -121,6 +148,8 @@ export type RecapPlayer = {
 		playingThrough?: boolean;
 	};
 };
+
+export type RecapMove = TeamMove & { region: string; name: string };
 
 // A player who did NOT play because of injury (the game's inactives).
 export type RecapInjuryOut = {
@@ -242,6 +271,11 @@ export type RecapTeam = {
 	norm?: ScoringNorm;
 	// The earlier games of this playoff series, from this team's side.
 	seriesSoFar?: SeriesGame[];
+	// The run of road (or home) games this one is part of.
+	stretch?: Stretch;
+	// What the night settled in the race: a clinch, an elimination, the
+	// first team to a win total.
+	race?: StandingsNews;
 };
 
 // A playoff series' state for context (bracket entry the game belongs to).
@@ -552,6 +586,9 @@ export type PlayerGameLine = {
 	day: number;
 	gid: number;
 	playoffs: boolean;
+	// The club he played for, and against.
+	tid?: number;
+	oppTid?: number;
 	row: Record<string, number>;
 };
 
@@ -1413,7 +1450,8 @@ const createAutoRecapContext = async (season: number) => {
 		if (!game.won || !game.lost) {
 			continue;
 		}
-		for (const t of game.teams) {
+		for (const [i, t] of game.teams.entries()) {
+			const oppTid = game.teams[1 - i]?.tid;
 			for (const p of (t as any).players ?? []) {
 				if ((p?.min ?? 0) > 0 && typeof p?.pid === "number") {
 					const arr = linesByPid.get(p.pid) ?? [];
@@ -1421,6 +1459,8 @@ const createAutoRecapContext = async (season: number) => {
 						day: game.day ?? 0,
 						gid: game.gid,
 						playoffs: !!game.playoffs,
+						tid: t.tid,
+						...(typeof oppTid === "number" ? { oppTid } : {}),
 						row: { ...p, gp: 1 },
 					});
 					linesByPid.set(p.pid, arr);
@@ -1664,6 +1704,117 @@ const createAutoRecapContext = async (season: number) => {
 		return fullPlayerCache.get(pid);
 	};
 
+	// The race: who is seeded together, and how many spots each group has.
+	let raceRules:
+		| Promise<{ byConf: boolean; direct: number; reach: number } | undefined>
+		| undefined;
+	const raceRulesOf = () => {
+		raceRules ??= (async () => {
+			try {
+				const byConf = await getPlayoffsByConf(season);
+				const { numPlayoffTeams, numPlayInTeams } =
+					await getNumPlayoffTeams(season);
+				const groups = byConf || 1;
+				const perGroup = numPlayoffTeams / groups;
+				const playIn = numPlayInTeams / groups;
+				if (!Number.isInteger(perGroup) || !Number.isInteger(playIn)) {
+					return undefined;
+				}
+				// The play-in takes in the last two spots and the two below.
+				return {
+					byConf: !!byConf,
+					direct: playIn > 0 ? perGroup - playIn : perGroup,
+					reach: perGroup + playIn,
+				};
+			} catch {
+				return undefined;
+			}
+		})();
+		return raceRules;
+	};
+	const raceGroups = async (day: number): Promise<RaceRow[][]> => {
+		const st = await standingsOn(day);
+		const rules = await raceRulesOf();
+		const groups = st.confs.map((c) =>
+			c.teams.flatMap((t) =>
+				typeof t.tid === "number"
+					? [{ tid: t.tid, won: t.won, lost: t.lost }]
+					: [],
+			),
+		);
+		return rules?.byConf ? groups : [groups.flat()];
+	};
+	const raceOf = async (
+		tid: number,
+		day: number,
+	): Promise<StandingsNews | undefined> => {
+		const rules = await raceRulesOf();
+		if (!rules) {
+			return undefined;
+		}
+		const news = standingsNewsOf(
+			tid,
+			await raceGroups(day - 1),
+			await raceGroups(day),
+			{ numGames: g.get("numGames"), direct: rules.direct, reach: rules.reach },
+		);
+		const conf = rules.byConf
+			? (await standingsOn(day)).confs.find((c) =>
+					c.teams.some((t) => t.tid === tid),
+				)?.name
+			: undefined;
+		return news && conf ? { ...news, conf } : news;
+	};
+	const moveOf = async (
+		move: TeamMove | undefined,
+	): Promise<RecapMove | undefined> => {
+		if (!move) {
+			return undefined;
+		}
+		const info = await teamInfo(move.fromTid);
+		return info ? { ...move, region: info.region, name: info.name } : undefined;
+	};
+	// His career, his draft and his moves - for the men looked up in full.
+	const addCareer = async (
+		base: RecapPlayer,
+		full: any,
+		tid: number,
+		game: any,
+	) => {
+		const lines = linesByPid.get(base.pid) ?? [];
+		const day = game.day ?? 0;
+		const past = playerPast(
+			full,
+			season,
+			g.get("startingSeason"),
+			lines,
+			game.gid,
+			day,
+		);
+		if (past) {
+			base.past = past;
+		}
+		const draft = draftSlotOf(full, season);
+		if (draft) {
+			base.draft = draft;
+		}
+		const newTeam = await moveOf(
+			newTeamOf(full, tid, season, lines, game.gid, day),
+		);
+		if (newTeam) {
+			base.newTeam = newTeam;
+		}
+		const oppTid = game.teams.find((x: any) => x.tid !== tid)?.tid;
+		if (typeof oppTid === "number") {
+			const former = await moveOf(
+				formerTeamOf(full, tid, oppTid, season, lines, game.gid, day),
+			);
+			if (former) {
+				base.formerTeam = former;
+			}
+		}
+	};
+
 	const buildRecapGame = async (
 		game: any,
 		effectiveDay: number,
@@ -1722,6 +1873,7 @@ const createAutoRecapContext = async (season: number) => {
 					fta: p?.fta ?? 0,
 					pf: p?.pf ?? 0,
 					pm: typeof p?.pm === "number" ? p.pm : undefined,
+					...(typeof p?.orb === "number" ? { orb: p.orb } : {}),
 					injury:
 						p?.injury && (p.injury.newThisGame || p.injury.playingThrough)
 							? {
@@ -1760,6 +1912,9 @@ const createAutoRecapContext = async (season: number) => {
 								void tids;
 								return rest;
 							});
+						}
+						if (!playoffs && !allStar) {
+							await addCareer(base, full, t.tid, game);
 						}
 					}
 					if (playoffs) {
@@ -1876,6 +2031,19 @@ const createAutoRecapContext = async (season: number) => {
 						scheduleRows,
 					);
 					team.seasonHighs = teamSeasonHighs(team.tid, game, allGames);
+					const stretch = stretchOf(
+						team.tid,
+						game.gid,
+						mine,
+						g.get("phase") === PHASE.REGULAR_SEASON ? scheduleRows : [],
+					);
+					if (stretch) {
+						team.stretch = stretch;
+					}
+					const race = await raceOf(team.tid, day2);
+					if (race) {
+						team.race = race;
+					}
 					const after = standingOf(await standingsOn(day2), team.tid);
 					if (after) {
 						const before = standingOf(await standingsOn(day2 - 1), team.tid);

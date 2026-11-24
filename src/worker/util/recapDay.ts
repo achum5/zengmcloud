@@ -66,7 +66,7 @@ import { clockLeft } from "../../common/gameFlow.ts";
 import {
 	dayBracketWatch,
 	dayNextSlate,
-	seasonHighOf,
+	highOf,
 	type DayBeatContext,
 } from "./recapBeats.ts";
 import { surnameOf } from "./recapNames.ts";
@@ -441,13 +441,13 @@ const onlyPoints = (p: RecapPlayer): boolean =>
 // After a possessive it takes no article: "Marcus Brooks' season-high 45".
 const lineWithHigh = (p: RecapPlayer, possessive = false): string => {
 	const line = lineOf(p);
-	const high = seasonHighOf(p);
+	const high = highOf(p);
 	if (!high) {
 		return line;
 	}
 	const figure = `${high.n} ${high.unit}`;
 	return line.includes(figure)
-		? line.replace(figure, `${possessive ? "" : "a "}season-high ${figure}`)
+		? line.replace(figure, `${possessive ? "" : "a "}${high.label} ${figure}`)
 		: line;
 };
 

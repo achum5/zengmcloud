@@ -44,6 +44,7 @@ import {
 	statPhrase,
 	theNick,
 } from "./recapText.ts";
+import { careerHighOf } from "./recapPeople.ts";
 
 export type BeatContext = {
 	game: RecapGame;
@@ -595,6 +596,29 @@ export const seasonHighOf = (
 	return undefined;
 };
 
+// The high his line should call: a career high over a season high, in the
+// columns a line carries (points, rebounds, assists).
+export const highOf = (
+	p: RecapPlayer,
+):
+	| {
+			n: number;
+			unit: "points" | "rebounds" | "assists";
+			label: "career-high" | "season-high";
+	  }
+	| undefined => {
+	const career = careerHighOf(p);
+	if (career && career.key !== "tp") {
+		return {
+			n: career.n,
+			unit: career.unit as "points" | "rebounds" | "assists",
+			label: "career-high",
+		};
+	}
+	const season = seasonHighOf(p);
+	return season ? { ...season, label: "season-high" } : undefined;
+};
+
 // THE SEASON HIGH IN HIS LINE. "Walker Green racked up 32 points, 6
 // assists, and 4 steals..." and a paragraph later "Walker Green's previous
 // season high was 31." - a footnote, with the subtraction left to the
@@ -610,7 +634,7 @@ export const foldSeasonHigh = (
 	// never taken for his.
 	others: string[],
 ): boolean => {
-	const high = seasonHighOf(p);
+	const high = highOf(p);
 	if (!high) {
 		return false;
 	}
@@ -643,7 +667,7 @@ export const foldSeasonHigh = (
 				}
 				const before = s.slice(0, m.index);
 				sentences[j] =
-					`${before}${/(?:'s|'|\bhis) $/.test(before) ? "" : "a "}season-high ${s.slice(m.index)}`;
+					`${before}${/(?:'s|'|\bhis) $/.test(before) ? "" : "a "}${high.label} ${s.slice(m.index)}`;
 				texts[i] = sentences.join(" ");
 				return true;
 			}
@@ -678,7 +702,8 @@ export const playerHighBeat = (
 				),
 		);
 	const e = p.entering;
-	if (!e || e.gp < 10) {
+	// A career high is the bigger note, and careerNote has it.
+	if (!e || e.gp < 10 || careerHighOf(p)) {
 		return undefined;
 	}
 	// A high by a point in a 22-point night is a footnote; clearing the old
