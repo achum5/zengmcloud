@@ -2757,10 +2757,10 @@ describe("the standings once there are some", () => {
 
 	test("a 4-1 or 6-2 leader is not news; 5-0 and 9-3 are", () => {
 		for (let day = 1; day <= 8; day++) {
-			assert.notInclude(wrap(4, 1, day), "Western Conference", wrap(4, 1, day));
-			assert.notInclude(wrap(6, 2, day), "Western Conference", wrap(6, 2, day));
-			assert.include(wrap(5, 0, day), "Western Conference", wrap(5, 0, day));
-			assert.include(wrap(9, 3, day), "Western Conference", wrap(9, 3, day));
+			assert.notMatch(wrap(4, 1, day), /\bthe West\b/, wrap(4, 1, day));
+			assert.notMatch(wrap(6, 2, day), /\bthe West\b/, wrap(6, 2, day));
+			assert.match(wrap(5, 0, day), /\bthe West\b/, wrap(5, 0, day));
+			assert.match(wrap(9, 3, day), /\bthe West\b/, wrap(9, 3, day));
 		}
 	});
 });

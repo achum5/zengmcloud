@@ -10,7 +10,7 @@ import {
 	recapGamesForDay,
 	type RecapGame,
 } from "./getDayGamesForRecap.ts";
-import { verifyRecap } from "./recapAccuracy.ts";
+import { verifyNight, verifyRecap } from "./recapAccuracy.ts";
 import {
 	buildFeedDay,
 	clearSocialFeedCache,
@@ -71,8 +71,19 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	const gameRecaps: string[] = [];
 	const dayRecaps: string[] = [];
 	const pairs: { gid: number; recap: string; game: RecapGame }[] = [];
+	const nightViolations: string[] = [];
 	for (let day = 1; day <= lastDay; day++) {
-		const { notes, dayRecap } = await getAutoRecapsForDay({ season, day });
+		const {
+			notes,
+			dayRecap,
+			games: nightGames,
+			standings,
+		} = await getAutoRecapsForDay({ season, day });
+		for (const v of verifyNight(dayRecap, nightGames, standings)) {
+			nightViolations.push(
+				`day ${day} [${v.kind}] ${v.detail}\n    ${v.sentence}`,
+			);
+		}
 		for (const rg of await recapGamesForDay({ season, day })) {
 			const note = notes[rg.gid];
 			if (note) {
@@ -297,7 +308,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	// scale, so it is asked here and it is fatal - a recap that states something
 	// the game does not contain is the one defect no amount of good phrasing
 	// makes up for.
-	const violations: string[] = [];
+	const violations: string[] = [...nightViolations];
 	for (const { gid, recap, game } of pairs) {
 		for (const v of verifyRecap(recap, game)) {
 			violations.push(`gid ${gid} [${v.kind}] ${v.detail}\n    ${v.sentence}`);

@@ -37,7 +37,6 @@ import {
 	closeLate,
 	clutchShot,
 	comebackSize,
-	conferencePictureSentence,
 	gamesLeft,
 	gamesOut,
 	heldOn,
@@ -70,6 +69,15 @@ import {
 	type DayBeatContext,
 } from "./recapBeats.ts";
 import { surnameOf } from "./recapNames.ts";
+import {
+	byTheNumbers,
+	milestonesSection,
+	movesSection,
+	raceSection,
+	streaksSection,
+	worthWatching,
+} from "./recapNight.ts";
+import { careerNote, raceNote, stretchNote } from "./recapPeople.ts";
 import {
 	aFigure,
 	aNumWord,
@@ -1979,7 +1987,10 @@ const itemShapes = (s: Story, rng: Rng): Shaped[] => {
 // One more thing the game meant, as its own sentence. What each item could
 // add, best first; the item takes the first one (two for the night's biggest
 // stories) not already told.
-const contextOf = (
+type Context = { tag: string; text: string };
+
+// What a game meant, each sentence tagged with what it tells.
+const contextParts = (
 	s: Story,
 	told: string,
 	rng: Rng,
@@ -1987,8 +1998,12 @@ const contextOf = (
 	stakes = false,
 	// What the night's recap has said before this game.
 	night = "",
-): string[] => {
-	const out: string[] = [];
+): Context[] => {
+	const out: Context[] = [];
+	let tag = "series";
+	const push = (text: string) => {
+		out.push({ tag, text });
+	};
 	const { w, l } = s;
 	const W = cap(w);
 	const L = cap(l);
@@ -1996,7 +2011,7 @@ const contextOf = (
 	if (sr) {
 		if (s.kind === "title") {
 			if (!/champion/.test(told)) {
-				out.push(`${W} are champions.`);
+				push(`${W} are champions.`);
 			}
 		} else if (s.kind === "clinch") {
 			const next = s.post!.clinch!.nextRound;
@@ -2005,10 +2020,10 @@ const contextOf = (
 			// to the Conference Semifinals" says nothing.
 			if (night.includes(next) || told.includes(next)) {
 				if (!/season is over/.test(`${night} ${told}`)) {
-					out.push(over);
+					push(over);
 				}
 			} else {
-				out.push(
+				push(
 					pick(
 						rng,
 						[`${W} move on to ${next}.`, `${W} advance to ${next}.`, over],
@@ -2022,7 +2037,7 @@ const contextOf = (
 			if (lp && !told.includes(lp.name)) {
 				// "Payton Harper scored 40 for the Nets, who face elimination
 				// in Game 6."
-				out.push(
+				push(
 					`${lp.name} ${did(lp, rng)} for ${l}, ${pick(
 						rng,
 						[
@@ -2034,7 +2049,7 @@ const contextOf = (
 					)}.`,
 				);
 			} else {
-				out.push(
+				push(
 					pick(
 						rng,
 						[
@@ -2058,20 +2073,25 @@ const contextOf = (
 			`${numWord(n)} more ${n === 1 ? "win" : "wins"}`;
 		const to = finals ? "for the title" : "to advance";
 		if (sr.state === "even") {
-			out.push(`Both teams need ${wins(wNeed)} ${to}.`);
+			push(`Both teams need ${wins(wNeed)} ${to}.`);
 		} else if (sr.state === "opener" || sr.state === "lead") {
-			out.push(
+			push(
 				`${W} are ${numWord(wNeed)} wins from ${finals ? "the title" : "the next round"}; ${l} need ${numWord(lNeed)}.`,
 			);
 		} else if (sr.state === "brink") {
-			out.push(`${W} can finish it in Game ${sr.gameNo + 1}.`);
+			push(`${W} can finish it in Game ${sr.gameNo + 1}.`);
 		} else if (sr.state === "alive" || sr.state === "cut") {
-			out.push(`${L} still need ${wins(lNeed)} ${to}.`);
+			push(`${L} still need ${wins(lNeed)} ${to}.`);
 		}
 	}
 	const p = s.loserStar ?? s.loserLead;
-	if (p && !told.includes(p.name) && !out.some((x) => x.includes(p.name))) {
-		out.push(
+	if (
+		p &&
+		!told.includes(p.name) &&
+		!out.some((x) => x.text.includes(p.name))
+	) {
+		tag = "loser";
+		push(
 			pick(
 				rng,
 				[
@@ -2087,32 +2107,34 @@ const contextOf = (
 	}
 	const changes = s.game.flow?.leadChanges ?? 0;
 	if (changes >= 15) {
-		out.push(`The teams traded the lead ${changes} times.`);
+		tag = "changes";
+		push(`The teams traded the lead ${changes} times.`);
 	}
 	if (s.dog !== undefined && !/underdog|upset/.test(told)) {
-		out.push(`${W} were ${s.dog}-point underdogs.`);
+		tag = "dog";
+		push(`${W} were ${s.dog}-point underdogs.`);
 	}
 	if (s.skid !== undefined && s.skid >= 5 && !/losing streak|skid/.test(told)) {
-		out.push(
-			`The win snapped ${poss(w)} ${numWord(s.skid)}-game losing streak.`,
-		);
+		tag = "skid";
+		push(`The win snapped ${poss(w)} ${numWord(s.skid)}-game losing streak.`);
 	}
 	if (s.ended !== undefined && !/winning streak/.test(told)) {
-		out.push(
-			`The loss ended ${poss(l)} ${numWord(s.ended)}-game winning streak.`,
-		);
+		tag = "ended";
+		push(`The loss ended ${poss(l)} ${numWord(s.ended)}-game winning streak.`);
 	}
 	if (s.firstIn) {
-		out.push(`${W} moved into first place in the ${s.firstIn}.`);
+		tag = "first";
+		push(`${W} moved into first place in the ${s.firstIn}.`);
 	}
+	tag = "streak";
 	if (s.unbeaten !== undefined && !/unbeaten/.test(told)) {
-		out.push(`${W} are still unbeaten at ${s.unbeaten}-0.`);
+		push(`${W} are still unbeaten at ${s.unbeaten}-0.`);
 	} else if (
 		s.unbeaten === undefined &&
 		s.streak !== undefined &&
 		!/straight|in a row|winning streak/.test(told)
 	) {
-		out.push(
+		push(
 			pick(
 				rng,
 				[
@@ -2124,10 +2146,11 @@ const contextOf = (
 			),
 		);
 	}
+	tag = "lSkid";
 	if (s.winless !== undefined) {
-		out.push(`${L} are still winless at 0-${s.winless}.`);
+		push(`${L} are still winless at 0-${s.winless}.`);
 	} else if (s.lSkid !== undefined && !/lost|skid/.test(told)) {
-		out.push(
+		push(
 			pick(
 				rng,
 				[
@@ -2140,10 +2163,19 @@ const contextOf = (
 	}
 	const hurt = hurtSentence(s.hurt, told, s.game.playoffs);
 	if (hurt) {
-		out.push(hurt);
+		tag = "hurt";
+		push(hurt);
 	}
 	return out;
 };
+
+const contextOf = (
+	s: Story,
+	told: string,
+	rng: Rng,
+	stakes = false,
+	night = "",
+): string[] => contextParts(s, told, rng, stakes, night).map((x) => x.text);
 
 // Who got hurt, the way the wire tells it: one man in a sentence of his own,
 // two of a club's men together. "The Rockets lost two players to injuries:
@@ -2185,9 +2217,13 @@ const theyNext = (sentences: string[], clubs: string[]): string => {
 		for (const club of clubs) {
 			const nick = club.replace(/^the /, "");
 			const others = clubs.filter((c) => c !== club);
+			// ...or one that opened on it and named no other: "The Trail
+			// Blazers closed on an 18-4 run. They clinched at least a play-in
+			// spot."
 			if (
-				before.endsWith(` ${nick}.`) &&
-				/\b[Tt]he $/.test(before.slice(0, -nick.length - 1)) &&
+				(before.startsWith(`The ${nick} `) ||
+					(before.endsWith(` ${nick}.`) &&
+						/\b[Tt]he $/.test(before.slice(0, -nick.length - 1)))) &&
 				parts[i]!.startsWith(`The ${nick} `) &&
 				!others.some((c) => before.includes(c.replace(/^the /, "")))
 			) {
@@ -2612,6 +2648,17 @@ const storyParagraph = (
 	}
 	const ctx = contextOf(s, para.join(" "), rng, alone, night);
 	para.push(...ctx.slice(0, detail ? 1 : first ? 2 : 1));
+	// What it settled in the race, and what it was in his career.
+	const race = raceOf(s);
+	if (race && !/clinch|eliminated|first team to/.test(para.join(" "))) {
+		para.push(race);
+	}
+	if (s.star && !s.game.playoffs && para.length < 4) {
+		const note = careerNote(s.star, s.W, rng, para.join(" "));
+		if (note) {
+			para.push(note);
+		}
+	}
 	if (para.length === 1) {
 		const extra = depthLine(s, para[0]!);
 		if (extra) {
@@ -2619,6 +2666,55 @@ const storyParagraph = (
 		}
 	}
 	return theyNext(para, [s.w, s.l]);
+};
+
+// What a result settled in the race - the winners' clinch, or the losers'
+// elimination.
+const raceOf = (s: Story): string | undefined =>
+	s.game.playoffs
+		? undefined
+		: (raceNote(s.W, { S: cap(s.w), one: false }, true) ??
+			raceNote(s.L, { S: cap(s.l), one: false }, false));
+
+// What a game in the list meant, the thing a desk would say of it first: the
+// race, where a series stands, a streak ended or extended, first place, an
+// upset, the end of a trip.
+const POINTS = ["series", "ended", "skid", "first", "streak", "lSkid", "dog"];
+
+// The deck: one line of the night's other stories, under the headline.
+const DECK_MAX = 110;
+const deckOf = (rest: Story[]): string | undefined => {
+	// Stories of a kind as one clause, as the headline has them: "Nuggets,
+	// Bucks and Lakers take 2-0 series leads".
+	const units = unitsOf(
+		rest.filter((s) => isStory(s) || /^(?:close|rout)$/.test(s.kind)),
+	);
+	const clauses: string[] = [];
+	const frames: string[] = [];
+	for (const u of units) {
+		const s = u[0]!;
+		const clause =
+			u.length > 1
+				? groupClause(u)!
+				: surnamesIn(headClause(s, { short: true }), s.game);
+		// Not the same clause twice with other names: "Mavericks hold off
+		// Rockets; Cavaliers hold off Kings".
+		const frame =
+			u.length > 1 ? clause : clause.replace(s.wn, "W").replace(s.ln, "L");
+		if (frames.includes(frame)) {
+			continue;
+		}
+		const line = [...clauses, clause].join("; ");
+		if (line.length > DECK_MAX) {
+			continue;
+		}
+		clauses.push(clause);
+		frames.push(frame);
+		if (clauses.length === 3) {
+			break;
+		}
+	}
+	return clauses.length > 0 ? `*${cap(clauses.join("; "))}*` : undefined;
 };
 
 export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
@@ -2643,6 +2739,7 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 	const headline = nightHeadline(units, themes, rng);
 	top = units.flat();
 	const rest = stories.filter((s) => !top.includes(s));
+	const deck = deckOf(rest);
 
 	// The night's shape (three games won at the buzzer, five favorites
 	// beaten): after the first story when it was one of them, else over the
@@ -2697,10 +2794,33 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 			"day:item",
 		);
 		lastKey = main.key;
-		// One more thing it meant, when it meant something; who got hurt is
-		// told at the end with the rest.
-		const ctx = contextOf({ ...s, hurt: [] }, main.text, rng, false, night);
-		const text = theyNext([main.text, ...ctx.slice(0, 1)], [s.w, s.l]);
+		// What it meant: the race first, then where a series stands, a
+		// streak, first place - or, when it meant none of those, the one
+		// more thing worth saying of it. Then who got hurt in it.
+		const parts = contextParts(
+			{ ...s, hurt: [] },
+			main.text,
+			rng,
+			false,
+			night,
+		);
+		const trip =
+			stretchNote(s.W, { S: cap(s.w), one: false }) ??
+			stretchNote(s.L, { S: cap(s.l), one: false });
+		const point =
+			raceOf(s) ??
+			parts.find((x) => POINTS.includes(x.tag))?.text ??
+			trip ??
+			parts[0]?.text;
+		const hurt = hurtSentence(
+			s.hurt,
+			`${main.text} ${point ?? ""}`,
+			s.game.playoffs,
+		);
+		const text = theyNext(
+			[main.text, ...(point ? [point] : []), ...(hurt ? [hurt] : [])],
+			[s.w, s.l],
+		);
 		night += ` ${text}`;
 		return `- **${s.header}:** ${text}`;
 	});
@@ -2716,13 +2836,39 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 		paragraphs.push(items[0]!.replace(/^- /, ""));
 	} else if (items.length > 0) {
 		paragraphs.push(
-			[`**Around the league**`, ...(intro ? [intro] : []), ...items].join("\n"),
+			[`### Around the league`, ...(intro ? [intro] : []), ...items].join("\n"),
 		);
 	}
 
-	// What the night left: the standings, who got hurt in the games the list
-	// told, what's next.
-	const said = [headline, ...paragraphs].join(" ");
+	// Who got hurt in the games told together at the end of the list.
+	const hurt: string[] = [];
+	for (const s of quiet.filter((x) => x.hurt.length > 0)) {
+		const text = hurtSentence(s.hurt, "", s.game.playoffs);
+		if (text && hurt.length < 3) {
+			hurt.push(text);
+		}
+	}
+	if (hurt.length > 0) {
+		paragraphs.push(hurt.join(" "));
+	}
+
+	// The night's closing sections, each only when it has something: its
+	// figures, the streaks, the race, its milestones and firsts, its moves,
+	// and the next day's best game.
+	const saidSoFar = () => [headline, ...paragraphs].join(" ");
+	const sections = [
+		() => byTheNumbers(top.concat(rest), saidSoFar(), standings),
+		() => streaksSection(standings),
+		() => raceSection(games, standings, saidSoFar(), rng),
+		() => milestonesSection(games, saidSoFar()),
+		() => movesSection(games, saidSoFar(), rng),
+	];
+	for (const make of sections) {
+		const text = make();
+		if (text) {
+			paragraphs.push(text);
+		}
+	}
 	const dayCtx: DayBeatContext = {
 		games,
 		standings,
@@ -2733,50 +2879,21 @@ export const writeDayRecap = (input: AutoDayRecapInput, rng: Rng): string => {
 		const bracket = dayBracketWatch(dayCtx, rng);
 		if (
 			bracket &&
-			!/face elimination|stay alive|from elimination|more loss ends/.test(said)
+			!/face elimination|stay alive|from elimination|more loss ends/.test(
+				saidSoFar(),
+			)
 		) {
 			paragraphs.push(bracket);
 		}
 	} else {
-		const picture = conferencePictureSentence(
-			standings,
-			rng,
-			dayCtx.saidTids,
-			input.day,
-			{
-				played: new Set(games.flatMap((g) => g.teams.map((t) => t.tid))),
-				won: new Set(games.map((g) => g.winnerTid)),
-				rankBefore: new Map(
-					games.flatMap((g) =>
-						g.teams.flatMap((t) =>
-							t.standing?.rankBefore !== undefined
-								? [[t.tid, t.standing.rankBefore] as const]
-								: [],
-						),
-					),
-				),
-			},
-		);
-		if (picture && !/first place|unbeaten/.test(said)) {
-			paragraphs.push(picture);
-		}
-	}
-	const hurt: string[] = [];
-	for (const s of rest.filter((x) => x.hurt.length > 0)) {
-		const text = hurtSentence(s.hurt, "", s.game.playoffs);
-		if (text && hurt.length < 3) {
-			hurt.push(text);
-		}
-	}
-	if (hurt.length > 0) {
-		paragraphs.push(hurt.join(" "));
-	}
-	if (!playoffs) {
-		const next = dayNextSlate(dayCtx, rng);
+		const watch = worthWatching(input.next, standings);
+		const next = watch ?? dayNextSlate(dayCtx, rng);
 		if (next) {
 			paragraphs.push(next);
 		}
 	}
 
-	return `**${headline}**\n\n${paragraphs.join("\n\n")}`;
+	return [`**${headline}**`, ...(deck ? [deck] : []), ...paragraphs].join(
+		"\n\n",
+	);
 };
