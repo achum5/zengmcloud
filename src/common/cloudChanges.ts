@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 558,
+		n: 559,
 		date: "2026-11-24",
 		text: "3D games: uniforms aren't skin tight anymore. Jerseys hang loose from the chest and shoulders down to the shorts, the way real ones do, instead of clinging to every muscle, and shorts are roomier again.",
+	},
+	{
+		n: 558,
+		date: "2026-11-24",
+		text: 'Trading Block: while CPU teams think over your offer, the button shows how far along it is, like "Processing 42%", with a bar filling along its bottom edge.',
 	},
 	{
 		n: 557,
