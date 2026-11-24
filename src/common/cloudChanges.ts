@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 579,
+		date: "2026-11-24",
+		text: "Draft History's Redraft column now goes by more than career win shares. A player's best five seasons count twice, so stars outrank long careers off the bench, and anyone still playing also gets credit for the seasons he's likely to have left, from his rating and age.",
+	},
+	{
 		n: 578,
 		date: "2026-11-24",
 		text: "Smart CPU: CPU teams now look for trades with each other twice a week, going into every Sunday and Thursday, and every night for the 10 days before the trade deadline. It used to be about every 10 days. Simming up to the deadline takes a little longer.",
