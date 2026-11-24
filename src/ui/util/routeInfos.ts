@@ -93,6 +93,7 @@ export const routeInfos = {
 	"/l/:lid/leaders_progressive": "leadersProgressive",
 	"/l/:lid/leaders_progressive/:stat": "leadersProgressive",
 	"/l/:lid/leaders_progressive/:stat/:statType/:playoffs": "leadersProgressive",
+	"/l/:lid/milestone_watch": "milestoneWatch",
 	"/l/:lid/player_bios": "playerBios",
 	"/l/:lid/player_bios/:team": "playerBios",
 	"/l/:lid/player_bios/:team/:season": "playerBios",

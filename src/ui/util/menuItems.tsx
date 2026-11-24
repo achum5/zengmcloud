@@ -645,6 +645,18 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["leaders"],
 				text: "League Leaders",
 			},
+			...(__SPORT === "basketball"
+				? ([
+						{
+							type: "link",
+							active: (pageID) => pageID === "milestoneWatch",
+							league: true,
+							commandPalette: true,
+							path: ["milestone_watch"],
+							text: "Milestone Watch",
+						},
+					] as MenuItemLink[])
+				: []),
 			{
 				type: "link",
 				league: true,

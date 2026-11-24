@@ -136,6 +136,7 @@ $flag-icon-css-path: "/img/flags";
 @import "league-hub";
 @import "playoff-series";
 @import "season-strip";
+@import "milestone-watch";
 @import "top-bar";
 
 @each $color, $value in $table-variants {
