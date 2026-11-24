@@ -3476,6 +3476,7 @@ const cols: {
 		sortType: "record",
 	},
 	Redraft: {
+		blanksLast: true,
 		desc: "Pick in a redraft of the class, by career value",
 		sortType: "number",
 	},

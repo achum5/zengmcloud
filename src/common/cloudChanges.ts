@@ -12,9 +12,14 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 576,
+		n: 577,
 		date: "2026-11-24",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders close out like real ones. The man contesting a jumper is still coming at the shooter as the shot goes up, carries on in the air and comes down going, past him or on to the boards, instead of getting there early and standing still. How open each shot is hasn't changed. Pull-up jumpers off the dribble are taken in stride too, instead of from a dead stop.",
+	},
+	{
+		n: 576,
+		date: "2026-11-24",
+		text: "Draft History no longer has the Redraft card. The Redraft column stays, and players with no redraft pick now stay at the bottom whichever way you sort it.",
 	},
 	{
 		n: 575,
