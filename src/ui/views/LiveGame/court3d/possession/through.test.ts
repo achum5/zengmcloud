@@ -1,6 +1,6 @@
 import { assert, describe, test } from "vitest";
 import type { Act, BallSeg, Move, Track } from "../director.ts";
-import { carryThrough, throughPasses } from "./through.ts";
+import { carryThrough, throughPasses, throughPullUps } from "./through.ts";
 
 const track = (moves: Move[], acts: Act[] = []): Track => ({
 	pid: 1,
@@ -150,6 +150,69 @@ describe("on through the catch", () => {
 		assert.isAbove(passer.moves[0]!.v1!, 1.5);
 		assert.strictEqual(catcher.moves[0]!.t1, 2400);
 		assert.isAbove(catcher.moves[0]!.v1!, 1.5);
+	});
+
+	test("a pull-up is gathered into off the dribble, stopped on the spot before he goes up", () => {
+		const shooter = track(
+			[run(0, 1500, 40, 60), stand(1500, 4000, 60)],
+			[act(1900, 2900, "shoot", { jump: [0.28, 0.87, 1.5] })],
+		);
+		const ball: BallSeg[] = [
+			{ kind: "hold", t0: 0, pid: 1, style: "dribble" },
+			{ kind: "hold", t0: 1700, pid: 1, style: "hold" },
+			{
+				kind: "fly",
+				t0: 2100,
+				t1: 3100,
+				from: { pid: 1 },
+				to: { x: 88, y: 25, z: 10 },
+			},
+		];
+		assert.strictEqual(throughPullUps(new Map([[1, shooter]]), ball), 1);
+		const [a, b] = shooter.moves;
+		assert.strictEqual(a!.t1, 1700);
+		assert.isAtLeast(a!.v1!, 1.5);
+		assert.deepEqual(b!.to, { x: 60, y: 20 });
+		assert.strictEqual(b!.v1, 0);
+		assert.isAtMost(b!.t1, 1900 + 0.28 * 1000 - 60 + 1e-9);
+	});
+
+	test("a jumper off the catch is no pull-up", () => {
+		const shooter = track(
+			[run(0, 1500, 40, 60), stand(1500, 4000, 60)],
+			[act(1900, 2900, "shoot", { jump: [0.28, 0.87, 1.5] })],
+		);
+		const ball: BallSeg[] = [
+			{ kind: "fly", t0: 1200, t1: 1700, from: { pid: 2 }, to: { pid: 1 } },
+			{ kind: "hold", t0: 1700, pid: 1, style: "hold" },
+			{
+				kind: "fly",
+				t0: 2100,
+				t1: 3100,
+				from: { pid: 1 },
+				to: { x: 88, y: 25, z: 10 },
+			},
+		];
+		assert.strictEqual(throughPullUps(new Map([[1, shooter]]), ball), 0);
+		assert.strictEqual(shooter.moves[0]!.t1, 1500);
+	});
+
+	test("hopping on into the air the way he was going, the hop's first step is one run with the one in", () => {
+		const tr = track(
+			[
+				run(0, 1500, 40, 60),
+				{ ...run(1500, 1700, 60, 61), v1: 4 },
+				{ ...run(1700, 2000, 61, 62.2), v0: 4, v1: 4 },
+				{ ...stand(2000, 4000, 62.2) },
+			],
+			[act(1650, 2650, "shoot", { jump: [0.28, 0.87, 1.5] })],
+		);
+		assert.isTrue(carryThrough(tr, 1400));
+		assert.strictEqual(tr.moves.length, 3);
+		const [a, b] = tr.moves;
+		assert.strictEqual(a!.t1, b!.t0);
+		assert.deepEqual(a!.to, b!.from);
+		assert.strictEqual(a!.v1, b!.v0);
 	});
 
 	test("the stride or two after a run of the set's spacing is his own, as the run was", () => {

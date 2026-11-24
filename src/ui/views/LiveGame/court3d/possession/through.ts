@@ -58,8 +58,16 @@ const AFTER_MOST = 0.4;
 const ON_WITHIN = 450;
 const ON_OVER = 1.5;
 const TURN_MOST = 4;
-// Going up off the floor, he is stood this long (ms) before it.
+// Going up off the floor, he is stood this long (ms) before it - unless
+// the play has him on a run as he goes up (starting no more than this long,
+// ms, before then, and no more than this long after the catch or the pick-
+// up): on into it.
 const UP_SET = 60;
+const UP_ON = 150;
+// (Going on this much the way he was (its cosine), a step of a hop is one
+// run with the one into it.)
+const HOP_ON = 0.7;
+const UP_ON_WITHIN = 1000;
 // A pass that meets the floor on its way (feet up, at most): bounced.
 const BOUNCED = 0.5;
 // What he can be gathering into as it starts: facing up, holding it.
@@ -163,20 +171,46 @@ export const carryThrough = (
 	}
 	const n = j >= 0 ? moves[j]! : undefined;
 
-	// On into his next run, straight off the catch.
+	// On into his next run, straight off the catch - or up into the air on
+	// it: the play carrying him on through his jump (a drift, the last of a
+	// hop into it), he goes up going, as a man must to go anywhere in the
+	// air. (A run the play has him make going already - its pace up off the
+	// floor - no faster than that.)
+	// (The first of a hop into the air the play has him make, going on the
+	// way he was: one run with the one in, carried on into the rest of it.)
 	if (
 		n &&
-		n.t0 - tc <= ON_WITHIN &&
-		n.t0 <= stand &&
-		len(n) >= RUN_LEAST &&
-		!(n.v0 ?? 0)
+		len(n) < RUN_LEAST &&
+		(n.v1 ?? 0) > 0 &&
+		n.t0 - m.t1 <= 1 &&
+		n.t0 <= stand + UP_SET &&
+		(ux * (n.to.x - n.from.x) + uy * (n.to.y - n.from.y)) / len(n) >= HOP_ON
+	) {
+		m.to = { ...n.to };
+		m.t1 = n.t1;
+		m.v1 = n.v1;
+		moves.splice(k + 1, j - k);
+		return true;
+	}
+	const upOn =
+		n !== undefined &&
+		stand < Infinity &&
+		n.t0 >= stand - UP_ON &&
+		n.t0 - tc <= UP_ON_WITHIN;
+	if (
+		n &&
+		(n.t0 - tc <= ON_WITHIN || upOn) &&
+		n.t0 <= stand + UP_SET &&
+		(len(n) >= RUN_LEAST || (n.v1 ?? 0) > 0)
 	) {
 		const Ln = len(n);
 		const cos = (ux * (n.to.x - n.from.x) + uy * (n.to.y - n.from.y)) / Ln;
 		const D = (n.t0 - m.t0) / 1000;
 		const p = Math.min(
 			runShape(L, D, m.v0 ?? 0, 0).vc,
-			runShape(Ln, (n.t1 - n.t0) / 1000, 0, n.v1 ?? 0).vc,
+			(n.v0 ?? 0) ||
+				runShape(Ln, (n.t1 - n.t0) / 1000, 0, n.v1 ?? 0).vc ||
+				Infinity,
 			(ON_OVER * L) / D,
 			cos > 0.999 ? Infinity : TURN_MOST / Math.sqrt(2 - 2 * cos),
 		);
@@ -295,6 +329,47 @@ export const throughPasses = (
 	for (const [pid, t] of thrown) {
 		const tr = tracks.get(pid);
 		if (tr && carryThrough(tr, t, spacing)) {
+			n++;
+		}
+	}
+	return n;
+};
+
+// Every jumper off the dribble - a pull-up - laid on through his pick-up:
+// still going as he takes it into his hands, the stride or two of his
+// gather under him, stopped on the play's spot a moment before he goes up.
+// (Real pull-ups: 5.7 ft/s 0.6 s before it leaves his hands, 4.8 at 0.4 s,
+// median, over the 17 games.) How many it laid.
+export const throughPullUps = (
+	tracks: ReadonlyMap<number, Track>,
+	ball: readonly BallSeg[],
+	spacing?: Set<Move>,
+): number => {
+	let n = 0;
+	for (let k = 2; k < ball.length; k++) {
+		const f = ball[k]!;
+		if (f.kind !== "fly" || f.dead || !("pid" in f.from) || "pid" in f.to) {
+			continue;
+		}
+		const pid = f.from.pid;
+		const up = ball[k - 1]!;
+		const was = ball[k - 2]!;
+		if (
+			up.kind !== "hold" ||
+			up.pid !== pid ||
+			up.style !== "hold" ||
+			was.kind !== "hold" ||
+			was.pid !== pid ||
+			was.style === "hold"
+		) {
+			continue;
+		}
+		// (His shot: up off the floor with it.)
+		const tr = tracks.get(pid);
+		const shot = tr?.acts.find(
+			(a) => a.jump !== undefined && a.t0 <= f.t0 && a.t1 >= f.t0,
+		);
+		if (tr && shot && carryThrough(tr, up.t0, spacing)) {
 			n++;
 		}
 	}

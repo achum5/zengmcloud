@@ -145,7 +145,7 @@ import { type Attacker, attackerOf } from "./possession/offense.ts";
 import { type Follow, followWith } from "./possession/follow.ts";
 import { inchesOf, type OwnGait } from "./possession/gait.ts";
 import { signatureOf } from "./possession/signature.ts";
-import { throughPasses } from "./possession/through.ts";
+import { throughPasses, throughPullUps } from "./possession/through.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
 	floorRoll,
@@ -29801,7 +29801,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length;) {
+		for (let i = 0; i < starts.length; ) {
 			let n = 1;
 			while (
 				i + n < starts.length &&
@@ -31689,10 +31689,11 @@ class Director {
 		// all that - then kept off each other, the ball's way kept clear and
 		// the rest, as he goes.
 		if (this.step) {
-			// (The new sim: a pass thrown and caught on the move, not stood
-			// for - see possession/through.ts.)
+			// (The new sim: a pass thrown and caught on the move, and a
+			// pull-up gathered into, not stood for - see possession/through.ts.)
 			if (this.possession) {
 				throughPasses(this.tracks, this.ball, this.spacing);
+				throughPullUps(this.tracks, this.ball, this.spacing);
 			}
 			stepTimeline(
 				{

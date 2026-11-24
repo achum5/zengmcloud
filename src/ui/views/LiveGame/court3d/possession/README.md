@@ -436,6 +436,13 @@ The man with the ball makes for the spot of his pick-up going as the play
 has him going then (`handler.ts` home): a pass off the dribble leaves on
 the move, the stride or two of his gather under it.
 
+A jumper off the dribble, a pull-up, is gathered into the same way
+(`throughPullUps`): still going as he picks it up, stopped on his spot as
+he goes up. A hop into it the way he was going is one run with the run in.
+Before, he stood from 0.7 s before it left his hands; now 2.9 ft/s 0.6 s
+before, 1.6 at 0.5, stopped by 0.4 (real: 5.7 at 0.6 s, 4.8 at 0.4, 2.7 as
+it leaves his hands).
+
 | Measure (real_11, whole possessions) | Before | Now | Real |
 | --- | --- | --- | --- |
 | Pace at the catch (median, ft/s) | 0.5 | 3.6 | 5.6 |
@@ -457,8 +464,10 @@ Still short:
 - Closeouts: the nearest defender as a jumper leaves the shooter's hands
   is going 2.4 ft/s (real 6.5); off a quick catch he is 8.6 ft off (real
   5.1) - he goes out once his man has it, not on the pass, and sets his
-  feet on the play's spot. Pull-ups: the shooter stood 0.6 s before it
-  leaves his hands (real 5.7 ft/s). Both next.
+  feet on the play's spot. Next.
+- Real pull-up shooters go up still going and drift in the air; the play's
+  jump goes up from a stand, so he is stopped 0.4 s before it leaves his
+  hands. That is the shot's own (how it is laid), later.
 
 ## Natural and smooth (before step 8)
 
