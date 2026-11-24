@@ -4,6 +4,8 @@ import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import { PHASE } from "../../../common/constants.ts";
+import type { View } from "../../../common/types.ts";
+import { MonthCalendar } from "../../components/MonthCalendar.tsx";
 
 type Side = { tid: number; pts?: number };
 type Played = {
@@ -15,7 +17,10 @@ type Played = {
 type Upcoming = { gid: number; teams: [Side, Side] };
 
 // (A view's data asked of the worker as its own page asks for it.)
-const load = async (viewId: "gameLog" | "schedule", params: object) => {
+const load = async (
+	viewId: "calendar" | "gameLog" | "schedule",
+	params: object,
+) => {
 	const got = await toWorker("main", "runBefore", {
 		viewId,
 		params,
@@ -31,7 +36,8 @@ const load = async (viewId: "gameLog" | "schedule", params: object) => {
 // A TEAM'S SEASON, GAME BY GAME (its page's schedule, the refreshed look):
 // each game a little tile - who, home or away, the score, the record after
 // it - to the game's own page; this season's games still to come after them,
-// greyed. Any season the team page is on.
+// greyed. Any season the team page is on. A season on the NBA calendar is
+// its month calendar instead, each game on its date.
 export const TeamGames = ({
 	tid,
 	abbrev,
@@ -47,7 +53,12 @@ export const TeamGames = ({
 		teamInfoCache,
 	} = useLocal(["phase", "season", "teamInfoCache"]);
 	const [games, setGames] = useState<
-		{ played: Played[]; upcoming: Upcoming[] } | undefined
+		| {
+				played: Played[];
+				upcoming: Upcoming[];
+				calendar?: View<"calendar">;
+		  }
+		| undefined
 	>();
 	const current = season === currentSeason;
 	useEffect(() => {
@@ -56,6 +67,16 @@ export const TeamGames = ({
 		(async () => {
 			try {
 				const team = `${abbrev}_${tid}`;
+				const calendar = (await load("calendar", {
+					team,
+					season: String(season),
+				})) as View<"calendar"> | undefined;
+				if (calendar && calendar.games.length > 0 && !calendar.undated) {
+					if (live) {
+						setGames({ played: [], upcoming: [], calendar });
+					}
+					return;
+				}
 				let played: Played[] = [];
 				let upcoming: Upcoming[] = [];
 				if (current) {
@@ -95,6 +116,18 @@ export const TeamGames = ({
 
 	if (!games) {
 		return <div className="hub-wait" />;
+	}
+	if (games.calendar) {
+		return (
+			<MonthCalendar
+				games={games.calendar.games}
+				keyDates={games.calendar.keyDates}
+				monthChips
+				season={season}
+				tid={tid}
+				today={games.calendar.today}
+			/>
+		);
 	}
 	if (games.played.length === 0 && games.upcoming.length === 0) {
 		return <p className="text-body-secondary">No games.</p>;

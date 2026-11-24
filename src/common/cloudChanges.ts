@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 521,
+		date: "2026-11-24",
+		text: "Team page (refreshed look), Schedule section: on the NBA calendar it's now the team's month calendar, each game on its date, instead of numbered games.",
+	},
+	{
 		n: 520,
 		date: "2026-11-24",
 		text: "NBA calendar: the Play Through Injuries sliders now go a day at a time (1 day, 2 days, 3 days...). Performance is prorated by days left, so a player plays exactly as well as he would with the same time left in a league off the calendar.",
