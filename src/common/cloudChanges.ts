@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 571,
+		date: "2026-11-24",
+		text: "New page, Stats > Milestone Watch: the active players climbing the league's all-time lists in points, rebounds, assists, steals, blocks and 3-pointers and how many it takes to pass the next man up, the ones a few games from a round number like 20,000 points, and anyone on pace for one of the best seasons the league has seen. A player's page shows his part of it.",
+	},
+	{
 		n: 570,
 		date: "2026-11-24",
 		text: "Game and night recaps repeat themselves less. Their most common lines now come in several wordings. The race only brings up a magic number or a cut line on a night that moved it, so a team moving into or out of a playoff spot is never crowded out, and Worth watching says how far ahead a conference leader is.",
