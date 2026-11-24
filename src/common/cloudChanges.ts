@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 499,
+		date: "2026-11-24",
+		text: "3D game, New sim: players' feet stay planted through shots, jumps, screens and jab steps too. A shooter steps into his shot and leaves the floor from where his feet are, comes down on the feet his jump puts down, and a jab step is a real step out and back.",
+	},
+	{
 		n: 494,
 		date: "2026-11-23",
 		text: "NBA calendar scores bar: it now works like the regular one. It opens on its right end with your next game, runs through that game instead of the days after it, and has the same yesterday and today buttons on the right, which stay put while you scroll back.",

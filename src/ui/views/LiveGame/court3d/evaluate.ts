@@ -1524,6 +1524,35 @@ export const tensionAt = (tl: CourtTimeline, t: number): number => {
 	return i >= 0 ? tl.tension[i]![1] : 0;
 };
 
+// The picture of an act: his own way of it, or the way the play has him do
+// it.
+const actAnimOf = (tl: CourtTimeline, pid: number, act: Act): AnimName =>
+	// (A jumper, each man his own way of it.)
+	act.anim === "shoot"
+		? act.push
+			? "shootPush"
+			: act.lean
+				? act.lean === "L"
+					? "shootLeanL"
+					: "shootLeanR"
+				: shotWith(pid, act.arms)
+		: act.anim === "catch" && act.catchAt
+			? act.catchAt === "high"
+				? "catchHigh"
+				: "catchLow"
+			: act.anim === "pass" && act.outlet
+				? "passOutlet"
+				: act.anim === "board" && act.oneHand
+					? "boardOne"
+					: // (A pass held on to longer than a quick one is let go
+						// later in it than his own way's snap allows for - and
+						// one handed on with the ball dead is no time for it.)
+						(act.anim === "pass" || act.anim === "passBounce") &&
+						  (act.t1 - act.t0 > PASS_OWN_MS ||
+								stoppageAt(tl, act.t0) !== undefined)
+						? act.anim
+						: ownWay(act.anim, pid, act.t0);
+
 // The act running now, if any (they rarely overlap; the later one wins).
 const actAt = (tr: Track, t: number): Act | undefined => {
 	const ai = lastT0(tr.acts, t);
@@ -3364,32 +3393,7 @@ const doingNow = (
 	if (act) {
 		mirrored = act.mirror === true || act.oneHand === "L";
 		const u = (t - act.t0) / (act.t1 - act.t0);
-		// (A jumper, each man his own way of it.)
-		anim =
-			act.anim === "shoot"
-				? act.push
-					? "shootPush"
-					: act.lean
-						? act.lean === "L"
-							? "shootLeanL"
-							: "shootLeanR"
-						: shotWith(pid, act.arms)
-				: act.anim === "catch" && act.catchAt
-					? act.catchAt === "high"
-						? "catchHigh"
-						: "catchLow"
-					: act.anim === "pass" && act.outlet
-						? "passOutlet"
-						: act.anim === "board" && act.oneHand
-							? "boardOne"
-							: // (A pass held on to longer than a quick one is let go
-								// later in it than his own way's snap allows for - and
-								// one handed on with the ball dead is no time for it.)
-								(act.anim === "pass" || act.anim === "passBounce") &&
-								  (act.t1 - act.t0 > PASS_OWN_MS ||
-										stoppageAt(tl, act.t0) !== undefined)
-								? act.anim
-								: ownWay(act.anim, pid, act.t0);
+		anim = actAnimOf(tl, pid, act);
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own
 		// accord - so one held for a while and then just stood in, a
@@ -4907,13 +4911,18 @@ export const evalPlayer = (
 			st = { ...st, style };
 		}
 		const tr = tl.tracks.get(pid);
-		// (Up off the floor only as his stride has him, if at all: not in a
-		// jump.)
 		const striding = STEP_KINDS[st.anim] !== undefined && !feetAct(tr, t);
-		const feet =
-			tr && st.shown && (st.z <= 0 || striding) ? feetAt(tl, tr, t) : undefined;
-		if (feet) {
-			st = { ...st, feet: feet.feet };
+		const feet = tr && st.shown ? feetAt(tl, tr, t) : undefined;
+		if (tr && feet) {
+			// (Up off the floor other than as his stride has him - a jump - his
+			// feet as high as his move has them: only over the floor his own.)
+			st = {
+				...st,
+				feet:
+					st.z > AIR_Z && jumpingAt(tr, t)
+						? [aloftFoot(feet.feet[0]), aloftFoot(feet.feet[1])]
+						: feet.feet,
+			};
 			// (His stride's beat his steps': his arms and hips go with them -
 			// and he is up off the floor between them only as high as his
 			// stride takes him, less as he slows, none stood.)
@@ -4936,10 +4945,11 @@ export const evalPlayer = (
 };
 
 // HIS FEET, STEP BY STEP (the new possession sim's men - see
-// possession/footsteps.ts): planned a stretch at a time - each stretch his
-// legs are his own, on the floor between whatever he does with them (a
-// shot, a jump, a screen; not a catch or a pass, which he does on the run) -
-// the first time it is looked at.
+// possession/footsteps.ts): planned a stretch at a time - all his time on
+// the floor, through whatever he does there (a screen, a jab, setting his
+// feet for a shot), stepping to where it has his feet; each stretch ending
+// as he leaves the floor or goes into a move his legs go their own way in
+// (sat down, knocked over) - the first time it is looked at.
 export type FootHere = {
 	x: number;
 	y: number;
@@ -4954,10 +4964,16 @@ export type FootHere = {
 	w: number;
 	// Down on the floor (if up on its toes), not swinging through.
 	down: boolean;
+	// Up off the floor with him in his jump: as high as his move has it -
+	// only where it is over the floor is the plan's.
+	air?: boolean;
 };
-// (A stretch's edges: whether his move has his legs on the other side -
-// his shot, his jump - so his own come over from it, or back to it.)
-type FootSpan = { t0: number; t1: number; into: boolean; out: boolean };
+// (A stretch's edges: what his legs are doing on the other side - up in a
+// jump, so they go over to it once he is off the floor, and come down out
+// of it onto his steps; or in a move of their own on the floor (sat down,
+// knocked over), so they ease over to it and back on the floor.)
+type FootEdge = "air" | "act";
+type FootSpan = { t0: number; t1: number; into?: FootEdge; out?: FootEdge };
 type FootPlan = {
 	spans: FootSpan[];
 	plans: (FootPlanner | undefined)[];
@@ -4975,11 +4991,145 @@ const FOOT_BOUNCE_V = [2, 6] as const;
 // hips rise and fall only a few inches - his legs, reaching for the floor,
 // do the rest.)
 const FOOT_BOUNCE = 0.4;
-// What he is doing that his legs are not his own for: anything but an act
-// done on the run - and one of those that takes him up off the floor.
+// What he is doing that is not his stride: anything but an act done on the
+// run - and one of those that takes him up off the floor.
 const feetAct = (tr: Track | undefined, t: number): Act | undefined => {
 	const a = tr ? actAt(tr, t) : undefined;
 	return a && (!STRIDE_ACTS.has(a.anim) || a.jump || a.zKeys) ? a : undefined;
+};
+// Acts done stood on his feet: his steps go on under them - his move has
+// the rest of him, and where it would have his feet he steps to (see
+// ownFeetAt). (Any other act not done on the run - sat down on the bench,
+// knocked to the floor, getting up off it - has his legs its own way, as
+// does any jump while he is up in it.)
+const FLOOR_ACTS = new Set<AnimName>([
+	...STANDING,
+	"screen",
+	"triple",
+	"hold",
+	"jab",
+	"jabRip",
+	"shotFake",
+	"snatch",
+	"pickup",
+	"setShot",
+	"follow",
+	"guard",
+	"postUp",
+	"callPlay",
+	"dribbleHesi",
+	"dribbleJab",
+	"dribbleRocker",
+	"dribbleShake",
+	"dribbleInOutR",
+	"dribbleInOutL",
+	"lowFive",
+	"waitFive",
+	"dap",
+	"dapPat",
+	"dapHug",
+	"helpUp",
+	"tipSet",
+]);
+const legsOwn = (a: Act): boolean =>
+	!(STRIDE_ACTS.has(a.anim) || FLOOR_ACTS.has(a.anim) || a.jump || a.zKeys);
+// (Up off the floor: higher than this, feet.)
+const AIR_Z = 0.02;
+// When he is up off the floor in an act, if he is (ms): his jump.
+const airs = new WeakMap<Act, [number, number] | null>();
+const airOf = (a: Act): [number, number] | undefined => {
+	let up = airs.get(a);
+	if (up === undefined) {
+		up = airIn(a) ?? null;
+		airs.set(a, up);
+	}
+	return up ?? undefined;
+};
+// Up in a jump at t: one of his acts has him off the floor (not the bob of
+// his stride, eased out of as he goes into one).
+const jumpingAt = (tr: Track, t: number): boolean => {
+	const ai = lastT0(tr.acts, t);
+	for (let k = ai; k >= 0 && k >= ai - 4; k--) {
+		const a = tr.acts[k]!;
+		const up = a.flash || a.quiet ? undefined : airOf(a);
+		if (up && t > up[0] && t < up[1]) {
+			return true;
+		}
+	}
+	return false;
+};
+const airIn = (a: Act): [number, number] | undefined => {
+	const D = a.t1 - a.t0;
+	if (!(D > 0)) {
+		return undefined;
+	}
+	if (a.jump) {
+		const [u0, u1, peak] = a.jump;
+		return u1 > u0 && peak > 0 ? [a.t0 + u0 * D, a.t0 + u1 * D] : undefined;
+	}
+	if (!a.zKeys) {
+		return undefined;
+	}
+	const N = 200;
+	let u0 = -1;
+	let u1 = -1;
+	for (let i = 0; i <= N; i++) {
+		if (jumpZ(a, i / N) > AIR_Z) {
+			if (u0 < 0) {
+				u0 = Math.max(0, (i - 1) / N);
+			}
+			u1 = Math.min(1, (i + 1) / N);
+		}
+	}
+	return u0 < 0 ? undefined : [a.t0 + u0 * D, a.t0 + u1 * D];
+};
+// A foot up in the air with him (see FootHere.air).
+const aloftFoot = (p: FootHere): FootHere => ({
+	...p,
+	lift: 0,
+	down: false,
+	air: true,
+});
+// Where what he is doing has his feet at t, on the floor - right, left - if
+// it is an act done stood on his feet: its picture's, for a man his size,
+// round the way he faces. (A loop - a screen held, his triple threat - as it
+// starts: it only breathes from there.)
+const ownBodies = new Map<number, Body>();
+const ownFeetAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	inches: number,
+	t: number,
+): [Pt, Pt] | undefined => {
+	const act = actAt(tr, t);
+	if (!act || legsOwn(act)) {
+		return undefined;
+	}
+	const u = clamp01((t - act.t0) / (act.t1 - act.t0));
+	if (jumpZ(act, u) > 0) {
+		return undefined;
+	}
+	const anim = actAnimOf(tl, tr.pid, act);
+	const q = poseNow(anim, ANIMS[anim].kind === "act" ? u : 0);
+	let b = ownBodies.get(inches);
+	if (!b) {
+		b = bodyOf(inches);
+		ownBodies.set(inches, b);
+	}
+	const sk = skeleton(
+		b,
+		act.mirror === true || act.oneHand === "L" ? mirror(q) : q,
+	);
+	const p = spotAt(tr, t, false);
+	const yaw = yawAt(tl, tr, t);
+	const c = Math.cos(yaw);
+	const sn = Math.sin(yaw);
+	// (His left is (sin, -cos) - see bodyPoint.)
+	const at = (v: V3): Pt => ({
+		x: p.x + v.f * c + v.s * sn,
+		y: p.y + v.f * sn - v.s * c,
+	});
+	return [at(sk.legR.end), at(sk.legL.end)];
 };
 // Down in his stance: his feet spread wide.
 const STANCE_FEET = new Set<AnimName>([
@@ -5019,30 +5169,40 @@ const footPlanOf = (tl: CourtTimeline, tr: Track): FootPlan | undefined => {
 			on.push([a, b]);
 		}
 	});
-	const busy = tr.acts
-		.filter(
-			(a) =>
-				!(a.flash || a.quiet) &&
-				(!STRIDE_ACTS.has(a.anim) || a.jump || a.zKeys),
-		)
-		.map((a) => [a.t0, a.t1] as [number, number])
-		.sort((a, b) => a[0] - b[0]);
+	// (His legs not his steps': up in a jump, or in a move of their own.)
+	const busy: { t0: number; t1: number; edge: FootEdge }[] = [];
+	for (const a of tr.acts) {
+		if (a.flash || a.quiet) {
+			continue;
+		}
+		if (legsOwn(a)) {
+			busy.push({ t0: a.t0, t1: a.t1, edge: "act" });
+			continue;
+		}
+		const up = airOf(a);
+		if (up) {
+			busy.push({ t0: up[0], t1: up[1], edge: "air" });
+		}
+	}
+	busy.sort((a, b) => a.t0 - b.t0);
 	const spans: FootSpan[] = [];
 	for (const [a, b] of on) {
 		let from = a;
-		let into = false;
-		for (const [x0, x1] of busy) {
-			if (x1 <= from || x0 >= b) {
+		let into: FootEdge | undefined;
+		for (const x of busy) {
+			if (x.t1 <= from || x.t0 >= b) {
 				continue;
 			}
-			if (x0 - from >= FOOT_SPAN_LEAST) {
-				spans.push({ t0: from, t1: x0, into, out: true });
+			if (x.t0 - from >= FOOT_SPAN_LEAST) {
+				spans.push({ t0: from, t1: x.t0, into, out: x.edge });
 			}
-			from = Math.max(from, x1);
-			into = true;
+			if (x.t1 > from) {
+				from = x.t1;
+				into = x.edge;
+			}
 		}
 		if (b - from >= FOOT_SPAN_LEAST) {
-			spans.push({ t0: from, t1: b, into, out: false });
+			spans.push({ t0: from, t1: b, into });
 		}
 	}
 	plan = { spans, plans: spans.map(() => undefined) };
@@ -5060,11 +5220,14 @@ const stepsIn = (
 	let planner = plan.plans[k];
 	if (!planner) {
 		const own = tl.gaits!.get(tr.pid)!;
-		const { t0: from, t1: to } = plan.spans[k]!;
+		const { t0: from, t1: to, into } = plan.spans[k]!;
 		const moveAt = (at: number) => tr.moves[Math.max(0, lastT0(tr.moves, at))];
 		planner = footPlanner({
 			from,
 			to,
+			// (Down out of a jump, on both feet - where it has them.)
+			set: into === "air",
+			own: (at) => ownFeetAt(tl, tr, own.inches, at),
 			at: (at) => {
 				const p = spotAt(tr, at, false);
 				return { x: p.x, y: p.y };
@@ -5150,6 +5313,33 @@ const footOn = (
 		down: false,
 	};
 };
+// His feet up in his jump, `w` of the way to where the k'th stretch has
+// them at its edge (as it ends, he leaving the floor off them - up on his
+// toes; as it starts, he coming down onto them).
+const feetUp = (
+	tl: CourtTimeline,
+	tr: Track,
+	plan: FootPlan,
+	k: number,
+	w: number,
+	roll: number,
+): { feet: [FootHere, FootHere]; pace: number } | undefined => {
+	const span = plan.spans[k]!;
+	const at = roll > 0 ? span.t1 : span.t0;
+	const [R, L] = stepsIn(tl, tr, plan, k, at);
+	const hips = (s: number) => spotAt(tr, s, false);
+	const r = footOn(R, at, hips);
+	const l = footOn(L, at, hips);
+	if (!r || !l || w <= 0) {
+		return undefined;
+	}
+	const up = (p: FootHere): FootHere => ({
+		...aloftFoot(p),
+		roll,
+		w: p.w * w,
+	});
+	return { feet: [up(r), up(l)], pace: 0 };
+};
 const feetAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -5162,9 +5352,20 @@ const feetAt = (
 	const k = lastT0(plan.spans, t);
 	const span = plan.spans[k];
 	if (!span || t > span.t1) {
-		return undefined;
-	}
-	if (feetAct(tr, t)) {
+		// Up in his jump between two stretches: his feet going over from where
+		// the one left them to where his jump has them, as he leaves the floor
+		// - and from there to where the next puts them down, as he comes down.
+		const next = plan.spans[k + 1];
+		const ease = Math.min(
+			FOOT_EASE_MS,
+			((next?.t0 ?? Infinity) - (span?.t1 ?? -Infinity)) / 2,
+		);
+		if (span?.out === "air" && t - span.t1 < ease) {
+			return feetUp(tl, tr, plan, k, 1 - smooth01((t - span.t1) / ease), 1);
+		}
+		if (next?.into === "air" && next.t0 - t < ease) {
+			return feetUp(tl, tr, plan, k + 1, 1 - smooth01((next.t0 - t) / ease), 0);
+		}
 		return undefined;
 	}
 	const [R, L] = stepsIn(tl, tr, plan, k, t);
@@ -5182,8 +5383,8 @@ const feetAt = (
 		s0 && s1 && i >= 0 ? clamp01((t - s0.t0) / (s1.t0 - s0.t0)) : undefined;
 	const w = smooth01(
 		Math.min(
-			span.into ? (t - span.t0) / FOOT_EASE_MS : 1,
-			span.out ? (span.t1 - t) / FOOT_EASE_MS : 1,
+			span.into === "act" ? (t - span.t0) / FOOT_EASE_MS : 1,
+			span.out === "act" ? (span.t1 - t) / FOOT_EASE_MS : 1,
 		),
 	);
 	if (w <= 0) {
@@ -8079,6 +8280,7 @@ export const poseOf = (st: PlayerState): Posed => {
 			roll: p.roll,
 			w: p.w,
 			down: p.down,
+			...(p.air ? { air: true } : {}),
 		};
 	}) as [FootAt, FootAt];
 	return { ...q, feetAt };
