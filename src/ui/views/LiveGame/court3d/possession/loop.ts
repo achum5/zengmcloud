@@ -1,17 +1,20 @@
-// THE GAME A POSSESSION AT A TIME (see README.md, "Step 5").
+// THE GAME A POSSESSION AT A TIME (see README.md, "Step 5" and "Step 6").
 //
-// Time runs forward one possession at a time. Each, the side with the ball
-// is stepped first - after where the play wants each of them, as stepper.ts
-// always has (they don't answer the defense yet: step 6) - and then the five
-// on defense together, a step at a time, from what the offense really did:
-// each guarding his man himself (defense.ts) wherever the planner (for now,
-// the director's following of his man - see mark in director.ts) has him on
-// a man, and after the play everywhere else: into his acts, through the
-// picture's cuts, a shot in the air, the runs the play has him make. Every
-// man carries on from wherever the last stretch left him.
+// Time runs forward one possession at a time, and through each the ten
+// together, a step at a time, each seeing the other side as it was a beat
+// before. On defense each guards his man himself (defense.ts) wherever the
+// planner (for now, the director's following of his man - see mark in
+// director.ts) has him on a man; on offense each man off the ball works
+// the spot the set gives him himself (offense.ts) whenever the play has
+// nothing of his on. Everywhere else, after the play: into his acts,
+// through the picture's cuts, a shot in the air, the runs the play has him
+// make, the ball in his hands. Every man carries on from wherever the last
+// stretch left him. (Without the offense's own way - `attacking` - the side
+// with the ball is stepped after the play first, as stepper.ts always has,
+// and then the five on defense.)
 
-import type { BallSeg, Track } from "../director.ts";
-import { COURT_H, type Pt, rimX } from "../geometry.ts";
+import type { BallSeg, Move, Track } from "../director.ts";
+import { COURT_H, COURT_W, type Pt, rimX } from "../geometry.ts";
 import type { AnimName } from "../poses.ts";
 import type { Sample, Spans } from "../stepper.ts";
 import {
@@ -33,7 +36,15 @@ import {
 	seenOf,
 	type Threat,
 } from "./defense.ts";
+import type { Body } from "./body.ts";
 import { type Mover, STEP_S, stood } from "./movement.ts";
+import {
+	type Attacker,
+	decide as decideOff,
+	goingAtRim,
+	type Mind,
+	mindOf,
+} from "./offense.ts";
 
 const STEP_MS = STEP_S * 1000;
 
@@ -48,6 +59,15 @@ export type Defending = {
 	threat: (pid: number) => Threat;
 };
 
+// What the planner (the director, for now) gives the offense: each man off
+// the ball is his own whenever the play has nothing of his on.
+export type Attacking = {
+	attacker: (pid: number) => Attacker;
+	// The runs of the play's that only say where the set wants him: his
+	// own to make (see offense.ts).
+	spacing: ReadonlySet<Move>;
+};
+
 // Where the play wants a man (stepper.ts), and how far ahead he reads it.
 export type Wanted = {
 	want: (t: number) => Pt | undefined;
@@ -60,6 +80,7 @@ export type Together<M extends Man> = {
 	men: readonly M[];
 	wanted: ReadonlyMap<number, Wanted>;
 	defending: Defending;
+	attacking?: Attacking;
 	// Stepping a man after the play (stepper.ts), from `lo` till `hi`.
 	stepInto: (
 		tr: M,
@@ -114,6 +135,26 @@ const LOOSE = new Set<AnimName>([
 // this soon after (ms), he makes for that (as soon as he must: see
 // commitLead).
 const COMMIT_AFTER = COMMIT_MOST;
+// (On the floor, this far in at the least (feet): working his spot
+// himself, a man doesn't go off it to get round anybody.)
+const IN_BOUNDS = 0.5;
+const keepIn = (n: Mover): Mover => {
+	const x = Math.min(COURT_W - IN_BOUNDS, Math.max(IN_BOUNDS, n.x));
+	const y = Math.min(COURT_H - IN_BOUNDS, Math.max(IN_BOUNDS, n.y));
+	return x === n.x && y === n.y
+		? n
+		: {
+				...n,
+				x,
+				y,
+				vx: x === n.x ? n.vx : 0,
+				vy: y === n.y ? n.vy : 0,
+			};
+};
+// On offense, a long way from something of his that pins him, he sets off
+// as soon as he must for it this long before at the most (ms) - out of a
+// corner across the floor for a catch, say.
+const OFF_COMMIT_MOST = 6000;
 // How long the five take to see the ball going to the rim (ms).
 const TEAM_READ = 200;
 // Something that pins him this soon (ms) after one he does wherever he is:
@@ -130,6 +171,11 @@ const AGENT_LEAST = 500;
 // (Who he guards holds this long past the last the planner said, ms: it
 // says so every tenth of a second.)
 const GUARD_SLACK = 100;
+// A run of the play's: one that takes him at least this far (feet).
+const RUN_LEAST = 1;
+// Rid of the ball this long ago (ms) at the most, a man on offense still
+// answers it (see offense.ts).
+const PASS_ANSWER = 1500;
 
 type Run = { a: number; b: number; agent: boolean };
 
@@ -203,6 +249,8 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		own.set(tr.pid, []);
 		teamOf.set(tr.pid, tr.team);
 	}
+	// (His body: the same on either side of the ball.)
+	const bodyOf = (pid: number): Body => x.defending.defender(pid).body;
 	// Where a man is at t, as stepped so far.
 	const at = (pid: number, t: number): Sample | undefined => {
 		const s = samples.get(pid);
@@ -243,12 +291,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		if (!q || !mine || mine[0] !== q.t || from - q.t > STEP_MS + 1) {
 			return want;
 		}
-		return mergedFrom(
-			want,
-			q,
-			x.defending.defender(pid).body.top,
-			held.next(q.t + 1),
-		);
+		return mergedFrom(want, q, bodyOf(pid).top, held.next(q.t + 1));
 	};
 	// A pass in the air, from one of them to another.
 	const passes: [number, number][] = [];
@@ -351,7 +394,13 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		);
 	// Whether he guards his man himself at t: on a man of theirs the planner
 	// has him on, the ball in play, nothing of his own coming.
-	const agentAt = (pid: number, t: number, O: 0 | 1): boolean => {
+	const agentAt = (
+		pid: number,
+		t: number,
+		O: 0 | 1,
+		// (Whether his man is on the floor then.)
+		there: (man: number, t: number) => boolean,
+	): boolean => {
 		const man = guardAt(pid, t);
 		return (
 			man !== undefined &&
@@ -363,7 +412,94 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			!x.ft.hit(t, t + 1) &&
 			!x.skipAt(t) &&
 			(x.live.hit(t, t + 1) || passing(t)) &&
-			at(man, t) !== undefined
+			there(man, t)
+		);
+	};
+	// The runs the play has each man make (to a spot, a screen, a cut).
+	const runsOf = new Map<number, Spans>();
+	for (const tr of x.men) {
+		runsOf.set(
+			tr.pid,
+			x.spans(
+				tr.moves
+					.filter(
+						(m) =>
+							Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) >= RUN_LEAST &&
+							!x.attacking?.spacing.has(m),
+					)
+					.map((m) => [m.t0, m.t1] as [number, number]),
+			),
+		);
+	}
+	// When each man had the ball, from when till when.
+	const holdsOf = new Map<number, [number, number][]>();
+	x.ball.forEach((s, k) => {
+		if (s.kind === "hold") {
+			const list = holdsOf.get(s.pid) ?? [];
+			list.push([s.t0, x.ball[k + 1]?.t0 ?? Infinity]);
+			holdsOf.set(s.pid, list);
+		}
+	});
+	// When the ball last left his hands, at or before t, if it has.
+	const letGo = (pid: number, t: number): number | undefined => {
+		const list = holdsOf.get(pid) ?? [];
+		const i = lastAtOrBefore(list, t, (h) => h[0]);
+		const h = list[i];
+		return h && h[1] <= t ? h[1] : undefined;
+	};
+	// Where the set wants a man at t: where the play has him - or, on a run
+	// of the set's spacing, where that takes him.
+	const setAt = (tr: M, t: number): Pt | undefined => {
+		const m = tr.moves[lastAtOrBefore(tr.moves, t, (q) => q.t0)];
+		return m && t <= m.t1 && x.attacking?.spacing.has(m)
+			? m.to
+			: x.laid.get(tr.pid)!.at(t);
+	};
+	// The man the ball is in the air to at t, if it is.
+	const flyingTo = (t: number): number | undefined => {
+		const s = x.ball[lastAtOrBefore(x.ball, t, (q) => q.t0)];
+		return s?.kind === "fly" && "pid" in s.to ? s.to.pid : undefined;
+	};
+	// Where the play has the ball at t: with the man who has it, or the man
+	// it is on its way to.
+	const ballLaid = (t: number): Pt | undefined => {
+		const s = x.ball[lastAtOrBefore(x.ball, t, (q) => q.t0)];
+		if (!s) {
+			return undefined;
+		}
+		const pid =
+			s.kind === "hold"
+				? s.pid
+				: s.kind === "fly" && "pid" in s.to
+					? s.to.pid
+					: undefined;
+		return pid === undefined ? undefined : x.laid.get(pid)?.at(t);
+	};
+	// Whether a man on offense works his spot himself at t: off the ball, in
+	// play in the front court with it, nothing of his own coming, no run of
+	// the play's on.
+	const ownOnOffense = (pid: number, t: number, O: 0 | 1): boolean => {
+		if (
+			teamOf.get(pid) !== O ||
+			x.holderAt(t) === pid ||
+			strict.get(pid)!.hit(t - STEP_MS, t + ACT_LEAD) ||
+			runsOf.get(pid)!.hit(t - STEP_MS, t + STEP_MS) ||
+			x.cut.hit(t - STEP_MS, t + STEP_MS) ||
+			x.sharp.hit(t, t + 1) ||
+			x.ft.hit(t, t + 1) ||
+			x.skipAt(t) ||
+			!(x.live.hit(t, t + 1) || passing(t))
+		) {
+			return false;
+		}
+		const half = rimX(O) - COURT_W / 2;
+		const P = x.laid.get(pid)?.at(t);
+		const B = ballLaid(t);
+		return (
+			P !== undefined &&
+			B !== undefined &&
+			(P.x - COURT_W / 2) * half > 0 &&
+			(B.x - COURT_W / 2) * half > 0
 		);
 	};
 	// Each man's stretches on the floor from `lo` till `hi`, on his own beat
@@ -385,10 +521,21 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		});
 		return out;
 	};
-	const defend = (D: readonly M[], lo: number, hi: number, O: 0 | 1) => {
+	// The five on defense from `lo` till `hi`, and with them, a step at a
+	// time, the men on offense `A` (none: stepped already).
+	const defend = (
+		D: readonly M[],
+		A: readonly M[],
+		lo: number,
+		hi: number,
+		O: 0 | 1,
+	) => {
 		const rim = { x: rimX(O), y: COURT_H / 2 };
 		type Who = {
 			tr: M;
+			off: boolean;
+			// (On offense: what he keeps between his picks of where next.)
+			mind?: Mind;
 			runs: Run[];
 			k: number;
 			t: number;
@@ -401,7 +548,14 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		const who: Who[] = [];
 		let first = Infinity;
 		let lastT = -Infinity;
-		for (const tr of D) {
+		// (Whether a man of theirs is on the floor at t: stepped there
+		// already, or - stepped in this same loop - to be.)
+		const onFloor = new Map(A.map((tr) => [tr.pid, ticksOf(tr, lo, hi)]));
+		const there = (man: number, t: number) =>
+			at(man, t) !== undefined ||
+			(onFloor.get(man)?.some(([a, b]) => a <= t && t <= b) ?? false);
+		for (const tr of [...A, ...D]) {
+			const off = tr.team === O;
 			const runs: Run[] = [];
 			for (const [a, b] of ticksOf(tr, lo, hi)) {
 				const here: Run[] = [];
@@ -409,9 +563,10 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 					// (Guarding his man himself and something of his that pins
 					// him coming: on his own way to it, man or no man, till the
 					// play takes him in to it.)
-					const agent =
-						agentAt(tr.pid, t, O) ||
-						(here.at(-1)?.agent === true && committing(tr.pid, t));
+					const agent = off
+						? ownOnOffense(tr.pid, t, O)
+						: agentAt(tr.pid, t, O, there) ||
+							(here.at(-1)?.agent === true && committing(tr.pid, t));
 					const r = here.at(-1);
 					if (r && r.agent === agent) {
 						r.b = t;
@@ -458,7 +613,14 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 				}
 			}
 			if (runs.length > 0) {
-				who.push({ tr, runs, k: 0, t: runs[0]!.a });
+				who.push({
+					tr,
+					off,
+					...(off ? { mind: mindOf() } : {}),
+					runs,
+					k: 0,
+					t: runs[0]!.a,
+				});
 				first = Math.min(first, runs[0]!.a);
 				lastT = Math.max(lastT, runs.at(-1)!.b);
 			}
@@ -588,6 +750,150 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			S.push({ t, x: n.x, y: n.y, vx: n.vx, vy: n.vy });
 			own.get(pid)!.push([t, anim]);
 		};
+		// A man on offense working his spot himself, a step.
+		const tickOff = (w: Who, r: Run, t: number, mine: Wanted, S: Sample[]) => {
+			const pid = w.tr.pid;
+			const me = x.attacking!.attacker(pid);
+			const see = t - me.react;
+			const ball = ballAt(see);
+			// (On from where he is: the last step he took himself, or where
+			// the play's left him.)
+			let m: Mover | undefined;
+			const last = S.at(-1);
+			if (!(w.m && w.mt === t - STEP_MS)) {
+				// (A new stretch of his own: what he was about the last time is
+				// over - but not his draws, nor the pass he answered.)
+				w.mind = { ...mindOf(), n: w.mind!.n, passKey: w.mind!.passKey };
+			}
+			if (w.m && w.mt === t - STEP_MS) {
+				m = w.m;
+			} else if (last && t - last.t <= STEP_MS + 1) {
+				const pace = Math.hypot(last.vx, last.vy);
+				m = {
+					x: last.x,
+					y: last.y,
+					vx: last.vx,
+					vy: last.vy,
+					ax: 0,
+					ay: 0,
+					yaw:
+						pace > 0.5 || !ball
+							? Math.atan2(last.vy, last.vx)
+							: Math.atan2(ball.y - last.y, ball.x - last.x),
+				};
+			} else {
+				const P = mine.want(t) ?? x.laid.get(pid)!.at(t);
+				if (!P) {
+					return;
+				}
+				m = stood(P, ball ? Math.atan2(ball.y - P.y, ball.x - P.x) : 0);
+			}
+			// (Handing back to the play as his stretch ends - its run, his
+			// catch, his screen: on his way to where it has him by then; with
+			// something of his that pins him coming soon after, straight to
+			// it, as soon as his legs say he must.)
+			const end = r.b + STEP_MS;
+			const due = x.helds.get(pid)!.next(end);
+			const commit = due - end <= COMMIT_AFTER;
+			const f = commit ? due : end;
+			let handTo: Guarding["handTo"];
+			const A = mine.want(f);
+			if (A) {
+				const gap = Math.hypot(A.x - m.x, A.y - m.y);
+				const lead = !commit
+					? handLead(gap, me)
+					: w.sure === f
+						? Infinity
+						: f - t <= OFF_COMMIT_MOST
+							? commitLead(m, A, me, OFF_COMMIT_MOST)
+							: 0;
+				if (commit && f - t <= lead) {
+					w.sure = f;
+				}
+				const B = mine.want(f + STEP_MS);
+				if (f - t <= lead) {
+					handTo = {
+						at: A,
+						// (Into it as the play has him going into it.)
+						v: B
+							? { x: (B.x - A.x) / STEP_S, y: (B.y - A.y) / STEP_S }
+							: { x: 0, y: 0 },
+						until: f - t,
+						lead: Math.min(lead, OFF_COMMIT_MOST),
+						commit,
+					};
+				}
+			}
+			// (The man with the ball - or, with it in the air to a man of
+			// his, the man it is going to.)
+			const to = flyingTo(see);
+			const h =
+				x.holderAt(see) ??
+				(to !== undefined && teamOf.get(to) === O ? to : undefined);
+			const H = h !== undefined && h !== pid ? at(h, see) : undefined;
+			const gone = letGo(pid, see);
+			const mates: Pt[] = [];
+			let man: Pt | undefined;
+			for (const o of x.men) {
+				if (o.pid === pid) {
+					continue;
+				}
+				const q = at(o.pid, see);
+				if (!q) {
+					continue;
+				}
+				if (o.team === O) {
+					mates.push(q);
+				} else if (guardAt(o.pid, see) === pid) {
+					man = q;
+				}
+			}
+			const { goal, anim } = decideOff(
+				m,
+				{
+					t,
+					set: setAt(w.tr, t) ?? { x: m.x, y: m.y },
+					rim,
+					team: O,
+					ball,
+					holder: H && h !== undefined ? { ...H, pid: h } : undefined,
+					mates,
+					man,
+					drive:
+						H && h === x.holderAt(see) && goingAtRim(H, rim) ? H : undefined,
+					passKey:
+						gone !== undefined && see - gone <= PASS_ANSWER ? gone : undefined,
+					handTo,
+					next: A && commit ? { at: A, in: f - t } : undefined,
+				},
+				me,
+				w.mind!,
+				pid,
+			);
+			const others: Other[] = [];
+			for (const o of x.men) {
+				if (o.pid !== pid) {
+					const q = at(o.pid, t);
+					if (q) {
+						others.push(q);
+					}
+				}
+			}
+			const n = keepIn(
+				moveOn(
+					m,
+					goal,
+					me,
+					others,
+					handTo?.commit === true &&
+						Math.hypot(handTo.at.x - m.x, handTo.at.y - m.y) < KEEP_NEAR,
+				),
+			);
+			w.m = n;
+			w.mt = t;
+			S.push({ t, x: n.x, y: n.y, vx: n.vx, vy: n.vy });
+			own.get(pid)!.push([t, anim]);
+		};
 		// The five as one: whether the ball is on its way to the rim, and
 		// who steps up into its way (the same man till it stops or goes).
 		let helper: number | undefined;
@@ -609,6 +915,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			const free = (w: Who) => {
 				const r = w.runs[w.k];
 				return (
+					!w.off &&
 					r !== undefined &&
 					r.agent &&
 					r.a <= c &&
@@ -630,6 +937,9 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			helper = undefined;
 			// (Nobody needed, if somebody is in his way already.)
 			for (const w of who) {
+				if (w.off) {
+					continue;
+				}
 				const P = at(w.tr.pid, c);
 				if (P && inFront(H, P, rim)) {
 					return;
@@ -666,7 +976,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 						w.t = w.runs[w.k]?.a ?? Infinity;
 						continue;
 					}
-					tick(w, r, w.t, mine, S);
+					(w.off ? tickOff : tick)(w, r, w.t, mine, S);
 					w.t += STEP_MS;
 					if (w.t > r.b) {
 						w.k += 1;
@@ -690,8 +1000,9 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			continue;
 		}
 		const O = x.offenseAt(lo);
-		for (const tr of x.men) {
-			if (tr.team === O) {
+		const A = x.men.filter((tr) => tr.team === O);
+		if (!x.attacking) {
+			for (const tr of A) {
 				const mine = x.wanted.get(tr.pid)!;
 				x.stepInto(
 					tr,
@@ -705,6 +1016,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		}
 		defend(
 			x.men.filter((tr) => tr.team !== O),
+			x.attacking ? A : [],
 			lo,
 			hi,
 			O,

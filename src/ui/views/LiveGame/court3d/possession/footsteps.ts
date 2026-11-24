@@ -71,6 +71,9 @@ const A_OVER = 100;
 // he steps only to stay over his feet.
 const STOOD = 1.2;
 const STOOD_LOOK = 300;
+// Down in his stance, he slides - up to this pace (feet a second): past it
+// he is running, as the picture draws him (SLIDE_FTPS in evaluate.ts).
+const STANCE_RUN = 11.5;
 // Each foot this far out from the line he goes along (feet, for a man 6 ft
 // 6 in - in proportion for anybody else): close in running, wider walking,
 // and wide in his stance.
@@ -268,7 +271,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		const pace = Math.hypot(v.x, v.y);
 		const off = Math.abs(wrap(Math.atan2(v.y, v.x) - yawAt(t)));
 		if (
-			stanceAt(t) ||
+			(stanceAt(t) && pace < STANCE_RUN) ||
 			(pace < 11 && off > Math.PI * 0.3 && off < Math.PI * 0.72)
 		) {
 			return "slide";

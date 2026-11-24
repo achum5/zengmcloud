@@ -95,7 +95,8 @@ looks better.
 5. Defense (built), the first of the ten deciding for themselves. The facts, the
    planner's first pieces and the per-possession loop come in with it, in
    this folder, and today's defensive patch passes are off under the switch.
-6. Offense off the ball.
+6. Offense off the ball (built). Coming into a catch on the move waits
+   for steps 7 and 8, where the catches are laid.
 7. The ball handler.
 8. The planner's full vocabulary: transition, the playbook, team styles.
 9. Contact: screens hit, bumps, box-outs.
@@ -181,6 +182,130 @@ shooter at the release) rather than runs; so does `planned`, the help that
 stops a drive (0.1%). Nothing after the stepper moves the five to speak of:
 the court's own passes shift a man the five laid more than 1 ft on under 1%
 of their steps; turning the steps into runs, 0.2 ft at the median.
+
+## Step 6: offense off the ball
+
+Where it starts (real_11 against 17 real games, half court, the ball in an
+attacker's hands, the four without it):
+
+| | 3D now | Real |
+|---|---|---|
+| Stood still (under 1.5 ft/s) | 52% | 19% |
+| Walking, jogging, running | 31%, 13%, 5% | 47%, 27%, 7% |
+| Feet covered a minute | 181 | 313 |
+| The passer, 2 s after his pass: stays, relocates, cuts | 48%, 43%, 9% | 10%, 60%, 30% |
+| Catching it on the move (median, ft/s) | 3.3 | 5.8 |
+| A drive: of the four, how many move 3 ft in its first second | 1.3 (none, 28%) | 2.3 (none, 4%) |
+| Nearest teammate (median, ft) | 14.7 | 14.1 |
+| Cuts a minute, each man | 0.88 | 0.75 |
+
+Spacing and cutting are about right already; what is wrong is that a man
+off the ball stands on his spot until the play next moves him. Most of
+that standing is the plain stood pose (`ready`); screens are 4% of it.
+
+What pins an attacker off the ball (the facts, as the play is staged from
+the engine's lines): his catch (the ball reaching him at a spot, at a
+time); a screen he sets; his other acts (a handoff, sealing in the post, a
+box-out, going to the glass); the ball in his hands (step 7); a shot in the
+air till it is rebounded; the picture cutting; a free throw; a break (the
+planner's, step 8). He is on the spot as each starts, getting there by his
+own body.
+
+The planner, for now, is today's director. It lays the set (where each man
+is as it moves) and its actions: the screens, the cuts and runs a play
+has a man make, the roll, the handoff, the post-up. Those stay laid as it
+lays them. Its spacing runs (the set's spots, spreading out off a board,
+moving on after a pass, the drift on a drive, the walking about added on
+top) say where it wants him, not how he gets there.
+
+Between those, each attacker decides for himself, each step (`offense.ts`):
+
+- sees the floor a beat late (his own reaction time, quicker the higher
+  his offensive IQ), carried on by how it was going;
+- has a spot: where the set wants him, never on top of a teammate (about
+  10 ft at the least out on the floor), out of the way the ball is going
+  in, behind the line if he shoots it there, out of the lane before the
+  count of three;
+- does not stand on it like a cone: he walks it, a few steps along the
+  line and back, toward where the passer can see him, set and ready when
+  the ball might come to him;
+- reads the ball: a drive, and a beat later a man in its way gets out of
+  it (a big to the dunker spot on the far side, anybody else to the short
+  corner or the wing), a man in close slides along the baseline away from
+  it, the corner stays (lifting to the wing on one down his baseline at
+  him), a wing or the top with it gone past him cuts in behind it or
+  drifts on round the arc, and the far side sinks a few steps or stays;
+- passes and moves: as he lets it go, cuts to the rim (with the lane
+  empty; more often the better he reads it, and when his man turns to
+  watch the ball), otherwise relocates to an open spot a good few feet
+  away, now and then stays;
+- reads his man: one who turns his back on him to help, he cuts behind;
+  one up in the passing lane close in, he goes backdoor;
+- keeps his next job in mind: nothing of his own (a cut, a clear-out, a
+  relocation) that takes him so far off he could not get to his next catch
+  or screen at a run with a second to spare, and as it comes due he makes
+  for its spot when his own legs say he must (up to 6 s ahead, out of a
+  corner across the floor);
+- stays on the floor: never off it to get round anybody.
+
+The play's own runs into its spots (bringing it into a set, spreading out
+off a board, moving on after a pass, out of the way of a drive) are his:
+the run's end is his spot from the moment it starts, and he gets there
+his own way.
+
+The ten step together, a step at a time: each side sees the other as it
+was a beat before (`loop.ts`), so a cut can read the man guarding him and
+the man guarding him the cut.
+
+Ratings: offensive IQ for how quick he reads it and how often he cuts on a
+man who looks away; his three-point shooting for staying out on the arc;
+size and position for where a big spaces (dunker spot, short corner,
+elbow); his body (`body.ts`) for how he gets there.
+
+Built as: 6a the ten stepped together, the facts, spacing (spot and
+walking it); 6b drive, pass and move, reading his man.
+
+Alex's call (2026-11-24): between their parts in a play, the men off the
+ball work around the spots the set gives them (not spots of their own).
+Real teams run sets and read off them, and the catches the engine decides
+are laid on those spots.
+
+Where it is now (real_11, the same measures as above; the defense's own
+measures are where step 5 left them):
+
+| | Before | Now | Real |
+|---|---|---|---|
+| Stood still (under 1.5 ft/s) | 52% | 32% | 19% |
+| Walking, jogging, running | 31%, 13%, 5% | 47%, 16%, 5% | 47%, 27%, 7% |
+| Feet covered a minute | 181 | 233 | 313 |
+| The passer, 2 s after his pass: stays, relocates, cuts | 48%, 43%, 9% | 33%, 53%, 14% | 10%, 60%, 30% |
+| Catching it on the move (median, ft/s) | 3.3 | 3.3 | 5.8 |
+| A drive: of the four, how many move 3 ft in its first second | 1.3 (none, 28%) | 1.7 (none, 13%) | 2.3 (none, 4%) |
+| Nearest teammate (median, ft) | 14.7 | 15.0 | 14.1 |
+| Three or more out beyond the arc | 53% | 42% | 48% |
+| Help defense stood still | 39% | 33% | 18% |
+
+Still short:
+
+- The rest of the standing is the play's own time: on a spot waiting for
+  a catch it lays there, set for a screen, between its runs. Catches come
+  stood because the play lays them that way; a man coming into the ball
+  on the move belongs to the passer leading him (step 7) and the planner
+  laying it (step 8).
+- After a pass he cuts half as often as real players, and moves about half
+  as far: the play's next part for him (a screen away, a catch back) is
+  often only a second or two off.
+- Jolts: a few more quick changes of pace per game than before (lurch
+  flags 137 against 116, teleports the same 8), mostly where a man hands
+  back to the play's run partway through it.
+
+Built across 6a and 6b, then: the ten stepped as one; the play's spacing
+runs (into a set, spreading out off a board, moving on after a pass, out
+of the way of a drive) tagged as the set's so each man makes them his own
+way; and, found on the way, the step 5 defense had quietly stopped
+deciding once the offense was stepped in the same loop (a defender only
+guards his man himself where his man has been stepped already) - fixed,
+with a test that both ends decide for themselves (`staged.test.ts`).
 
 ## How we know
 

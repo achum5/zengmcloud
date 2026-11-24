@@ -355,7 +355,7 @@ export type Guarding = {
 // top speed takes - no longer than this.
 export const HAND_MS = 700;
 const HAND_MOST = 2500;
-export const handLead = (gap: number, d: Defender): number =>
+export const handLead = (gap: number, d: Pick<Defender, "body">): number =>
 	Math.min(HAND_MOST, HAND_MS + (1000 * gap) / (0.5 * d.body.top));
 // How long getting to `to` takes him from the way he is going now (ms):
 // what he has going the other way (or across) taken out first, then up to
@@ -363,7 +363,11 @@ export const handLead = (gap: number, d: Defender): number =>
 // flat out, not his very best start.
 const REACH_PACE = 0.8;
 const REACH_GO = 0.6;
-export const reachMs = (m: Mover, to: Pt, d: Defender): number => {
+export const reachMs = (
+	m: Mover,
+	to: Pt,
+	d: Pick<Defender, "body">,
+): number => {
 	const dx = to.x - m.x;
 	const dy = to.y - m.y;
 	const gap = Math.hypot(dx, dy);
@@ -401,8 +405,12 @@ const COMMIT_SLIDE = 4;
 // sooner than this.
 const COMMIT_SPARE = 700;
 export const COMMIT_MOST = 3000;
-export const commitLead = (m: Mover, to: Pt, d: Defender): number =>
-	Math.min(COMMIT_MOST, COMMIT_SPARE + reachMs(m, to, d));
+export const commitLead = (
+	m: Mover,
+	to: Pt,
+	d: Pick<Defender, "body">,
+	most = COMMIT_MOST,
+): number => Math.min(most, COMMIT_SPARE + reachMs(m, to, d));
 // His feet set for an act, no faster than this (feet a second).
 const PLANTED = 3;
 
@@ -644,7 +652,7 @@ const giveWay = (m: Mover, goal: Goal, others: readonly Other[]): Goal => {
 export const moveOn = (
 	m: Mover,
 	want: Goal,
-	d: Defender,
+	d: Pick<Defender, "body">,
 	others: readonly Other[],
 	// (Coming in on a spot the play pins him to: on it, as the play has
 	// everybody else round it.)

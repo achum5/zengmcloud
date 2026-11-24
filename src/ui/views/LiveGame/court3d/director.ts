@@ -140,7 +140,8 @@ import {
 	type Guard,
 	threatOf,
 } from "./possession/defense.ts";
-import type { Defending } from "./possession/loop.ts";
+import type { Attacking, Defending } from "./possession/loop.ts";
+import { type Attacker, attackerOf } from "./possession/offense.ts";
 import { type Follow, followWith } from "./possession/follow.ts";
 import { inchesOf, type OwnGait } from "./possession/gait.ts";
 import { signatureOf } from "./possession/signature.ts";
@@ -3099,6 +3100,10 @@ class Director {
 	// The runs that take a defender to where his man has him be, and whose man
 	// that is: in the end (see mark) he follows his man every step of the way.
 	private readonly marking = new Map<Move, number>();
+	// The runs off the ball on offense that only say where the set wants a
+	// man (its spots, moving on after a pass, out of the way of a drive):
+	// under the new sim he gets there his own way (see possession/).
+	private readonly spacing = new Set<Move>();
 	// Who each defender guards, from when to when, as following his man has
 	// it (see mark) - for the new sim's defenders to guard him themselves.
 	private readonly guards = new Map<number, Guard[]>();
@@ -3631,6 +3636,14 @@ class Director {
 	private hurryLive(t0: number, t1: number) {
 		if (t1 - t0 >= 900) {
 			this.liveFast.push([t0, t1]);
+		}
+	}
+
+	// His runs from the `before`'th on are the set's spacing.
+	private spaced(pid: number, before: number) {
+		const moves = this.track(pid)?.moves ?? [];
+		for (let k = before; k < moves.length; k++) {
+			this.spacing.add(moves[k]!);
 		}
 	}
 
@@ -4887,6 +4900,30 @@ class Director {
 				return d;
 			},
 			threat: (pid) => threatOf(this.rated.get(pid)),
+		};
+	}
+
+	// The offense off the ball, each man working his spot himself (see
+	// possession/offense.ts).
+	private attacking(): Attacking {
+		const by = new Map<number, Attacker>();
+		return {
+			spacing: this.spacing,
+			attacker: (pid) => {
+				let a = by.get(pid);
+				if (!a) {
+					const r = this.rated.get(pid);
+					a = attackerOf(
+						pid,
+						r,
+						ownBodyOf(r),
+						// (A power forward or bigger.)
+						(this.rank.get(pid) ?? 4) >= 6,
+					);
+					by.set(pid, a);
+				}
+				return a;
+			},
 		};
 	}
 
@@ -7167,7 +7204,9 @@ class Director {
 				if ((target.x - this.posOf(pid).x) * dir >= LANE_RUN) {
 					lanes.push({ pid, to: target, j });
 				} else {
+					const n0 = this.track(pid)?.moves.length ?? 0;
 					this.goBy(pid, target, t0 + j * 40, by, "run");
+					this.spaced(pid, n0);
 					this.turn(pid, Math.max(by, this.free.get(pid) ?? 0), dir);
 				}
 			}
@@ -9011,10 +9050,12 @@ class Director {
 			} else if ((S.x - P.x) * dir >= LANE_RUN) {
 				lanes.push({ pid, to: S, j: r });
 			} else {
+				const n0 = this.track(pid)?.moves.length ?? 0;
 				ready = Math.max(
 					ready,
 					this.go(pid, S, t + r * 40, far ? RUN * 0.85 : JOG, "run"),
 				);
+				this.spaced(pid, n0);
 			}
 		});
 		if (lanes.length > 0) {
@@ -9075,14 +9116,18 @@ class Director {
 				if (from !== had) {
 					const G = spotOf[run.roles.indexOf(from)];
 					if (G) {
+						const n0 = this.track(from)?.moves.length ?? 0;
 						ready = Math.max(ready, this.go(from, G, at, JOG, "run"));
+						this.spaced(from, n0);
 					}
 				}
 			}
 			const r = run.roles.indexOf(had);
 			const mine = r >= 0 ? spotOf[r] : undefined;
 			const D = mine && dist(mine, spotOf[f.ball]!) >= 4 ? mine : came;
+			const n0 = this.track(had)?.moves.length ?? 0;
 			ready = Math.max(ready, this.go(had, D, t, JOG, "run"));
+			this.spaced(had, n0);
 		}
 		this.guardStep(run, [], t + 150, ready);
 		this.motionTeam = team;
@@ -9653,7 +9698,9 @@ class Director {
 				run.roles.every((o) => o === pid || dist(this.posOf(o), q) > 5),
 			);
 			if (Q) {
+				const n0 = this.track(pid)?.moves.length ?? 0;
 				this.go(pid, Q, there + 450, 10, "jog");
+				this.spaced(pid, n0);
 			}
 		});
 	}
@@ -9965,6 +10012,7 @@ class Director {
 					.sort((u, v) => dist(P, u) - dist(P, v))[0];
 			}
 			if (Q && dist(P, Q) > 1.5 && clear(pid, Q)) {
+				const n0 = this.track(pid)?.moves.length ?? 0;
 				this.goBy(
 					pid,
 					Q,
@@ -9972,6 +10020,7 @@ class Director {
 					b,
 					r >= 21 ? "drift" : dist(P, Q) > 8 ? "run" : "slide",
 				);
+				this.spaced(pid, n0);
 				taken.set(pid, Q);
 			}
 		}
@@ -12525,6 +12574,7 @@ class Director {
 			if (!best) {
 				return;
 			}
+			const n0 = this.track(pid)?.moves.length ?? 0;
 			const there = this.go(
 				pid,
 				best,
@@ -12532,6 +12582,7 @@ class Director {
 				JOG + 3,
 				"run",
 			);
+			this.spaced(pid, n0);
 			this.lookAt(pid, there, ball);
 		});
 	}
@@ -13525,7 +13576,9 @@ class Director {
 			return;
 		}
 		const start = (this.free.get(pid) ?? 0) + 60;
+		const n0 = this.track(pid)?.moves.length ?? 0;
 		const there = this.go(pid, best, start, JOG + 3, "run");
+		this.spaced(pid, n0);
 		const d = this.defenderOf(pid);
 		if (d !== undefined) {
 			this.shadow(
@@ -22626,7 +22679,9 @@ class Director {
 				// line), in close round the rim, or anywhere between.
 				const out = behindArc(team, P) === undefined;
 				const big = !out && dist(P, rim) < 17;
-				if (!front) {
+				// (The new sim: up there, each works his spot himself - see
+				// possession/offense.ts.)
+				if (!front || this.possession) {
 					continue;
 				}
 				// The lane, where he cannot stand three seconds.
@@ -31575,6 +31630,7 @@ class Director {
 				calm,
 				this.possession ? this.ownMovers() : undefined,
 				this.possession ? this.defending() : undefined,
+				this.possession ? this.attacking() : undefined,
 			);
 		}
 		this.keepApart(calm);

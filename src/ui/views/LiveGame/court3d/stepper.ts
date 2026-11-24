@@ -20,6 +20,7 @@ import { RIM_INSET } from "../courtSpots.ts";
 import { alongShape, pushFrom, runShape } from "./motion.ts";
 import { stagingBeat, stagingTick } from "./stagingTick.ts";
 import {
+	type Attacking,
 	type Defending,
 	defendTogether,
 	type Wanted,
@@ -2098,6 +2099,10 @@ export const stepTimeline = <T extends Stepped>(
 	// The new sim's defense (see possession/defense.ts): each defender
 	// guarding his man himself.
 	defending?: Defending,
+	// And its offense (possession/offense.ts): each man off the ball working
+	// his spot himself - in place of the steps aside below that get him open
+	// and drift him with a drive.
+	attacking?: Attacking,
 ): T => {
 	const cut = spansAt(tl.cuts.map((c) => [c - STEP_MS, c] as const));
 	// (Those of them long enough, each cut short of where it plays at its
@@ -2399,7 +2404,9 @@ export const stepTimeline = <T extends Stepped>(
 			tr.team,
 			crossedBy.get(tr.pid) ?? crossedBy.set(tr.pid, []).get(tr.pid)!,
 		);
-		const open = openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
+		const open = attacking
+			? keyed([])
+			: openingsOf(tl, tr.pid, L, held, tr.team, offenseAt, live);
 		const arc = arcsOf(tr, tl, L, held, offenseAt);
 		const bend = bendsOf(tr, tl, L, held, (t, P) => {
 			let best: Pt | undefined;
@@ -2417,16 +2424,18 @@ export const stepTimeline = <T extends Stepped>(
 			}
 			return best;
 		});
-		const drift = driftsOf(
-			tl,
-			tr.pid,
-			L,
-			held,
-			tr.team,
-			drives,
-			laid,
-			spansAt([...probe.spans, ...open.spans, ...arc.spans]),
-		);
+		const drift = attacking
+			? keyed([])
+			: driftsOf(
+					tl,
+					tr.pid,
+					L,
+					held,
+					tr.team,
+					drives,
+					laid,
+					spansAt([...probe.spans, ...open.spans, ...arc.spans]),
+				);
 		spotting.set(tr.pid, spansAt([...open.spans, ...drift.spans]));
 		probes.set(tr.pid, (t) => {
 			const a = probe(t);
@@ -2652,6 +2661,7 @@ export const stepTimeline = <T extends Stepped>(
 			men,
 			wanted,
 			defending,
+			attacking,
 			stepInto,
 			laid,
 			helds,
