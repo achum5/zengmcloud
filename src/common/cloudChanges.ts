@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 542,
+		date: "2026-11-24",
+		text: "No more \"Watch live?\" popup when a league mate starts a live game. It shows up in the header's live scores like any other, and you tap it there to watch.",
+	},
+	{
 		n: 541,
 		date: "2026-11-24",
 		text: "Daily Schedule: the Nightly Recap video now sits at the top of the right-hand column, above Top Performers, so the night's story and the scores move up. On a phone it's still first in the Recap tab.",

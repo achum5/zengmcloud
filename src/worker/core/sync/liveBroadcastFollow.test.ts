@@ -19,24 +19,25 @@ const live = { startedAt: 1000, gameOver: false };
 const finished = { startedAt: 1000, gameOver: true };
 
 describe("decideFollowAction", () => {
-	test("a broadcast this device has never seen is offered, not joined", () => {
-		assert.strictEqual(decideFollowAction(live, undefined), "offer");
+	test("a broadcast this device has never seen is not asked about or joined", () => {
+		// It is in the header's live scores; a tap there is the way in.
+		assert.strictEqual(decideFollowAction(live, undefined), "pill");
 	});
 
 	test("who ran the sim makes no difference - there is only one kind now", () => {
 		// The whole point of the normalization: the decision cannot see, and does
 		// not ask, whether the simmer was the device in charge of simming.
-		assert.strictEqual(decideFollowAction(live, undefined), "offer");
-		assert.strictEqual(decideFollowAction(finished, undefined), "offer");
+		assert.strictEqual(decideFollowAction(live, undefined), "pill");
+		assert.strictEqual(decideFollowAction(finished, undefined), "ignore");
 	});
 
-	test("the next broadcast is offered again, even after leaving the last", () => {
+	test("the next broadcast is watchable again, even after leaving the last", () => {
 		assert.strictEqual(
 			decideFollowAction(
 				{ startedAt: 2000, gameOver: false },
 				{ startedAt: 1000, left: true },
 			),
-			"offer",
+			"pill",
 		);
 	});
 
@@ -72,10 +73,10 @@ describe("decideFollowAction", () => {
 		assert.strictEqual(decideFollowAction(live, undefined, true), "pill");
 	});
 
-	test("once its own sim ends, the next heartbeat offers it as normal", () => {
+	test("once its own sim ends, the next heartbeat treats it as normal", () => {
 		// Nothing was recorded against the broadcast while the local sim played,
 		// so the ordinary never-seen-it rule takes over.
-		assert.strictEqual(decideFollowAction(live, undefined, false), "offer");
+		assert.strictEqual(decideFollowAction(live, undefined, false), "pill");
 	});
 
 	test("the page is only served the broadcast while actually inside it", () => {
@@ -121,7 +122,7 @@ describe("decideFollowAction", () => {
 		for (let failures = 0; failures < MAX_JOIN_ATTEMPTS; failures++) {
 			assert.strictEqual(
 				decideFollowAction(live, undefined, false, failures),
-				"offer",
+				"pill",
 				`still worth a try after ${failures} failures`,
 			);
 		}
@@ -166,7 +167,7 @@ describe("decideFollowAction", () => {
 				false,
 				0,
 			),
-			"offer",
+			"pill",
 		);
 	});
 

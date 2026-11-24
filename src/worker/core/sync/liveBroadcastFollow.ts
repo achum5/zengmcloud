@@ -125,8 +125,11 @@ export const decideFollowAction = (
 	if (joinFailures >= MAX_JOIN_ATTEMPTS) {
 		return "ignore";
 	}
+	// Never asked about any more: a league mate's game is in the header's live
+	// scores, and a tap there is the way in (Alex, 2026-11-24 - it is already
+	// shown as in progress everywhere, so a popup on every tip-off was noise).
 	if (!followed || followed.startedAt !== broadcast.startedAt) {
-		return localSimActive ? "pill" : "offer";
+		return broadcast.gameOver ? "ignore" : "pill";
 	}
 	if (followed.left) {
 		return broadcast.gameOver ? "ignore" : "pill";
