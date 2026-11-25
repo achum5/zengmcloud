@@ -2292,10 +2292,11 @@ export const stepTimeline = <T extends Stepped>(
 		const end = tr.moves.at(-1)!.t1 + 1000;
 		tr.shown.forEach(([at, on], k) => {
 			const whole = Math.max(begin, at);
-			// (From `lo` on, on the stretch's own beat.)
+			// (From `lo` on, on the stretch's own beat - a beat of it given as
+			// `lo` that beat, not the next one for a rounding.)
 			const from =
 				lo > whole
-					? whole + Math.ceil((lo - whole) / STEP_MS) * STEP_MS
+					? whole + Math.ceil((lo - whole) / STEP_MS - 1e-6) * STEP_MS
 					: whole;
 			const until = Math.min(end, tr.shown[k + 1]?.[0] ?? end, hi);
 			if (!on || !(until > from)) {

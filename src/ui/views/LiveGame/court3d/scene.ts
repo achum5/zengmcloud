@@ -41,7 +41,15 @@ import {
 import { drawCourtLines } from "./courtLines.ts";
 import { callAt, rowSpot } from "./intro.ts";
 import { drawLights } from "./lights.ts";
-import { atTable, TABLE_SEAT_Y } from "./crew.ts";
+import type { ShowFx } from "./pregameShow.ts";
+import { drawShowFx } from "./showFx.ts";
+import { atTable } from "./crew.ts";
+import {
+	drawTableBack,
+	drawTableItems,
+	drawTableRow,
+	type ScorersTable,
+} from "./scorersTable.ts";
 import {
 	STRIP_MS,
 	type Beat,
@@ -616,6 +624,8 @@ export type ArenaPaint = {
 	// The seats on the floor behind each basket and in the far corners (see
 	// paintCourtside).
 	courtside?: Courtside;
+	// The two rows behind the scorer's table (see scorersTable.ts).
+	table?: ScorersTable;
 	// The lit panel on the faces of the baskets' bases - and the same with
 	// each of the building's sponsors on it, shown as the boards show it.
 	stanchion?: HTMLCanvasElement;
@@ -699,6 +709,8 @@ export type Frame = {
 	black?: boolean;
 	// Not a game's floor at all (see Venue): somewhere else on it.
 	venue?: Venue;
+	// The pregame show's fire, beams and phones (see pregameShow.ts).
+	showFx?: ShowFx;
 };
 
 // THE BUILDING DRESSED FOR SOMETHING ELSE - draft night (see draftVenue.ts):
@@ -1898,40 +1910,6 @@ export const drawChair = (
 	back(h + 0.82, h + 1.02, trim);
 };
 
-// A monitor on the table in front of each seat behind it, its back to the
-// floor and the glow of its screen on the edges.
-const drawMonitors = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	crew: { st: PlayerState }[],
-) => {
-	for (const { st } of crew) {
-		if (!atTable(st.pid)) {
-			continue;
-		}
-		const y = TABLE_SEAT_Y + 1.7;
-		const corners = (x0: number, x1: number, z0: number, z1: number) =>
-			[
-				[x0, z0],
-				[x1, z0],
-				[x1, z1],
-				[x0, z1],
-			].map(([x, z]) => project(cam, { x: x!, y, z: z! }));
-		const quad = (pts: { x: number; y: number }[], color: string) => {
-			ctx.fillStyle = color;
-			ctx.beginPath();
-			for (const p of pts) {
-				ctx.lineTo(p.x, p.y);
-			}
-			ctx.closePath();
-			ctx.fill();
-		};
-		quad(corners(st.x - 0.95, st.x + 0.95, 3.25, 4.45), "#9fc3ff");
-		quad(corners(st.x - 0.88, st.x + 0.88, 3.3, 4.38), "#101216");
-		quad(corners(st.x - 0.12, st.x + 0.12, 2.7, 3.3), "#202228");
-	}
-};
-
 // CONFETTI down from the rafters over the floor, the home team champions -
 // fluttering as it falls, and lying where it lands. Each piece is its own
 // from the moment it was let go, so the same instant always looks the same.
@@ -2184,6 +2162,10 @@ export const drawFrame = (f: Frame) => {
 		const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
 		drawTexturedPlane(ctx, cam, wall.plane, wall.img, 24, 1, BOARD_SHINE);
 		ctx.globalCompositeOperation = "source-over";
+		// Behind the scorer's table: its curtain, its second row.
+		if (arena.table) {
+			drawTableBack(ctx, cam, arena.table);
+		}
 		// The seats on the floor behind the baskets and in the far corners,
 		// stood on it in front of the boards.
 		if (arena.courtside) {
@@ -2206,14 +2188,19 @@ export const drawFrame = (f: Frame) => {
 			);
 		}
 		// The scorer's table, the people behind it hidden from the waist down,
-		// their monitors on it.
+		// their monitors and laptops on it.
+		if (arena.table) {
+			drawTableRow(ctx, cam, arena.table);
+		}
 		for (const c of crewAll) {
 			if (atTable(c.st.pid)) {
 				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
 			}
 		}
 		drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
-		drawMonitors(ctx, cam, crewAll);
+		if (arena.table) {
+			drawTableItems(ctx, cam, arena.table);
+		}
 		drawTexturedPlane(
 			ctx,
 			cam,
@@ -2466,7 +2453,7 @@ export const drawFrame = (f: Frame) => {
 				ctx.save();
 				hug.clip(ctx);
 				if (f.sprites) {
-					restamp(ctx, f.sprites, hug.fig.st, 1);
+					restamp(ctx, f.sprites, hug.fig.st);
 				} else {
 					drawSprite(
 						ctx,
@@ -2499,7 +2486,11 @@ export const drawFrame = (f: Frame) => {
 		t,
 		players,
 		f.teamColors ?? DEFAULT_TEAM_COLORS,
+		f.showFx,
 	);
+	if (f.showFx) {
+		drawShowFx(ctx, cam, f.showFx, f.now ?? t);
+	}
 	// The board over center court, when the picture takes it in.
 	if (arena.jumbotron && !venue) {
 		drawJumbotron(
@@ -2995,6 +2986,17 @@ const AMBIENT: BoardScreen[] = [
 	"ad3",
 ];
 export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
+	// The starting lineups (see intro.ts): the building told to make some
+	// noise in the dark, the visitors' names called over the home team's,
+	// and then "LET'S GO" for each of its own.
+	const intro = tl.intro;
+	if (intro && t >= intro.t0 && t < intro.t1) {
+		const call = callAt(intro, t);
+		if (!call) {
+			return t < (intro.calls[0]?.t0 ?? 0) ? "noise" : "name";
+		}
+		return call.team === 1 ? "letsGo" : "name";
+	}
 	const roar = recentFx(tl, t, ["roar"], 3200);
 	if (roar?.team === 1 && roar.what) {
 		return roar.what;

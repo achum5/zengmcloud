@@ -5,6 +5,10 @@ import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import classicDaysLeft from "../game/classicDaysLeft.ts";
+import { nbaCalendarLeague } from "../game/calendarTicks.ts";
+import { lastNightPlayed } from "../sync/tradeDeadlineGate.ts";
+import { addDays } from "../../../common/calendarDates.ts";
+import { isTradeDeadline } from "../../../common/specialGames.ts";
 import processTrade from "../trade/processTrade.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import summary from "../trade/summary.ts";
@@ -83,9 +87,16 @@ export const marketSettings = {
 	// On vanilla's rules (smartVanillaOn), every this many: CPU teams go after
 	// players all season, not mostly at the deadline - so a human team can't
 	// take the preseason to buy up every upgrade before the other contenders
-	// move (owner, 2026-11-17).
-	vanillaGamesBetween: 5,
+	// move (owner, 2026-11-17). About twice a week, as on the NBA calendar
+	// (calendarMomentKey): a team's 82 games over 25 weeks (owner,
+	// 2026-11-24; it was 5).
+	vanillaGamesBetween: 1.65,
 	deadlineDays: 5,
+	// On vanilla's rules on the NBA calendar, by its dates instead (owner,
+	// 2026-11-24): going into each of these days of the week (Sunday 0,
+	// Thursday 4), and every night of these last days before the deadline.
+	calendarWeekdays: [0, 4],
+	calendarDeadlineDays: 10,
 	// In free agency, a moment on these days left - or, in stages, at each
 	// stage (daysLeft counts the stages down).
 	freeAgencyDays: [30, 20, 10],
@@ -953,6 +964,65 @@ export const deadlineMomentDay = (
 	return Number.isFinite(last) ? Math.max(daysLeft, last - 1) : daysLeft;
 };
 
+// The day of the week a date falls on, Sunday 0.
+const weekday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
+
+// The meeting days' stretch a date is in: the last meeting day on or before
+// it.
+const meetingStretch = (date: string) => {
+	let day = date;
+	for (let i = 0; i < 7; i++) {
+		if (marketSettings.calendarWeekdays.includes(weekday(day))) {
+			return day;
+		}
+		day = addDays(day, -1);
+	}
+	return date;
+};
+
+// On the NBA calendar with the smart CPU on vanilla's rules, by its dates: as
+// the sim goes into a meeting day (the next night with games is in a new
+// stretch, so not as the season opens), and every night of the deadline's
+// last days. Undefined: no meeting tonight.
+export const calendarMomentKey = ({
+	tonight,
+	next,
+	deadline,
+}: {
+	// The night just played.
+	tonight: string | undefined;
+	// The next night with games.
+	next: string | undefined;
+	// The trade deadline's date.
+	deadline: string | undefined;
+}) => {
+	if (tonight === undefined || next === undefined) {
+		return undefined;
+	}
+	if (
+		deadline !== undefined &&
+		next >= addDays(deadline, -marketSettings.calendarDeadlineDays)
+	) {
+		return `deadline:${next}`;
+	}
+	const stretch = meetingStretch(next);
+	return stretch !== meetingStretch(tonight) ? `week:${stretch}` : undefined;
+};
+
+const calendarMomentNow = async () => {
+	const rows = await idb.cache.schedule.getAll();
+	const dates = (keep: (row: (typeof rows)[number]) => boolean) =>
+		rows
+			.filter((row) => row.date !== undefined && keep(row))
+			.map((row) => row.date!)
+			.sort();
+	return calendarMomentKey({
+		tonight: await lastNightPlayed(),
+		next: dates((row) => row.homeTid >= 0 && row.awayTid >= 0)[0],
+		deadline: dates((row) => isTradeDeadline(row.homeTid, row.awayTid))[0],
+	});
+};
+
 // When the market meets: in season every few weeks (not as it opens) and
 // each of the last days before the deadline, in free agency at each stage
 // (or on a few of its days), and as each offseason window opens
@@ -964,7 +1034,13 @@ export const smartTradeDay = async () => {
 	}
 	const phase = g.get("phase");
 	let key: string | undefined;
-	if (phase === PHASE.REGULAR_SEASON) {
+	if (
+		phase === PHASE.REGULAR_SEASON &&
+		smartVanillaOn() &&
+		nbaCalendarLeague()
+	) {
+		key = await calendarMomentNow();
+	} else if (phase === PHASE.REGULAR_SEASON) {
 		// In classic days, on a calendar too (game/classicDaysLeft.ts).
 		let daysLeft = Infinity;
 		try {

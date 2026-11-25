@@ -1,12 +1,28 @@
-import { project, type Camera } from "./camera.ts";
+import {
+	END_WALL,
+	LED_WALL,
+	NEAR_RIBBON,
+	NEAR_WALL,
+	type Plane,
+	RIBBON,
+	TABLE_FRONT,
+} from "./arena.ts";
+import { depthOf, project, type Camera } from "./camera.ts";
 import type { PlayerState } from "./evaluate.ts";
+import { COURT_H, COURT_W } from "./geometry.ts";
 import { callAt, calledBy, darkAt, type Intro } from "./intro.ts";
+import type { ShowFx } from "./pregameShow.ts";
 
 // THE LIGHTS DOWN for the starting lineups (see intro.ts): the whole building
 // dark but for a spotlight on the man being called - a pool on the floor
 // round his feet and the beam coming down to it - and a softer one on each
 // man already out in his team's line. For the home team, and for everybody
-// in the playoffs, colored lights sweep the floor too.
+// in the playoffs, colored lights sweep the floor too. The boards stay lit
+// in the dark - the ribbons round the decks, the boards along the front of
+// the stands, the table's - the way they glow in a real building with the
+// lights down. And in the pregame show (see pregameShow.ts), whatever the
+// building has going off lights the floor round it: the fire, the beams,
+// the one light on the logo at center court.
 
 // The darkness is drawn into a layer of its own and the lit places cut out
 // of it, then laid over the picture.
@@ -29,6 +45,8 @@ const DARK = 0.84;
 const POOL_R = 4.3;
 const BODY_R = 1.6;
 const HEAD_Z = 7.6;
+// The one light on the logo at center court (feet across).
+const LOGO_R = 11;
 
 // An ellipse on the floor round a point - a circle `r` feet across, as
 // the camera sees it - filled from the middle out.
@@ -128,6 +146,59 @@ const rgba = (hex: string, a: number): string => {
 	return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
+// The LED boards, cut out of the dark: each a strip at a time, any of it
+// behind the camera left out.
+const BOARDS: Plane[] = [
+	RIBBON,
+	NEAR_RIBBON,
+	LED_WALL,
+	NEAR_WALL,
+	END_WALL[0],
+	END_WALL[1],
+	TABLE_FRONT,
+];
+const BOARD_STRIPS = 14;
+const cutBoards = (c: CanvasRenderingContext2D, cam: Camera, a: number) => {
+	c.fillStyle = `rgba(0,0,0,${a})`;
+	for (const b of BOARDS) {
+		const across = {
+			x: b.alongX.x * b.w,
+			y: b.alongX.y * b.w,
+			z: b.alongX.z * b.w,
+		};
+		const down = {
+			x: b.alongY.x * b.h,
+			y: b.alongY.y * b.h,
+			z: b.alongY.z * b.h,
+		};
+		c.beginPath();
+		for (let i = 0; i < BOARD_STRIPS; i++) {
+			const at = (u: number, v: number) => ({
+				x: b.origin.x + across.x * u + down.x * v,
+				y: b.origin.y + across.y * u + down.y * v,
+				z: b.origin.z + across.z * u + down.z * v,
+			});
+			const u0 = i / BOARD_STRIPS;
+			const u1 = (i + 1) / BOARD_STRIPS;
+			const pts = [at(u0, 0), at(u1, 0), at(u1, 1), at(u0, 1)];
+			if (pts.some((q) => depthOf(cam, q) < 1)) {
+				continue;
+			}
+			const sp = pts.map((q) => project(cam, q));
+			c.moveTo(sp[0]!.x, sp[0]!.y);
+			for (let k = 1; k < 4; k++) {
+				c.lineTo(sp[k]!.x, sp[k]!.y);
+			}
+			c.closePath();
+		}
+		c.fill();
+	}
+};
+
+// Somewhere on the floor in front of the camera.
+const seen = (cam: Camera, x: number, y: number) =>
+	depthOf(cam, { x, y, z: 0 }) > 1;
+
 // The colored lights sweeping the floor: where each is at t.
 const SWEEPS = 3;
 const sweepAt = (i: number, t: number) => ({
@@ -143,6 +214,8 @@ export const drawLights = (
 	players: PlayerState[],
 	// Each side's colors [road, home], for the sweeping lights.
 	colors: [string, string][],
+	// The pregame show's own lights (see pregameShow.ts).
+	fx?: ShowFx,
 ) => {
 	const dark = darkAt(intro, t);
 	if (!intro || dark <= 0.002) {
@@ -190,6 +263,46 @@ export const drawLights = (
 			floorPool(lc, cam, at.x, at.y, 5.5, "rgba(0,0,0,0.45)", "rgba(0,0,0,0)");
 		}
 	}
+	cutBoards(lc, cam, 0.82);
+	if (fx) {
+		if (fx.logo > 0 && seen(cam, COURT_W / 2, COURT_H / 2)) {
+			floorPool(
+				lc,
+				cam,
+				COURT_W / 2,
+				COURT_H / 2,
+				LOGO_R,
+				`rgba(0,0,0,${0.97 * fx.logo})`,
+				"rgba(0,0,0,0)",
+			);
+		}
+		for (const j of fx.jets) {
+			if (seen(cam, j.at.x, j.at.y)) {
+				floorPool(
+					lc,
+					cam,
+					j.at.x,
+					j.at.y,
+					9 * j.k,
+					`rgba(0,0,0,${0.7 * j.k})`,
+					"rgba(0,0,0,0)",
+				);
+			}
+		}
+		for (const b of fx.beams) {
+			if (seen(cam, b.to.x, b.to.y)) {
+				floorPool(
+					lc,
+					cam,
+					b.to.x,
+					b.to.y,
+					4.6,
+					"rgba(0,0,0,0.5)",
+					"rgba(0,0,0,0)",
+				);
+			}
+		}
+	}
 	ctx.save();
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.drawImage(layerFor(W, H), 0, 0);
@@ -208,6 +321,18 @@ export const drawLights = (
 			POOL_R,
 			`rgba(255, 238, 205, ${0.2 * dark})`,
 			"rgba(255, 238, 205, 0)",
+		);
+	}
+	if (fx && fx.logo > 0 && seen(cam, COURT_W / 2, COURT_H / 2)) {
+		beam(ctx, cam, COURT_W / 2, COURT_H / 2, 0.2 * fx.logo * dark);
+		floorPool(
+			ctx,
+			cam,
+			COURT_W / 2,
+			COURT_H / 2,
+			LOGO_R,
+			`rgba(255, 240, 215, ${0.16 * fx.logo * dark})`,
+			"rgba(255, 240, 215, 0)",
 		);
 	}
 	if (hype) {

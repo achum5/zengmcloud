@@ -51,9 +51,9 @@ describe("starting lineups", () => {
 		for (let k = 1; k < intro.calls.length; k++) {
 			assert.ok(intro.calls[k]!.t0 >= intro.calls[k - 1]!.t1);
 		}
-		// Quick: about 15-20 seconds.
-		assert.isAtLeast(intro.t1 - intro.t0, 15000);
-		assert.isAtMost(intro.t1 - intro.t0, 21000);
+		// The pregame show's (see pregameShow.ts): under a minute.
+		assert.isAtLeast(intro.t1 - intro.t0, 40000);
+		assert.isAtMost(intro.t1 - intro.t0, 55000);
 		// The tip only once the lights are back up.
 		const tip = tl.beats.find((b) => events[b.i]?.type === "jumpBall")!;
 		assert.ok(tip.actionStart > intro.t1);

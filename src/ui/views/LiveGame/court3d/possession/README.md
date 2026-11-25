@@ -51,9 +51,9 @@ everyone: ratings say how far above it he is, so stars look like stars and a
   most 5 ft/s on top of his own going) rather than left feet behind. On the
   play itself whenever he catches, shoots, passes or screens. Swapped in for
   `stepper.ts`'s `follow`, one man at a time (`Director.ownMovers`).
-- `through.ts`: step 8a's first piece. The play's runs into a catch or a
-  throw laid on through it, rather than ended stood on its spot before the
-  ball gets there (see Step 8a).
+- `through.ts`: step 8a. The play's runs into a catch, a throw, a pull-up,
+  a contest or a rebound laid on through it, rather than ended stood on its
+  spot before the ball gets there (see Step 8a, Closeouts, Rebounds).
 - `packages.ts`: the library of moves. Each kind of move (walking, running,
   down in his stance, backpedaling for now) comes in versions, packages,
   each with its timing (read by the staging), its look (read only by the
@@ -110,8 +110,8 @@ looks better.
    packages): the play becomes something the ten run, not something they
    are dragged through.
    - 8a, checkpoints as windows: catches, passes, contests, rebounds,
-     reaches and shots met at a pace a body allows (catches and passes
-     built: see below).
+     reaches and shots met at a pace a body allows (catches, passes,
+     pull-ups, closeouts and rebounds built: see below).
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor.
@@ -436,6 +436,13 @@ The man with the ball makes for the spot of his pick-up going as the play
 has him going then (`handler.ts` home): a pass off the dribble leaves on
 the move, the stride or two of his gather under it.
 
+A jumper off the dribble, a pull-up, is gathered into the same way
+(`throughPullUps`): still going as he picks it up, stopped on his spot as
+he goes up. A hop into it the way he was going is one run with the run in.
+Before, he stood from 0.7 s before it left his hands; now 2.9 ft/s 0.6 s
+before, 1.6 at 0.5, stopped by 0.4 (real: 5.7 at 0.6 s, 4.8 at 0.4, 2.7 as
+it leaves his hands).
+
 | Measure (real_11, whole possessions) | Before | Now | Real |
 | --- | --- | --- | --- |
 | Pace at the catch (median, ft/s) | 0.5 | 3.6 | 5.6 |
@@ -454,11 +461,105 @@ Still short:
   holds it now (how long he holds it is 8c's).
 - A catch-and-shoot comes to a stop a few tenths sooner than a real one
   (stopped 0.2 s after the catch, real 0.6).
-- Closeouts: the nearest defender as a jumper leaves the shooter's hands
-  is going 2.4 ft/s (real 6.5); off a quick catch he is 8.6 ft off (real
-  5.1) - he goes out once his man has it, not on the pass, and sets his
-  feet on the play's spot. Pull-ups: the shooter stood 0.6 s before it
-  leaves his hands (real 5.7 ft/s). Both next.
+- Real pull-up shooters go up still going and drift in the air; the play's
+  jump goes up from a stand, so he is stopped 0.4 s before it leaves his
+  hands. That is the shot's own (how it is laid), later.
+
+## Closeouts (8a)
+
+Real defenders are still coming as a jumper leaves the shooter's hands:
+the nearest one going about 6 to 6.5 ft/s whether he is 2 ft off him or 6
+(how near he is hardly changes it), still about 5.5 four tenths later,
+and coming no nearer him than about 2 ft (the 17 games). The play laid
+every closeout as a run that ended on the spot giving the shooter the
+room it means him to have, stood there - often half a second and more
+before the shot - and the contest's jump straight up from it.
+
+`through.ts` (`throughContests`), on the play's runs before they are
+stepped: the run in to a contest (his choppy steps and all, back as far as
+it goes the one way) is laid on through it.
+
+- On the play's spot as it leaves the shooter's hands, as before: the room
+  the play gives him (`ROOM_FT`, leaning made or missed as the league's
+  tracking has it) is the same.
+- Still coming: as fast as his way in allows, 8 ft/s at the most, up into
+  the air at that pace and on at it in the air, braking once he is down
+  (15 ft/s a second) - or, off to the boards straight after, on into that.
+- Never nearer the shooter than 2 ft: coming straight at him, he bends by
+  him as he goes up (no more of a change than 4 ft/s), on the side he is
+  off to. He comes down inside the lines, stopped by anything of his that
+  wants him stood (a box-out), and the play's next run of his from there
+  is no harder than it was.
+- Only a closeout the play has him make: not a hand up after it is long
+  gone (going up more than 0.15 s after it leaves the shooter's hands -
+  he is still on his way then already).
+
+The new sim's defender, guarding his man, commits to the play's spot for
+the contest ahead of it (see `loop.ts`) and, the box-out or the boards
+coming straight after, is the play's through it.
+
+| Measure (real_11, whole possessions, jumpers 10-30 ft) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Nearest defender's pace as it leaves his hands (median, ft/s) | 2.6 | 3.4 | 6.5 |
+| ... the slowest quarter of them, at most | 0.1 | 1.7 | 4.0 |
+| ... on a man who had it 2 s and more | 1.6 | 2.7 | 5.6 |
+| How far off him then (median, ft) | 4.2 | 4.3 | 4.7 |
+| Sudden starts and stops (lurch flags) | 163 | 162 | |
+| Jumps from one spot to another (teleport flags) | 10 | 10 | |
+
+Still short:
+
+- A defender the play has on his spot long before the shot (a man who
+  holds it a while) comes in slowly through it, as fast as his way in
+  allows; real defenders guard a man holding it live, on the move - 8c.
+- The defenders the new sim's guarding has nowhere near the play's spot
+  for the contest (it is done where he is) close out as they guard: often
+  stood. And off a quick catch the nearest defender is 8.6 ft off (real
+  5.1): how open a quick catch is, is the play's room for it.
+
+## Rebounds (8a)
+
+A real man who comes down with a rebound is on the move through it: at
+his own end 5.8 ft/s as it comes into his hands, at the other 4.5
+(median, the 17 games), and stood half a second or more in the second
+and a half before it only one time in twelve. The play laid his run to
+the spot he takes it at as one that ended there, and his jump straight up
+from it: stood for it more than half the time.
+
+`through.ts` (`throughBoards`), on the play's runs before they are
+stepped, lays it on through, the same way as a closeout (`upThrough`):
+
+- On the play's spot as the ball comes to his hands (the top of his jump),
+  so the ball still meets him there; still going, into the air at that
+  pace and on at it, braking once he is down, or on into what he does
+  next.
+- His way in is the play's run there, the shuffle onto the spot at the end
+  of it, and any stop on the way, back as far as 2.5 s before he goes up;
+  not across a box-out, a contest or his own shot (straight up off those,
+  as before).
+- How fast he goes up is each man's own draw from the real spread (its
+  tenth to nine tenths 1.5 to 8.9 ft/s at the other end, 1.9 to 12.8 at
+  his own), as fast as his way in and the floor allow. From stood he sets
+  off as late as gets him there that fast, not at a walk all the way.
+
+A man stepped by the new sim's loop lost the first beat of a stretch of
+his when it started on a rounding (at a change of possession, mostly): he
+stood a beat and jumped. That beat is his again (`ticksOf`, `stepInto`).
+
+| Measure (real_11, whole possessions) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Pace as it comes into his hands, at his own end (median, ft/s) | 0.0 | 3.0 | 5.8 |
+| ... at the other end | 0.0 | 0.0 | 4.5 |
+| Stood half a second or more in the 1.5 s before | 57% | 36% | 8% |
+| Sudden starts and stops (lurch flags) | 162 | 147 | |
+| Jumps from one spot to another (teleport flags) | 10 | 8 | |
+
+Still short: a miss comes down right on the man the line says gets it
+(the play aims it at him), so a defensive rebounder, often stood right
+there, has no way in to lay. Real misses come down in nearer the rim than
+he was as the shot went up, and off to a side of him; aiming them that
+way changes the whole game after (the rebound comes later), so it waits
+on a tape that shows what that does to everything else.
 
 ## Natural and smooth (before step 8)
 

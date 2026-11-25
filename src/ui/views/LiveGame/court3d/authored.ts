@@ -23,8 +23,13 @@ export type Authored = {
 	ms: number;
 	// Everyone in it at t.
 	moment: (t: number, bodyFor: (pid: number) => Body) => Moment;
-	// Where the camera looks at t, and from where.
-	aim: (t: number, narrow: boolean, m: Moment) => { shot: Shot; rig: Rig };
+	// Where the camera looks at t, and from where - `close`: in close on a
+	// man, the building behind him out of focus.
+	aim: (
+		t: number,
+		narrow: boolean,
+		m: Moment,
+	) => { shot: Shot; rig: Rig; close?: boolean };
 	// What a man in it wears, from how the game would have dressed him.
 	dress?: (pid: number, look: Look) => Look;
 	// What somebody wears at t, from what they are dressed in (see dress):

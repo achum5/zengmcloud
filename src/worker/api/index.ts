@@ -466,6 +466,7 @@ import {
 import { augmentOffers } from "../views/trade.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
 import { setAutoSave } from "../core/league/setAutoSave.ts";
+import { getPlayerMilestones } from "../util/milestoneWatch.ts";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -9127,6 +9128,7 @@ const api = {
 		getReplayFeed,
 		getRecapFeed,
 		getNightlyRecap,
+		getPlayerMilestones,
 		getTeamColorsUI,
 		getAllTeamColorsUI,
 		hasLiveGameReplay,

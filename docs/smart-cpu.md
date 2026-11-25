@@ -1001,10 +1001,13 @@ league's trade difficulty, the draft screen, the sim.
 Offices):
 
 - CPU-CPU trades: its market, at the preseason flip, after the draft, at
-  re-signing, three moments in free agency, and every 5 games a team all
-  season (`vanillaGamesBetween`; 17 with Realistic Front Offices) plus each
-  of the deadline's last five days - so contenders keep going after players
-  all season and a human can't take the preseason to buy up the market.
+  re-signing, three moments in free agency, and all season: on the NBA
+  calendar going into each Sunday and Thursday and every night of the ten
+  days before the deadline (`calendarMomentKey`, owner 2026-11-24); off it,
+  every 1.65 games a team (`vanillaGamesBetween`, about twice a week; 5
+  before 2026-11-24) plus each of the deadline's last five days; 17 games
+  with Realistic Front Offices - so contenders keep going after players all
+  season and a human can't take the preseason to buy up the market.
 - Free agency: on a day a CPU team signs (vanilla's odds of a day off), of
   the 10 best it may sign under vanilla's cap rules, the one it gains most
   from on his ask, and nobody if no one is worth his ask
@@ -2920,6 +2923,29 @@ charge of simming" message never showed, because every refusal in the
 worker's guard logged an event with no pids or tids and `logEvent` threw
 before showing it (now `saveToDb: false`). The section offers Sim here when
 another device is in charge.
+
+## The market twice a week (2026-11-24)
+
+The owner asked whether the in-season market should meet more often, then
+chose twice a week: "going into sunday and thursday", and every night of
+the ten days before the deadline. On the NBA calendar the market now meets
+as the sim goes into each Sunday and Thursday (the next night with games in
+a new stretch, so not as the season opens) and going into every night from
+ten days before the deadline (`calendarMomentKey`). Off the calendar it is
+every 1.65 games a team, about twice a week.
+
+On the owner's league (2025, opening night to the deadline, seed 77,
+`cadenceProbe`):
+
+|                           | moments | CPU trades | market | whole stretch |
+| ------------------------- | ------- | ---------- | ------ | ------------- |
+| every 5 games a team      | 14      | 6          | 620 s  | 11.8 min      |
+| every 1.65 games a team   | 33      | 6          | 1152 s | 20.7 min      |
+| Sunday, Thursday, last 10 | 39      | 6          | 1136 s | 20.3 min      |
+
+The same six trades, the first a week sooner. A moment that must read the
+league again takes about a minute; one a few days after another, with
+little changed, a few seconds.
 
 ## The draft: prospects read by luck (2026-11-25)
 

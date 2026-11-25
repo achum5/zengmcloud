@@ -1557,8 +1557,6 @@ export type MenuItemLink = {
 	rotationPlans?: true;
 	// Hidden unless the league runs realistic front offices' contract rules.
 	contractRules?: true;
-	// Hidden unless the league plays on the NBA calendar.
-	nbaCalendar?: true;
 	// Pro leagues only (contracts, trades, the draft) / college leagues only.
 	pro?: true;
 	college?: true;
@@ -3104,6 +3102,9 @@ export type SortType =
 	| "pos";
 
 export type Col = {
+	// Rows with nothing in this column sort to the bottom whichever way it
+	// points, instead of to the top when it's ascending.
+	blanksLast?: boolean;
 	classNames?: any; // Just header
 	desc?: string;
 	// The getCols lookup key ("Ovr", "rating:hgt"), as distinct from the display

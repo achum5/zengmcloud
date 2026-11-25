@@ -1,0 +1,15 @@
+// The arrow beside a redraft pick in the Draft History table.
+.rd-cell {
+	margin-left: 0.3rem;
+	font-size: 0.8em;
+}
+.rd-arrow {
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.rd-up .rd-arrow {
+	color: var(--bs-success);
+}
+.rd-down .rd-arrow {
+	color: var(--bs-danger);
+}

@@ -265,10 +265,35 @@ const DraftHistory = ({
 		},
 	});
 
+	const redraft = players.some((p) => p.redraft !== undefined);
+
+	// Where each pick fell overall, for the redraft's rise or fall: a round
+	// starts after every pick of the rounds before it, as many as the class
+	// shows (real-players classes can be missing a pick or two).
+	const picksByRound = new Map<number, number>();
+	for (const p of players) {
+		if (p.draft.round >= 1) {
+			picksByRound.set(
+				p.draft.round,
+				Math.max(picksByRound.get(p.draft.round) ?? 0, p.draft.pick),
+			);
+		}
+	}
+	const overallPick = (draft: { round: number; pick: number }) => {
+		if (draft.round < 1) {
+			return undefined;
+		}
+		let overall = draft.pick;
+		for (let round = 1; round < draft.round; round++) {
+			overall += picksByRound.get(round) ?? 0;
+		}
+		return overall;
+	};
+
 	const superCols = [
 		{
 			title: "",
-			colspan: 3,
+			colspan: redraft ? 4 : 3,
 		},
 		{
 			title: noDraft ? "As Prospect" : "At Draft",
@@ -290,6 +315,7 @@ const DraftHistory = ({
 
 	const cols = getCols([
 		"Pick",
+		...(redraft ? ["Redraft"] : []),
 		"Name",
 		"Pos",
 		"Team",
@@ -401,6 +427,39 @@ const DraftHistory = ({
 					sortValue:
 						p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : null,
 				},
+				...(redraft
+					? [
+							{
+								value:
+									p.redraft === undefined
+										? null
+										: (() => {
+												const overall = overallPick(p.draft);
+												return (
+													<>
+														{p.redraft}
+														{overall !== undefined && overall !== p.redraft ? (
+															<span
+																className={
+																	overall > p.redraft
+																		? "rd-cell rd-up"
+																		: "rd-cell rd-down"
+																}
+															>
+																<span className="rd-arrow">
+																	{overall > p.redraft ? "▲" : "▼"}
+																	{Math.abs(overall - p.redraft)}
+																</span>
+															</span>
+														) : null}
+													</>
+												);
+											})(),
+								sortValue: p.redraft ?? null,
+								searchValue: p.redraft === undefined ? "" : String(p.redraft),
+							},
+						]
+					: []),
 				nameCell,
 				p.pos,
 				wrappedDraftAbbrev(

@@ -288,19 +288,31 @@ describe("the race", () => {
 			[player({ name: "A B" })],
 		);
 		const opp = team(2, "Utah", "Jazz", 110, [], [player({ name: "C D" })]);
+		// A new leader, who won: the top changed and the magic number fell.
 		const text = night(
-			twelve([row(1, "Nuggets", 60, 15, 1), row(2, "Jazz", 55, 20, 2)]),
-			[game(1, den, opp)],
+			twelve([
+				row(1, "Nuggets", 60, 15, 1, { rankBefore: 2 }),
+				row(2, "Jazz", 55, 20, 2),
+			]),
+			[game(1, { ...den, pts: 120 }, opp)],
 		)!;
 		assert.match(
 			text,
 			/The Nuggets \(60-15\) (?:lead the West by 5 games over|are 5 games ahead of) the Jazz/,
 		);
 		// 82 + 1 - 60 - 20.
-		assert.include(
+		assert.match(
 			text,
-			"The Nuggets' magic number for first in the West is 3.",
+			/The Nuggets' magic number for first in the West is 3\.|Any combination of three Nuggets wins or Jazz losses clinches first in the West for the Nuggets\./,
 		);
+		// Beaten by the runner-up: the leader line, but the magic number
+		// did not move.
+		const beaten = night(
+			twelve([row(1, "Nuggets", 60, 15, 1), row(2, "Jazz", 55, 20, 2)]),
+			[game(1, den, opp)],
+		)!;
+		assert.include(beaten, "Nuggets (60-15)");
+		assert.notMatch(beaten, /magic number|Any combination/);
 		// The leader won and was first before: no line.
 		const quiet = night(
 			twelve([
@@ -331,10 +343,99 @@ describe("the race", () => {
 			text,
 			"The Kings moved from 11th to eighth in the West, into a play-in spot.",
 		);
-		assert.include(
+		assert.match(
 			text,
-			"The Suns hold the last play-in spot in the West by half a game over the Spurs.",
+			/The Suns hold the last play-in spot in the West by half a game over the Spurs\.|The Suns are half a game ahead of the Spurs for the last play-in spot in the West\.|The Spurs are half a game behind the Suns for the last play-in spot in the West\./,
 		);
+		// A night nobody near the line played: no cut line.
+		const still = rows.map((r) => ({ ...r, rankBefore: r.rank }));
+		const quiet = night(still, [
+			game(
+				1,
+				kings,
+				team(51, "Utah", "Jazz", 100, [], [player({ name: "C D" })]),
+			),
+		]);
+		assert.notMatch(quiet ?? "", /last play-in spot/);
+	});
+
+	test("past six lines, a magic number gives way before a crossing", () => {
+		const kings = team(
+			9,
+			"Sacramento",
+			"Kings",
+			110,
+			[],
+			[player({ name: "A B" })],
+		);
+		const den = team(
+			1,
+			"Denver",
+			"Nuggets",
+			120,
+			[],
+			[player({ name: "E F" })],
+		);
+		const opp = team(50, "Utah", "Jazz", 100, [], [player({ name: "C D" })]);
+		const opp2 = team(51, "Utah", "Jazz", 100, [], [player({ name: "G H" })]);
+		const west = twelve([
+			row(1, "Nuggets", 60, 15, 1, { rankBefore: 2 }),
+			row(2, "Lakers", 55, 20, 2),
+		]).map((r) => ({ ...r }));
+		west[7] = row(9, "Kings", 30, 30, 8, { rankBefore: 11 });
+		west[9] = row(10, "Suns", 29, 31, 10);
+		west[10] = row(11, "Spurs", 28, 31, 11);
+		const east = twelve([
+			row(201, "Celtics", 60, 15, 1, { rankBefore: 2 }),
+			row(202, "Knicks", 55, 20, 2),
+		]).map((r, i) => ({ ...r, tid: (r.tid ?? 0) + (i > 1 ? 300 : 0) }));
+		east[7] = row(250, "Hawks", 30, 30, 8, { rankBefore: 11 });
+		const hawks = team(
+			250,
+			"Atlanta",
+			"Hawks",
+			105,
+			[],
+			[player({ name: "M N" })],
+		);
+		const celtics = team(
+			201,
+			"Boston",
+			"Celtics",
+			120,
+			[],
+			[player({ name: "I J" })],
+		);
+		const text = night(
+			west,
+			[
+				game(1, kings, opp),
+				game(2, { ...den }, opp2),
+				game(
+					3,
+					celtics,
+					team(52, "Utah", "Jazz", 90, [], [player({ name: "K L" })]),
+				),
+				game(
+					4,
+					hawks,
+					team(53, "Utah", "Jazz", 95, [], [player({ name: "O P" })]),
+				),
+			],
+			{
+				confs: [
+					{ name: "Western Conference", teams: withGb(west) },
+					{ name: "Eastern Conference", teams: withGb(east) },
+				],
+			},
+		)!;
+		const lines = text.split("\n").filter((l) => l.startsWith("- "));
+		assert.strictEqual(lines.length, 6);
+		assert.include(text, "The Kings moved from 11th to eighth in the West");
+		assert.include(text, "The Hawks moved from 11th to eighth in the East");
+		// Eight lines: both magic numbers give way.
+		assert.notMatch(text, /magic number|Any combination/);
+		assert.include(text, "The Celtics (60-15)");
 	});
 
 	test("no race in the playoffs, or without standings", () => {
@@ -519,6 +620,7 @@ describe("worth watching", () => {
 				],
 			},
 			standings,
+			rngFromSeed(1),
 		)!;
 		assert.strictEqual(
 			text,
@@ -526,8 +628,20 @@ describe("worth watching", () => {
 		);
 	});
 
+	test("a leader, with how far clear", () => {
+		const text = worthWatching(
+			{ day: 51, games: [{ homeTid: 1, awayTid: 4 }] },
+			standings,
+			rngFromSeed(2),
+		)!;
+		assert.match(
+			text,
+			/The Nuggets (?:lead the West by 1 game|are 1 game clear in the West|sit 1 game up in the West) and have won six straight\./,
+		);
+	});
+
 	test("nothing without a next day", () => {
-		assert.isUndefined(worthWatching(undefined, standings));
+		assert.isUndefined(worthWatching(undefined, standings, rngFromSeed(1)));
 	});
 });
 

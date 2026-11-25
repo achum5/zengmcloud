@@ -415,6 +415,7 @@ const standingLines = (
 	x: Subject,
 	won: boolean,
 	story: string,
+	rng: Rng,
 ): Line[] => {
 	const st = t.standing;
 	if (game.playoffs || !st || st.won + st.lost < MIN_GAMES_FOR_STANDINGS) {
@@ -438,14 +439,30 @@ const standingLines = (
 		return line(`${x.S} fell out of first place in the ${conf}.`);
 	}
 	if (st.rank === 1 && st.lead !== undefined && st.lead >= 1) {
+		const by = st.lead === 1 ? "a game" : gbText(st.lead);
 		return line(
-			`${x.S} ${vb(x, "leads", "lead")} the ${conf} by ${st.lead === 1 ? "a game" : gbText(st.lead)}.`,
+			pick(
+				rng,
+				[
+					`${x.S} ${vb(x, "leads", "lead")} the ${conf} by ${by}.`,
+					`${x.S} ${vb(x, "is", "are")} ${by} clear at the top of the ${conf}.`,
+				],
+				"wire:leads",
+			),
 		);
 	}
 	// The worst record in a conference, after a loss, late enough to mean it.
 	if (!won && st.rank === st.teams && st.teams >= 5 && st.won + st.lost >= 30) {
 		return line(
-			`${x.S} ${vb(x, "has", "have")} the worst record in the ${conf}.`,
+			pick(
+				rng,
+				[
+					`${x.S} ${vb(x, "has", "have")} the worst record in the ${conf}.`,
+					`${x.S} ${vb(x, "is", "are")} last in the ${conf}.`,
+					`${x.S} ${vb(x, "sits", "sit")} at the bottom of the ${conf}.`,
+				],
+				"wire:worst",
+			),
 		);
 	}
 	return [];
@@ -781,6 +798,7 @@ const homeRoadLines = (
 	x: Subject,
 	won: boolean,
 	story: string,
+	rng: Rng,
 ): Line[] => {
 	if (game.playoffs || game.neutral) {
 		return [];
@@ -797,13 +815,41 @@ const homeRoadLines = (
 	const line = (text: string): Line[] => [{ kind: "split", text }];
 	const is = vb(x, "is", "are");
 	if (home && !won && r.lost >= r.won) {
-		return line(`${x.S} fell to ${r.won}-${r.lost} ${where}.`);
+		return line(
+			pick(
+				rng,
+				[
+					`${x.S} fell to ${r.won}-${r.lost} ${where}.`,
+					`${x.S} dropped to ${r.won}-${r.lost} ${where}.`,
+				],
+				"wire:homeLoss",
+			),
+		);
 	}
 	if (!home && won && r.won > r.lost) {
-		return line(`${x.S} ${is} ${r.won}-${r.lost} ${where}.`);
+		return line(
+			pick(
+				rng,
+				[
+					`${x.S} ${is} ${r.won}-${r.lost} ${where}.`,
+					`${x.S} improved to ${r.won}-${r.lost} ${where}.`,
+					`${x.S} ${is} ${r.won}-${r.lost} away from home.`,
+				],
+				"wire:roadWin",
+			),
+		);
 	}
 	if (home && won && r.lost === 0) {
-		return line(`${x.S} ${is} ${r.won}-0 ${where}.`);
+		return line(
+			pick(
+				rng,
+				[
+					`${x.S} ${is} ${r.won}-0 ${where}.`,
+					`${x.S} ${vb(x, "remains", "remain")} unbeaten at home at ${r.won}-0.`,
+				],
+				"wire:homeUnbeaten",
+			),
+		);
 	}
 	if (!home && !won && r.won === 0) {
 		return line(`${x.S} ${is} 0-${r.lost} ${where}.`);
@@ -833,6 +879,7 @@ const recordLine = (
 	x: Subject,
 	won: boolean,
 	story: string,
+	rng: Rng,
 ): Line[] => {
 	const r = t.record;
 	if (!r) {
@@ -855,7 +902,20 @@ const recordLine = (
 	// The story gave the record already ("the Pandas (5-0)"): only the split
 	// is new.
 	if (where && story.includes(`(${r.won}-${r.lost})`)) {
-		return [{ kind: "record", text: `${x.S} ${vb(x, "is", "are")} ${where}.` }];
+		return [
+			{
+				kind: "record",
+				text: pick(
+					rng,
+					[
+						`${x.S} ${vb(x, "is", "are")} ${where}.`,
+						`${x.S} ${vb(x, "has", "have")} gone ${where}.`,
+						`${x.S} ${vb(x, "is", "are")} ${where} this season.`,
+					],
+					"wire:split",
+				),
+			},
+		];
 	}
 	return [
 		{
@@ -884,14 +944,14 @@ const takeawayOf = (
 		...(game.playoffs ? [] : raceLines(t, x, won, story)),
 		...(game.playoffs ? [] : careerLines(t, story, rng, 4)),
 		...streakLines(t, x, won, told, rng),
-		...standingLines(game, t, x, won, story),
+		...standingLines(game, t, x, won, story, rng),
 		...playerLines(t, story),
 		...(game.playoffs ? [] : careerLines(t, story, rng, 2, 3)),
 		...formLines(game, t, x, won, told),
 		...teamHighLines(game, t, x, won, t.pts - opp.pts, story),
 		...nightLines(t, opp, x, won, story),
 		...(game.playoffs ? [] : tripLines(t, x, story)),
-		...homeRoadLines(game, t, x, won, story),
+		...homeRoadLines(game, t, x, won, story, rng),
 		...seasonSeriesLines(game, t, x, won, story),
 		...missingLines(t, x, story),
 	];
@@ -917,7 +977,7 @@ const takeawayOf = (
 		chosen.push(line);
 	}
 	if (chosen.length === 0) {
-		chosen.push(...recordLine(game, t, x, won, story));
+		chosen.push(...recordLine(game, t, x, won, story, rng));
 	}
 	if (chosen.length === 0) {
 		return undefined;
@@ -1161,7 +1221,10 @@ const keyStatOf = (
 	story: string,
 	// The parts above it: a fact a takeaway just gave is never the key stat.
 	above: string,
+	rng: Rng,
 ): string | undefined => {
+	const say = (key: string, texts: string[]) =>
+		pick(rng, texts, `wire:keyStat:${key}`);
 	const w = totalsOf(shape.winner);
 	const l = totalsOf(shape.loser);
 	type Cand = { value: number; min: number; text: string; sig: RegExp };
@@ -1170,14 +1233,20 @@ const keyStatOf = (
 	cands.push({
 		value: tov * 1.1,
 		min: 6,
-		text: `${L.S} turned it over ${l.tov} times to ${poss(W.s)} ${w.tov}.`,
+		text: say("tov", [
+			`${L.S} turned it over ${l.tov} times to ${poss(W.s)} ${w.tov}.`,
+			`${L.S} committed ${l.tov} turnovers, ${W.s} ${w.tov}.`,
+		]),
 		sig: new RegExp(String.raw`\b${l.tov} (?:times|turnovers)`),
 	});
 	const tp = w.tp - l.tp;
 	cands.push({
 		value: tp * 1.6,
 		min: 9,
-		text: `${W.S} made ${w.tp} 3-pointers to ${poss(L.s)} ${l.tp}.`,
+		text: say("tp", [
+			`${W.S} made ${w.tp} 3-pointers to ${poss(L.s)} ${l.tp}.`,
+			`${W.S} hit ${w.tp} 3-pointers, ${L.s} ${l.tp}.`,
+		]),
 		sig: new RegExp(
 			String.raw`\b${w.tp}\b[^.]*\b${l.tp}\b|\b${w.tp} (?:3|three)|\b(?:${w.tp}(?: of | for |-of-)${w.tpa}|${l.tp}(?: of | for |-of-)${l.tpa})\b`,
 		),
@@ -1186,7 +1255,10 @@ const keyStatOf = (
 	cands.push({
 		value: ft,
 		min: 8,
-		text: `${W.S} went ${w.ft} for ${w.fta} at the free-throw line, ${L.s} ${l.ft} for ${l.fta}.`,
+		text: say("ft", [
+			`${W.S} went ${w.ft} for ${w.fta} at the free-throw line, ${L.s} ${l.ft} for ${l.fta}.`,
+			`${W.S} made ${w.ft} of ${w.fta} free throws, ${L.s} ${l.ft} of ${l.fta}.`,
+		]),
 		sig: new RegExp(
 			String.raw`\b(?:${w.ft}(?: of | for |-of-)${w.fta}|${l.ft}(?: of | for |-of-)${l.fta})\b`,
 		),
@@ -1195,7 +1267,10 @@ const keyStatOf = (
 	cands.push({
 		value: reb * 0.8,
 		min: 8,
-		text: `${W.S} outrebounded ${L.s} ${w.reb}-${l.reb}.`,
+		text: say("reb", [
+			`${W.S} outrebounded ${L.s} ${w.reb}-${l.reb}.`,
+			`${W.S} won the rebounding battle ${w.reb}-${l.reb}.`,
+		]),
 		sig: new RegExp(String.raw`\b${w.reb}-${l.reb}\b`),
 	});
 	if (w.fga > 0 && l.fga > 0) {
@@ -1222,7 +1297,10 @@ const keyStatOf = (
 		cands.push({
 			value: bench * 0.5,
 			min: 9,
-			text: `${cap(poss(W.s))} bench outscored ${poss(L.s)} ${w.bench}-${l.bench}.`,
+			text: say("bench", [
+				`${cap(poss(W.s))} bench outscored ${poss(L.s)} ${w.bench}-${l.bench}.`,
+				`${cap(poss(W.s))} reserves outscored ${poss(L.s)} ${w.bench}-${l.bench}.`,
+			]),
 			sig: new RegExp(String.raw`\b${w.bench}-${l.bench}\b`),
 		});
 	}
@@ -1322,7 +1400,7 @@ export const wireOf = (game: RecapGame, story: string): Wire | undefined => {
 	if (moment) {
 		parts.push(`### Key moment\n\n${moment}`);
 	}
-	const stat = keyStatOf(shape, W, L, story, parts.join("\n\n"));
+	const stat = keyStatOf(shape, W, L, story, parts.join("\n\n"), rng);
 	if (stat) {
 		parts.push(`### Key stat\n\n${stat}`);
 	}

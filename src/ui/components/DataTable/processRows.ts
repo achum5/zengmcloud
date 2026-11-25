@@ -118,6 +118,14 @@ export const processRows = ({
 			const i = colIndex(sortBy);
 			const order = sortBy[1];
 
+			if (cols[i]?.blanksLast) {
+				sortKeys.push((row) => {
+					const value = valueOf(row, i);
+					return value === -Infinity || value == null || value === "" ? 1 : 0;
+				});
+				orders.push("asc");
+			}
+
 			// A row exempt from the coarsening (a draft prospect, when the setting
 			// spares them) still carries exact ratings, so its 78 sits in the same
 			// column as everyone else's 7. Compared straight, 78 beats every real 8

@@ -1,4 +1,4 @@
-import { PLAYER } from "../../common/constants.ts";
+import { PHASE, PLAYER } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { PlayerAward } from "../../common/types.ts";
@@ -11,6 +11,8 @@ import { helpers } from "../util/index.ts";
 import { getSeasonState, validateSeason } from "../util/processInputs.ts";
 import { hasCurrentSeasonDraftHappened } from "../../common/seasons.ts";
 import { player, team } from "../core/index.ts";
+import { local } from "../util/index.ts";
+import { redraftValue } from "../util/redraftValue.ts";
 
 const processInputs = (params: RouteParams<"draftHistory">) => {
 	let season: number;
@@ -212,8 +214,109 @@ export default defineView({
 
 		const teamsByTid = await getDraftTeamsByTid(inputs.season);
 
+		// THE REDRAFT: the class again in order of career value, once it has
+		// two seasons behind it - and only when its careers are on file from
+		// the start, which a class from before a random league began isn't.
+		// In basketball that value counts what's still to come and the best
+		// seasons twice (redraftValue.ts); elsewhere it's the career total.
+		const seasonsPlayed =
+			g.get("season") -
+			inputs.season -
+			(g.get("phase") > PHASE.PLAYOFFS ? 0 : 1);
+		const onFile =
+			inputs.season >= g.get("startingSeason") - 1 ||
+			playersRaw.some((p) =>
+				p.stats.some((row) => row.season === inputs.season + 1),
+			);
+		// (Ties go to the earlier pick, and anyone undrafted after them all.)
+		const pickOrder = (draft: { round: number; pick: number }) =>
+			draft.round >= 1 ? draft.round * 1000 + draft.pick : Infinity;
+		const redraftByPid = new Map<number, number>();
+		if (seasonsPlayed >= 2 && onFile) {
+			let value = (p: (typeof players)[number]) =>
+				(p.careerStats[summaryStat] as number | undefined) ?? -Infinity;
+			if (__SPORT === "basketball") {
+				const season = g.get("season");
+				const phase = g.get("phase");
+				let leftThisSeason = phase <= PHASE.PRESEASON ? 1 : 0;
+				if (phase === PHASE.REGULAR_SEASON) {
+					const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
+						"teamSeasonsBySeasonTid",
+						[[season], [season, "Z"]],
+					);
+					const played =
+						teamSeasons.reduce(
+							(sum, ts) => sum + ts.won + ts.lost + ts.tied + ts.otl,
+							0,
+						) / Math.max(1, teamSeasons.length);
+					leftThisSeason = Math.max(0, 1 - played / g.get("numGames"));
+				}
+				const ctx = {
+					season,
+					leftThisSeason,
+					numGames: g.get("numGames"),
+					ovrMean: local.playerOvrMean,
+					ovrStd: local.playerOvrStd,
+				};
+				// What the table shows (a tens digit when the ones are hidden).
+				const shown = (rating: number) =>
+					g.get("hideRatingsOnesDigit") && rating <= 10
+						? rating * 10 + 4.5
+						: rating;
+				const rawByPid = new Map(playersRaw.map((p) => [p.pid, p]));
+				const values = new Map<number, number>();
+				for (const p of players) {
+					const raw = rawByPid.get(p.pid);
+					if (!raw) {
+						continue;
+					}
+					const ws = new Map<number, number>();
+					for (const row of raw.stats) {
+						if (!row.playoffs) {
+							ws.set(
+								row.season,
+								(ws.get(row.season) ?? 0) + (row.ows ?? 0) + (row.dws ?? 0),
+							);
+						}
+					}
+					values.set(
+						p.pid,
+						redraftValue(
+							{
+								bornYear: raw.born.year,
+								ws,
+								current:
+									p.currentOvr !== null && !g.get("challengeNoRatings")
+										? {
+												ovr: shown(p.currentOvr),
+												peakOvr: shown(p.peakOvr),
+											}
+										: undefined,
+							},
+							ctx,
+						),
+					);
+				}
+				value = (p) => values.get(p.pid) ?? -Infinity;
+			}
+			players
+				.filter((p) => (p.careerStats.gp ?? 0) > 0)
+				.sort(
+					(a, b) =>
+						value(b) - value(a) || pickOrder(a.draft) - pickOrder(b.draft),
+				)
+				.forEach((p, i) => {
+					redraftByPid.set(p.pid, i + 1);
+				});
+		}
+
 		return {
-			players: addFirstNameShort(players),
+			players: addFirstNameShort(
+				players.map((p) => ({
+					...p,
+					redraft: redraftByPid.get(p.pid),
+				})),
+			),
 			season: inputs.season,
 			stats,
 			summaryStat,

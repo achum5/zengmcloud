@@ -808,7 +808,7 @@ const DatedCalendar = ({
 			tid={userTid}
 			today={calendar.today}
 		/>
-		<a href={helpers.leagueUrl(["calendar"])}>» Full Calendar</a>
+		<a href={helpers.leagueUrl(["schedule"])}>» Full Calendar</a>
 	</div>
 );
 

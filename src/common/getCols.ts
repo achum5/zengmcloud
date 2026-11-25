@@ -3475,6 +3475,11 @@ const cols: {
 		desc: "Record",
 		sortType: "record",
 	},
+	Redraft: {
+		blanksLast: true,
+		desc: "Pick in a redraft of the class, by career value",
+		sortType: "number",
+	},
 	Relation: {},
 	Release: {
 		desc: "Release Player",

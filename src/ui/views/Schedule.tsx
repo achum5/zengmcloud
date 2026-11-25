@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { PHASE } from "../../common/constants.ts";
 import { SeasonStrip } from "../components/SeasonStrip.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
@@ -71,7 +72,13 @@ const Schedule = ({
 	return (
 		<>
 			<MoreLinks type="team" page="schedule" tid={tid} />
-			<SeasonStrip games={completed} tid={tid} season={season} />
+			<SeasonStrip
+				games={completed}
+				upcoming={upcoming}
+				upcomingPlayoffs={phase === PHASE.PLAYOFFS}
+				tid={tid}
+				season={season}
+			/>
 			{godMode ? (
 				<Dropdown className="mb-3">
 					<Dropdown.Toggle

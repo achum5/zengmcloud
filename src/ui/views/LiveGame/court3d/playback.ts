@@ -218,6 +218,10 @@ export const stepPlay = (
 	staging: boolean,
 	now: number,
 	wall: number,
+	// How far what is shown while staging runs (ms): the warm-ups' length,
+	// or - a scene of its own (see authored.ts), which holds itself at its
+	// end - as long as it takes.
+	stagingFor = WARMUP_MS,
 ): { dt: number; rate: number; cut: number | undefined } => {
 	const show = courtShow(tl);
 	const { dt, rate, ran } = stepShow(
@@ -226,7 +230,7 @@ export const stepPlay = (
 		f,
 		tl,
 		show,
-		staging ? WARMUP_MS : undefined,
+		staging ? stagingFor : undefined,
 		now,
 		wall,
 	);
