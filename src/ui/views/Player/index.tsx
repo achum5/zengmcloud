@@ -4,6 +4,7 @@ import Injuries from "./Injuries.tsx";
 import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
 import { getCols } from "../../../common/getCols.ts";
 import type { View } from "../../../common/types.ts";
 import { SeasonIcons } from "../../components/SeasonIcons.tsx";
@@ -424,7 +425,12 @@ const Player2 = ({
 							{feats.map((e) => {
 								return (
 									<p key={e.eid}>
-										<b>{e.season}</b>: <SafeHtml dirty={e.text} />
+										<b>
+											{e.date !== undefined
+												? formatGameDate(e.date, "withYear")
+												: e.season}
+										</b>
+										: <SafeHtml dirty={e.text} />
 									</p>
 								);
 							})}
@@ -445,7 +451,12 @@ const Player2 = ({
 						{events.map((e) => {
 							return (
 								<p key={e.eid}>
-									<b>{e.season}</b>: <SafeHtml dirty={e.text} />
+									<b>
+										{e.date !== undefined
+											? formatGameDate(e.date, "withYear")
+											: e.season}
+									</b>
+									: <SafeHtml dirty={e.text} />
 									{e.pressTids ? (
 										<PressButton eid={e.eid} tids={e.pressTids} />
 									) : null}

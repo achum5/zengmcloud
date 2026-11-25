@@ -1,5 +1,6 @@
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 import { getCols } from "../../common/getCols.ts";
 import { DataTable } from "../components/DataTable/index.tsx";
 import type { View } from "../../common/types.ts";
@@ -209,7 +210,10 @@ const FrivolitiesTrades = ({
 			];
 		});
 
-		const seasonText = `${trade.season} ${PHASE_TEXT[trade.phase]}`;
+		const seasonText =
+			trade.date !== undefined
+				? formatGameDate(trade.date, "withYear")
+				: `${trade.season} ${PHASE_TEXT[trade.phase]}`;
 
 		return {
 			key: trade.rank,

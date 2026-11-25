@@ -5,6 +5,7 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { showNotification } from "../util/showNotification.ts";
 import { getCols } from "../../common/getCols.ts";
@@ -82,6 +83,7 @@ const useSeasonsFreeAgents = () => {
 const signedFreeAgentWrapped = (
 	freeAgentTransaction: FreeAgentTransaction & {
 		abbrev: string;
+		date?: string;
 	},
 	freeAgencySeason: number,
 	season: number | "current",
@@ -97,6 +99,12 @@ const signedFreeAgentWrapped = (
 		rosterSeason = freeAgencySeason + 1;
 	}
 
+	// The day he signed on the NBA calendar, else the phase.
+	const when =
+		freeAgentTransaction.date !== undefined
+			? formatGameDate(freeAgentTransaction.date, "monthDay")
+			: PHASE_TEXT[freeAgentTransaction.phase];
+
 	return {
 		value: (
 			<>
@@ -109,10 +117,10 @@ const signedFreeAgentWrapped = (
 				>
 					{freeAgentTransaction.abbrev}
 				</a>
-				, {PHASE_TEXT[freeAgentTransaction.phase]}
+				, {when}
 			</>
 		),
-		searchValue: `${freeAgentTransaction.abbrev}, ${PHASE_TEXT[freeAgentTransaction.phase]}`,
+		searchValue: `${freeAgentTransaction.abbrev}, ${when}`,
 	};
 };
 

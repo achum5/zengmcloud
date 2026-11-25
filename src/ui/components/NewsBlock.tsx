@@ -3,6 +3,7 @@ import { PressButton } from "./PressButton.tsx";
 import { SafeHtml } from "./SafeHtml.tsx";
 import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 import type { View, LogEventType } from "../../common/types.ts";
 import { categories, types } from "../../common/transactionInfo.ts";
 import { SocialThread, type TeamLike } from "../views/SocialPost.tsx";
@@ -118,6 +119,11 @@ export const NewsBlock = ({
 			>
 				{teamName}
 				<Badge type={event.type} />
+				{event.date !== undefined ? (
+					<span className="small text-body-secondary text-nowrap me-2">
+						{formatGameDate(event.date, "monthDay")}
+					</span>
+				) : null}
 				{event.pressTids ? (
 					<PressButton
 						eid={event.eid}

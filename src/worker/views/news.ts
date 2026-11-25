@@ -140,6 +140,7 @@ export const processEvents = async (
 			pids: event.pids,
 			tids: event.tids,
 			season: event.season,
+			date: event.date,
 			score: event.score,
 			// (The teams that held a press conference for it - see
 			// pressConference.ts.)

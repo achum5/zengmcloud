@@ -99,6 +99,7 @@ export default defineView({
 					pids: event.pids,
 					tids: event.tids,
 					season: event.season,
+					date: event.date,
 					score: event.score,
 					revertable: godMode && (await isRevertable(event)),
 					// (Its press conferences - this team's, on a team's page.)

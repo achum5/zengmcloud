@@ -44,6 +44,8 @@ type Trade = {
 	eid: number;
 	season: number;
 	phase: Phase;
+	// The day it was made, on the NBA calendar.
+	date: string | undefined;
 	teams: [Team, Team];
 	most: Most;
 };
@@ -130,6 +132,7 @@ const getMostXRows = async ({
 				eid: event.eid,
 				season: event.season,
 				phase: event.phase,
+				date: event.date,
 				teams,
 				most,
 			});

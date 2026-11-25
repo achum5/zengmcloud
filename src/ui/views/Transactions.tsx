@@ -3,6 +3,7 @@ import { MoreLinks } from "../components/MoreLinks.tsx";
 import { dropdownOptions } from "../hooks/useDropdownOptions.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { formatGameDate } from "../../common/calendarDates.ts";
 import type { View } from "../../common/types.ts";
 import { SafeHtml } from "../components/SafeHtml.tsx";
 import { PressButton } from "../components/PressButton.tsx";
@@ -115,6 +116,11 @@ const Transactions = ({
 					const posts = social?.postsByEid[e.eid];
 					return (
 						<li key={e.eid} className="list-group-item">
+							{e.date !== undefined ? (
+								<div className="small text-body-secondary">
+									{formatGameDate(e.date, "withYear")}
+								</div>
+							) : null}
 							{e.revertable ? (
 								<div className="d-flex align-items-start">
 									<div className="flex-grow-1">

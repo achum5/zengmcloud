@@ -50,6 +50,8 @@ export type TreeAsset = {
 export type TreeTrade = {
 	eid: number;
 	season: number;
+	// The day it was made, on the NBA calendar.
+	date?: string;
 	tid: number;
 	abbrev: string;
 	// What else the team sent in that deal, from outside this tree.
@@ -142,6 +144,7 @@ export const getTradeTrees = async (
 			const node: TreeTrade = {
 				eid: trade.eid,
 				season: trade.season,
+				date: trade.date,
 				tid: other,
 				abbrev:
 					(await getTeamInfoBySeason(other, trade.season))?.abbrev ?? "???",

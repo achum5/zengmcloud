@@ -771,6 +771,7 @@ export default defineView({
 					return {
 						eid: event.eid,
 						season: event.season,
+						date: event.date,
 						text: helpers.correctLinkLid(g.get("lid"), event.text as any),
 					};
 				});
@@ -793,6 +794,7 @@ export default defineView({
 					eid: event.eid,
 					text: await formatEventText(event),
 					season: event.season,
+					date: event.date,
 					// (The press conference that introduced him - see
 					// pressConference.ts.)
 					pressTids: await pressTidsOf(event, { pid: p.pid }),

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toWorker } from "../../util/toWorker.ts";
 import { helpers } from "../../util/helpers.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
@@ -99,7 +100,10 @@ const Deal = ({ trade }: { trade: TreeTrade }) => (
 				"Traded to "
 			)}
 			<a href={helpers.leagueUrl(["trade_summary", trade.eid])}>
-				{trade.abbrev} in {trade.season}
+				{trade.abbrev}{" "}
+				{trade.date !== undefined
+					? `on ${formatGameDate(trade.date, "withYear")}`
+					: `in ${trade.season}`}
 			</a>{" "}
 			for
 		</span>

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 598,
+		date: "2026-11-25",
+		text: "In leagues on the NBA calendar, trades, signings and releases now say the day they happened: on Trade Summary, Transactions, the News Feed, player pages, Free Agents and the best and worst trades. Moves made before this update, and anything in the offseason, still show the season.",
+	},
+	{
 		n: 588,
 		date: "2026-11-25",
 		text: "Season Summary has a Season in review button for every finished season. Tap through the year like a story: the champions, the Finals MVP and MVP, the other awards, the league leaders, your own season and the biggest careers that ended.",

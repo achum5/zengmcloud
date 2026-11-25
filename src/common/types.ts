@@ -398,7 +398,7 @@ export type TransactionRevert = {
 	dp?: DraftPick;
 };
 
-export type EventBBGMWithoutKey =
+export type EventBBGMWithoutKey = (
 	| {
 			type: Exclude<
 				LogEventType,
@@ -474,7 +474,13 @@ export type EventBBGMWithoutKey =
 
 			// Never defined, just for TypeScript
 			dpids?: number[];
-	  };
+	  }
+) & {
+	// The day it happened ("YYYY-MM-DD"), when the league was on the NBA
+	// calendar then (util/eventDate.ts). Undefined between seasons, on
+	// classic numbered days, and for anything older.
+	date?: string;
+};
 
 export type EventBBGM = EventBBGMWithoutKey & {
 	eid: number;

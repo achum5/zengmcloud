@@ -27,6 +27,7 @@ import {
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { nightTick } from "./calendarTicks.ts";
+import { duringNight } from "../../util/eventDate.ts";
 import { classicDaysTo } from "./tradableOn.ts";
 import { refreshCalendarDays } from "./refreshCalendarDays.ts";
 import { countedThrough } from "./classicDays.ts";
@@ -380,212 +381,215 @@ const playDays = async (
 			countedThrough: countedThrough(),
 		});
 
-		// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
-		const players = await idb.cache.players.indexGetAll("playersByTid", [
-			0,
-			Infinity,
-		]);
+		// Everything the night brings is dated that night (util/eventDate.ts).
+		await duringNight(tick.tonight, async () => {
+			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
+			const players = await idb.cache.players.indexGetAll("playersByTid", [
+				0,
+				Infinity,
+			]);
 
-		const playersToSave = [];
-		for (const p of players) {
-			let changed = false;
+			const playersToSave = [];
+			for (const p of players) {
+				let changed = false;
 
-			// How many days this night is for the player's team: none if it had
-			// the night off.
-			const ticks =
-				tick.ticksByTid === undefined
-					? 1
-					: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
-			// A wait to one of the NBA's dates goes by the date, whatever
-			// classic days tonight came to (tradableOn.ts).
-			const tradableIn =
-				p.tradableOn !== undefined &&
-				p.gamesUntilTradable > 0 &&
-				tick.clock !== undefined &&
-				tick.tonight !== undefined
-					? classicDaysTo(p.tradableOn, tick.clock, tick.tonight, nextNight)
-					: undefined;
-			if (ticks === 0) {
-				if (tradableIn !== undefined && tradableIn !== p.gamesUntilTradable) {
-					p.gamesUntilTradable = tradableIn;
-					if (tradableIn === 0) {
-						delete p.tradableOn;
+				// How many days this night is for the player's team: none if it had
+				// the night off.
+				const ticks =
+					tick.ticksByTid === undefined
+						? 1
+						: (tick.ticksByTid.get(p.tid) ?? tick.restTicks ?? 0);
+				// A wait to one of the NBA's dates goes by the date, whatever
+				// classic days tonight came to (tradableOn.ts).
+				const tradableIn =
+					p.tradableOn !== undefined &&
+					p.gamesUntilTradable > 0 &&
+					tick.clock !== undefined &&
+					tick.tonight !== undefined
+						? classicDaysTo(p.tradableOn, tick.clock, tick.tonight, nextNight)
+						: undefined;
+				if (ticks === 0) {
+					if (tradableIn !== undefined && tradableIn !== p.gamesUntilTradable) {
+						p.gamesUntilTradable = tradableIn;
+						if (tradableIn === 0) {
+							delete p.tradableOn;
+						}
+						playersToSave.push(p);
 					}
-					playersToSave.push(p);
+					continue;
 				}
-				continue;
-			}
 
-			if (p.injury.gamesRemaining > 0) {
-				const gamesRemaining = Math.max(0, p.injury.gamesRemaining - ticks);
-				injuryTickNotes.push(
-					`p${p.pid}:${p.injury.gamesRemaining}>${gamesRemaining}`,
-				);
-				p.injury.gamesRemaining = gamesRemaining;
-				changed = true;
-			}
-
-			if (
-				__SPORT === "baseball" &&
-				p.pFatigue !== undefined &&
-				p.pFatigue > 0
-			) {
-				p.pFatigue = helpers.bound(
-					p.pFatigue - P_FATIGUE_DAILY_REDUCTION,
-					0,
-					80,
-				);
-				changed = true;
-			}
-
-			// Is it already over?
-			if (p.injury.type !== "Healthy" && p.injury.gamesRemaining <= 0) {
-				const score = p.injury.score;
-				p.injury = {
-					type: "Healthy",
-					gamesRemaining: 0,
-				};
-				changed = true;
-				const healedText = `${
-					last(p.ratings).pos
-				} <a href="${helpers.leagueUrl(["player", p.pid])}">${p.firstName} ${
-					p.lastName
-				}</a>`;
+				if (p.injury.gamesRemaining > 0) {
+					const gamesRemaining = Math.max(0, p.injury.gamesRemaining - ticks);
+					injuryTickNotes.push(
+						`p${p.pid}:${p.injury.gamesRemaining}>${gamesRemaining}`,
+					);
+					p.injury.gamesRemaining = gamesRemaining;
+					changed = true;
+				}
 
 				if (
-					p.tid === g.get("userTid") &&
-					!pidsInjuredOneGameOrLess.has(p.pid)
+					__SPORT === "baseball" &&
+					p.pFatigue !== undefined &&
+					p.pFatigue > 0
 				) {
-					healedTexts.push(healedText);
+					p.pFatigue = helpers.bound(
+						p.pFatigue - P_FATIGUE_DAILY_REDUCTION,
+						0,
+						80,
+					);
+					changed = true;
 				}
 
+				// Is it already over?
+				if (p.injury.type !== "Healthy" && p.injury.gamesRemaining <= 0) {
+					const score = p.injury.score;
+					p.injury = {
+						type: "Healthy",
+						gamesRemaining: 0,
+					};
+					changed = true;
+					const healedText = `${
+						last(p.ratings).pos
+					} <a href="${helpers.leagueUrl(["player", p.pid])}">${p.firstName} ${
+						p.lastName
+					}</a>`;
+
+					if (
+						p.tid === g.get("userTid") &&
+						!pidsInjuredOneGameOrLess.has(p.pid)
+					) {
+						healedTexts.push(healedText);
+					}
+
+					logEvent(
+						{
+							type: "healed",
+							text: `${healedText} has recovered from ${helpers.pronoun(
+								g.get("gender"),
+								"his",
+							)} injury.`,
+							showNotification: false,
+							pids: [p.pid],
+							tids: [p.tid],
+							score,
+						},
+						conditions,
+					);
+				}
+
+				// Also check for gamesUntilTradable
+				if (p.gamesUntilTradable === undefined) {
+					p.gamesUntilTradable = 0; // Initialize for old leagues
+
+					changed = true;
+				} else if (p.gamesUntilTradable > 0) {
+					p.gamesUntilTradable =
+						tradableIn ?? Math.max(0, p.gamesUntilTradable - ticks);
+					if (p.gamesUntilTradable === 0) {
+						delete p.tradableOn;
+					}
+					changed = true;
+				}
+
+				if (changed) {
+					playersToSave.push(p);
+				}
+			}
+			await idb.cache.players.putAll(playersToSave);
+
+			if (healedTexts.length > 0) {
 				logEvent(
 					{
-						type: "healed",
-						text: `${healedText} has recovered from ${helpers.pronoun(
-							g.get("gender"),
-							"his",
-						)} injury.`,
-						showNotification: false,
-						pids: [p.pid],
-						tids: [p.tid],
-						score,
+						type: "healedList",
+						text: healedTexts.join("<br>"),
+						showNotification: true,
+						saveToDb: false,
 					},
 					conditions,
 				);
 			}
 
-			// Also check for gamesUntilTradable
-			if (p.gamesUntilTradable === undefined) {
-				p.gamesUntilTradable = 0; // Initialize for old leagues
-
-				changed = true;
-			} else if (p.gamesUntilTradable > 0) {
-				p.gamesUntilTradable =
-					tradableIn ?? Math.max(0, p.gamesUntilTradable - ticks);
-				if (p.gamesUntilTradable === 0) {
-					delete p.tradableOn;
-				}
-				changed = true;
-			}
-
-			if (changed) {
-				playersToSave.push(p);
-			}
-		}
-		await idb.cache.players.putAll(playersToSave);
-
-		if (healedTexts.length > 0) {
-			logEvent(
-				{
-					type: "healedList",
-					text: healedTexts.join("<br>"),
-					showNotification: true,
-					saveToDb: false,
-				},
-				conditions,
-			);
-		}
-
-		for (let run = 0; run < tick.leagueRuns; run++) {
-			// Tragic deaths only happen during the regular season!
-			if (
-				g.get("phase") !== PHASE.PLAYOFFS &&
-				Math.random() < g.get("tragicDeathRate") &&
-				!g.get("repeatSeason") &&
-				!g.get("forceHistoricalRosters")
-			) {
-				await player.killOne(conditions);
-
-				if (g.get("stopOnInjury")) {
-					sim.requestStop();
-				}
-
-				updateEvents.push("playerMovement");
-			}
-
-			// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
-			const phase = g.get("phase");
-			if (g.get("college")) {
-				// College: no in-season signings or trades, but recruiting goes on
-				// all season.
-				await collegeRecruitingDay();
-				if (phase !== PHASE.PLAYOFFS) {
-					await collegePollDay();
-				}
-			} else {
+			for (let run = 0; run < tick.leagueRuns; run++) {
+				// Tragic deaths only happen during the regular season!
 				if (
-					phase === PHASE.REGULAR_SEASON ||
-					phase === PHASE.AFTER_TRADE_DEADLINE
+					g.get("phase") !== PHASE.PLAYOFFS &&
+					Math.random() < g.get("tragicDeathRate") &&
+					!g.get("repeatSeason") &&
+					!g.get("forceHistoricalRosters")
 				) {
-					await freeAgents.decreaseDemands();
-					await freeAgents.autoSign();
+					await player.killOne(conditions);
+
+					if (g.get("stopOnInjury")) {
+						sim.requestStop();
+					}
+
+					updateEvents.push("playerMovement");
 				}
-				if (phase === PHASE.REGULAR_SEASON) {
-					await trade.betweenAiTeams();
+
+				// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
+				const phase = g.get("phase");
+				if (g.get("college")) {
+					// College: no in-season signings or trades, but recruiting goes on
+					// all season.
+					await collegeRecruitingDay();
+					if (phase !== PHASE.PLAYOFFS) {
+						await collegePollDay();
+					}
+				} else {
+					if (
+						phase === PHASE.REGULAR_SEASON ||
+						phase === PHASE.AFTER_TRADE_DEADLINE
+					) {
+						await freeAgents.decreaseDemands();
+						await freeAgents.autoSign();
+					}
+					if (phase === PHASE.REGULAR_SEASON) {
+						await trade.betweenAiTeams();
+					}
 				}
 			}
-		}
 
-		// On a calendar: the days each injury and trade wait has left, as
-		// the game shows them.
-		if (tick.clock && tick.tonight !== undefined) {
-			await refreshCalendarDays(tick.clock, tick.tonight);
-		}
+			// On a calendar: the days each injury and trade wait has left, as
+			// the game shows them.
+			if (tick.clock && tick.tonight !== undefined) {
+				await refreshCalendarDays(tick.clock, tick.tonight);
+			}
 
-		// The smart CPU's market keeps its own clock - a moment every so many
-		// games, and one on each of the deadline's last nights
-		// (smartCpu/market.ts) - so it is asked every night, a calendar night
-		// that ends no round of games too.
-		if (
-			tick.leagueRuns === 0 &&
-			!g.get("college") &&
-			g.get("phase") === PHASE.REGULAR_SEASON
-		) {
-			await trade.betweenAiTeams({ smartOnly: true });
-		}
+			// The smart CPU's market keeps its own clock - a moment every so many
+			// games, and one on each of the deadline's last nights
+			// (smartCpu/market.ts) - so it is asked every night, a calendar night
+			// that ends no round of games too.
+			if (
+				tick.leagueRuns === 0 &&
+				!g.get("college") &&
+				g.get("phase") === PHASE.REGULAR_SEASON
+			) {
+				await trade.betweenAiTeams({ smartOnly: true });
+			}
 
-		// One compact durable line for the whole league's countdown this day -
-		// the record that distinguishes "the tick ran twice" from "a remote row
-		// wiped the injury" next time a countdown loses days it should not.
-		if (injuryTickNotes.length > 0) {
-			void recordInjuryForensics({
-				source: "day-tick",
-				detail: `day=${simmedDay ?? "?"} ${injuryTickNotes.join(" ")}`,
-			});
-		}
+			// One compact durable line for the whole league's countdown this day -
+			// the record that distinguishes "the tick ran twice" from "a remote row
+			// wiped the injury" next time a countdown loses days it should not.
+			if (injuryTickNotes.length > 0) {
+				void recordInjuryForensics({
+					source: "day-tick",
+					detail: `day=${simmedDay ?? "?"} ${injuryTickNotes.join(" ")}`,
+				});
+			}
 
-		// Stamped LAST, so a crash mid-block re-counts the day rather than
-		// marking it counted without counting. Rides the same capture window
-		// as the countdown itself, so the whole room learns of both together.
-		if (countdownDay !== undefined) {
-			await setGameAttributes({
-				lastDailyCountdownDay:
-					tick.tonight === undefined
-						? countdownDay
-						: { ...countdownDay, date: tick.tonight },
-			});
-		}
+			// Stamped LAST, so a crash mid-block re-counts the day rather than
+			// marking it counted without counting. Rides the same capture window
+			// as the countdown itself, so the whole room learns of both together.
+			if (countdownDay !== undefined) {
+				await setGameAttributes({
+					lastDailyCountdownDay:
+						tick.tonight === undefined
+							? countdownDay
+							: { ...countdownDay, date: tick.tonight },
+				});
+			}
+		});
 	};
 
 	// Saves a vector of results objects for a day, as is output from cbSimGames.

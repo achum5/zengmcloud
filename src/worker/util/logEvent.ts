@@ -1,5 +1,6 @@
 import { idb } from "../db/index.ts";
 import g from "./g.ts";
+import { eventDate } from "./eventDate.ts";
 import { toUIWithoutWaiting } from "./toUI.ts";
 import type {
 	Conditions,
@@ -36,7 +37,12 @@ const logEvent = async <SaveToDb extends boolean = true>(
 			throw new Error("Saved event must include pids or tids");
 		}
 
-		result = await idb.cache.events.add({ ...event, season: g.get("season") });
+		const date = event.date ?? (await eventDate());
+		result = await idb.cache.events.add({
+			...event,
+			season: g.get("season"),
+			...(date === undefined ? {} : { date }),
+		});
 	}
 
 	if (showNotification && event.text) {

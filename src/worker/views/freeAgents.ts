@@ -259,24 +259,33 @@ export default defineView({
 					? await loadAbbrevs(freeAgencySeason + 1)
 					: {};
 
-			const signedPlayers = (
-				await getPlayersFiltered(playersByType.signed.map((row) => row.p))
-			).map((p) => {
+			const signedPlayers = [];
+			for (const p of await getPlayersFiltered(
+				playersByType.signed.map((row) => row.p),
+			)) {
 				const row = signedByPid[p.pid];
 				if (!row) {
 					throw new Error(`Signed player not found for pid ${p.pid}`);
 				}
-				const freeAgentTransaction: FreeAgentTransaction & { abbrev: string } =
-					{
-						...row.freeAgentTransaction,
-						abbrev: abbrevs[row.freeAgentTransaction.tid] ?? "???",
-					};
-				return {
+				const eid = row.freeAgentTransaction.eid;
+				const freeAgentTransaction: FreeAgentTransaction & {
+					abbrev: string;
+					// The day he signed, on the NBA calendar.
+					date?: string;
+				} = {
+					...row.freeAgentTransaction,
+					abbrev: abbrevs[row.freeAgentTransaction.tid] ?? "???",
+					date:
+						eid === undefined
+							? undefined
+							: (await idb.merged.events.get(eid))?.date,
+				};
+				signedPlayers.push({
 					...p,
 					freeAgentType: "signed" as const,
 					freeAgentTransaction,
-				};
-			});
+				});
+			}
 
 			let players = addFirstNameShort([...availablePlayers, ...signedPlayers]);
 

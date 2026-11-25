@@ -654,6 +654,8 @@ export default defineView({
 				teams,
 				season: event.season,
 				phase: event.phase,
+				// The day it was made, on the NBA calendar.
+				date: event.date,
 				stat: bySport({
 					baseball: "WAR",
 					basketball: "WS",

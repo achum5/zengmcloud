@@ -1,6 +1,7 @@
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import type { View } from "../../../common/types.ts";
 import { helpers } from "../../util/helpers.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
 import { PlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
 import { PressButton } from "../../components/PressButton.tsx";
 import { PHASE, PHASE_TEXT } from "../../../common/constants.ts";
@@ -98,6 +99,7 @@ const Outcome = ({ outcome }: { outcome: PlayerOutcome }) => {
 };
 
 const TradeSummary = ({
+	date,
 	eid,
 	frontOffice,
 	phase,
@@ -115,12 +117,18 @@ const TradeSummary = ({
 
 	return (
 		<>
-			<p>
-				Trade occurred during the{" "}
-				<b>
-					{season} {PHASE_TEXT[phase]}
-				</b>
-			</p>
+			{date !== undefined ? (
+				<p>
+					Trade occurred on <b>{formatGameDate(date, "full")}</b>
+				</p>
+			) : (
+				<p>
+					Trade occurred during the{" "}
+					<b>
+						{season} {PHASE_TEXT[phase]}
+					</b>
+				</p>
+			)}
 			{revertable ? (
 				<button
 					className="btn btn-god-mode mb-3"
