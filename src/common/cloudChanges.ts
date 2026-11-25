@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 602,
+		date: "2026-11-25",
+		text: "Scores: both teams' records now sit the same way on every game card, under the score on both sides or beside it on both, instead of one jumping up next to a two-digit score.",
+	},
+	{
 		n: 601,
 		date: "2026-11-25",
 		text: "Player pages: the all-time milestones moved to the bottom as All-Time Ranks, shown for everyone who has played, retired players too: where they stand on the career lists for points, rebounds, assists, steals, blocks and 3-pointers. Tap one to open Player Stats' career totals sorted by that stat, the same as Full list on Milestone Watch.",

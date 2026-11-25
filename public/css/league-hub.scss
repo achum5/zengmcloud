@@ -770,10 +770,11 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-// The score, and the record beside it on the inner side.
+// The score, and the record beside it on the inner side - or, on a card
+// too narrow for a three-digit score and a record side by side, under it.
+// The card decides, not the side, so the two sides always match.
 .lh-gc-scoreline {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: baseline;
 	column-gap: 0.4rem;
 }
@@ -786,6 +787,14 @@
 	font-weight: 700;
 	opacity: 0.8;
 	font-variant-numeric: tabular-nums;
+}
+@container (max-width: 499px) {
+	.lh-gc-scoreline {
+		flex-wrap: wrap;
+	}
+	.lh-gc-record {
+		flex-basis: 100%;
+	}
 }
 .lh-gc-name {
 	font-size: clamp(1rem, 5.2cqw, 1.55rem);
@@ -1055,9 +1064,11 @@
 		line-height: 1.05;
 	}
 	.lh-gc-scoreline {
+		flex-wrap: nowrap;
 		column-gap: 0.3rem;
 	}
 	.lh-gc-record {
+		flex-basis: auto;
 		font-size: 0.66rem;
 	}
 	.lh-gc-mid {
@@ -1081,6 +1092,15 @@
 		margin-top: 0.1rem;
 		padding-top: 0.1rem;
 		font-size: 0.58rem;
+	}
+}
+// (The narrowest phones: the record under the score.)
+@container lh-gc (max-width: 359px) {
+	.lh-gc-scoreline {
+		flex-wrap: wrap;
+	}
+	.lh-gc-record {
+		flex-basis: 100%;
 	}
 }
 // A phone's frame, tight around it.
