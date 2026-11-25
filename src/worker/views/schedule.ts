@@ -16,7 +16,18 @@ import { COMPOSITE_WEIGHTS } from "../../common/constants.hockey.ts";
 import { getStartingAndBackupGoalies } from "../core/GameSim.hockey/getStartingAndBackupGoalies.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
-import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
+import {
+	BASKETBALL_PLAYOFF_TOTAL_FACTOR,
+	getGameSpread,
+	roundHalf,
+} from "../../common/getGameSpread.ts";
+import {
+	expectedTotalFromRates,
+	leagueAvgGameTotal,
+	toHalfPointLine,
+} from "../../common/sportsbookOdds.ts";
+import { getTotalsPrior } from "../core/sportsbook/gameLines.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { rosterAtTipoff } from "../core/team/rosterAtTipoff.ts";
 import {
 	getTeamSpreadBias,
@@ -51,11 +62,14 @@ export const getUpcoming = async ({
 	day,
 	onlyOneGame,
 	tid,
+	withTotals,
 }: {
 	cid?: number;
 	day?: number;
 	onlyOneGame?: boolean;
 	tid?: number;
+	// The over/under on each game too (the Daily Schedule's cards).
+	withTotals?: boolean;
 }) => {
 	const schedule = await season.getSchedule();
 
@@ -309,6 +323,48 @@ export const getUpcoming = async ({
 		return roundHalf(corrected);
 	};
 
+	// The over/under, as the sportsbook sets it (see gameLines.ts): from each
+	// team's scoring this season, per game - as it stands on screen, a game
+	// still being played live left out (see liveGameShown.ts).
+	const scoring = withTotals
+		? groupByUnique(
+				await team.getFormattedAll({
+					attrs: ["tid"],
+					stats: ["pts", "oppPts", "gp"],
+					season: g.get("season"),
+					active: true,
+					// (A team yet to play still has a game to show.)
+					showNoStats: true,
+					liveShown: await getLiveShown(),
+				}),
+				"tid",
+			)
+		: {};
+	const scoringOf = (tid: number) => {
+		const s = scoring[tid]?.stats as
+			| { gp?: number; pts?: number; oppPts?: number }
+			| undefined;
+		return { gp: s?.gp ?? 0, pts: s?.pts ?? 0, oppPts: s?.oppPts ?? 0 };
+	};
+	const leagueAvgTotal = withTotals
+		? leagueAvgGameTotal(
+				Object.values(scoring).map((t) => scoringOf(t.tid)),
+				await getTotalsPrior(g.get("season")),
+			)
+		: 0;
+	const getTotal = (homeTid: number, awayTid: number) =>
+		toHalfPointLine(
+			expectedTotalFromRates({
+				home: scoringOf(homeTid),
+				away: scoringOf(awayTid),
+				leagueAvgTotal,
+				factor:
+					roundSeries && __SPORT === "basketball"
+						? BASKETBALL_PLAYOFF_TOTAL_FACTOR
+						: 1,
+			}),
+		);
+
 	// The national games' networks, for their previews.
 	const national = await nationalTags(schedule);
 
@@ -321,6 +377,7 @@ export const getUpcoming = async ({
 		national?: NationalTag;
 		season: number;
 		spread?: number;
+		total?: number;
 		teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>];
 	}[] = filteredSchedule.map(
 		({ awayTid, date, day, finals, forceWin, gid, homeTid }) => {
@@ -349,6 +406,9 @@ export const getUpcoming = async ({
 								awayTid,
 							})
 						: undefined,
+				...(withTotals && homeTid >= 0 && awayTid >= 0
+					? { total: getTotal(homeTid, awayTid) }
+					: {}),
 				teams,
 			};
 		},
