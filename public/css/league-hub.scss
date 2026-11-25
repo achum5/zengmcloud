@@ -1055,6 +1055,97 @@
 	padding-top: 0;
 	border-top: 0;
 }
+// On a phone, under a game's card: a player from each team on its own side
+// (where the card has room for its lines beside it, those instead).
+.lh-gc-previews {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	column-gap: 0.75rem;
+	padding: 0.45rem 0.15rem 0.05rem;
+}
+.lh-gc-prev-side {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	min-width: 0;
+}
+.lh-gc-prev {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	min-width: 0;
+	color: var(--bs-emphasis-color);
+	text-decoration: none;
+	&:hover {
+		color: var(--bs-emphasis-color);
+		text-decoration: none;
+	}
+	.lh-gc-face {
+		width: 1.35rem;
+		height: 2rem;
+	}
+}
+.lh-gc-prev-home .lh-gc-prev {
+	flex-direction: row-reverse;
+	text-align: right;
+}
+.lh-gc-prev-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.15;
+}
+.lh-gc-prev-name {
+	font-size: 0.8rem;
+	font-weight: 800;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-gc-prev-stats {
+	display: flex;
+	gap: 0.4rem;
+	font-size: 0.55rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+	b {
+		margin-right: 0.12rem;
+		font-size: 0.74rem;
+		font-weight: 800;
+		letter-spacing: 0;
+		color: var(--bs-emphasis-color);
+		font-variant-numeric: tabular-nums;
+	}
+}
+.lh-gc-prev-home .lh-gc-prev-stats {
+	justify-content: flex-end;
+}
+// (Narrower phones: the numbers tighter; the narrowest, no faces.)
+@container lh-gc (max-width: 355px) {
+	.lh-gc-previews {
+		column-gap: 0.5rem;
+	}
+	.lh-gc-prev-stats {
+		gap: 0.26rem;
+		font-size: 0.5rem;
+		b {
+			margin-right: 0.08rem;
+			font-size: 0.68rem;
+		}
+	}
+}
+@container lh-gc (max-width: 315px) {
+	.lh-gc-prev .lh-gc-face {
+		display: none;
+	}
+}
+@container lh-gc (min-width: 620px) {
+	.lh-gc-previews {
+		display: none;
+	}
+}
 // (No network: just the line and the total, a touch bigger, a hairline
 // between them.)
 .lh-gc-mid-lines {

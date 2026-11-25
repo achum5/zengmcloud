@@ -6,14 +6,21 @@ import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { NationalTag } from "../NationalTag.tsx";
 import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
-import { Face, Logo, Side, useBrand } from "./GameCard.tsx";
+import {
+	Face,
+	Logo,
+	PhonePlayers,
+	Side,
+	useBrand,
+	type PhonePlayer,
+} from "./GameCard.tsx";
 import { spreadLine } from "./spreadLine.ts";
 
 // A GAME STILL TO BE PLAYED, on the played game's card (GameCard): each
 // team's colors at its end, its city and name - and where a played game has
 // its score, its record, with its overall beside it. Between them, the line
 // (under its network, if it's on one); hung from the foot, watch it or sim it;
-// beside it all, each team's best player.
+// beside it all (on a phone, under it), each team's best player.
 
 export type UpcomingCardTeam = {
 	tid: number;
@@ -150,6 +157,20 @@ const ToWatch = ({
 	);
 };
 
+// A team's best player going in, with his averages (a phone's line under
+// the card).
+const toWatchLine = (p: any): PhonePlayer | undefined =>
+	p
+		? {
+				p,
+				cols: [
+					[(p.stats?.pts ?? 0).toFixed(1), "PTS"],
+					[(p.stats?.trb ?? 0).toFixed(1), "REB"],
+					[(p.stats?.ast ?? 0).toFixed(1), "AST"],
+				],
+			}
+		: undefined;
+
 const PlayIcon = () => (
 	<svg viewBox="0 0 10 10" aria-hidden="true">
 		<path d="M2 1.2v7.6L8.6 5z" fill="currentColor" />
@@ -269,6 +290,11 @@ export const UpcomingCard = ({
 							</div>
 						) : null}
 					</div>
+					<PhonePlayers
+						away={toWatchLine(players?.[1])}
+						home={toWatchLine(players?.[0])}
+						season={season}
+					/>
 				</div>
 				<div className="lh-gc-leaders">
 					<ToWatch t={away} p={players?.[1]} season={season} />

@@ -424,6 +424,8 @@ export const getTopPlayers = async <T extends any[]>(
 	// On daily schedule, for baseball SP calculation, we don't need to look at any games beyond the requested day
 	targetDay?: number,
 ) => {
+	// (Averages as they stood before any league mate's live game.)
+	const liveShown = await getLiveShown();
 	const formatOptions = (tid: number) => {
 		return {
 			attrs: ["pid", "name", "injury", "abbrev", "tid"],
@@ -439,6 +441,7 @@ export const getTopPlayers = async <T extends any[]>(
 			showRookies: true,
 			tid,
 			fuzz: true,
+			liveShown,
 		} as const;
 	};
 
