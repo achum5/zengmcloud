@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 599,
+		date: "2026-11-25",
+		text: "On the NBA calendar, the scores bar's games look like a TV score strip: the date and the W or L on top, then both teams on their own rows with logo and score, the winner marked. A game being played live shows the quarter and clock up top, and the next game shows the favorite's spread.",
+	},
+	{
 		n: 598,
 		date: "2026-11-25",
 		text: "In leagues on the NBA calendar, trades, signings and releases now say the day they happened: on Trade Summary, Transactions, the News Feed, player pages, Free Agents and the best and worst trades. Moves made before this update, and anything in the offseason, still show the season.",

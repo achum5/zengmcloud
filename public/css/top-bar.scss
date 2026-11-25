@@ -1,11 +1,15 @@
 // THE SCORES BAR on the NBA calendar (Controller/LeagueTopBar.tsx and
 // TopBarDay.tsx): the team's calendar in one row, every day with bye days too.
-// It shares the team calendar's look (league-calendar.scss): the day on top,
-// home days filled black, W/L coins, today in red.
+// Each game a scoreboard cell, as on the networks' score strips: the day and
+// the W/L coin (or the live clock) on top, the two teams under it. Every
+// game cell plain, home or away; today in red.
 
 // Like the classic bar (light.scss .league-top-bar), just taller for the
 // days: their full height, with room under them for the scrollbar that
 // shows on hover (and never a scrollbar up and down).
+// A game being played live: its clock in the networks' orange.
+$tbd-live: #f28b20;
+
 .league-top-bar.league-top-bar-calendar {
 	height: auto;
 	margin-bottom: 0.25rem;
@@ -40,7 +44,7 @@
 	display: flex;
 	flex-direction: column;
 	flex-shrink: 0;
-	width: 5.25rem;
+	width: 6rem;
 	height: 64px;
 	color: var(--bs-body-color);
 	text-decoration: none;
@@ -79,22 +83,22 @@
 // Hover or tap: the day stays as it is, no underline, only a little lighter
 // (on a phone a tap would leave hover lit, so there it's the press only).
 @media (hover: hover) {
-	.tbd-link:not(.tbd-home):hover .tbd-body {
+	.tbd-link:hover .tbd-body {
 		background: rgba(var(--bs-emphasis-color-rgb), 0.06);
 	}
 }
 
-.tbd-link:not(.tbd-home):has(:focus-visible) .tbd-body,
-.tbd-link:not(.tbd-home):active .tbd-body {
+.tbd-link:has(:focus-visible) .tbd-body,
+.tbd-link:active .tbd-body {
 	background: rgba(var(--bs-emphasis-color-rgb), 0.06);
 }
 
 .tbd-head {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 3px;
 	height: 18px;
-	padding: 3px 6px 0;
+	padding: 0 6px;
 	font-size: 0.6rem;
 	font-weight: 700;
 	letter-spacing: 0.04em;
@@ -105,15 +109,39 @@
 	background: var(--bs-tertiary-bg);
 }
 
-.tbd-weekday {
-	margin-right: auto;
-}
-
 .tbd-num {
-	font-size: 0.75rem;
+	font-size: 0.7rem;
 	font-weight: 800;
 	letter-spacing: 0;
 	color: var(--bs-body-color);
+}
+
+// Where the game stands, at the head's right end: the W or L coin, the
+// quarter and clock while it's live, the network on a national game.
+.tbd-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-left: auto;
+	min-width: 0;
+}
+
+.tbd-ot {
+	font-size: 0.55rem;
+}
+
+.tbd-live {
+	font-size: 0.6rem;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+	color: $tbd-live;
+	font-variant-numeric: tabular-nums;
+}
+
+.tbd-note {
+	font-size: 0.55rem;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
 }
 
 .tbd-body {
@@ -121,64 +149,84 @@
 	flex-direction: column;
 	flex-grow: 1;
 	justify-content: center;
-	gap: 4px;
+	gap: 3px;
 	padding: 0 6px;
 }
 
-.tbd-matchup,
-.tbd-result {
+// A team's row: logo, abbreviation, score - the one behind dimmed.
+.tbd-row {
 	display: flex;
 	align-items: center;
-	gap: 3px;
+	gap: 4px;
+	height: 18px;
 	overflow: hidden;
 	white-space: nowrap;
 	line-height: 1;
-}
-
-.tbd-matchup {
-	height: 16px;
 	font-size: 0.75rem;
-	font-weight: 800;
+	font-weight: 700;
 }
 
-.tbd-at {
-	min-width: 0.7rem;
-	font-size: 0.6rem;
-	font-weight: 600;
+.tbd-row-trailing {
 	color: var(--bs-secondary-color);
+	font-weight: 600;
+}
+
+.tbd-abbrev {
+	min-width: 0;
+	overflow: hidden;
+}
+
+.tbd-pts {
+	margin-left: auto;
+	font-size: 0.8rem;
+	font-weight: 800;
+	font-variant-numeric: tabular-nums;
+}
+
+.tbd-row-trailing .tbd-pts {
+	font-weight: 600;
+}
+
+// The winner's score marked, as on a scoreboard.
+.tbd-row-won .tbd-pts::after {
+	display: inline-block;
+	margin-left: 2px;
+	vertical-align: 1px;
+	content: "";
+	border-top: 3px solid transparent;
+	border-bottom: 3px solid transparent;
+	border-right: 4px solid currentColor;
+}
+
+.tbd-line {
+	margin-left: auto;
+	font-size: 0.6rem;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
+	font-variant-numeric: tabular-nums;
 }
 
 .tbd-logo {
 	flex-shrink: 0;
 }
 
+// The All-Star Game and the deadline: their name, and the All-Star score.
 .tbd-special {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
 	font-size: 0.65rem;
+	font-weight: 800;
+	line-height: 1;
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
 }
 
-.tbd-result {
-	height: 15px;
-	font-size: 0.7rem;
-	font-weight: 700;
-}
-
-.tbd-score {
+.tbd-special-score {
+	font-size: 0.75rem;
+	letter-spacing: 0;
 	font-variant-numeric: tabular-nums;
-}
-
-.tbd-ot {
-	margin-left: 1px;
-	font-size: 0.5rem;
-	font-weight: 600;
-	color: var(--bs-secondary-color);
-}
-
-.tbd-note {
-	font-size: 0.6rem;
-	font-weight: 700;
-	color: var(--bs-secondary-color);
 }
 
 // The result as a coin, the team calendar's.
@@ -187,10 +235,11 @@
 	flex-shrink: 0;
 	align-items: center;
 	justify-content: center;
-	width: 14px;
-	height: 14px;
+	width: 13px;
+	height: 13px;
 	font-size: 0.5rem;
 	font-weight: 800;
+	letter-spacing: 0;
 	color: #fff;
 	border-radius: 50%;
 }
@@ -208,60 +257,14 @@
 }
 
 .tbd-national {
-	height: 15px;
-	padding: 0 4px;
-	font-size: 0.55rem;
+	height: 13px;
+	padding: 0 3px;
+	font-size: 0.5rem;
 
 	img {
-		height: 11px;
-		max-width: 40px;
+		height: 10px;
+		max-width: 34px;
 	}
-}
-
-.tbd-live {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	color: var(--bs-danger);
-	font-variant-numeric: tabular-nums;
-}
-
-.tbd-live-dot {
-	width: 6px;
-	height: 6px;
-	background: var(--bs-danger);
-	border-radius: 50%;
-	animation: tbd-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes tbd-pulse {
-	50% {
-		opacity: 0.3;
-	}
-}
-
-// Home days filled in the team's color (black until the colors load).
-.tbd-home .tbd-body {
-	color: var(--tbd-home-fg, #fff);
-	background: var(--tbd-home-bg, #{$lc-home-bg});
-
-	.tbd-at,
-	.tbd-ot,
-	.tbd-note {
-		color: inherit;
-		opacity: 0.7;
-	}
-}
-
-@media (hover: hover) {
-	.tbd-link.tbd-home:hover .tbd-body {
-		filter: brightness(1.12);
-	}
-}
-
-.tbd-link.tbd-home:has(:focus-visible) .tbd-body,
-.tbd-link.tbd-home:active .tbd-body {
-	filter: brightness(1.12);
 }
 
 .tbd-today {
@@ -272,8 +275,13 @@
 		background: var(--bs-danger);
 	}
 
-	.tbd-num {
+	.tbd-num,
+	.tbd-live {
 		color: #fff;
+	}
+
+	.tbd-note {
+		color: inherit;
 	}
 
 	&::after {
