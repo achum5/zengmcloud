@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 608,
+		date: "2026-11-25",
+		text: "Player pages: All-Time Ranks is now a list like a TV graphic. Pick any stat (every career total, per game numbers and the playoffs, each with his rank on it) to see him with the two players just ahead and the one just behind. Old-time players who only have total rebounds, like Wilt Chamberlain, now count on the rebounding lists here and on Milestone Watch.",
+	},
+	{
 		n: 607,
 		date: "2026-11-25",
 		text: "Daily Schedule: the upcoming game cards no longer show team overalls in a league with No Visible Team Ratings on.",
