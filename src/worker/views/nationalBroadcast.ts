@@ -323,8 +323,12 @@ export const nationalTags = async (schedule: ScheduleGame[]) => {
 
 // THE NETWORKS THESE PLAYED GAMES WERE ON, by gid - the same pick as each
 // game's own page (nationalBroadcastOf), told in one pass over their nights,
-// for the scores bar. Cosmetic, so nothing when it can't be told.
-export const nationalTagsPlayed = async (gids: number[]) => {
+// for the scores bar and the Daily Schedule's cards (`season`: theirs, the
+// current one if not given). Cosmetic, so nothing when it can't be told.
+export const nationalTagsPlayed = async (
+	gids: number[],
+	season = g.get("season"),
+) => {
 	const out = new Map<number, NationalTag>();
 	const networks = nationalNetworks();
 	if (gids.length === 0 || networks.length === 0) {
@@ -332,7 +336,6 @@ export const nationalTagsPlayed = async (gids: number[]) => {
 	}
 	const picks = new Map<number, NationalBroadcast>();
 	try {
-		const season = g.get("season");
 		const wanted = new Set(gids);
 		const games = (
 			(await idb.merged.games.getAll({ season })) as Game[]

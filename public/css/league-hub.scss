@@ -1040,6 +1040,16 @@ a.lh-gc-card:hover {
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
 	white-space: nowrap;
+}
+// A national game's network, at the top of the tab (a played game's over
+// Final) - the tab dark in either theme, so its logo for a dark page.
+.lh-gc-net {
+	display: flex;
+	justify-content: center;
+	margin-bottom: 0.15rem;
+}
+.lh-gc-when,
+.lh-gc-net {
 	.national-tag {
 		color: #fff;
 		img {
@@ -1047,6 +1057,12 @@ a.lh-gc-card:hover {
 			height: 1.25rem;
 			max-width: 3.4rem;
 			max-height: none;
+		}
+		.national-logo-light {
+			display: none;
+		}
+		.national-logo-dark {
+			display: block;
 		}
 	}
 }
@@ -1320,6 +1336,20 @@ a.lh-gc-card:hover {
 	}
 	.lh-gc-has-series .lh-gc-mid {
 		margin-top: 0.8rem;
+	}
+	.lh-gc-net {
+		margin-bottom: 0.1rem;
+		.national-tag img {
+			height: 1rem;
+		}
+	}
+	// (A network's logo makes the tab taller: still clear of the card's edges
+	// and the series' tag.)
+	.lh-gc-mid:has(.lh-gc-net) {
+		margin-block: 0.25rem;
+	}
+	.lh-gc-has-series .lh-gc-mid:has(.lh-gc-net) {
+		margin-top: 1.05rem;
 	}
 	.lh-gc-line {
 		margin-top: 0.1rem;

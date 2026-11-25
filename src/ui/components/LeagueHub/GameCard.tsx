@@ -3,18 +3,21 @@ import type { CSSProperties, ReactNode } from "react";
 import getWinner from "../../../common/getWinner.ts";
 import { processPlayerStats } from "../../../common/processPlayerStats.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
+import type { NationalTag as NationalTagType } from "../../../common/types.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
+import { NationalTag } from "../NationalTag.tsx";
 import { PlayerPicture } from "../PlayerPicture.tsx";
 import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
 import { spreadLine } from "./spreadLine.ts";
 
 // A NIGHT'S GAME IN THE HUB, as NBA.com's scoreboard shows one: a card with
-// each team's colors at its end, its city, name and score, "Final" and the
-// series between them, linked to the box score, with the game's recap line
-// under it; beside both, each team's two best lines of the night (on a phone,
-// each team's top game score under the card instead).
+// each team's colors at its end, its city, name and score, "Final" (under
+// its network, if it was on one) and the series between them, linked to the
+// box score, with the game's recap line under it; beside both, each team's
+// two best lines of the night (on a phone, each team's top game score under
+// the card instead).
 
 type Branding = { region: string; name: string; abbrev: string };
 
@@ -39,6 +42,8 @@ export type GameCardGame = {
 	numGamesToWinSeries?: number;
 	// The pregame line, home's side (Game.spread).
 	spread?: number;
+	// The national network it was on, if any (see nationalTagsPlayed).
+	national?: NationalTagType;
 	teams: [GameCardTeam, GameCardTeam];
 };
 
@@ -439,6 +444,11 @@ export const GameCard = ({
 							</div>
 						) : null}
 						<div className="lh-gc-mid">
+							{game.national ? (
+								<div className="lh-gc-net">
+									<NationalTag tag={game.national} />
+								</div>
+							) : null}
 							<div className="lh-gc-final">Final{ot ? `/${ot}` : ""}</div>
 							{line ? (
 								<div className="lh-gc-line" title="Pregame spread">

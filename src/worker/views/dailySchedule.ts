@@ -30,6 +30,8 @@ import {
 import { formatGameDate } from "../../common/calendarDates.ts";
 import { getCalendarIfDated } from "./calendar.ts";
 import { getLiveGate, liveScheduleRow } from "../util/liveGameGate.ts";
+import { nationalTagsPlayed } from "./nationalBroadcast.ts";
+import type { Game, NationalTag } from "../../common/types.ts";
 
 const processInputs = (params: RouteParams<"dailySchedule">) => {
 	let cid;
@@ -331,7 +333,7 @@ export default defineView({
 					}
 				}
 
-				const completed = games
+				const completed: (Game & { national?: NationalTag })[] = games
 					.map((game) => game.completedGame)
 					.filter((game) => game !== undefined)
 					.filter((game) => !gate?.hidden.has(game.gid));
@@ -436,6 +438,20 @@ export default defineView({
 					(isMine(b) ? 1 : 0) - (isMine(a) ? 1 : 0);
 				completed.sort(userFirst);
 				upcoming.sort(userFirst);
+
+				// The national games' networks, as on each game's own page.
+				if (__SPORT === "basketball" && completed.length > 0) {
+					const national = await nationalTagsPlayed(
+						completed.map((game) => game.gid),
+						inputs.season,
+					);
+					for (const [i, game] of completed.entries()) {
+						const tag = national.get(game.gid);
+						if (tag) {
+							completed[i] = { ...game, national: tag };
+						}
+					}
+				}
 
 				// Every completed game gets an automatic, procedural recap (headline +
 				// a couple of fact-anchored paragraphs) shown under its card, and the

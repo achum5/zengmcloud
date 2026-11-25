@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 630,
+		date: "2026-11-25",
+		text: "Daily Schedule: finished games that were on national TV now show the network's logo above Final, like the games still to be played and the game's own page.",
+	},
+	{
 		n: 629,
 		date: "2026-11-25",
 		text: 'Shared leagues: when every team readies up for a regular-season stop like Dec 15, the day no longer sims right away. The ready-up goes away, the auto play countdown comes back, and the day sims when it hits zero. The trade deadline still goes as soon as everyone is ready. Phones also get a push when a ready-up is needed: "Dec 15. Ready up to advance."',
