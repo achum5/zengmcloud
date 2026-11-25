@@ -14,7 +14,7 @@ import { defineView } from "../util/defineView.ts";
 import { validateSeason, validateTeam } from "../util/processInputs.ts";
 import { getLiveGate, nightShown } from "../util/liveGameGate.ts";
 import { getPlannedPlayoffGames } from "../util/plannedPlayoffGames.ts";
-import { nationalTags } from "./nationalBroadcast.ts";
+import { nationalTags, nationalTagsPlayed } from "./nationalBroadcast.ts";
 
 // A SEASON'S NIGHTS, month by month, for a team or the whole league: the
 // month calendar on Daily Schedule, Schedule and the dashboard, from
@@ -47,7 +47,7 @@ export type CalendarGame = {
 	homePts?: number;
 	awayPts?: number;
 	overtimes?: number;
-	// The network, for a team's national game still to come.
+	// The network, for a team's national game (this season's).
 	national?: NationalTag;
 };
 
@@ -108,6 +108,8 @@ export const getCalendarData = async (
 	};
 
 	const played = await idb.merged.games.getAll({ season });
+	// (A team's, for the networks they were on.)
+	const playedGames: CalendarGame[] = [];
 	for (const game of played) {
 		if (game.date === undefined) {
 			undated = true;
@@ -130,7 +132,7 @@ export const getCalendarData = async (
 		if (!forTeam(home.tid, away.tid)) {
 			continue;
 		}
-		games.push({
+		const calendarGame: CalendarGame = {
 			gid: game.gid,
 			date: game.date,
 			day: game.day,
@@ -145,7 +147,9 @@ export const getCalendarData = async (
 						awayPts: away.pts,
 						overtimes: game.overtimes,
 					}),
-		});
+		};
+		games.push(calendarGame);
+		playedGames.push(calendarGame);
 	}
 
 	let today: string | undefined;
@@ -156,15 +160,27 @@ export const getCalendarData = async (
 		}
 		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 		const schedule = await seasonCore.getSchedule();
-		// (One tag object a network, so its logo crosses to the page once.)
+		// A team's national games, played (the same pick as the scores bar's)
+		// and to come. (One tag object a network, so its logo crosses to the
+		// page once.)
 		const national = new Map<number, NationalTag>();
 		if (tid !== "all") {
 			const byNetwork = new Map<string, NationalTag>();
-			for (const [gid, tag] of await nationalTags(schedule)) {
+			const tags = [
+				...(await nationalTagsPlayed(playedGames.map((game) => game.gid))),
+				...(await nationalTags(schedule)),
+			];
+			for (const [gid, tag] of tags) {
 				if (!byNetwork.has(tag.network)) {
 					byNetwork.set(tag.network, tag);
 				}
 				national.set(gid, byNetwork.get(tag.network)!);
+			}
+			for (const game of playedGames) {
+				const tag = national.get(game.gid);
+				if (tag) {
+					game.national = tag;
+				}
 			}
 		}
 		for (const game of schedule) {

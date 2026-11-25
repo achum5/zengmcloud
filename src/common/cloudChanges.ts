@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 620,
+		date: "2026-11-25",
+		text: "NBA Calendar: your team's month calendar (dashboard, Schedule, team page) now looks like the scores bar. Each game shows vs or @ and the opponent's logo with the score under it, green for a win and red for a loss, with the national TV network at the top. Home games are no longer filled in your team's color, so they can't be mistaken for wins.",
+	},
+	{
 		n: 619,
 		date: "2026-11-25",
 		text: "3D game, new arena to try: Global Settings > 3D Arena > New (in progress). The whole building is real 3D, built and lit in Blender: rows, aisles and tunnels, two levels of suites, ribbon boards, the upper deck and the roof. The crowd sits in its seats, stands, waves and claps like before, with empty seats when the gate is small. Off by default while it gets tested on phones. Also, cameras down on the floor no longer see a flat wall of color behind the basket.",

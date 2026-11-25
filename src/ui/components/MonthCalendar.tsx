@@ -23,10 +23,10 @@ import { useLocal } from "../util/local.ts";
 import { bannerColors, useAllTeamColors } from "./TeamBanner.tsx";
 import { NationalTag } from "./NationalTag.tsx";
 
-// A MONTH OF THE NBA CALENDAR, Sunday to Saturday. For a team, its games -
-// home nights shaded, results, back-to-backs, playoff games; for the league,
-// how many games each night, the user's team's road nights in its color. Full size on the
-// Calendar and Schedule pages, compact on Daily Schedule and the dashboard.
+// A MONTH OF THE NBA CALENDAR, Sunday to Saturday. For a team, its games as
+// the scores bar has them (see TeamDay); for the league, how many games each
+// night. Full size on the Schedule page, compact on Daily Schedule and the
+// dashboard.
 
 type TeamInfo = LocalStateUI["teamInfoCache"][number];
 
@@ -97,8 +97,8 @@ const weeksOf = (month: string) => {
 	return weeks;
 };
 
-// The opponent's logo on a white disc, so a dark logo shows on a dark night
-// and any logo on the team's color.
+// A team's logo on a white disc, so a dark logo shows on a dark night and any
+// logo on the team's color.
 const Crest = ({
 	children,
 	t,
@@ -118,13 +118,6 @@ const Crest = ({
 		</span>
 	);
 };
-
-// A win or a loss, as a little coin, green or red.
-const Coin = ({ className, won }: { className: string; won: boolean }) => (
-	<span className={clsx("lc-wl", className, won ? "lc-w" : "lc-l")}>
-		{won ? "W" : "L"}
-	</span>
-);
 
 // [on a phone, wider]
 const KEY_DATE_LABELS: Record<CalendarKeyDate["type"], [string, string]> = {
@@ -169,43 +162,63 @@ const KeyDateLabel = ({
 	);
 };
 
-// What's in a team's night's corner: Play-In or the playoff game's number.
-const teamTag = ({
-	compact,
-	game,
-	playoffGame,
-}: {
-	compact: boolean;
-	game: CalendarGame;
-	playoffGame: number | undefined;
-}) =>
-	game.playIn ? (
-		<span className="lc-tag lc-tag-playoffs" title="Play-In">
-			{compact ? "PI" : "Play-In"}
-		</span>
-	) : playoffGame !== undefined ? (
-		<span
-			className="lc-tag lc-tag-playoffs"
-			title={game.ifNecessary ? "If necessary" : undefined}
-		>
-			G{playoffGame}
-			{game.ifNecessary ? "*" : null}
-		</span>
-	) : null;
+// The favorite's line, "ATL -4.5".
+const lineText = (abbrev: string | undefined, spread: number) =>
+	`${abbrev ?? ""} -${Math.abs(spread).toLocaleString("en-US", {
+		maximumFractionDigits: 1,
+	})}`;
 
-const TeamNight = ({
+// A TEAM'S DAY, in the scores bar's look: the date on a band across the top,
+// with OT, the playoff game and the network there; under it the opponent, vs
+// or @, and the score - or before tip-off, the line. A game played green if
+// the team won, red if it lost; a day with no game just the date, faded.
+const TeamDay = ({
 	compact,
+	date,
 	game,
+	keyDate,
+	nightDay,
+	playoffGame,
 	season,
+	spread,
 	teams,
 	tid,
 }: {
 	compact: boolean;
-	game: CalendarGame;
+	date: string;
+	game: CalendarGame | undefined;
+	keyDate: CalendarKeyDate | undefined;
+	// The league's night, to open on a day off.
+	nightDay: number | undefined;
+	playoffGame: number | undefined;
 	season: number;
+	// The next game's line, home's (see TopBarDay).
+	spread: number | undefined;
 	teams: TeamInfo[];
 	tid: number;
 }) => {
+	const dayNum = Number(date.slice(8));
+
+	if (!game) {
+		return (
+			<>
+				{nightDay !== undefined ? (
+					<a
+						className="lc-cover"
+						href={helpers.leagueUrl(["daily_schedule", season, nightDay])}
+						aria-label={`Games on ${formatGameDate(date, "full")}`}
+					/>
+				) : null}
+				<div className="lc-d-head">
+					<span className="lc-d-num">{dayNum}</span>
+				</div>
+				{keyDate ? (
+					<KeyDateLabel compact={compact} keyDate={keyDate} season={season} />
+				) : null}
+			</>
+		);
+	}
+
 	const home = game.homeTid === tid;
 	const opp = home ? game.awayTid : game.homeTid;
 	const final = game.homePts !== undefined && game.awayPts !== undefined;
@@ -225,58 +238,80 @@ const TeamNight = ({
 				? helpers.leagueUrl(["playoffs", season])
 				: undefined;
 	const t = teams[opp];
+	const logo = t?.imgURLSmall ?? t?.imgURL;
 	const ot =
 		game.overtimes !== undefined && game.overtimes > 0
 			? `${game.overtimes > 1 ? game.overtimes : ""}OT`
 			: undefined;
+	const tag = game.playIn
+		? compact
+			? "PI"
+			: "Play-In"
+		: playoffGame !== undefined
+			? `G${playoffGame}${game.ifNecessary ? "*" : ""}`
+			: undefined;
+	const favorite =
+		final || spread === undefined || spread === 0
+			? undefined
+			: spread > 0
+				? game.homeTid
+				: game.awayTid;
 
 	const label = `${home ? "vs" : "@"} ${t?.region ?? ""} ${t?.name ?? ""}${
 		final ? `, ${won ? "W" : "L"} ${pts}-${oppPts}${ot ? ` ${ot}` : ""}` : ""
-	}${game.ifNecessary ? " (if necessary)" : ""}`;
+	}${game.ifNecessary ? " (if necessary)" : ""}${
+		game.national ? `, on ${game.national.network}` : ""
+	}`;
 
-	// The whole night is the game's link, laid over it, under the
-	// opponent's logo and abbreviation, which open its roster.
+	// The whole day is the game's link, laid over it, under the opponent's
+	// logo and abbreviation, which open its roster.
 	return (
-		<div className="lc-game">
+		<>
 			{href ? (
 				<a className="lc-cover" href={href} title={label} aria-label={label} />
 			) : null}
-			<span className="lc-matchup">
-				<a
-					className="lc-team-link"
-					href={helpers.leagueUrl([
-						"roster",
-						`${t?.abbrev ?? opp}_${opp}`,
-						season,
-					])}
-					title={`${t?.region ?? ""} ${t?.name ?? ""} roster`}
-				>
-					{/* (On the crest where there's no room for more: phones and compact.) */}
-					<Crest t={t}>
-						{final ? <Coin className="lc-badge" won={won} /> : null}
-					</Crest>
-					{compact ? null : (
-						<span className="lc-opp-abbrev">
-							<span className="lc-at">{home ? "vs" : "@"}</span>
-							{t?.abbrev}
-						</span>
-					)}
-				</a>
-			</span>
-			{final ? (
-				<span className="lc-result">
-					<Coin className="lc-coin" won={won} />
-					<span className="lc-score">
-						{pts}-{oppPts}
-						{ot ? <span className="lc-ot">{ot}</span> : null}
-					</span>
+			<div className="lc-d-head">
+				<span className="lc-d-num">{dayNum}</span>
+				{keyDate ? (
+					<span className="lc-d-key">{KEY_DATE_LABELS[keyDate.type][1]}</span>
+				) : null}
+				<span className="lc-d-status">
+					{ot ? <span className="lc-d-ot">{ot}</span> : null}
+					{tag ? <span className="lc-d-tag">{tag}</span> : null}
+					{game.national ? (
+						<NationalTag className="lc-d-national" tag={game.national} />
+					) : null}
 				</span>
-			) : compact ? null : game.ifNecessary ? (
-				<span className="lc-note">If necessary</span>
-			) : game.national ? (
-				<NationalTag className="lc-national" tag={game.national} />
-			) : null}
-		</div>
+			</div>
+			<div className="lc-d-body">
+				<div className="lc-d-opp">
+					<a
+						className="lc-d-team"
+						href={helpers.leagueUrl([
+							"roster",
+							`${t?.abbrev ?? opp}_${opp}`,
+							season,
+						])}
+						title={`${t?.region ?? ""} ${t?.name ?? ""} roster`}
+					>
+						<span className="lc-d-at">{home ? "vs" : "@"}</span>
+						<span className="lc-d-logo">
+							{logo ? <img src={logo} alt="" /> : null}
+						</span>
+						<span className="lc-d-abbrev">{t?.abbrev}</span>
+					</a>
+				</div>
+				{final ? (
+					<span className="lc-d-final">
+						{pts}-{oppPts}
+					</span>
+				) : favorite !== undefined ? (
+					<span className="lc-d-line" title="Point spread">
+						{lineText(teams[favorite]?.abbrev, spread!)}
+					</span>
+				) : null}
+			</div>
+		</>
 	);
 };
 
@@ -422,10 +457,19 @@ export const MonthCalendar = ({
 	today: string | undefined;
 }) => {
 	const {
+		games: localGames,
 		season: currentSeason,
 		teamInfoCache,
 		userTid,
-	} = useLocal(["season", "teamInfoCache", "userTid"]);
+	} = useLocal(["games", "season", "teamInfoCache", "userTid"]);
+
+	// The next game's line, as the scores bar has it.
+	const spreads = new Map<number, number>();
+	for (const game of localGames) {
+		if (game.spread !== undefined) {
+			spreads.set(game.gid, game.spread);
+		}
+	}
 
 	const months = monthsBetween([
 		...games.map((game) => game.date),
@@ -457,11 +501,10 @@ export const MonthCalendar = ({
 		prev.current = { season, anchor };
 	}, [anchor, season, selected, startMonth]);
 
-	// A team's home nights in its colors, the way team sites fill them in;
-	// the league's, the user's road nights in his team's color (so no "@" is
+	// The league's, the user's road nights in his team's color (so no "@" is
 	// needed), his home nights plain.
 	const allColors = useAllTeamColors();
-	const colors = bannerColors(allColors?.[tid === "all" ? userTid : tid]);
+	const colors = bannerColors(allColors?.[userTid]);
 
 	const month =
 		chosenMonth !== undefined && months.includes(chosenMonth)
@@ -705,12 +748,47 @@ export const MonthCalendar = ({
 										</td>
 									);
 								}
+								if (isTeam) {
+									const won =
+										game?.homePts !== undefined && game.awayPts !== undefined
+											? game.homeTid === tid
+												? game.homePts > game.awayPts
+												: game.awayPts > game.homePts
+											: undefined;
+									return (
+										<td
+											key={date}
+											className={clsx(
+												game ? "lc-d lc-d-game" : "lc-d lc-d-off",
+												won === true && "lc-d-won",
+												won === false && "lc-d-lost",
+												game?.ifNecessary && "lc-maybe",
+												date === today && "lc-today",
+												date === selected && "lc-selected",
+											)}
+											title={formatGameDate(date, "full")}
+										>
+											<TeamDay
+												compact={compact}
+												date={date}
+												game={game}
+												keyDate={keyDate}
+												nightDay={nightDays?.[date]}
+												playoffGame={
+													game ? playoffGameNumbers.get(game.gid) : undefined
+												}
+												season={season}
+												spread={game ? spreads.get(game.gid) : undefined}
+												teams={teamInfoCache}
+												tid={tid}
+											/>
+										</td>
+									);
+								}
 								return (
 									<td
 										key={date}
 										className={clsx(
-											game && (game.homeTid === tid ? "lc-home" : "lc-away"),
-											game?.ifNecessary && "lc-maybe",
 											night && "lc-night",
 											night?.mine?.awayTid === userTid && "lc-road",
 											date === today && "lc-today",
@@ -720,34 +798,7 @@ export const MonthCalendar = ({
 									>
 										<div className="lc-day-head">
 											<span className="lc-num">{Number(date.slice(8))}</span>
-											{game && isTeam
-												? teamTag({
-														compact,
-														game,
-														playoffGame: playoffGameNumbers.get(game.gid),
-													})
-												: null}
 										</div>
-										{isTeam && !game && nightDays?.[date] !== undefined ? (
-											<a
-												className="lc-cover"
-												href={helpers.leagueUrl([
-													"daily_schedule",
-													season,
-													nightDays[date],
-												])}
-												aria-label={`Games on ${formatGameDate(date, "full")}`}
-											/>
-										) : null}
-										{game && isTeam ? (
-											<TeamNight
-												compact={compact}
-												game={game}
-												season={season}
-												teams={teamInfoCache}
-												tid={tid}
-											/>
-										) : null}
 										{night ? (
 											<LeagueNight
 												compact={compact}
@@ -775,25 +826,6 @@ export const MonthCalendar = ({
 					))}
 				</tbody>
 			</table>
-
-			{isTeam && !compact ? (
-				<div className="lc-legend">
-					<span>
-						<span className="lc-swatch lc-swatch-home" />
-						Home
-					</span>
-					<span>
-						<span className="lc-swatch lc-swatch-away" />
-						Away
-					</span>
-					{todayMonth !== undefined ? (
-						<span>
-							<span className="lc-swatch lc-swatch-today" />
-							Today
-						</span>
-					) : null}
-				</div>
-			) : null}
 		</div>
 	);
 };

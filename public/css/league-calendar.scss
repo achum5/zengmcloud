@@ -2,13 +2,9 @@
 // Schedule and Daily Schedule pages and the dashboard, today's date in the
 // navbar (Controller/NavBar.tsx), for leagues on the NBA calendar.
 
-// (The scores bar's home nights, top-bar.scss: black on either theme, the
-// dark theme swapping $white for a dark gray.)
-$lc-home-bg: if(lightness($white) < 50%, #000, #111);
-
-// Each night a tile: a team's home nights in its colors, its road nights a
-// plain card, the nights off faint. (On the light theme the card is white
-// over the gray; on the dark one, lighter than it.)
+// The league's nights each a tile, the nights off faint. (On the light theme
+// the card is white over the gray; on the dark one, lighter than it.) A
+// team's month is its own look, at the end.
 $lc-dark: lightness($white) < 50%;
 .lc {
 	--lc-gap: 2px;
@@ -203,34 +199,26 @@ $lc-dark: lightness($white) < 50%;
 		background: transparent;
 	}
 
-	// A road night, or a night of the league's games.
-	td.lc-away,
+	// A night of the league's games.
 	td.lc-night {
 		background: var(--lc-card-bg);
 		box-shadow: inset 0 0 0 1px var(--lc-card-border);
 	}
 
-	// A team's home night, filled in its color - and the league's, the
-	// user's road nights the same.
-	td.lc-home,
+	// The user's road nights, in his team's color.
 	td.lc-road {
 		color: var(--lc-team-fg);
 		background: var(--lc-team-bg);
 		box-shadow: none;
 
 		.lc-num,
-		.lc-tag,
-		.lc-at,
-		.lc-key,
-		.lc-note {
+		.lc-key {
 			color: inherit;
 		}
 	}
 
 	// The whole night is the link.
-	td:has(> .lc-game[href]):hover,
-	td:has(> .lc-game > .lc-cover):hover,
-	td:has(> .lc-cover):hover {
+	td:has(> .lc-game[href]):hover {
 		box-shadow: inset 0 0 0 2px var(--lc-ring);
 	}
 
@@ -256,7 +244,7 @@ $lc-dark: lightness($white) < 50%;
 	}
 }
 
-// The date on the left, a tag on the right.
+// The date.
 .lc-day-head {
 	display: flex;
 	align-items: center;
@@ -272,25 +260,6 @@ $lc-dark: lightness($white) < 50%;
 	color: var(--bs-emphasis-color);
 	opacity: 0.8;
 	font-variant-numeric: tabular-nums;
-}
-
-.lc-tag {
-	overflow: hidden;
-	font-size: 0.52rem;
-	font-weight: 800;
-	letter-spacing: 0.02em;
-	line-height: 1;
-	white-space: nowrap;
-	color: var(--bs-secondary-color);
-}
-
-.lc-tag-playoffs {
-	color: if($lc-dark, #ffc94d, #a35d00);
-}
-
-// A playoff game that may not be needed.
-.lc-maybe .lc-game {
-	opacity: 0.6;
 }
 
 .lc-game {
@@ -315,37 +284,11 @@ $lc-dark: lightness($white) < 50%;
 	}
 }
 
-// A team's night: its game's link over the whole night.
+// A team's day: its game's link over the whole day.
 .lc-cover {
 	position: absolute;
 	inset: 0;
 	z-index: 1;
-}
-
-.lc-matchup {
-	display: flex;
-	max-width: 100%;
-	min-width: 0;
-}
-
-// The opponent's logo and abbreviation, above the night's link: its roster.
-.lc-team-link {
-	position: relative;
-	z-index: 2;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.1rem;
-	min-width: 0;
-	max-width: 100%;
-
-	&,
-	&:hover,
-	&:focus,
-	&:active {
-		color: inherit;
-		text-decoration: none;
-	}
 }
 
 // The opponent's logo on a white disc, so it shows on any night.
@@ -372,119 +315,6 @@ $lc-dark: lightness($white) < 50%;
 	font-size: 0.5rem;
 	font-weight: 800;
 	color: #16181b;
-}
-
-.lc-opp-abbrev {
-	max-width: 100%;
-	overflow: hidden;
-	font-size: 0.6rem;
-	font-weight: 800;
-	letter-spacing: 0.01em;
-	line-height: 1.1;
-	white-space: nowrap;
-}
-
-.lc-at {
-	margin-right: 0.2em;
-	font-size: 0.85em;
-	font-weight: 600;
-	color: var(--bs-secondary-color);
-	opacity: 0.85;
-}
-
-// The result: on a phone, a coin on the crest; with room, a coin beside the
-// score.
-.lc-wl {
-	display: inline-flex;
-	flex-shrink: 0;
-	align-items: center;
-	justify-content: center;
-	width: 16px;
-	height: 16px;
-	font-size: 0.55rem;
-	font-weight: 800;
-	line-height: 1;
-	color: #fff;
-	border-radius: 50%;
-}
-
-.lc-w {
-	background: #22a447;
-}
-
-.lc-l {
-	background: #dc3545;
-}
-
-// (At the logo's top corner, clear of the name and score under it.)
-.lc-badge {
-	position: absolute;
-	top: -3px;
-	right: -5px;
-	width: 12px;
-	height: 12px;
-	font-size: 0.45rem;
-	box-shadow: 0 0 0 1.5px #fff;
-}
-
-.lc-result {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.3rem;
-	white-space: nowrap;
-}
-
-.lc-coin {
-	display: none;
-}
-
-.lc-score {
-	font-size: 0.6rem;
-	font-weight: 700;
-	line-height: 1.1;
-	font-variant-numeric: tabular-nums;
-}
-
-.lc-ot {
-	display: none;
-	margin-left: 0.25em;
-	font-size: 0.85em;
-	font-weight: 600;
-	opacity: 0.8;
-}
-
-.lc-note {
-	display: none;
-	font-size: 0.68rem;
-	font-style: italic;
-	line-height: 1.1;
-	color: var(--bs-secondary-color);
-}
-
-// A national game's network, on a white chip so it shows on any night.
-.lc .lc-national {
-	max-width: 100%;
-	padding: 1px 4px;
-	color: #16181b;
-	background: #fff;
-	border-radius: 4px;
-	box-shadow: 0 0 0 1px var(--lc-card-border);
-
-	img {
-		width: auto;
-		height: 11px;
-		max-width: 100%;
-		max-height: none;
-	}
-
-	// (The one for a light page, whatever the theme.)
-	.national-logo-light {
-		display: block;
-	}
-
-	.national-logo-dark {
-		display: none;
-	}
 }
 
 // The league's nights: how many games, and the user's opponent.
@@ -525,46 +355,7 @@ $lc-dark: lightness($white) < 50%;
 	}
 }
 
-// Home, away, today - what the tiles' looks mean.
-.lc-legend {
-	display: flex;
-	justify-content: flex-end;
-	gap: 0.9rem;
-	margin-top: 0.5rem;
-	font-size: 0.65rem;
-	font-weight: 600;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: var(--bs-secondary-color);
-
-	> span {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-	}
-}
-
-.lc-swatch {
-	display: inline-block;
-	width: 0.85rem;
-	height: 0.85rem;
-	border-radius: 3px;
-}
-
-.lc-swatch-home {
-	background: var(--lc-team-bg);
-}
-
-.lc-swatch-away {
-	background: var(--lc-card-bg);
-	box-shadow: inset 0 0 0 1px var(--lc-card-border);
-}
-
-.lc-swatch-today {
-	box-shadow: inset 0 0 0 2px var(--bs-danger);
-}
-
-// Smaller, for Daily Schedule and the dashboard: the crest and the coin.
+// Smaller, for Daily Schedule and the dashboard.
 .lc-compact {
 	.lc-head {
 		margin-bottom: 0.3rem;
@@ -594,26 +385,12 @@ $lc-dark: lightness($white) < 50%;
 		}
 	}
 
-	// (The coin is on the crest.)
-	.lc-coin,
-	.lc-ot {
-		display: none;
-	}
-
-	.lc-score {
-		font-size: 0.55rem;
-	}
-
 	.lc-day-head {
 		min-height: 0.75rem;
 	}
 
 	.lc-num {
 		font-size: 0.6rem;
-	}
-
-	.lc-tag {
-		font-size: 0.48rem;
 	}
 
 	.lc-game {
@@ -624,14 +401,6 @@ $lc-dark: lightness($white) < 50%;
 	.lc-crest {
 		width: 22px;
 		height: 22px;
-	}
-
-	.lc-badge {
-		top: -2px;
-		right: -4px;
-		width: 10px;
-		height: 10px;
-		font-size: 0.4rem;
 	}
 
 	.lc-count {
@@ -686,55 +455,14 @@ $lc-dark: lightness($white) < 50%;
 		font-size: 0.85rem;
 	}
 
-	.lc-tag {
-		font-size: 0.65rem;
-	}
-
 	.lc-game {
 		gap: 0.35rem;
 		margin-top: 0.3rem;
 	}
 
-	.lc-team-link {
-		flex-direction: row;
-		gap: 0.5rem;
-	}
-
 	.lc-crest {
 		width: 40px;
 		height: 40px;
-	}
-
-	.lc-opp-abbrev {
-		font-size: 1.05rem;
-	}
-
-	.lc-badge {
-		display: none;
-	}
-
-	.lc-coin {
-		display: inline-flex;
-	}
-
-	.lc-score {
-		font-size: 0.85rem;
-	}
-
-	.lc-ot {
-		display: inline;
-	}
-
-	.lc-note {
-		display: inline-flex;
-	}
-
-	.lc .lc-national {
-		padding: 2px 6px;
-
-		img {
-			height: 16px;
-		}
 	}
 
 	.lc-count {
@@ -748,10 +476,6 @@ $lc-dark: lightness($white) < 50%;
 
 	.lc-key {
 		font-size: 0.72rem;
-	}
-
-	.lc-legend {
-		font-size: 0.7rem;
 	}
 
 	// (Compact is phone-sized everywhere: it sits beside other things.)
@@ -775,21 +499,8 @@ $lc-dark: lightness($white) < 50%;
 			}
 		}
 
-		.lc-coin,
-		.lc-ot {
-			display: none;
-		}
-
-		.lc-score {
-			font-size: 0.62rem;
-		}
-
 		.lc-num {
 			font-size: 0.65rem;
-		}
-
-		.lc-tag {
-			font-size: 0.5rem;
 		}
 
 		.lc-game {
@@ -800,10 +511,6 @@ $lc-dark: lightness($white) < 50%;
 		.lc-crest {
 			width: 24px;
 			height: 24px;
-		}
-
-		.lc-badge {
-			display: inline-flex;
 		}
 
 		.lc-count {
@@ -1014,5 +721,442 @@ $lc-dark: lightness($white) < 50%;
 	.lc-p-logo {
 		width: 0.52rem;
 		height: 0.52rem;
+	}
+}
+
+// A TEAM'S MONTH (MonthCalendar's TeamDay), as the scores bar (top-bar.scss)
+// has its games: hairlines between the days, each with its date on a band
+// across the top and the network there on a national game; a game played
+// green on a win, red on a loss; today in red; the days off faded.
+$lc-won: #1e7d3e;
+$lc-lost: #b4252f;
+$lc-line: var(--bs-border-color);
+
+.lc-team .lc-grid {
+	width: 100%;
+	margin: 0;
+	border-spacing: 0;
+
+	td.lc-d,
+	td.lc-out {
+		height: 3.6rem;
+		padding: 0;
+		text-align: left;
+		background: none;
+		border-radius: 0;
+		border-right: 1px solid $lc-line;
+		border-bottom: 1px solid $lc-line;
+		box-shadow: none;
+	}
+
+	tbody tr:first-child td {
+		border-top: 1px solid $lc-line;
+	}
+
+	tbody td:first-child {
+		border-left: 1px solid $lc-line;
+	}
+
+	tbody tr:first-child td:first-child {
+		border-top-left-radius: 6px;
+	}
+
+	tbody tr:first-child td:last-child {
+		border-top-right-radius: 6px;
+	}
+
+	tbody tr:last-child td:first-child {
+		border-bottom-left-radius: 6px;
+	}
+
+	tbody tr:last-child td:last-child {
+		border-bottom-right-radius: 6px;
+	}
+
+	td.lc-d-game {
+		background: var(--bs-body-bg);
+	}
+
+	td.lc-d-won,
+	td.lc-d-lost {
+		color: #fff;
+		background: var(--lc-result-bg);
+	}
+
+	td.lc-d-won {
+		--lc-result-bg: #{$lc-won};
+	}
+
+	td.lc-d-lost {
+		--lc-result-bg: #{$lc-lost};
+	}
+
+	// Hover or tap: a little lighter, nothing else.
+	@media (hover: hover) {
+		td.lc-d:has(> .lc-cover):hover {
+			background-image: linear-gradient(
+				rgba(var(--bs-emphasis-color-rgb), 0.06),
+				rgba(var(--bs-emphasis-color-rgb), 0.06)
+			);
+			box-shadow: none;
+		}
+
+		td.lc-d-won:has(> .lc-cover):hover,
+		td.lc-d-lost:has(> .lc-cover):hover {
+			background-image: linear-gradient(
+				rgba(255, 255, 255, 0.08),
+				rgba(255, 255, 255, 0.08)
+			);
+		}
+	}
+
+	td.lc-today,
+	td.lc-today:hover,
+	td.lc-selected {
+		box-shadow: none;
+
+		&::after {
+			position: absolute;
+			inset: 0;
+			pointer-events: none;
+			content: "";
+			box-shadow: inset 0 0 0 2px var(--bs-danger);
+		}
+	}
+
+	td.lc-selected:not(.lc-today)::after {
+		box-shadow: inset 0 0 0 2px var(--bs-emphasis-color);
+	}
+}
+
+.lc-d-head {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	height: 16px;
+	padding: 0 4px;
+	overflow: hidden;
+	font-size: 0.52rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	line-height: 1;
+	text-transform: uppercase;
+	white-space: nowrap;
+	color: var(--bs-secondary-color);
+}
+
+.lc-d-game .lc-d-head {
+	background: var(--bs-tertiary-bg);
+}
+
+.lc-d-num {
+	font-size: 0.65rem;
+	font-weight: 800;
+	letter-spacing: 0;
+	color: var(--bs-body-color);
+	font-variant-numeric: tabular-nums;
+}
+
+.lc-d-off .lc-d-num {
+	color: var(--bs-secondary-color);
+	opacity: 0.8;
+}
+
+// (Only with room: the full calendar on a wide screen.)
+.lc-d-key {
+	display: none;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.lc-d-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-left: auto;
+	min-width: 0;
+}
+
+.lc-d-tag {
+	font-weight: 800;
+	color: if($lc-dark, #ffc94d, #a35d00);
+}
+
+.lc-d-ot {
+	font-weight: 700;
+}
+
+.lc-d-national {
+	height: 12px;
+	padding: 0 2px;
+	font-size: 0.48rem;
+
+	img {
+		height: 9px;
+		max-width: 26px;
+	}
+}
+
+.lc-d-body {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 4px 0 3px;
+}
+
+// A playoff game that may not be needed. (Faded piece by piece: opacity on
+// the body would sink the opponent's link under the day's.)
+.lc-d.lc-maybe {
+	.lc-d-team,
+	.lc-d-final,
+	.lc-d-line {
+		opacity: 0.55;
+	}
+}
+
+// The game's link over the whole day; the opponent above it, to its roster.
+.lc-d-team {
+	position: relative;
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
+
+	&,
+	&:hover,
+	&:focus,
+	&:active {
+		color: inherit;
+		text-decoration: none;
+	}
+}
+
+// The opponent's name is a text link: it underlines on hover and on a click
+// or tap; the day around it doesn't.
+@media (hover: hover) {
+	.lc-d-team:hover .lc-d-abbrev {
+		text-decoration: underline;
+	}
+}
+
+.lc-d-team:active .lc-d-abbrev,
+.lc-d-team:focus-visible .lc-d-abbrev {
+	text-decoration: underline;
+}
+
+.lc-d-logo {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+
+	img {
+		max-width: 100%;
+		max-height: 100%;
+	}
+}
+
+.lc-d-abbrev {
+	display: none;
+	min-width: 0;
+	overflow: hidden;
+}
+
+// The opponent, vs or @, over the score or the line.
+.lc-d-opp {
+	display: flex;
+	justify-content: center;
+	padding: 0 3px;
+	font-size: 0.65rem;
+	font-weight: 800;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.lc-d-at {
+	font-size: 0.55rem;
+	font-weight: 600;
+	color: var(--bs-secondary-color);
+}
+
+.lc-d-final,
+.lc-d-line {
+	display: block;
+	font-size: 0.62rem;
+	font-weight: 800;
+	line-height: 1.1;
+	text-align: center;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.lc-d-line {
+	font-size: 0.55rem;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
+}
+
+// A game played: the head a shade darker, the rest white.
+.lc-d-won,
+.lc-d-lost {
+	.lc-d-head {
+		color: rgba(255, 255, 255, 0.8);
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.lc-d-num {
+		color: #fff;
+	}
+
+	.lc-d-at,
+	.lc-d-ot {
+		color: inherit;
+		opacity: 0.7;
+	}
+
+	.lc-d-tag {
+		color: inherit;
+	}
+}
+
+.lc-today .lc-d-head {
+	color: rgba(255, 255, 255, 0.85);
+	background: var(--bs-danger);
+
+	.lc-d-num {
+		color: #fff;
+		opacity: 1;
+	}
+}
+
+// (On a dark band - a result's, today's - the network's logo for a dark
+// page, where it has one.)
+.lc-d-won,
+.lc-d-lost,
+.lc-today .lc-d-head {
+	.national-tag {
+		color: inherit;
+
+		.national-logo-light {
+			display: none;
+		}
+
+		.national-logo-dark {
+			display: block;
+		}
+	}
+}
+
+// A key date on a day off, under its date.
+.lc-d-off .lc-key {
+	padding: 0 4px;
+	text-align: left;
+}
+
+// THE FULL CALENDAR ON A WIDE SCREEN: bigger, and the opponent's
+// abbreviation.
+@include media-breakpoint-up(md) {
+	.lc-team:not(.lc-compact) {
+		.lc-grid {
+			td.lc-d,
+			td.lc-out {
+				height: 5.6rem;
+			}
+
+			tbody tr:first-child td:first-child {
+				border-top-left-radius: 8px;
+			}
+
+			tbody tr:first-child td:last-child {
+				border-top-right-radius: 8px;
+			}
+
+			tbody tr:last-child td:first-child {
+				border-bottom-left-radius: 8px;
+			}
+
+			tbody tr:last-child td:last-child {
+				border-bottom-right-radius: 8px;
+			}
+		}
+
+		.lc-d-head {
+			gap: 6px;
+			height: 22px;
+			padding: 0 8px;
+			font-size: 0.62rem;
+		}
+
+		.lc-d-num {
+			font-size: 0.8rem;
+		}
+
+		.lc-d-key {
+			display: inline;
+		}
+
+		.lc-d-national {
+			height: 16px;
+			padding: 0 3px;
+
+			img {
+				height: 12px;
+				max-width: 44px;
+			}
+		}
+
+		.lc-d-body {
+			gap: 4px;
+			padding: 8px 0 6px;
+		}
+
+		.lc-d-abbrev {
+			display: inline;
+		}
+
+		.lc-d-opp {
+			padding: 0 8px;
+			font-size: 1rem;
+
+			.lc-d-team {
+				gap: 6px;
+			}
+
+			.lc-d-logo {
+				width: 32px;
+				height: 32px;
+			}
+		}
+
+		.lc-d-at {
+			font-size: 0.8rem;
+		}
+
+		.lc-d-final,
+		.lc-d-line {
+			margin-top: 2px;
+			font-size: 0.9rem;
+		}
+
+		.lc-d-line {
+			font-size: 0.75rem;
+		}
+
+		.lc-d-off .lc-key {
+			padding: 2px 8px;
+			font-size: 0.72rem;
+		}
+	}
+}
+
+// (The narrowest phones: the score a hair smaller, to fit a day.)
+@media (max-width: 379.98px) {
+	.lc-d-final {
+		font-size: 0.56rem;
+		letter-spacing: -0.02em;
 	}
 }
