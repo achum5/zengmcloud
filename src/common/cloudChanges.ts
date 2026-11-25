@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 587,
+		date: "2026-11-25",
+		text: "Season Summary has a Season in review button for every finished season. Tap through the year like a story: the champions, the Finals MVP and MVP, the other awards, the league leaders, your own season and the biggest careers that ended.",
+	},
+	{
+		n: 586,
+		date: "2026-11-25",
+		text: "Trade Summary now shows a trade tree when something from the deal was traded again: what each team got, what it later turned those players and picks into, and so on, down to where each one ended up.",
+	},
+	{
 		n: 585,
 		date: "2026-11-25",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): rebounders go up for the ball on the move, still coming as it gets to their hands, instead of getting to the spot and waiting for it to drop to them. How fast each one is going is drawn from how real rebounders move. Also fixed a one-frame hitch when the ball changed hands.",
