@@ -2225,6 +2225,13 @@ const ROOM_MISSED = [0.09, 0.42, 0.33, 0.16] as const;
 // feet, as the league's tracking has them.)
 const ROOM_MADE_3 = [0.01, 0.07, 0.34, 0.58] as const;
 const ROOM_MISSED_3 = [0.02, 0.12, 0.38, 0.48] as const;
+// (The new sim's three, though, as open as real ones are as they leave his
+// hands - the league's measure is from before then, his man still on his
+// way out: 6 ft and more off 32 in 100 of the 17 games' threes, 8.6 and
+// more off 10 in 100. A step late far more often than left all alone - a
+// man drawn all alone left so only if his man is off helping.)
+const ROOM_MADE_3_LIVE = [0.01, 0.06, 0.53, 0.4] as const;
+const ROOM_MISSED_3_LIVE = [0.02, 0.1, 0.58, 0.3] as const;
 // How much room a jumper gets (an index into ROOM_FT): the same draw for the
 // shot wherever it is asked for.
 const roomFor = (
@@ -2232,11 +2239,16 @@ const roomFor = (
 	release: number,
 	three: boolean,
 	made: boolean,
+	live: boolean,
 ): number => {
 	const odds = three
 		? made
-			? ROOM_MADE_3
-			: ROOM_MISSED_3
+			? live
+				? ROOM_MADE_3_LIVE
+				: ROOM_MADE_3
+			: live
+				? ROOM_MISSED_3_LIVE
+				: ROOM_MISSED_3
 		: made
 			? ROOM_MADE
 			: ROOM_MISSED;
@@ -14551,6 +14563,7 @@ class Director {
 							gather + dur * J.release,
 							zone === "three",
 							plan.kind === "make",
+							this.possession,
 						)
 					: 3;
 			if (
@@ -15018,6 +15031,7 @@ class Director {
 					release,
 					zone === "three",
 					plan.kind === "make",
+					this.possession,
 				);
 				const outAt =
 					onHim === undefined

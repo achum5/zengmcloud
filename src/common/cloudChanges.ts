@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 594,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): threes are left wide open about as often as real ones are as the shot goes up, about one in three, down from about four in ten. More of them now have a defender a step late, closing out.",
+	},
+	{
 		n: 593,
 		date: "2026-11-25",
 		text: "3D game: the bowl looks like a real NBA arena's. Two rings of suites, lit warm inside, wrap the building above the lower bowl with the ribbon board between them, the score now runs along the middle of the ribbon, and the tunnels into the lower bowl show the lit concourse behind them instead of black holes.",

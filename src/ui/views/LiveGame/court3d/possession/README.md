@@ -529,15 +529,34 @@ coming straight after, is the play's through it.
 ft/s at the most. The lurch and teleport flags since include the
 rebounds, below: 147 and 8 before this.)
 
+How open a three is, in the new sim: the play's odds for its room (the
+league's tracking, `ROOM_MADE_3` / `ROOM_MISSED_3`: nobody within 6 ft
+of about half of them) are measured from before it is away, his man
+still on his way out. As it leaves his hands, the 17 games have 6 ft and
+more off 32 threes in 100, and 8.6 ft and more off 10. The new sim draws
+a three's room from `ROOM_MADE_3_LIVE` / `ROOM_MISSED_3_LIVE` instead
+(`director.ts`): a step late far more often than left all alone, still
+leaning made or missed. Two whole games (real_11 and real_22):
+
+| Threes, nearest defender as it leaves his hands | Before | Now | Real |
+| --- | --- | --- | --- |
+| 6 ft and more off him (both games) | 38% | 32% | 32% |
+| How far off him (median, ft: real_11, real_22) | 5.5, 3.8 | 4.9, 4.7 | 5.1 |
+| Lurch flags (real_11, real_22) | 144, 192 | 186, 154 | |
+| Teleport flags (real_11, real_22) | 8, 24 | 13, 14 | |
+
+(The lurch flags move with the whole game's timeline: a change to how a
+shot is staged shifts everything after it, and real_11's count is the
+one each fix so far was checked on. Taken over both games, even.)
+
 Still short:
 
 - A man who holds it a while: the play has his defender on his spot long
   before the shot, and he comes in from a step or two off it; real
   defenders guard a man holding it live, on the move with him - 8c.
-- Off a quick catch the nearest defender is 8.6 ft off (real 5.1): the
-  play leaves too many shots wide open, a three most of all (6 ft and
-  more off 47 in 100 of ours, 32 of the real ones) - its room for them
-  (`ROOM_FT`) is the league's, measured before the shot is away.
+- Too many threes have a man right on the shooter: under 3 ft off a
+  quarter of ours, a tenth of the real ones under 3.4. A man already
+  tighter than the room the play gives the shot stays there.
 
 ## Rebounds (8a)
 
