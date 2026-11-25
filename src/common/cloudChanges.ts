@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 582,
+		date: "2026-11-25",
+		text: "A finished game's score banner now shows the line and the over/under under the score by quarter, with how each went: who covered, and over or under. On phones the game's recap opens with its headline and first paragraph, and Read more shows the rest.",
+	},
+	{
 		n: 581,
 		date: "2026-11-25",
 		text: "Draft History's Redraft column now shows how far second-round picks rose or fell too, counted from where they went overall.",
