@@ -466,7 +466,7 @@ import {
 import { augmentOffers } from "../views/trade.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
 import { setAutoSave } from "../core/league/setAutoSave.ts";
-import { getPlayerMilestones } from "../util/milestoneWatch.ts";
+import { getPlayerAllTime } from "../util/milestoneWatch.ts";
 import { getTradeTrees } from "../util/tradeTree.ts";
 import { getSeasonReview } from "../util/seasonReview.ts";
 
@@ -9130,7 +9130,7 @@ const api = {
 		getReplayFeed,
 		getRecapFeed,
 		getNightlyRecap,
-		getPlayerMilestones,
+		getPlayerAllTime,
 		getTradeTrees,
 		getSeasonReview,
 		getTeamColorsUI,

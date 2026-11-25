@@ -198,10 +198,6 @@ const Player2 = ({
 				willingToSign={willingToSign}
 			/>
 
-			{__SPORT === "basketball" && !retired ? (
-				<Milestones pid={player.pid} />
-			) : null}
-
 			{statTables.map(({ key, name, onlyShowIf, stats, superCols }, i) => (
 				<StatsTable
 					awardsBySeason={awardsBySeason}
@@ -490,6 +486,8 @@ const Player2 = ({
 					</div>
 				</div>
 			) : null}
+
+			{__SPORT === "basketball" ? <Milestones pid={player.pid} /> : null}
 
 			<div className="row" style={{ marginBottom: "-1rem" }}>
 				<div className="col">

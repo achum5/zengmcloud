@@ -39,7 +39,9 @@ export const n = (x: number) => helpers.numberWithCommas(x);
 export const playerUrl = (pid: number) => helpers.leagueUrl(["player", pid]);
 
 // "41 to pass Name for 2nd", or the lead the man on top has.
-export const chaseNote = (row: ChaseRow) => {
+export const chaseNote = (
+	row: Pick<ChaseRow, "total" | "rank" | "next" | "behind">,
+) => {
 	if (row.next) {
 		return (
 			<>

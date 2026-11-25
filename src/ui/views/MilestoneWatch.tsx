@@ -123,7 +123,13 @@ const Chase = ({
 	rows: ChaseRow[];
 	season: number;
 }) => (
-	<RailCard title={STAT_TITLES[stat]}>
+	<RailCard
+		title={STAT_TITLES[stat]}
+		more={{
+			href: helpers.leagueUrl(["all_time_leaders", stat]),
+			text: "Full list",
+		}}
+	>
 		<ol className="lh-list">
 			{rows.map((row) => (
 				<Row

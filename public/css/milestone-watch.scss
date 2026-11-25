@@ -67,63 +67,200 @@
 	}
 }
 
-// A player's line of it, on his page (views/Player/Milestones.tsx).
-.pm {
-	margin-bottom: 1.5rem;
-	padding: 0.75rem 0.9rem;
-	background: var(--bs-body-bg);
-	border: 1px solid var(--bs-border-color);
-	border-radius: var(--bs-border-radius);
+// A player's all-time ranks, near the bottom of his page
+// (views/Player/Milestones.tsx): a tile a stat.
+.atr-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.6rem;
+	margin-bottom: 1rem;
 }
-.pm-head {
-	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 0.5rem;
-	margin-bottom: 0.5rem;
-	a {
-		font-size: 0.8rem;
-		white-space: nowrap;
+@include media-breakpoint-up(md) {
+	.atr-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
-.pm-title {
-	margin: 0;
-	font-size: 1.05rem;
-	font-weight: 800;
-	text-transform: uppercase;
-	letter-spacing: 0.02em;
+@include media-breakpoint-up(xl) {
+	.atr-grid {
+		grid-template-columns: repeat(6, minmax(0, 1fr));
+	}
 }
-.pm-items {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-	gap: 0.75rem 1.25rem;
-	margin: 0;
-	padding: 0;
-	list-style: none;
-}
-.pm-item {
+.atr-tile {
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
-	line-height: 1.2;
+	padding: 0.6rem 0.75rem 0.65rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	background: var(--bs-body-bg);
+	line-height: 1.25;
 }
-.pm-figure {
+.atr-head {
+	display: flex;
+	flex-direction: column;
+	color: inherit;
+	text-decoration: none;
+	&:hover .atr-stat {
+		color: var(--bs-link-hover-color);
+		text-decoration: underline;
+	}
+}
+.atr-rank {
 	font-size: 1.6rem;
 	font-weight: 800;
+	line-height: 1.1;
 	font-variant-numeric: tabular-nums;
 }
-.pm-label {
-	font-size: 0.7rem;
+.atr-stat {
+	font-size: 0.72rem;
 	font-weight: 700;
+	letter-spacing: 0.04em;
 	text-transform: uppercase;
-	letter-spacing: 0.03em;
+	color: var(--bs-link-color);
+}
+.atr-total {
+	margin-top: 0.3rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.atr-of {
+	font-weight: 400;
+	font-size: 0.8rem;
 	color: var(--bs-secondary-color);
 }
-.pm-note {
+.atr-note {
 	margin-top: 0.2rem;
 	font-size: 0.8rem;
 	color: var(--bs-secondary-color);
 	a {
 		color: var(--bs-body-color);
 	}
+}
+.atr-extra {
+	margin: 0 0 1rem;
+	padding: 0;
+	list-style: none;
+	li {
+		padding: 0.15rem 0;
+	}
+	b {
+		font-variant-numeric: tabular-nums;
+	}
+}
+.atr-extra-note {
+	color: var(--bs-secondary-color);
+	a {
+		color: var(--bs-body-color);
+	}
+}
+
+// One all-time list (views/AllTimeLeaders.tsx).
+.atl-stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin-bottom: 0.6rem;
+}
+.atl-stat {
+	padding: 0.25rem 0.75rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: 999px;
+	color: var(--bs-body-color);
+	font-size: 0.9rem;
+	font-weight: 600;
+	text-decoration: none;
+	&:hover {
+		border-color: var(--bs-link-hover-color);
+		color: var(--bs-link-hover-color);
+	}
+}
+.atl-stat-on,
+.atl-stat-on:hover {
+	border-color: var(--bs-primary);
+	background: var(--bs-primary);
+	color: #fff;
+}
+.atl-sub {
+	color: var(--bs-secondary-color);
+}
+.atl-list {
+	max-width: 44rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.atl-row {
+	display: grid;
+	grid-template-columns: 2.2rem 2.4rem minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.35rem 0.5rem;
+	border-bottom: 1px solid var(--bs-border-color);
+}
+.atl-me {
+	background: rgba(var(--bs-primary-rgb), 0.14);
+	border-radius: var(--bs-border-radius);
+}
+.atl-rank {
+	text-align: right;
+	font-size: 1.05rem;
+	font-weight: 800;
+	font-variant-numeric: tabular-nums;
+	color: var(--bs-secondary-color);
+}
+.atl-face {
+	display: block;
+	width: 2.4rem;
+	height: 3.6rem;
+	> * {
+		width: 100%;
+		height: 100%;
+	}
+}
+.atl-main {
+	min-width: 0;
+	line-height: 1.25;
+}
+.atl-name {
+	overflow: hidden;
+	font-weight: 700;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.atl-active {
+	margin-left: 0.4rem;
+	padding: 0 0.35rem;
+	border-radius: 0.25rem;
+	background: var(--bs-success-bg-subtle);
+	color: var(--bs-success-text-emphasis);
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	vertical-align: 0.1rem;
+}
+.atl-where {
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+}
+.atl-figure {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	line-height: 1.15;
+	b {
+		font-size: 1.15rem;
+		font-weight: 800;
+		font-variant-numeric: tabular-nums;
+	}
+	span {
+		font-size: 0.72rem;
+		color: var(--bs-secondary-color);
+		white-space: nowrap;
+	}
+}
+.atl-gap {
+	padding: 0.2rem 0;
+	text-align: center;
+	color: var(--bs-secondary-color);
 }

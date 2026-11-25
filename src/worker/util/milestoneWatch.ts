@@ -191,10 +191,8 @@ const ROUND: Record<WatchStat, { step: number; min: number }> = {
 // How far off a round number can be, in games at his rate, to be watched.
 const ROUND_GAMES = 20;
 
-// How deep in the all-time list a man is worth watching: on the page, and
-// on his own page.
+// How deep in the all-time list a man is worth watching.
 const CHASE_DEPTH = 50;
-const PLAYER_DEPTH = 25;
 
 const ranked = (rows: CareerRow[], stat: WatchStat) =>
 	rows
@@ -394,25 +392,59 @@ export const getMilestoneWatch = async () => {
 	};
 };
 
-// One player's part of it, for his page: where he stands on each list he is
-// high on, the round number he's closest to, and a season on a record pace.
-export const getPlayerMilestones = async (pid: number) => {
+// ------------------------------------------------------ EVERYONE'S ALL-TIME
+
+// Where the man stands on the list: tied, he shares the place of the first
+// man on that total.
+const rankAt = (list: CareerRow[], i: number, stat: WatchStat) => {
+	let rank = i + 1;
+	while (rank > 1 && list[rank - 2]!.career[stat] === list[i]!.career[stat]) {
+		rank -= 1;
+	}
+	return rank;
+};
+
+export type AllTimeRank = {
+	stat: WatchStat;
+	total: number;
+	// Undefined with none of it.
+	rank: number | undefined;
+	// How many players are on the list.
+	of: number;
+	next?: ChaseRow["next"];
+	behind?: ChaseRow["behind"];
+};
+
+// A player's place on each all-time list, for his page: every player with a
+// regular season game or stat to his name, playing or retired. Still playing,
+// also the round number he's closest to and a season on a record pace.
+export const getPlayerAllTime = async (pid: number) => {
 	const season = g.get("season");
 	const rows = await loadRows();
 	const me = rows.find((row) => row.pid === pid);
-	if (!me || !me.active) {
+	if (
+		!me ||
+		(me.career.gp === 0 && WATCH_STATS.every((stat) => me.career[stat] === 0))
+	) {
 		return undefined;
 	}
 
-	const history = hasHistory(rows, season);
-	const chase: (ChaseRow & { stat: WatchStat })[] = [];
-	for (const stat of history ? WATCH_STATS : []) {
+	const ranks: AllTimeRank[] = WATCH_STATS.map((stat) => {
 		const list = ranked(rows, stat);
 		const i = list.findIndex((row) => row.pid === pid);
-		if (i >= 0 && i < PLAYER_DEPTH) {
-			chase.push({ ...chaseRow(list, i, stat), stat });
+		if (i < 0) {
+			return { stat, total: 0, rank: undefined, of: list.length };
 		}
-	}
+		const { next, behind, rank } = chaseRow(list, i, stat);
+		return {
+			stat,
+			total: me.career[stat],
+			rank,
+			of: list.length,
+			next,
+			behind,
+		};
+	});
 
 	let round: RoundRow | undefined;
 	for (const stat of WATCH_STATS) {
@@ -422,16 +454,65 @@ export const getPlayerMilestones = async (pid: number) => {
 		}
 	}
 
-	const pace = history
-		? (await paceRows(rows, season)).filter((row) => row.pid === pid)
-		: [];
+	const pace =
+		me.active && hasHistory(rows, season)
+			? (await paceRows(rows, season)).find((row) => row.pid === pid)
+			: undefined;
 
-	if (chase.length === 0 && !round && pace.length === 0) {
-		return undefined;
-	}
-	return {
-		chase: chase.sort((a, b) => a.rank - b.rank).slice(0, 3),
-		round,
-		pace: pace[0],
+	return { active: me.active, gp: me.career.gp, ranks, round, pace };
+};
+
+export type AllTimeLeader = WatchPlayer & {
+	rank: number;
+	active: boolean;
+	total: number;
+	gp: number;
+	// His first and last regular seasons.
+	from: number;
+	to: number;
+};
+
+const TOP = 100;
+
+// One all-time list, every player in the league's history on it: the top
+// hundred, and the man the page was opened for with those around him, when
+// he's further down.
+export const getAllTimeLeaders = async (
+	stat: WatchStat,
+	pid: number | undefined,
+) => {
+	const rows = await loadRows();
+	const list = ranked(rows, stat);
+	const leader = (i: number): AllTimeLeader => {
+		const row = list[i]!;
+		const seasons = [...row.seasons.keys()];
+		return {
+			...player(row),
+			rank: rankAt(list, i, stat),
+			active: row.active,
+			total: row.career[stat],
+			gp: row.career.gp,
+			from: Math.min(...seasons),
+			to: Math.max(...seasons),
+		};
 	};
+
+	const top: AllTimeLeader[] = [];
+	for (let i = 0; i < Math.min(TOP, list.length); i++) {
+		top.push(leader(i));
+	}
+
+	const around: AllTimeLeader[] = [];
+	const i = pid === undefined ? -1 : list.findIndex((row) => row.pid === pid);
+	if (i >= TOP) {
+		for (
+			let j = Math.max(TOP, i - 2);
+			j <= Math.min(list.length - 1, i + 2);
+			j++
+		) {
+			around.push(leader(j));
+		}
+	}
+
+	return { stat, of: list.length, top, around, pid };
 };
