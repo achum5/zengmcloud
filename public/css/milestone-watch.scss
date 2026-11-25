@@ -1,68 +1,287 @@
-// Milestone Watch (views/MilestoneWatch.tsx), in the league hub's cards.
-.mw-lists {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr);
-	gap: 1.25rem;
+// Milestone Watch (views/MilestoneWatch.tsx).
+.mw {
+	display: flex;
+	flex-direction: column;
+	gap: 2rem;
+	padding-bottom: 1rem;
 }
-@include media-breakpoint-up(md) {
-	.mw-lists {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
+.mw-sec {
+	container-type: inline-size;
+	min-width: 0;
+}
+.mw-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 0.3rem;
+	border-bottom: 2px solid var(--bs-emphasis-color);
+}
+.mw-title {
+	margin: 0;
+	font-size: 0.95rem;
+	font-weight: 800;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
 }
 .mw-more {
-	margin-left: 0.5rem;
 	font-size: 0.8rem;
-	font-weight: 400;
-	text-transform: none;
-	letter-spacing: 0;
+	white-space: nowrap;
 }
-.mw-row {
+.mw-name {
+	font-weight: 700;
+	color: var(--bs-emphasis-color);
+	text-decoration: none;
+	&:hover {
+		color: var(--bs-emphasis-color);
+		text-decoration: underline;
+	}
+}
+.mw-team {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--bs-secondary-color);
+	text-decoration: none;
+	white-space: nowrap;
+	img {
+		width: 16px;
+		height: 16px;
+		object-fit: contain;
+	}
+	&:hover {
+		color: var(--bs-emphasis-color);
+	}
+}
+// The whole face, not cropped; hovered, the name underlines with it.
+.mw-avatar {
+	flex: none;
+	display: block;
+	width: 2rem;
+	height: 3rem;
+	> * {
+		width: 100%;
+		height: 100%;
+	}
+	img {
+		object-fit: contain;
+	}
+}
+.mw-player:has(.mw-avatar:hover) .mw-name,
+.mw-rung:has(.mw-avatar:hover) .mw-name {
+	text-decoration: underline;
+}
+.mw-sub {
+	font-size: 0.75rem;
+	font-weight: 400;
+	color: var(--bs-secondary-color);
+	a {
+		color: inherit;
+	}
+}
+
+.mw-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-variant-numeric: tabular-nums;
+	th {
+		padding: 0.5rem 0.6rem 0.3rem;
+		font-size: 0.68rem;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--bs-secondary-color);
+		text-align: left;
+		white-space: nowrap;
+		border-bottom: 1px solid var(--bs-border-color);
+	}
+	td {
+		padding: 0.35rem 0.6rem;
+		vertical-align: middle;
+		border-bottom: 1px solid var(--bs-border-color);
+		line-height: 1.25;
+	}
+	th:first-child,
+	td:first-child {
+		padding-left: 0;
+	}
+	th:last-child,
+	td:last-child {
+		padding-right: 0;
+	}
+	.mw-num {
+		text-align: right;
+	}
+}
+.mw-player {
 	display: flex;
 	align-items: center;
 	gap: 0.6rem;
-	padding: 0.45rem 0;
+	min-width: 0;
 }
-.mw-row:has(.lh-face-link:hover) .lh-perf-name a {
-	color: var(--bs-link-hover-color);
+.mw-player-text {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+	line-height: 1.3;
 }
-.mw-rank {
-	flex: 0 0 1.6rem;
-	text-align: center;
-	font-size: 1.1rem;
+.mw-big {
+	font-size: 1.15rem;
 	font-weight: 800;
+}
+.mw-place {
+	font-weight: 800;
+}
+.mw-place-1 {
+	display: inline-block;
+	padding: 0 0.4rem;
+	border-radius: 0.3rem;
+	color: #fff;
+	background: rgb(16 18 22 / 0.85);
+}
+.mw-record {
+	white-space: nowrap;
+}
+.mw-wide {
+	display: none;
+}
+@container (min-width: 600px) {
+	.mw-table .mw-wide {
+		display: table-cell;
+	}
+	.mw-narrow {
+		display: none;
+	}
+}
+
+.mw-tabs {
+	display: flex;
+	gap: 1.25rem;
+	border-bottom: 1px solid var(--bs-border-color);
+	overflow-x: auto;
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+.mw-tab {
+	flex: none;
+	margin-bottom: -1px;
+	padding: 0.5rem 0 0.35rem;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	background: none;
+	color: var(--bs-secondary-color);
+	font-size: 0.85rem;
+	font-weight: 700;
+	&:hover {
+		color: var(--bs-emphasis-color);
+	}
+}
+.mw-tab-on,
+.mw-tab-on:hover {
+	border-bottom-color: var(--bs-emphasis-color);
+	color: var(--bs-emphasis-color);
+}
+
+.mw-ladders {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.75rem 2.25rem;
+	margin-top: 0.75rem;
+}
+.mw-ladder .mw-head {
+	border-bottom-width: 1px;
+	.mw-title {
+		font-size: 0.82rem;
+	}
+}
+.mw-ladder-off {
+	display: none;
+}
+@container (min-width: 560px) {
+	.mw-ladders-wrap > .mw-tabs {
+		display: none;
+	}
+	.mw-ladder-off {
+		display: block;
+	}
+	.mw-ladders {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		margin-top: 1rem;
+	}
+}
+@container (min-width: 900px) {
+	.mw-ladders {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+.mw-rungs {
+	margin: 0;
+	padding: 0;
+	list-style: none;
 	font-variant-numeric: tabular-nums;
-	color: var(--bs-secondary-color);
 }
-.mw-face {
-	width: 2.4rem;
-	height: 3.6rem;
-}
-.mw-note {
-	margin-top: 0.1rem;
-	font-size: 0.8rem;
+.mw-rung {
+	display: grid;
+	grid-template-columns: 1.6rem 1.8rem minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.25rem 0;
+	border-bottom: 1px solid var(--bs-border-color);
 	line-height: 1.25;
+}
+// (Ranks skipped between two rungs: a little room.)
+.mw-rung-gap {
+	margin-top: 0.6rem;
+	border-top: 1px solid var(--bs-border-color);
+}
+.mw-rung-rank {
+	text-align: right;
+	font-weight: 800;
 	color: var(--bs-secondary-color);
-	a {
-		color: var(--bs-body-color);
+}
+.mw-rung .mw-avatar {
+	width: 1.8rem;
+	height: 2.7rem;
+}
+.mw-rung-main {
+	min-width: 0;
+}
+.mw-rung-total {
+	font-weight: 800;
+}
+.mw-rung-sub {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	font-size: 0.75rem;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	> span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.mw-team + span::before {
+		content: "·";
+		margin-right: 0.4rem;
 	}
 }
-.mw-figure {
-	flex: 0 0 auto;
-	max-width: 6.5rem;
-	text-align: right;
-	line-height: 1.15;
-	b {
-		display: block;
-		font-size: 1.15rem;
-		font-weight: 800;
-		font-variant-numeric: tabular-nums;
+.mw-rung-on .mw-rung-rank {
+	color: var(--bs-emphasis-color);
+}
+.mw-rung-ghost {
+	.mw-name {
+		font-weight: 400;
+		color: var(--bs-secondary-color);
 	}
-	span {
-		display: block;
-		font-size: 0.68rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
+	.mw-rung-total {
+		font-weight: 600;
 		color: var(--bs-secondary-color);
 	}
 }

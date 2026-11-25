@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 633,
+		date: "2026-11-25",
+		text: "Milestone Watch has a new look. Players close to a round number and seasons on a record pace are now clean tables with the numbers in columns. The all-time lists show each active player between the legends he's chasing, with how many he needs to pass the next one. On a phone, tap PTS, REB, AST and the rest to switch lists.",
+	},
+	{
 		n: 632,
 		date: "2026-11-25",
 		text: "3D game, Cavaliers' score bug: THE DIFF tab now has room for a two-digit lead like +18, instead of cutting it off.",
