@@ -29,7 +29,7 @@
 
 import type { Act, BallSeg, Move, Track } from "../director.ts";
 import { COURT_H, COURT_W } from "../geometry.ts";
-import { runShape } from "../motion.ts";
+import { alongShape, paceAlong, runShape } from "../motion.ts";
 import type { AnimName } from "../poses.ts";
 
 // A run into the catch: at least this far (feet), ended no more than this
@@ -1217,6 +1217,308 @@ export const throughBoards = (
 					harder: NEXT_HARDER,
 				})
 			) {
+				n++;
+			}
+		}
+	}
+	return n;
+};
+
+// IN TIME FOR IT. A man going at the ball, or at the man with it - a reach
+// in at it, a foul, a steal, a block, a loose ball grabbed - is set off for
+// it by the play as late as the old sim's legs (flat out, quicker than any
+// man's) get him there: from stood at more of a run than a body has, or
+// turning back the way he was going at the last. Moved by his own body (see
+// follow.ts), he falls feet behind it and is yanked onto the spot as it
+// comes. Laid instead as a man who knows he is going for it goes: set off
+// as soon as getting there at a good run takes him - turning off whatever
+// the play had him doing then, from where it had him (pulling up first, if
+// that was the other way) - and a loose ball taken on the move, as a catch
+// is (see carryThrough).
+
+const AT_IT = new Set<AnimName>([
+	"hack",
+	"reach",
+	"poke",
+	"strip",
+	"block",
+	"snatch",
+	"pickup",
+]);
+// (A loose ball: taken into his hands as he goes.)
+const LOOSE_TAKE = new Set<AnimName>(["snatch", "pickup"]);
+// Getting somewhere as a man does (feet a second; and a second): up to a
+// good running pace - not flat out - pushing this hard, pulling up this
+// hard, and what he has going across first taken out this quickly (see
+// defense.ts reachMs).
+const TIME_GO = 10.5;
+const TIME_PACE = 15.7;
+const TIME_BRAKE = 17.5;
+const TIME_SIDE = 16;
+// Set off no more than this much sooner (ms) than the play had him, tried
+// this much at a time - and only for a run more than this (ms) too quick.
+const TIME_BACK = 1500;
+const TIME_STEP = 50;
+const TIME_SLACK = 60;
+// (A run he is on into it: along this much the same way, its cosine.)
+const TIME_ONE_WAY = 0.7;
+
+// How long (ms) he takes to go D feet, ending going v1 - going `along` the
+// way there as he sets off, and `across` it.
+const takesMs = (D: number, along: number, across: number, v1: number) => {
+	let t = across / TIME_SIDE;
+	let v0 = along;
+	if (v0 < 0) {
+		t += -v0 / TIME_BRAKE;
+		D += (v0 * v0) / (2 * TIME_BRAKE);
+		v0 = 0;
+	}
+	v0 = Math.min(v0, TIME_PACE);
+	const e = Math.min(Math.max(0, v1), TIME_PACE);
+	const up = (TIME_PACE * TIME_PACE - v0 * v0) / (2 * TIME_GO);
+	const down = (TIME_PACE * TIME_PACE - e * e) / (2 * TIME_BRAKE);
+	if (up + down <= D) {
+		t +=
+			(TIME_PACE - v0) / TIME_GO +
+			(TIME_PACE - e) / TIME_BRAKE +
+			(D - up - down) / TIME_PACE;
+	} else {
+		const a = 1 / (2 * TIME_GO);
+		const b = 1 / (2 * TIME_BRAKE);
+		const v = Math.sqrt(
+			Math.max((D + v0 * v0 * a + e * e * b) / (a + b), Math.max(v0, e) ** 2),
+		);
+		t += (v - v0) / TIME_GO + (v - e) / TIME_BRAKE;
+	}
+	return t * 1000;
+};
+
+// Where the play has him at t, which way he is going then and how fast (by
+// the shape of the run he is on: see runShape).
+const goingAt = (
+	moves: readonly Move[],
+	t: number,
+	start: { x: number; y: number },
+): {
+	P: { x: number; y: number };
+	u: { x: number; y: number };
+	v: number;
+	i: number;
+} => {
+	let P = start;
+	for (let i = 0; i < moves.length; i++) {
+		const m = moves[i]!;
+		if (m.t0 > t) {
+			break;
+		}
+		const L = len(m);
+		if (t < m.t1 && L >= STOOD) {
+			const T = (m.t1 - m.t0) / 1000;
+			const r = runShape(L, T, m.v0 ?? 0, m.v1 ?? 0);
+			const s = (t - m.t0) / 1000;
+			const d = alongShape(r, s);
+			const u = { x: (m.to.x - m.from.x) / L, y: (m.to.y - m.from.y) / L };
+			return {
+				P: { x: m.from.x + u.x * d, y: m.from.y + u.y * d },
+				u,
+				v: paceAlong(r, s),
+				i,
+			};
+		}
+		P = m.to;
+	}
+	return { P: { ...P }, u: { x: 0, y: 0 }, v: 0, i: -1 };
+};
+
+// Lays his run into `c` - at the ball, or at a man - set off as soon as a
+// man's body needs to get there by when the play has him there, if the
+// play has him set off later. Whether it did.
+export const inTime = (tr: Track, c: Act, spacing?: Set<Move>): boolean => {
+	const moves = tr.moves;
+	// The run in: the last of his to set off before it does, ending no
+	// sooner than ARRIVED_WITHIN before it - and back along it, the one
+	// before on the same way, run straight into it.
+	let k = -1;
+	for (let i = moves.length - 1; i >= 0; i--) {
+		const m = moves[i]!;
+		if (m.t0 >= c.t0 || len(m) < STOOD) {
+			continue;
+		}
+		if (m.t1 >= c.t0 - ARRIVED_WITHIN) {
+			k = i;
+		}
+		break;
+	}
+	if (k < 0) {
+		return false;
+	}
+	const C = moves[k]!.to;
+	let k0 = k;
+	while (k0 > 0) {
+		const a = moves[k0 - 1]!;
+		const b = moves[k0]!;
+		const La = len(a);
+		const Lc = Math.hypot(C.x - a.from.x, C.y - a.from.y);
+		if (
+			Math.abs(a.t1 - b.t0) > 1 ||
+			!(a.v1 ?? 0) ||
+			La < STOOD ||
+			Lc < 1e-6 ||
+			((a.to.x - a.from.x) * (C.x - a.from.x) +
+				(a.to.y - a.from.y) * (C.y - a.from.y)) /
+				(La * Lc) <
+				TIME_ONE_WAY
+		) {
+			break;
+		}
+		k0--;
+	}
+	const m0 = moves[k0]!;
+	const end = moves[k]!.t1;
+	const v1 = moves[k]!.v1 ?? 0;
+	// (How much too quick a run set off at `t` is, from where the play has
+	// him then - and him then.)
+	const short = (t: number) => {
+		const g = goingAt(moves, t, tr.start);
+		const dx = C.x - g.P.x;
+		const dy = C.y - g.P.y;
+		const D = Math.hypot(dx, dy);
+		if (D < STOOD) {
+			return { g, over: 0 };
+		}
+		const along = (g.v * (g.u.x * dx + g.u.y * dy)) / D;
+		const across = Math.abs(g.v * (g.u.x * dy - g.u.y * dx)) / D;
+		return { g, over: takesMs(D, along, across, v1) - (end - t) };
+	};
+	if (short(m0.t0).over <= TIME_SLACK) {
+		return false;
+	}
+	// As soon as that takes, back to TIME_BACK sooner - not across anything
+	// else of his that has him stood (or up off the floor), nor back before
+	// his last stop.
+	let ts = m0.t0;
+	let best = short(ts);
+	for (let t = m0.t0 - TIME_STEP; t >= m0.t0 - TIME_BACK; t -= TIME_STEP) {
+		if (pinned(tr.acts, c, t, m0.t0)) {
+			break;
+		}
+		const s = short(t);
+		if (s.over < best.over) {
+			ts = t;
+			best = s;
+		}
+		if (s.over <= 0) {
+			break;
+		}
+	}
+	if (ts === m0.t0) {
+		return false;
+	}
+	const { P, u, v } = best.g;
+	const face = m0.face !== undefined ? { face: m0.face } : {};
+	// (What he was on then, cut short there - and nothing else of his
+	// before the run in.)
+	let i = 0;
+	while (i < k0 && moves[i]!.t1 <= ts) {
+		i++;
+	}
+	// (Pulling up first, if what he was on took him the other way.)
+	const dx = C.x - P.x;
+	const dy = C.y - P.y;
+	const D = Math.hypot(dx, dy);
+	const back = D > 1e-6 && u.x * dx + u.y * dy < 0 && v > 0;
+	const was = i < k0 && moves[i]!.t0 < ts ? moves[i]! : undefined;
+	const lead: Move[] = [];
+	let from = P;
+	let t0 = ts;
+	let v0 = 0;
+	if (was) {
+		const cut: Move = {
+			...was,
+			t1: ts,
+			to: len(was) < STOOD ? { ...was.to } : { ...P },
+			v1: v,
+		};
+		lead.push(cut);
+		if (spacing?.has(was)) {
+			spacing.add(cut);
+		}
+		if (back) {
+			const tb = v / TIME_BRAKE;
+			const sb = (v * tb) / 2;
+			const Q = { x: P.x + u.x * sb, y: P.y + u.y * sb };
+			if (
+				Q.x >= IN &&
+				Q.x <= COURT_W - IN &&
+				Q.y >= IN &&
+				Q.y <= COURT_H - IN &&
+				ts + tb * 1000 < end - TIME_STEP
+			) {
+				lead.push({
+					t0: ts,
+					t1: ts + tb * 1000,
+					from: { ...P },
+					to: Q,
+					anim: was.anim,
+					v0: v,
+					v1: 0,
+					...(was.face !== undefined ? { face: was.face } : {}),
+				});
+				from = Q;
+				t0 = ts + tb * 1000;
+			} else {
+				cut.v1 = 0;
+			}
+		} else if (D > 1e-6) {
+			v0 = Math.max(0, (v * (u.x * dx + u.y * dy)) / D);
+			if (v0 < CATCH_LEAST) {
+				v0 = 0;
+				cut.v1 = 0;
+			}
+		}
+	}
+	const run: Move = {
+		t0,
+		t1: end,
+		from: { ...from },
+		to: { ...C },
+		anim: moves[k]!.anim,
+		...(v0 > 0 ? { v0 } : {}),
+		...(v1 > 0 ? { v1 } : {}),
+		...face,
+	};
+	if (spacing && moves.slice(k0, k + 1).some((q) => spacing.has(q))) {
+		spacing.add(run);
+	}
+	moves.splice(i, k + 1 - i, ...lead, run);
+	return true;
+};
+
+// Every loose ball taken on the move, and every run at the ball - or at a
+// man - set off in time for it. How many it laid.
+export const throughReaches = (
+	tracks: ReadonlyMap<number, Track>,
+	ball: readonly BallSeg[],
+	spacing?: Set<Move>,
+): number => {
+	let n = 0;
+	for (const h of ball) {
+		if (h.kind !== "hold") {
+			continue;
+		}
+		const tr = tracks.get(h.pid);
+		if (
+			tr?.acts.some(
+				(a) => LOOSE_TAKE.has(a.anim) && a.t0 <= h.t0 && h.t0 <= a.t1,
+			) &&
+			carryThrough(tr, h.t0, spacing)
+		) {
+			n++;
+		}
+	}
+	for (const tr of tracks.values()) {
+		for (const a of tr.acts) {
+			if (AT_IT.has(a.anim) && !a.flash && !a.quiet && inTime(tr, a, spacing)) {
 				n++;
 			}
 		}

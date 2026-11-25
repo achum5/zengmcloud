@@ -2,11 +2,13 @@ import { assert, describe, test } from "vitest";
 import type { Act, BallSeg, Move, Track } from "../director.ts";
 import {
 	carryThrough,
+	inTime,
 	spotAt,
 	throughBoards,
 	throughContests,
 	throughPasses,
 	throughPullUps,
+	throughReaches,
 } from "./through.ts";
 
 const track = (moves: Move[], acts: Act[] = []): Track => ({
@@ -629,5 +631,85 @@ describe("going up for a rebound on the move", () => {
 		]);
 		assert.strictEqual(throughBoards(tracks, ball), 0);
 		assert.strictEqual(r.moves.length, 1);
+	});
+});
+
+describe("in time for it", () => {
+	// (Every move after the one before it, none of them overlapping.)
+	const inOrder = (tr: Track) => {
+		for (let i = 1; i < tr.moves.length; i++) {
+			assert.isAtMost(tr.moves[i - 1]!.t1, tr.moves[i]!.t0 + 1e-6);
+		}
+	};
+	const hack = act(2900, 3570, "hack", { jump: [0.12, 0.8, 0.3] });
+
+	test("sent back for a foul the way he was going, quicker than a body turns: off for it sooner, pulling up first", () => {
+		const tr = track(
+			[run(0, 2000, 40, 60), run(2000, 3000, 60, 40), stand(3000, 5000, 40)],
+			[hack],
+		);
+		assert.isTrue(inTime(tr, hack));
+		inOrder(tr);
+		const into = tr.moves.find((m) => m.t1 === 3000)!;
+		// (Set off a good while sooner, from short of where the play had him
+		// turn - and there on time.)
+		assert.isAtMost(into.t0, 1500);
+		assert.isBelow(into.from.x, 60);
+		assert.strictEqual(into.to.x, 40);
+		// (Pulling up first, still the way he was going.)
+		const brake = tr.moves[tr.moves.indexOf(into) - 1]!;
+		assert.isAtLeast(brake.to.x, brake.from.x);
+		assert.strictEqual(brake.v1, 0);
+		assert.strictEqual(brake.t1, into.t0);
+		// (The rest as it was.)
+		assert.strictEqual(tr.moves.at(-1)!.t0, 3000);
+		assert.strictEqual(tr.moves[0]!.t0, 0);
+	});
+
+	test("a reach he has time for: as it was", () => {
+		const reach = act(2900, 3300, "reach");
+		const moves = [run(1000, 3000, 40, 50), stand(3000, 5000, 50)];
+		const tr = track(
+			moves.map((m) => ({ ...m })),
+			[reach],
+		);
+		assert.isFalse(inTime(tr, reach));
+		assert.deepEqual(tr.moves, moves);
+	});
+
+	test("in a screen till he sets off: as it was", () => {
+		const late = act(2200, 2870, "hack", { jump: [0.12, 0.8, 0.3] });
+		const moves = [stand(0, 1500, 60), run(1500, 2300, 60, 40)];
+		const tr = track(
+			moves.map((m) => ({ ...m })),
+			[act(0, 1500, "screen"), late],
+		);
+		assert.isFalse(inTime(tr, late));
+		assert.deepEqual(tr.moves, moves);
+	});
+
+	test("a loose ball grabbed on the move, not stood for", () => {
+		const tr = track(
+			[run(0, 1000, 40, 50), stand(1000, 3000, 50)],
+			[act(1300, 1850, "snatch")],
+		);
+		const ball: BallSeg[] = [
+			{
+				kind: "fly",
+				t0: 1000,
+				t1: 1500,
+				from: { x: 55, y: 20, z: 3 },
+				to: { pid: 1 },
+			},
+			{ kind: "hold", t0: 1500, pid: 1, style: "hold" },
+		];
+		assert.isAtLeast(throughReaches(new Map([[1, tr]]), ball), 1);
+		inOrder(tr);
+		const into = tr.moves.find((m) => m.t1 === 1500)!;
+		assert.isAtLeast(into.v1!, 1.5);
+		const P = spotAt(tr, 1500);
+		assert.isBelow(Math.abs(P.x - 50), 2);
+		// (Stopped on the play's spot after it.)
+		assert.strictEqual(spotAt(tr, 2500).x, 50);
 	});
 });

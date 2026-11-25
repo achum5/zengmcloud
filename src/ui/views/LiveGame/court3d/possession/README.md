@@ -111,7 +111,8 @@ looks better.
    are dragged through.
    - 8a, checkpoints as windows: catches, passes, contests, rebounds,
      reaches and shots met at a pace a body allows (catches, passes,
-     pull-ups, closeouts and rebounds built: see below).
+     pull-ups, closeouts, rebounds, fouls, steals, blocks and loose balls
+     built: see below).
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor.
@@ -601,6 +602,35 @@ there, has no way in to lay. Real misses come down in nearer the rim than
 he was as the shot went up, and off to a side of him; aiming them that
 way changes the whole game after (the rebound comes later), so it waits
 on a tape that shows what that does to everything else.
+
+## Fouls, steals, blocks and loose balls (8a)
+
+The play sends a man at the ball, or at the man with it (a foul, a reach
+in for a steal, a block, a loose ball he grabs), as late as the old sim's
+legs get him there: from stood at more of a run than a body has, or
+turned straight back the way he was going. Moved by his own body he falls
+a few feet behind and is yanked onto the spot in the last half second.
+And a loose ball he ran in for and stopped dead to grab.
+
+`through.ts` (`throughReaches`), on the play's runs before they are
+stepped:
+
+- His run in is set off as soon as getting there takes a man going at a
+  good run (pushing up to about 16 ft/s, not flat out), from where the
+  play had him then, up to 1.5 s sooner; pulling up first if he was going
+  the other way. Not across anything else of his that has him stood.
+- A loose ball is taken on the move, as a catch is (`carryThrough`).
+
+| Measure (real_11 + real_22, whole possessions) | Before | Now |
+| --- | --- | --- |
+| Jolts going for a foul, steal, block or loose ball (moments) | 27 | 14 |
+| Sudden starts and stops (lurch flags) | 340 | 314 |
+| Jumps from one spot to another (teleport flags) | 27 | 18 |
+
+Still short: a man the play has guarding somebody else, a long way off,
+when the shot he blocks goes up (a three, say), or getting back flat out
+and asked to stop dead and come straight back out: no body gets there in
+the time. Where the ten are as it comes is for the plays run live (8c).
 
 ## Natural and smooth (before step 8)
 

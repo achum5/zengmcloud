@@ -150,6 +150,7 @@ import {
 	throughContests,
 	throughPasses,
 	throughPullUps,
+	throughReaches,
 } from "./possession/through.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
@@ -31712,13 +31713,15 @@ class Director {
 		if (this.step) {
 			// (The new sim: a pass thrown and caught on the move, a pull-up
 			// gathered into, a closeout still coming as the shot goes up, a
-			// rebound gone up for on the way in - not stood for: see
-			// possession/through.ts.)
+			// rebound gone up for on the way in, a loose ball grabbed on the
+			// move - not stood for - and a foul, a steal or a block set off
+			// for in time: see possession/through.ts.)
 			if (this.possession) {
 				throughPasses(this.tracks, this.ball, this.spacing);
 				throughPullUps(this.tracks, this.ball, this.spacing);
 				throughContests(this.tracks, this.ball);
 				throughBoards(this.tracks, this.ball);
+				throughReaches(this.tracks, this.ball, this.spacing);
 			}
 			stepTimeline(
 				{

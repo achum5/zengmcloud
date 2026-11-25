@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 597,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): a defender going for a foul, a steal or a block sets off in time, turning back sooner if he was headed the other way, instead of being yanked onto the spot at the last moment. A loose ball is grabbed on the move instead of with a dead stop.",
+	},
+	{
 		n: 596,
 		date: "2026-11-25",
 		text: "A finished game's recap opens with its headline and first paragraph on desktop too, like on phones. Read more shows the rest.",
