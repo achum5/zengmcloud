@@ -13,7 +13,8 @@ import { spreadLine } from "./spreadLine.ts";
 // A NIGHT'S GAME IN THE HUB, as NBA.com's scoreboard shows one: a card with
 // each team's colors at its end, its city, name and score, "Final" and the
 // series between them, linked to the box score, with the game's recap line
-// under it; beside both, each team's two best lines of the night.
+// under it; beside both, each team's two best lines of the night (on a phone,
+// each team's top game score under the card instead).
 
 type Branding = { region: string; name: string; abbrev: string };
 
@@ -149,8 +150,94 @@ export const Face = ({ pid, season }: { pid: number; season: number }) => {
 	);
 };
 
+// ON A PHONE, under a game's card (no room for the lines beside it): a
+// player from each team on his own side, mirrored like the card - his face,
+// his name, and a line of numbers.
+export type PhonePlayer = { p: any; cols: [string, string][] };
+
+const PhonePlayerLine = ({
+	player: { p, cols },
+	season,
+}: {
+	player: PhonePlayer;
+	season: number;
+}) => {
+	const name: string = p.name ?? "";
+	const space = name.indexOf(" ");
+	const short = space > 0 ? `${name[0]}. ${name.slice(space + 1)}` : name;
+	return (
+		<a className="lh-gc-prev" href={helpers.leagueUrl(["player", p.pid])}>
+			<Face pid={p.pid} season={season} />
+			<span className="lh-gc-prev-text">
+				<span className="lh-gc-prev-name">{short}</span>
+				<span className="lh-gc-prev-stats">
+					{cols.map(([value, label]) => (
+						<span key={label}>
+							<b>{value}</b>
+							{label}
+						</span>
+					))}
+				</span>
+			</span>
+		</a>
+	);
+};
+
+export const PhonePlayers = ({
+	away,
+	home,
+	season,
+}: {
+	away?: PhonePlayer;
+	home?: PhonePlayer;
+	season: number;
+}) => {
+	if (!away && !home) {
+		return null;
+	}
+	return (
+		<div className="lh-gc-previews">
+			<div className="lh-gc-prev-side">
+				{away ? <PhonePlayerLine player={away} season={season} /> : null}
+			</div>
+			<div className="lh-gc-prev-side lh-gc-prev-home">
+				{home ? <PhonePlayerLine player={home} season={season} /> : null}
+			</div>
+		</div>
+	);
+};
+
+// A team's top game score of the night, with his points, rebounds and
+// assists (a phone's line under the card).
+const topGameScore = (players: any[] | undefined): PhonePlayer | undefined => {
+	let best: any;
+	let bestScore = -Infinity;
+	for (const p of players ?? []) {
+		if (!p.min) {
+			continue;
+		}
+		const score = helpers.gameScore(p);
+		if (score > bestScore) {
+			best = p;
+			bestScore = score;
+		}
+	}
+	if (!best) {
+		return undefined;
+	}
+	const s = processPlayerStats(best, ["pts", "trb", "ast"]);
+	return {
+		p: best,
+		cols: [
+			[String(s.pts ?? 0), "PTS"],
+			[String(s.trb ?? 0), "REB"],
+			[String(s.ast ?? 0), "AST"],
+		],
+	};
+};
+
 // A team's two best lines of the night, best first.
-const bestTwo = (players: any[] | undefined) => {
+const bestTwo = (players: any[] | undefined): any[] => {
 	if (!players) {
 		return [];
 	}
@@ -357,6 +444,11 @@ export const GameCard = ({
 							logo={homeBrand.logo}
 						/>
 					</a>
+					<PhonePlayers
+						away={topGameScore(away.players)}
+						home={topGameScore(home.players)}
+						season={season}
+					/>
 					{children}
 				</div>
 				<div className="lh-gc-leaders">

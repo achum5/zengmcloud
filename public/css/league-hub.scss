@@ -382,6 +382,7 @@
 // (The face is a way to the player too: the name lights with it.)
 .lh-perf:has(.lh-face-link:hover) .lh-perf-name a {
 	color: var(--bs-link-hover-color);
+	text-decoration: underline;
 }
 .lh-face {
 	flex: 0 0 auto;
@@ -923,24 +924,22 @@
 		height: 100%;
 	}
 }
-// The face and the name, one link to the player: on hover a faint wash
-// behind them, never an underline.
+// The face and the name, one link to the player: on hover the last name
+// underlines, like any player link.
 .lh-gc-player {
 	flex: none;
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
 	min-width: 0;
-	margin: -0.15rem -0.35rem;
-	padding: 0.15rem 0.35rem;
-	border-radius: 0.4rem;
 	color: var(--bs-emphasis-color);
 	text-decoration: none;
-	transition: background-color 0.12s ease;
 	&:hover {
 		color: var(--bs-emphasis-color);
 		text-decoration: none;
-		background-color: rgba(var(--bs-emphasis-color-rgb), 0.08);
+		.lh-gc-last {
+			text-decoration: underline;
+		}
 	}
 }
 .lh-gc-leader-name {
@@ -1055,6 +1054,114 @@
 	margin-top: 0.05rem;
 	padding-top: 0;
 	border-top: 0;
+}
+// On a phone, under a game's card: a player from each team on its own side
+// (where the card has room for its lines beside it, those instead).
+.lh-gc-previews {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	column-gap: 0.75rem;
+	padding: 0.45rem 0.15rem 0.05rem;
+}
+.lh-gc-prev-side {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	min-width: 0;
+}
+.lh-gc-prev {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	min-width: 0;
+	color: var(--bs-emphasis-color);
+	text-decoration: none;
+	&:hover {
+		color: var(--bs-emphasis-color);
+		text-decoration: none;
+	}
+	.lh-gc-face {
+		width: 1.35rem;
+		height: 2rem;
+	}
+}
+.lh-gc-prev-home .lh-gc-prev {
+	flex-direction: row-reverse;
+	text-align: right;
+}
+.lh-gc-prev-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.15;
+}
+.lh-gc-prev-name {
+	font-size: 0.8rem;
+	font-weight: 800;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.lh-gc-prev-stats {
+	display: flex;
+	gap: 0.4rem;
+	font-size: 0.55rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	color: var(--bs-secondary-color);
+	white-space: nowrap;
+	b {
+		margin-right: 0.12rem;
+		font-size: 0.74rem;
+		font-weight: 800;
+		letter-spacing: 0;
+		color: var(--bs-emphasis-color);
+		font-variant-numeric: tabular-nums;
+	}
+}
+.lh-gc-prev-home .lh-gc-prev-stats {
+	justify-content: flex-end;
+}
+// (Narrower phones: the numbers tighter; the narrowest, no faces.)
+@container lh-gc (max-width: 355px) {
+	.lh-gc-previews {
+		column-gap: 0.5rem;
+	}
+	.lh-gc-prev-stats {
+		gap: 0.26rem;
+		font-size: 0.5rem;
+		b {
+			margin-right: 0.08rem;
+			font-size: 0.68rem;
+		}
+	}
+}
+@container lh-gc (max-width: 315px) {
+	.lh-gc-prev .lh-gc-face {
+		display: none;
+	}
+}
+@container lh-gc (min-width: 620px) {
+	.lh-gc-previews {
+		display: none;
+	}
+}
+// (No network: just the line and the total, a touch bigger, a hairline
+// between them.)
+.lh-gc-mid-lines {
+	.lh-gc-line {
+		font-size: 0.76rem;
+	}
+	.lh-gc-line:first-child {
+		margin-top: 0;
+		padding-top: 0;
+		border-top: 0;
+	}
+	.lh-gc-line-2 {
+		margin-top: 0.2rem;
+		padding-top: 0.2rem;
+		border-top: 1px solid rgb(255 255 255 / 0.22);
+	}
 }
 // (Room under the line for the tab.)
 .lh-gc-has-acts .lh-gc-mid {
@@ -1197,6 +1304,15 @@
 		margin-top: 0.1rem;
 		padding-top: 0.1rem;
 		font-size: 0.58rem;
+	}
+	.lh-gc-mid-lines {
+		.lh-gc-line {
+			font-size: 0.64rem;
+		}
+		.lh-gc-line-2 {
+			margin-top: 0.12rem;
+			padding-top: 0.12rem;
+		}
 	}
 }
 // (The narrowest phones: the record under the score.)

@@ -1,15 +1,20 @@
 import { assert, describe, test } from "vitest";
 import {
+	broadcastStillLiveAfterReconnect,
 	chooseFocusGame,
 	createFollowerHold,
 	createRoomLiveCheck,
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
+	LEFTOVER_OWN_MS,
+	LEFTOVER_ROOM_MS,
 	liveGameHold,
 	MAX_JOIN_ATTEMPTS,
 	mateLiveCall,
 	QUIET_WATCH_MS,
+	quietGameToCheck,
+	quietGameVerdict,
 	roomGameStillLive,
 	shouldServeFollowedPayload,
 	type FollowerHoldPatch,
@@ -560,6 +565,184 @@ describe("a room game that went quiet", () => {
 		const check = createRoomLiveCheck(() => true);
 		assert.isFalse(check.isLive(game(10_000, true), 10_000));
 		assert.isFalse(check.givenUp(1000));
+	});
+});
+
+describe("a live game left behind", () => {
+	const me = "me";
+	const mate = "mate";
+	const doc = (over: Partial<Parameters<typeof quietGameToCheck>[0]> = {}) => ({
+		holderId: mate,
+		gid: 5,
+		startedAt: 1000,
+		expiresAt: 100_000,
+		gameOver: false,
+		...over,
+	});
+	const nothingHere = () => false;
+
+	test("a league mate's game is looked into once it has been quiet past the wait", () => {
+		const check = (now: number) =>
+			quietGameToCheck(doc(), { clientId: me, playingHere: nothingHere, now });
+		assert.isFalse(check(100_000 + QUIET_WATCH_MS - 1));
+		assert.isTrue(check(100_000 + QUIET_WATCH_MS));
+	});
+
+	test("this device's own leftover is looked into as soon as its lease is well gone", () => {
+		const own = doc({ holderId: me });
+		const check = (now: number) =>
+			quietGameToCheck(own, { clientId: me, playingHere: nothingHere, now });
+		assert.isFalse(check(100_000 + LEFTOVER_OWN_MS - 1));
+		assert.isTrue(check(100_000 + LEFTOVER_OWN_MS));
+	});
+
+	test("never the game this device is playing", () => {
+		assert.isFalse(
+			quietGameToCheck(doc({ holderId: me }), {
+				clientId: me,
+				playingHere: (gid) => gid === 5,
+				now: 100_000 + LEFTOVER_ROOM_MS * 2,
+			}),
+		);
+	});
+
+	test("quiet on the server past the wait: over here, whenever this device woke", () => {
+		const heard = doc();
+		const now = 100_000 + QUIET_WATCH_MS;
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: heard,
+				serverUpdatedAt: 90_000,
+				clientId: me,
+				now,
+			}),
+			{ over: true, clear: false },
+		);
+		// And the room's to clear once it has been quiet a long while.
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: heard,
+				serverUpdatedAt: 90_000,
+				clientId: me,
+				now: 100_000 + LEFTOVER_ROOM_MS,
+			}),
+			{ over: true, clear: true },
+		);
+	});
+
+	test("nothing, when the server has heard from it since this device did", () => {
+		const heard = doc();
+		const now = 100_000 + LEFTOVER_ROOM_MS;
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: doc({ expiresAt: now + 12_000 }),
+				serverUpdatedAt: now,
+				clientId: me,
+				now,
+			}),
+			{ over: false, clear: false },
+		);
+		// Gone already, or another broadcast of the game.
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: undefined,
+				serverUpdatedAt: undefined,
+				clientId: me,
+				now,
+			}),
+			{ over: false, clear: false },
+		);
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: doc({ startedAt: 2000 }),
+				serverUpdatedAt: 90_000,
+				clientId: me,
+				now,
+			}),
+			{ over: false, clear: false },
+		);
+	});
+
+	test("a simmer's slow clock can't get a game cleared early", () => {
+		// The lease says long gone (the simmer's clock is 20 minutes behind);
+		// the server took its last write a minute ago.
+		const now = 10_000_000;
+		const heard = doc({ expiresAt: now - 20 * 60 * 1000 });
+		const verdict = quietGameVerdict({
+			heard,
+			server: heard,
+			serverUpdatedAt: now - 60_000,
+			clientId: me,
+			now,
+		});
+		assert.isFalse(verdict.over);
+		assert.isFalse(verdict.clear);
+	});
+
+	test("this device's own leftover is cleared, not just called over", () => {
+		const heard = doc({ holderId: me });
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: heard,
+				serverUpdatedAt: 90_000,
+				clientId: me,
+				now: 100_000 + LEFTOVER_OWN_MS,
+			}),
+			{ over: false, clear: true },
+		);
+	});
+
+	test("a final left behind is cleared, never called over", () => {
+		const heard = doc({ gameOver: true });
+		assert.deepEqual(
+			quietGameVerdict({
+				heard,
+				server: heard,
+				serverUpdatedAt: 90_000,
+				clientId: me,
+				now: 100_000 + LEFTOVER_ROOM_MS,
+			}),
+			{ over: false, clear: true },
+		);
+	});
+
+	test("called over by the server, a game stays over here", () => {
+		const check = createRoomLiveCheck(() => true);
+		const game = { gid: 5, startedAt: 1000, gameOver: false, expiresAt: 0 };
+		// (Just woke: the wait would start over.)
+		const now = QUIET_WATCH_MS * 10;
+		assert.isTrue(check.isLive(game, now, now));
+		check.giveUp(game);
+		assert.isFalse(check.isLive(game, now, now));
+		assert.isTrue(check.givenUp(1000));
+	});
+});
+
+describe("the simmer's own game after a reconnect", () => {
+	test("goes on if the room hasn't called it over", () => {
+		assert.isTrue(broadcastStillLiveAfterReconnect(100_000, 100_000 + 60_000));
+	});
+
+	test("ends if it has been quiet about as long as the room waits", () => {
+		assert.isFalse(
+			broadcastStillLiveAfterReconnect(100_000, 100_000 + QUIET_WATCH_MS),
+		);
+		assert.isFalse(
+			broadcastStillLiveAfterReconnect(
+				100_000,
+				100_000 + QUIET_WATCH_MS - 10_000,
+			),
+		);
+	});
+
+	test("never heard from at all: over", () => {
+		assert.isFalse(broadcastStillLiveAfterReconnect(0, Date.now()));
 	});
 });
 

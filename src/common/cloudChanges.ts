@@ -12,6 +12,46 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 618,
+		date: "2026-11-25",
+		text: "3D game: a player with his arms up (dunks, layups, rebounds, blocks, contests, high fives) no longer grows huge wings of jersey from his armpits down his sides. His chest stays its own width with the jersey on it, and his armpit opens up under the raised arm, the way a real body looks reaching up.",
+	},
+	{
+		n: 617,
+		date: "2026-11-25",
+		text: "Scores bar: a team's name now underlines when you hover or tap it. Tapping the team that lost a played game (or either team in an if-necessary playoff game) now opens that team's roster like it should, instead of the game.",
+	},
+	{
+		n: 616,
+		date: "2026-11-25",
+		text: "Daily Schedule on phones: each game card now has a player from each team under it, on his team's side. Upcoming games show each team's best player with his points, rebounds and assists a game; finished games show each team's top game score of the night with his points, rebounds and assists in it.",
+	},
+	{
+		n: 615,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): a defender running up on a man in his way slows down in time instead of stopping dead on him, keeps up with a man running just ahead of him, and steps aside when someone walks into him instead of being shoved over in a blink.",
+	},
+	{
+		n: 614,
+		date: "2026-11-25",
+		text: "Links underline again when you hover or tap them: player names everywhere, recap sentences, the ticker, team banners, the league feed and the leaders on Daily Schedule game cards. The date in the top bar is a button now: no underline, just a soft shade on hover and a press when you tap it, and it's no longer cut off at the top and bottom. The yesterday/today arrows at the end of the scores bar no longer go blank on iPhones.",
+	},
+	{
+		n: 613,
+		date: "2026-11-25",
+		text: "Shared leagues: a game being played live no longer gets stuck as Delayed on everyone else's screen when the person playing it loses their connection. If they get back within a couple of minutes the game carries on; if not, it ends for everyone within a few minutes instead of hanging around. The dot by the date also gets itself back to green when uploads stall, instead of staying red until you refresh.",
+	},
+	{
+		n: 612,
+		date: "2026-11-25",
+		text: "Daily Schedule: upcoming game cards no longer say Today in the middle, just the line and the over/under. Games on national TV still show the network's logo above them.",
+	},
+	{
+		n: 611,
+		date: "2026-11-25",
+		text: "Finished games: the line and the over/under are now two columns of the score-by-quarter box, each team's side on its row (+2.5 / -2.5, O 212.5 / U 212.5) with a check on the side that hit. On phones they are two short lines under the box, and the box no longer runs into the team names on narrow phones.",
+	},
+	{
 		n: 610,
 		date: "2026-11-25",
 		text: "Player pages: All-Time Ranks is now a list like a TV graphic. Pick any stat (every career total, per game numbers and the playoffs, each with his rank on it) to see him with the two players just ahead and the one just behind. Old-time players who only have total rebounds, like Wilt Chamberlain, now count on the rebounding lists here and on Milestone Watch.",

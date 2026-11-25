@@ -248,6 +248,11 @@ const ENGAGE_DRIVE = 12;
 const APART = 2;
 // (Stepping aside, no quicker than this, feet a second.)
 const ASIDE = 8;
+// A man in his way, nearer than this (feet): braked for in time - to no
+// slower than this (feet a second) coming up on him, a pace he is
+// stepped round him at, not jolted.
+const HEED = 12;
+const HEED_LEAST = 4;
 // (How far on, s, the way his spot is going is read from.)
 const SPOT_DT = 0.1;
 // Off his spot, he means to make it up over about this long (s).
@@ -689,6 +694,47 @@ export const moveOn = (
 					arrive: Math.min(goal.most ?? Infinity, d.body.top),
 				};
 	let n = step(m, g, d.body, STEP_S);
+	// (Coming up on a man faster than he could still pull up from before he
+	// is on him - his own man ahead of him, say: slowed for him as he
+	// comes, no harder than he brakes, not stopped dead on him.)
+	for (const o of others) {
+		const dx = o.x - n.x;
+		const dy = o.y - n.y;
+		const r = Math.hypot(dx, dy);
+		if (r >= HEED || r < 1e-6) {
+			continue;
+		}
+		const ux = dx / r;
+		const uy = dy / r;
+		// (His own going at him, less the man's going on away from him: a man
+		// coming at him is not his to brake for - that one gets out of his
+		// way, see giveWay - and he is never backed off.)
+		const away = Math.max(0, (o.vx ?? 0) * ux + (o.vy ?? 0) * uy);
+		const at = n.vx * ux + n.vy * uy - away;
+		const may = Math.max(
+			HEED_LEAST,
+			Math.sqrt(2 * d.body.brake * Math.max(0, r - APART)),
+		);
+		if (at <= may) {
+			continue;
+		}
+		const was = m.vx * ux + m.vy * uy - away;
+		const cut = at - Math.max(may, was - d.body.brake * STEP_S);
+		if (cut > 0) {
+			// (Where the step has him, and how hard he pushes, as well.)
+			const cx = cut * ux;
+			const cy = cut * uy;
+			n = {
+				...n,
+				x: n.x - (cx / 2) * STEP_S,
+				y: n.y - (cy / 2) * STEP_S,
+				vx: n.vx - cx,
+				vy: n.vy - cy,
+				ax: n.ax - cx / STEP_S,
+				ay: n.ay - cy / STEP_S,
+			};
+		}
+	}
 	for (const o of others) {
 		const dx = n.x - o.x;
 		const dy = n.y - o.y;
@@ -717,15 +763,23 @@ export const moveOn = (
 			}
 		}
 		// (Out toward a step off him - a step aside, not put there - and no
-		// longer going into him.)
-		const by = Math.min(APART - r, ASIDE * STEP_S);
-		const into = n.vx * ux + n.vy * uy;
+		// longer going into him. Off him no quicker than he gets going, from
+		// however quick he was going off him already, and both reckoned from
+		// how quick the man goes on away from him: a man on his way ahead
+		// of him kept up with, not stopped dead behind.)
+		const away = Math.min(0, (o.vx ?? 0) * ux + (o.vy ?? 0) * uy);
+		const off = Math.max(0, m.vx * ux + m.vy * uy - away);
+		const by = Math.min(
+			APART - r,
+			Math.min(ASIDE, off + d.body.go * STEP_S) * STEP_S,
+		);
+		const short = away + by / STEP_S - (n.vx * ux + n.vy * uy);
 		n = {
 			...n,
 			x: n.x + ux * by,
 			y: n.y + uy * by,
-			vx: into < 0 ? n.vx - into * ux : n.vx,
-			vy: into < 0 ? n.vy - into * uy : n.vy,
+			vx: short > 0 ? n.vx + short * ux : n.vx,
+			vy: short > 0 ? n.vy + short * uy : n.vy,
 		};
 	}
 	return n;

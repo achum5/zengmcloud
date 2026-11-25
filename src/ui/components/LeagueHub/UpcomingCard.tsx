@@ -6,14 +6,21 @@ import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { NationalTag } from "../NationalTag.tsx";
 import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
-import { Face, Logo, Side, useBrand } from "./GameCard.tsx";
+import {
+	Face,
+	Logo,
+	PhonePlayers,
+	Side,
+	useBrand,
+	type PhonePlayer,
+} from "./GameCard.tsx";
 import { spreadLine } from "./spreadLine.ts";
 
 // A GAME STILL TO BE PLAYED, on the played game's card (GameCard): each
 // team's colors at its end, its city and name - and where a played game has
-// its score, its record, with its overall beside it. Between them, when it
-// is (or its network) and the line; hung from the foot, watch it or sim it;
-// beside it all, each team's best player.
+// its score, its record, with its overall beside it. Between them, the line
+// (under its network, if it's on one); hung from the foot, watch it or sim it;
+// beside it all (on a phone, under it), each team's best player.
 
 export type UpcomingCardTeam = {
 	tid: number;
@@ -150,6 +157,20 @@ const ToWatch = ({
 	);
 };
 
+// A team's best player going in, with his averages (a phone's line under
+// the card).
+const toWatchLine = (p: any): PhonePlayer | undefined =>
+	p
+		? {
+				p,
+				cols: [
+					[(p.stats?.pts ?? 0).toFixed(1), "PTS"],
+					[(p.stats?.trb ?? 0).toFixed(1), "REB"],
+					[(p.stats?.ast ?? 0).toFixed(1), "AST"],
+				],
+			}
+		: undefined;
+
 const PlayIcon = () => (
 	<svg viewBox="0 0 10 10" aria-hidden="true">
 		<path d="M2 1.2v7.6L8.6 5z" fill="currentColor" />
@@ -172,7 +193,7 @@ export const UpcomingCard = ({
 	// Each team's best player, home first (see getTopPlayers).
 	players?: [any, any];
 	actions?: UpcomingCardActions;
-	// "Today", or the day it's on.
+	// "Today", or the day it's on: shown only when there's no line.
 	when: string;
 }) => {
 	const {
@@ -187,6 +208,13 @@ export const UpcomingCard = ({
 	const homeBrand = useBrand(home);
 	const awayBrand = useBrand(away);
 	const line = spreadLine(game.spread, homeBrand.abbrev, awayBrand.abbrev);
+	const hasTotal = game.total !== undefined;
+	// Over the line, its network; with no line at all, when it is.
+	const heading = game.national ? (
+		<NationalTag tag={game.national} />
+	) : line || hasTotal ? null : (
+		when
+	);
 
 	const a = bannerColors(colors?.[away.tid]);
 	const h = bannerColors(colors?.[home.tid]);
@@ -212,16 +240,16 @@ export const UpcomingCard = ({
 							logo={awayBrand.logo}
 						/>
 						<UpcomingWords t={away} side="away" showOvr={showOvr} />
-						<div className="lh-gc-mid">
-							<div className="lh-gc-final lh-gc-when">
-								{game.national ? <NationalTag tag={game.national} /> : when}
-							</div>
+						<div className={clsx("lh-gc-mid", !heading && "lh-gc-mid-lines")}>
+							{heading ? (
+								<div className="lh-gc-final lh-gc-when">{heading}</div>
+							) : null}
 							{line ? (
 								<div className="lh-gc-line" title="Spread">
 									{line}
 								</div>
 							) : null}
-							{game.total !== undefined ? (
+							{hasTotal ? (
 								<div
 									className={clsx("lh-gc-line", line && "lh-gc-line-2")}
 									title="Over/under"
@@ -262,6 +290,11 @@ export const UpcomingCard = ({
 							</div>
 						) : null}
 					</div>
+					<PhonePlayers
+						away={toWatchLine(players?.[1])}
+						home={toWatchLine(players?.[0])}
+						season={season}
+					/>
 				</div>
 				<div className="lh-gc-leaders">
 					<ToWatch t={away} p={players?.[1]} season={season} />

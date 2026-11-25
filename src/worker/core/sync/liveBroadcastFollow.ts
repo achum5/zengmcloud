@@ -517,6 +517,19 @@ export const createRoomLiveCheck = (
 	onGiveUp?: (game: { gid?: number; startedAt: number }) => void,
 ) => {
 	const givenUp = new Set<number>();
+	const giveUp = (game: { gid?: number; startedAt: number }) => {
+		if (givenUp.has(game.startedAt)) {
+			return;
+		}
+		givenUp.add(game.startedAt);
+		onGiveUp?.(game);
+		if (givenUp.size > 32) {
+			const oldest = givenUp.values().next().value;
+			if (oldest !== undefined) {
+				givenUp.delete(oldest);
+			}
+		}
+	};
 	return {
 		isLive: (
 			game: {
@@ -535,20 +548,116 @@ export const createRoomLiveCheck = (
 				return true;
 			}
 			if (!game.gameOver && hearingRoom(now)) {
-				givenUp.add(game.startedAt);
-				onGiveUp?.(game);
-				if (givenUp.size > 32) {
-					const oldest = givenUp.values().next().value;
-					if (oldest !== undefined) {
-						givenUp.delete(oldest);
-					}
-				}
+				giveUp(game);
 			}
 			return false;
 		},
 		givenUp: (startedAt: number) => givenUp.has(startedAt),
+		// The server itself says this game has been quiet past the wait (see
+		// quietGameVerdict): over here now, whenever this device woke.
+		giveUp,
 	};
 };
+
+// LIVE GAMES LEFT BEHIND.
+//
+// The screen playing a game live clears its doc when it leaves the game. One
+// that can't - its connection down at the final, a refresh or a crash before
+// it got back online - leaves the doc behind, frozen at its last heartbeat:
+// every other device has the game in progress, Delayed. The rule above calls
+// it over after QUIET_WATCH_MS - but only of awake time, counted again from
+// every wake (a device's own sleep is not the game's silence), so a phone
+// opened now and then never got there, and the doc stayed for good.
+//
+// So every device looks into a game that has gone quiet, against the server
+// (its copy can be minutes behind after a sleep; the server's can't): quiet
+// past the wait there is over, here, now; and a doc nobody has heartbeated in
+// a long while is deleted, which ends it on every device at once. A device
+// clears its OWN leftover (by its uid, the same across reloads) as soon as
+// it is sure it is one: nothing on this device is playing that game, and
+// nobody has heartbeated it past its lease.
+export const LEFTOVER_OWN_MS = 30_000;
+export const LEFTOVER_ROOM_MS = 10 * 60 * 1000;
+
+type QuietGameDoc = {
+	holderId: string;
+	gid: number;
+	startedAt: number;
+	expiresAt: number;
+	gameOver: boolean;
+};
+
+// Whether a live game doc, as this device last heard it, has gone quiet long
+// enough to look into. Never one this device is playing (or starting).
+export const quietGameToCheck = (
+	heard: QuietGameDoc,
+	{
+		clientId,
+		playingHere,
+		now,
+	}: {
+		clientId: string;
+		playingHere: (gid: number) => boolean;
+		now: number;
+	},
+): boolean => {
+	if (playingHere(heard.gid)) {
+		return false;
+	}
+	const quiet = now - heard.expiresAt;
+	return heard.holderId === clientId
+		? quiet >= LEFTOVER_OWN_MS
+		: quiet >= QUIET_WATCH_MS;
+};
+
+// What the server's copy of a quiet game's doc says: `over` - quiet past the
+// wait, so not a game in progress here any more; `clear` - left behind, to
+// be deleted. Nothing, if the server has heard from it since (this device's
+// copy was behind) or the doc is gone or another game's. Quiet is measured
+// both by the lease on it (the simmer's clock) and by when the server took
+// its last write (the server's clock), the shorter of the two: a simmer's
+// clock running slow can't get a game cleared early.
+export const quietGameVerdict = ({
+	heard,
+	server,
+	serverUpdatedAt,
+	clientId,
+	now,
+}: {
+	heard: QuietGameDoc;
+	server: QuietGameDoc | undefined;
+	serverUpdatedAt: number | undefined;
+	clientId: string;
+	now: number;
+}): { over: boolean; clear: boolean } => {
+	if (
+		!server ||
+		server.gid !== heard.gid ||
+		server.startedAt !== heard.startedAt ||
+		server.expiresAt > heard.expiresAt
+	) {
+		return { over: false, clear: false };
+	}
+	const quiet = Math.min(
+		now - server.expiresAt,
+		serverUpdatedAt === undefined ? Infinity : now - serverUpdatedAt,
+	);
+	const own = server.holderId === clientId;
+	return {
+		over: !own && !server.gameOver && quiet >= QUIET_WATCH_MS,
+		clear: quiet >= (own ? LEFTOVER_OWN_MS : LEFTOVER_ROOM_MS),
+	};
+};
+
+// The simmer's own game, back from a dropped connection: still the room's
+// live game, if the room has not called it over in the meantime (its last
+// heartbeat the server took, `liveUntil`, is within the wait, with room to
+// spare). Otherwise it is over for everyone already, and ends here too.
+export const RESUME_MARGIN_MS = 15_000;
+export const broadcastStillLiveAfterReconnect = (
+	liveUntil: number,
+	now: number,
+): boolean => now - liveUntil < QUIET_WATCH_MS - RESUME_MARGIN_MS;
 
 // What holds the league's next step (a playoff day, a phase change) while a
 // game is being played live: undefined for nothing. A playoff game still on

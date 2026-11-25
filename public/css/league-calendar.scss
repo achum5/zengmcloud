@@ -829,13 +829,59 @@ $lc-dark: lightness($white) < 50%;
 	}
 }
 
-// Today in the top bar, as a page off a desk calendar.
+// Today in the top bar, as a page off a desk calendar. It works like a
+// button, not a text link: on hover a soft wash comes up behind the page, and
+// a press or tap sinks it a little. Never an underline.
 .league-date-tile-link {
+	position: relative;
 	display: flex;
 	flex-shrink: 0;
-	text-decoration: none;
-	&:hover .league-date-tile {
+	margin-right: 0.55rem;
+	border-radius: 0.3rem;
+	-webkit-tap-highlight-color: transparent;
+	&,
+	&:hover,
+	&:focus,
+	&:active {
+		text-decoration: none;
+	}
+	&::before {
+		position: absolute;
+		inset: -4px;
+		content: "";
+		border-radius: 0.5rem;
+		background: rgba(var(--bs-emphasis-color-rgb), 0.08);
+		opacity: 0;
+		transition: opacity 0.12s ease;
+	}
+	.league-date-tile {
+		position: relative;
+		transition:
+			transform 0.12s ease,
+			border-color 0.12s ease;
+	}
+	@media (hover: hover) {
+		&:hover::before {
+			opacity: 1;
+		}
+		&:hover .league-date-tile {
+			border-color: var(--bs-secondary-color);
+		}
+	}
+	&:active::before {
+		opacity: 1;
+		background: rgba(var(--bs-emphasis-color-rgb), 0.14);
+	}
+	&:active .league-date-tile {
 		border-color: var(--bs-secondary-color);
+		transform: scale(0.94);
+	}
+	&:focus-visible {
+		outline: none;
+	}
+	&:focus-visible::before {
+		opacity: 1;
+		box-shadow: 0 0 0 2px var(--bs-primary);
 	}
 }
 
@@ -844,7 +890,6 @@ $lc-dark: lightness($white) < 50%;
 	flex-direction: column;
 	flex-shrink: 0;
 	width: 2.3rem;
-	margin-right: 0.55rem;
 	overflow: hidden;
 	line-height: 1;
 	text-align: center;

@@ -331,6 +331,14 @@ export class SyncEngineV2 {
 	// Remedies applied to the CURRENT wedge. Reset the moment anything gets
 	// through, so the ladder starts at the cheap rung for the next one.
 	private wedgeRemedyCount = 0;
+	// The WRITE half of a wedge: readiness pings (one tiny write, see
+	// ensureReady) going unanswered in a row, and the remedies tried on it so
+	// far. Reads can carry on through a channel whose writes are stuck - the
+	// head probe passing every tick - so the read side's counts above never
+	// see it, and the dot sat red (nothing this device did reaching the room,
+	// a live game's heartbeats included) until the page was reloaded.
+	private readyPingFailures = 0;
+	private readyRemedyCount = 0;
 	private lastCatchupFailureAt = 0;
 	// The catch-up step already reported to the user via a persistent notice,
 	// so repeated failures at the same step nag exactly once.
@@ -655,7 +663,7 @@ export class SyncEngineV2 {
 	// Returns whether a remedy (cycle or hard restart) actually ran, so the
 	// caller knows whether a follow-up catch-up is already scheduled.
 	private async maybeCycleNetwork(
-		source: "probe" | "catchup",
+		source: "probe" | "catchup" | "ready",
 	): Promise<boolean> {
 		if (
 			this.stopped ||
@@ -668,7 +676,11 @@ export class SyncEngineV2 {
 		// landing mid-walk turned a working pass into "client is offline" and
 		// cost the device its place. The catchup source is exempt: it calls this
 		// from its own catch block, where the pass is already over.
-		if (source === "probe" && this.catchingUp) {
+		if ((source === "probe" || source === "ready") && this.catchingUp) {
+			return false;
+		}
+		// (Nor from under an upload, which recovers through its own retries.)
+		if (source === "ready" && this.draining) {
 			return false;
 		}
 		// One timed-out read is the wedge signature and qualifies on its own
@@ -676,7 +688,8 @@ export class SyncEngineV2 {
 		// needs two failures before the connection is presumed guilty.
 		const eligible =
 			Math.max(this.probeFailureStreak, this.catchupFailureStreak) >= 2 ||
-			(source === "catchup" && this.lastCatchupFailureWasTimeout);
+			(source === "catchup" && this.lastCatchupFailureWasTimeout) ||
+			(source === "ready" && this.readyPingFailures >= 2);
 		// The 30s spacing exists so a dead network cannot be cycle-stormed into
 		// the SDK's "client is offline" death spiral. But the SAME read failing
 		// twice is ~16 seconds of proof this is a wedge, not a blip - and every
@@ -724,8 +737,18 @@ export class SyncEngineV2 {
 		// counter resets on the next successful catch-up, so an ordinary blip
 		// still gets the cheap remedy next time.
 		this.wedgeRemedyCount += 1;
+		// (A stuck write half escalates on its own count: the head probe
+		// getting through resets the read side's every tick.)
+		if (source === "ready") {
+			this.readyRemedyCount += 1;
+			this.readyPingFailures = 0;
+		}
+		const escalate =
+			source === "ready"
+				? this.readyRemedyCount > 1
+				: this.wedgeRemedyCount > 1;
 		const hardRestart = this.hardRestartFn();
-		if (this.wedgeRemedyCount > 1 && hardRestart) {
+		if (escalate && hardRestart) {
 			syncDebugLog("v2:hard-restart", {
 				source,
 				attempt: this.wedgeRemedyCount,
@@ -1206,15 +1229,36 @@ export class SyncEngineV2 {
 		// skip the forced ping once ready) kept working. A timeout throws, the
 		// guard catches it, and the user sees "Cloud sync is not ready".
 		this.readyProbe = (async () => {
+			const started = Date.now();
 			try {
 				await withTimeout(
 					this.transport.ping?.() ?? Promise.resolve(),
 					CATCHUP_READ_TIMEOUT_MS,
 				);
+				if (this.readyPingFailures > 0 || this.readyRemedyCount > 0) {
+					syncDebugLog("v2:ready-restored", {
+						ms: Date.now() - started,
+						failures: this.readyPingFailures,
+						remedies: this.readyRemedyCount,
+					});
+				}
+				this.readyPingFailures = 0;
+				this.readyRemedyCount = 0;
 				this.readyUntil = Date.now() + READY_TTL_MS;
 				this.pushReady();
 			} catch (error) {
+				this.readyPingFailures += 1;
+				syncDebugLog("v2:ready-ping-failed", {
+					ms: Date.now() - started,
+					error: String(error),
+					inARow: this.readyPingFailures,
+				});
 				this.markNotReady();
+				// Twice in a row is ~16s of writes going nowhere: the same cure
+				// as a stuck read, a fresh channel, then a fresh client.
+				if (this.readyPingFailures >= 2) {
+					void this.maybeCycleNetwork("ready");
+				}
 				throw error;
 			}
 		})().finally(() => {

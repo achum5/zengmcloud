@@ -632,6 +632,37 @@ when the shot he blocks goes up (a three, say), or getting back flat out
 and asked to stop dead and come straight back out: no body gets there in
 the time. Where the ten are as it comes is for the plays run live (8c).
 
+## Calm decisions (8b)
+
+Jolts with nothing pinned - a man not at the ball, not catching, not set
+for anything - were about 23 a game, and two thirds of them were men
+running into one another: a defender at 16-19 ft/s comes within a step of
+a man (his own man, say, ahead of him) and the keep-apart (`moveOn`)
+stops him dead in one step. The rest were men shoved aside in a blink, a
+step's worth of floor in a tenth of a second with no step taken.
+
+`defense.ts` (`moveOn`):
+
+- A man in his way within 12 ft is braked for in time: no faster at him
+  than he could still pull up from before he is on him, slowed no harder
+  than he brakes - only for his own going at him, less the man's going on
+  away (a man coming at him gets out of the way himself, see `giveWay`).
+- Kept off a man by how fast they close, not how fast he goes: on the
+  heels of a man running the same way he keeps up, not stopped dead.
+- Stepped aside no quicker than he gets going, from however quick he was
+  going off the man already, his pace going with it.
+
+| Measure (real_11 + real_22, whole possessions) | Before | Now |
+| --- | --- | --- |
+| Jolts with nothing pinned (moments) | 46 | 10 |
+| Sudden starts and stops (lurch flags) | 314 | 278 |
+| Jumps from one spot to another (teleport flags) | 18 | 16 |
+| Stood still at the wrong time (statue, frozen) | 42 | 42 |
+
+Still to do in 8b: a choice holds a moment and a target slides - men
+flick between standing and walking, walking and backpedalling, up and
+down in their stance, for a tenth of a second at a time.
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it
