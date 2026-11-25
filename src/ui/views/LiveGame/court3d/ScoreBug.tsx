@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import { lightness } from "./figure.ts";
+import { useScreenPicture } from "./bugScale.ts";
 
 // THE SCORE BUG: the bar along the bottom of the picture, the way the
 // broadcasts carry it - each side's logo, abbreviation and score in its own
@@ -44,17 +45,26 @@ export type BugRefs = {
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 const MAX_TIMEOUTS = 7;
+// Its lettering's size, as a share of the picture's width (see bugScale.ts)
+// - and on a screen's widest picture, at least this big, px, to be read on a
+// phone, its small lines too.
+const SIZE = 0.0175;
+const MIN_SIZE = 10;
+const MIN_SMALL = 7.5;
 
 const Side = ({
 	team,
 	foulsRef,
 	ballRef,
 	totalTimeouts,
+	small,
 }: {
 	team: BugTeam | undefined;
 	foulsRef: BugRefs["fouls"][0];
 	ballRef: BugRefs["ball"][0];
 	totalTimeouts: number | undefined;
+	// The small lines' size, em (see MIN_SMALL).
+	small: (em: number) => string;
 }) => {
 	const main = team?.colors?.[0] ?? "#3a3a44";
 	const accent = team?.colors?.[1] ?? "#9a9aa6";
@@ -164,7 +174,7 @@ const Side = ({
 					padding: "0 0.45em",
 					background: "rgba(10, 10, 14, 0.9)",
 					color: "#d8d4de",
-					fontSize: "max(7.5px, 0.72em)",
+					fontSize: small(0.72),
 					letterSpacing: "0.06em",
 				}}
 			>
@@ -224,100 +234,110 @@ export const ScoreBug = ({
 	hidden?: boolean;
 	// What the clock after the game clock is (football's: the play clock).
 	shotTitle?: string;
-}) => (
-	<div
-		style={{
-			display: hidden ? "none" : "flex",
-			flexDirection: "column",
-			position: "absolute",
-			left: "50%",
-			bottom: "1.6cqw",
-			transform: "translateX(-50%)",
-			fontFamily: FONT,
-			fontWeight: 700,
-			fontSize: "clamp(10px, 1.75cqw, 16px)",
-			lineHeight: 1,
-			borderRadius: 4,
-			overflow: "hidden",
-			boxShadow: "0 3px 10px rgba(0,0,0,.5)",
-			whiteSpace: "nowrap",
-		}}
-	>
-		{series ? (
-			<div
-				style={{
-					padding: "0.3em 0.8em",
-					background: "rgba(10, 10, 14, 0.94)",
-					borderBottom: "1px solid rgba(255,255,255,.12)",
-					color: "#d8d4de",
-					fontSize: "max(7.5px, 0.66em)",
-					letterSpacing: "0.08em",
-					textAlign: "center",
-					textTransform: "uppercase",
-				}}
-			>
-				{series}
-			</div>
-		) : null}
-		<div style={{ display: "flex", alignItems: "stretch" }}>
-			<Side
-				team={away}
-				foulsRef={refs.fouls[0]}
-				ballRef={refs.ball[0]}
-				totalTimeouts={totalTimeouts}
-			/>
-			<Side
-				team={home}
-				foulsRef={refs.fouls[1]}
-				ballRef={refs.ball[1]}
-				totalTimeouts={totalTimeouts}
-			/>
-			<div
-				style={{
-					display: "flex",
-					alignItems: "center",
-					gap: "0.7em",
-					padding: "0 0.8em",
-					background: "rgba(10, 10, 14, 0.94)",
-					color: "#f4f4f4",
-					fontVariantNumeric: "tabular-nums",
-					fontSize: "1.1em",
-				}}
-			>
-				<span style={{ color: "#bdb8c6", fontSize: "0.85em" }}>{quarter}</span>
-				<span ref={refs.clock} style={{ minWidth: "2.6em" }} />
-			</div>
-			<span
-				ref={refs.shot}
-				title={shotTitle}
-				style={{
-					// Shown by the frame loop while the shot clock runs.
-					display: "none",
-					alignItems: "center",
-					justifyContent: "center",
-					minWidth: "1.9em",
-					padding: "0 0.35em",
-					background: "#1c1408",
-					color: "#ffb547",
-					fontVariantNumeric: "tabular-nums",
-					fontSize: "1.1em",
-				}}
-			/>
-			{refs.down ? (
-				<span
-					ref={refs.down}
-					title="Down and distance"
+}) => {
+	// The same share of every picture on the screen.
+	const screen = useScreenPicture();
+	const size = Math.max(SIZE * screen, MIN_SIZE);
+	const small = (em: number) => `${Math.max(em, MIN_SMALL / size)}em`;
+	return (
+		<div
+			style={{
+				display: hidden ? "none" : "flex",
+				flexDirection: "column",
+				position: "absolute",
+				left: "50%",
+				bottom: "1.6cqw",
+				transform: "translateX(-50%)",
+				fontFamily: FONT,
+				fontWeight: 700,
+				fontSize: `${(size / screen) * 100}cqw`,
+				lineHeight: 1,
+				borderRadius: "0.25em",
+				overflow: "hidden",
+				boxShadow: "0 3px 10px rgba(0,0,0,.5)",
+				whiteSpace: "nowrap",
+			}}
+		>
+			{series ? (
+				<div
+					style={{
+						padding: "0.3em 0.8em",
+						background: "rgba(10, 10, 14, 0.94)",
+						borderBottom: "1px solid rgba(255,255,255,.12)",
+						color: "#d8d4de",
+						fontSize: small(0.66),
+						letterSpacing: "0.08em",
+						textAlign: "center",
+						textTransform: "uppercase",
+					}}
+				>
+					{series}
+				</div>
+			) : null}
+			<div style={{ display: "flex", alignItems: "stretch" }}>
+				<Side
+					team={away}
+					foulsRef={refs.fouls[0]}
+					ballRef={refs.ball[0]}
+					totalTimeouts={totalTimeouts}
+					small={small}
+				/>
+				<Side
+					team={home}
+					foulsRef={refs.fouls[1]}
+					ballRef={refs.ball[1]}
+					totalTimeouts={totalTimeouts}
+					small={small}
+				/>
+				<div
 					style={{
 						display: "flex",
 						alignItems: "center",
+						gap: "0.7em",
+						padding: "0 0.8em",
+						background: "rgba(10, 10, 14, 0.94)",
+						color: "#f4f4f4",
+						fontVariantNumeric: "tabular-nums",
+						fontSize: "1.1em",
+					}}
+				>
+					<span style={{ color: "#bdb8c6", fontSize: "0.85em" }}>
+						{quarter}
+					</span>
+					<span ref={refs.clock} style={{ minWidth: "2.6em" }} />
+				</div>
+				<span
+					ref={refs.shot}
+					title={shotTitle}
+					style={{
+						// Shown by the frame loop while the shot clock runs.
+						display: "none",
+						alignItems: "center",
 						justifyContent: "center",
-						padding: "0 0.7em",
+						minWidth: "1.9em",
+						padding: "0 0.35em",
 						background: "#1c1408",
 						color: "#ffb547",
 						fontVariantNumeric: "tabular-nums",
+						fontSize: "1.1em",
 					}}
 				/>
-			) : null}
+				{refs.down ? (
+					<span
+						ref={refs.down}
+						title="Down and distance"
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							padding: "0 0.7em",
+							background: "#1c1408",
+							color: "#ffb547",
+							fontVariantNumeric: "tabular-nums",
+						}}
+					/>
+				) : null}
+			</div>
 		</div>
-	</div>
-);
+	);
+};

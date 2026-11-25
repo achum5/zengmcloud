@@ -16,6 +16,7 @@ import {
 import type { BugRefs, BugTeam } from "./ScoreBug.tsx";
 import { bugShown, writeBug, type BugNow } from "./bugWriter.ts";
 import { lightness } from "./figure.ts";
+import { useScreenPicture } from "./bugScale.ts";
 
 // THE LEAGUE'S OWN SCORE BUG (see ScoreBugStyle): its pieces placed in the
 // bug's own units, which scale with the picture. The clocks, the fouls, the
@@ -39,14 +40,15 @@ const MAX_TIMEOUTS = 7;
 // shows the game's own count. Always in seven places, the way TV keeps its
 // marks where they are.
 const TV_TIMEOUTS = __SPORT === "basketball" ? 7 : 0;
-// The smallest a bug is drawn, px - at least this wide, and at least this
-// tall: a corner box or a bar across the bottom the size it is on TV is too
-// small to read on a phone.
+// The smallest a bug is drawn on a screen's widest picture (see
+// bugScale.ts), px - at least this wide, and at least this tall: a corner box
+// or a bar across the bottom the size it is on TV is too small to read on a
+// phone.
 const MIN_WIDTH = 150;
 const MIN_HEIGHT = 32;
 // And at least the size it is on a picture this wide, px: a tall bug (three
 // rows, NBC's) kept only that tall had its records and network line too small
-// to read on a phone. (Wider pictures show every bug as on TV.)
+// to read on a phone. (Wider screens show every bug as on TV.)
 const MIN_PICTURE = 580;
 
 // A team's color written into CSS: "home0" alone, or in a gradient, a
@@ -129,6 +131,8 @@ export const CustomScoreBug = ({
 	useEffect(() => {
 		addFonts(style.fonts);
 	}, [style.fonts]);
+
+	const screen = useScreenPicture();
 
 	const W = style.width;
 	const H = style.height;
@@ -570,9 +574,10 @@ export const CustomScoreBug = ({
 
 	const span = style.span ?? 0.6;
 	const place = style.place ?? "center";
-	// (Never so small on a phone that it can't be read.)
+	// The same share of every picture on the screen (see bugScale.ts): as on
+	// TV, or never so small on a phone that it can't be read.
 	const least = Math.max(MIN_WIDTH, (MIN_HEIGHT * W) / H, span * MIN_PICTURE);
-	const width = `min(96%, max(${span * 100}%, ${least}px))`;
+	const width = `${Math.min(0.96, Math.max(span, least / screen)) * 100}%`;
 	// (And never pushed off the side by being made bigger.)
 	const edge = `min(${(style.edge ?? 0.016) * 100}cqw, calc(98% - ${width}))`;
 	return (

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 635,
+		date: "2026-11-25",
+		text: "3D game: the score bug keeps the same proportions on every size of picture, as if the whole picture were shrunk or blown up. The small picture in the Daily Schedule's Nightly Recap no longer has an oversized score bug, and a full size game shows the bug in proportion too. Phones keep their bigger, easier to read bug.",
+	},
+	{
 		n: 634,
 		date: "2026-11-25",
 		text: "Recaps: every team named in a recap is now a link to its page, not just the teams that played. That covers the night's Streaks, The race and Worth watching on the Daily Schedule, and the Up next part of a game's recap.",
