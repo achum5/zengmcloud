@@ -222,7 +222,7 @@ const CLOTHES: [string, number][] = [
 	["#c49a3f", 1],
 ];
 const CLOTHES_SUM = CLOTHES.reduce((n, [, w]) => n + w, 0);
-const clothes = (r: number) => {
+export const clothes = (r: number) => {
 	let left = r * CLOTHES_SUM;
 	for (const [c, w] of CLOTHES) {
 		left -= w;
@@ -233,8 +233,11 @@ const clothes = (r: number) => {
 	return CLOTHES[0]![0];
 };
 
-const teamColor = (team: ArenaTeam | undefined, i: number, fallback: string) =>
-	team?.colors?.[i] || fallback;
+export const teamColor = (
+	team: ArenaTeam | undefined,
+	i: number,
+	fallback: string,
+) => team?.colors?.[i] || fallback;
 
 // A point on the stands: x along the court, `up` feet up the rake from the
 // front row.
@@ -250,6 +253,8 @@ const ROW_FT = 2.75;
 const RIBBON_ROW = 13;
 // How tall a fan's head is drawn, hair and all (feet).
 const FACE_FT = 0.98;
+// The colors of fans' skin.
+export const SKINS = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
 // The fans in the stands drawn this much taller than they are, up the
 // rake: seen from the main camera, the slope of the stands is foreshortened
 // more than a man sat upright on it - drawn true to size, everyone came out
@@ -257,12 +262,12 @@ const FACE_FT = 0.98;
 // where in a real building each row's heads hide the laps behind them.
 const RAKE_TALL = 1.3;
 // Home fans in a jersey of their team's, of them; and what fans wear below.
-const JERSEY_SHARE = 0.22;
-const PANTS = ["#262b36", "#1d2330", "#3a3e47", "#4b3b2c", "#2f3a52"];
+export const JERSEY_SHARE = 0.22;
+export const PANTS = ["#262b36", "#1d2330", "#3a3e47", "#4b3b2c", "#2f3a52"];
 // Of the home fans in their seats, so many clap along (see paintStands).
-const CLAP_SHARE = 0.6;
+export const CLAP_SHARE = 0.6;
 // The jackets some have open over their shirts.
-const JACKETS = ["#16171a", "#2a2c31", "#1f2a44", "#45484f", "#3a2f28"];
+export const JACKETS = ["#16171a", "#2a2c31", "#1f2a44", "#45484f", "#3a2f28"];
 // The home fans down low who hold a sign up (the D and the fence): in the
 // first so many rows, so many of them.
 const SIGN_ROWS = 9;
@@ -361,7 +366,7 @@ export const RIBBON = plane(
 );
 
 // The score along the middle of it (see jumbotron's ribbonScore).
-const RIBBON_SCORE_FT = 44;
+export const RIBBON_SCORE_FT = 44;
 export const RIBBON_SCORE = plane(
 	"ribbonScore",
 	standsPoint(COURT_W / 2 - RIBBON_SCORE_FT / 2, (RIBBON_ROW + 1) * ROW_FT),
@@ -738,7 +743,7 @@ export const paintStands = (
 		}
 		return clothes(rng());
 	};
-	const skins = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
+	const skins = SKINS;
 	const rows = Math.floor(SLOPE / ROW_FT);
 	const aisle = 31;
 	// Who came: as many as bought tickets, in the best seats first - low and
@@ -1277,7 +1282,7 @@ export const courtsideFor = (
 	);
 	const pick = <T>(a: readonly T[]): T => a[Math.floor(rng() * a.length)]!;
 	const homeC = [teamColor(home, 0, "#8c1d40"), teamColor(home, 1, "#f2c14e")];
-	const skins = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
+	const skins = SKINS;
 	const px = CS_PX;
 	at.forEach((_, i) => {
 		const ox = (i % cols) * (cw + CS_GAP);

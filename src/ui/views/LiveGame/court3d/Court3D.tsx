@@ -79,6 +79,9 @@ const MESH_FIXED = 0.6;
 import { arenaSpecFor } from "./arenaSpec.ts";
 import { makeJumbotron } from "./jumbotron.ts";
 import { crowdFaces, crowdFacesMade, type CrowdFace } from "./crowdFaces.ts";
+import { type Bowl, bowlLoaded, loadBowl } from "./bowlData.ts";
+import { fanLooks, paintFanPool, seatCrowd } from "./bowlFans.ts";
+import { bowlHere } from "./bowlSetting.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
 import { courtRosterOf, courtTeamsOf, introKindOf } from "./courtInput.ts";
 import { dressKit } from "./kitArt.ts";
@@ -803,11 +806,64 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid, crests, adPictures],
 	);
+	// The bowl built in Blender (Global Settings, "3D Arena": see bowlGl.ts),
+	// fetched once a visit - and the crowd sat in it once a game, with
+	// faces once there are.
+	const [bowlData, setBowlData] = useState<Bowl | undefined>(() =>
+		bowlHere() ? bowlLoaded() : undefined,
+	);
+	useEffect(() => {
+		if (!bowlHere()) {
+			return;
+		}
+		let alive = true;
+		void loadBowl().then((b) => {
+			if (alive && b) {
+				setBowlData(b);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
+	const bowl = useMemo(
+		() => {
+			if (!bowlData) {
+				return undefined;
+			}
+			const h = {
+				abbrev: home?.abbrev,
+				name: home?.name,
+				region: home?.region,
+				colors: home?.colors,
+			};
+			const a = {
+				abbrev: away?.abbrev,
+				name: away?.name,
+				region: away?.region,
+				colors: away?.colors,
+			};
+			const seed = String(gid ?? 0);
+			const playoffs = !!boxScore?.playoffs;
+			const looks = fanLooks(h, a, seed, fans, playoffs);
+			const building: ArenaLooks | undefined = boxScore?.arena;
+			return {
+				data: bowlData,
+				crowd: seatCrowd(bowlData, looks, paintFanPool(looks), seed, playoffs, {
+					att: boxScore?.att,
+					capacity: building?.capacity,
+				}),
+				seatColor: arenaSpecFor(h).stands.seat,
+			};
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid, fans, bowlData],
+	);
 	// (The finals trophy is on the floor, at center court, on every court -
 	// see LiveCourt.)
 	const painted = useMemo(
-		() => ({ ...paint, rafters, jumbotron }),
-		[paint, rafters, jumbotron],
+		() => ({ ...paint, rafters, jumbotron, bowl }),
+		[paint, rafters, jumbotron, bowl],
 	);
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
@@ -1848,6 +1904,7 @@ const Court3D = ({
 					tableTop: pt.tableTop,
 					tableFront: pt.tableFront,
 					bench: [pt.bench0, pt.bench1],
+					...(pt.bowl ? { bowl: pt.bowl } : {}),
 				},
 				crowd,
 				now,

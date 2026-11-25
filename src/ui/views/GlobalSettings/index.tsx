@@ -20,6 +20,7 @@ import {
 	possessionSimHere,
 	setPossessionSim,
 } from "../LiveGame/court3d/possession/setting.ts";
+import { bowlHere, setBowl } from "../LiveGame/court3d/bowlSetting.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -54,6 +55,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				? "show"
 				: ("hide" as const),
 			possessionSim: possessionSimHere() ? "show" : ("hide" as const),
+			bowl: bowlHere() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -117,6 +119,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setNewInterface(state.newInterface === "show");
 		localActions.setRefreshedLook(state.refreshedLook === "show");
 		setPossessionSim(state.possessionSim === "show");
+		setBowl(state.bowl === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -316,6 +319,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 					})}
 					{__SPORT === "basketball"
 						? showHide("possessionSim", "3D Game Sim", "On this device", [
+								"New (in progress)",
+								"Current",
+							])
+						: null}
+					{__SPORT === "basketball"
+						? showHide("bowl", "3D Arena", "On this device", [
 								"New (in progress)",
 								"Current",
 							])

@@ -32,8 +32,12 @@ OUT = argv[1]
 CAMS = argv[2].split(",") if len(argv) > 2 and argv[2] else []
 SCALE = float(argv[3]) if len(argv) > 3 else 2
 SAMPLES = int(argv[4]) if len(argv) > 4 else 64
+# EXPORT=<file>: no pictures - the bowl's shell, its light baked into it
+# and the seats, written for the game (see export_bowl and bowlGl.ts).
+EXPORT = os.environ.get("EXPORT")
 os.makedirs(OUT, exist_ok=True)
-INFO = json.load(open(os.path.join(ASSETS, "info.json")))
+_info = os.path.join(ASSETS, "info.json")
+INFO = json.load(open(_info)) if os.path.exists(_info) else {"apron": "#1d2a44"}
 rng = random.Random(7)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -334,20 +338,29 @@ for k in ("ribbon", "wall", "end", "court"):
             MATS[k] = mat_image_diffuse(k, p, closest=True)
         else:
             MATS[k] = mat_image_emit(k, p, 2.2)
-MATS["fans"] = mat_image_diffuse("fans", os.path.join(ASSETS, "atlas.png"), closest=True, alpha=True)
+if EXPORT:
+    # (The boards lit, for the light they throw on what is round them.)
+    MATS["ribbon"] = mat_emit("ribbon", (0.55, 0.6, 0.75, 1), 1.0)
+    MATS["wall"] = mat_emit("wall", (0.55, 0.6, 0.75, 1), 1.0)
+else:
+    MATS["fans"] = mat_image_diffuse("fans", os.path.join(ASSETS, "atlas.png"), closest=True, alpha=True)
 
 
 def band(name, us, d0, z0, d1, z1, period=None):
     # A strip along the path: from (d0, z0) to (d1, z1) in section, at
-    # each of the us - a picture laid along it once every `period` feet.
+    # each of the us - a picture laid along it once every `period` feet,
+    # its middle at the middle of the far side and its ends meeting out
+    # of sight, behind the near side (see board_u).
     a = acc(name)
     for i in range(len(us) - 1):
         ua, ub = us[i], us[i + 1]
         pts = [P(ua, d0, z0), P(ub, d0, z0), P(ub, d1, z1), P(ua, d1, z1)]
         uvs = None
         if period:
-            k = math.floor(ua / period + 1e-9)
-            s0, s1 = ua / period - k, ub / period - k
+            ta = board_u(ua)
+            tb = ta + (ub - ua)
+            k = math.floor(ta / period + 1e-9)
+            s0, s1 = ta / period - k, tb / period - k
             uvs = [(s0, 0), (s1, 0), (s1, 1), (s0, 1)]
         a.poly(pts, uvs)
 
@@ -363,9 +376,26 @@ def samples(u0, u1, step=4.0, extra=()):
     return sorted(pts)
 
 
+# The boards' pictures (the game's LED wall and ribbon, each 174 ft of it -
+# see arena.ts LED_WALL), laid round from behind the middle of the near
+# side, so the middle of each is at the middle of the far side.
+BOARD_P = 174.0
+BOARD_SEAM = u_of_x_near(COURT_W / 2)
+BOARD_PHASE = BOARD_P / 2 - ((u_of_x_far(COURT_W / 2) - BOARD_SEAM) % L)
+
+
+def board_u(u):
+    # (A strip's quads each start at one of the samples - the seam among
+    # them - so none runs over it.)
+    return (u - BOARD_SEAM) % L + BOARD_PHASE
+
+
+BOARD_CUTS = [BOARD_SEAM] + [
+    (BOARD_SEAM + k * BOARD_P - BOARD_PHASE) % L for k in range(-3, 4) if 0 < k * BOARD_P - BOARD_PHASE < L
+]
 ALL = samples(0, L, 4.0)
-WALL_ALL = samples(0, L, 4.0, extra=[k * 174.0 for k in range(1, 3)])
-RIB_ALL = samples(0, L, 4.0, extra=[k * L / 3 for k in range(1, 3)])
+WALL_ALL = samples(0, L, 4.0, extra=BOARD_CUTS)
+RIB_ALL = WALL_ALL
 
 
 def cut(us, holes):
@@ -391,7 +421,7 @@ def cut(us, holes):
 
 # ---- The lower bowl ----
 # The LED wall and its cap.
-band("wall", WALL_ALL, 0, 0.0, 0, WALL_H, period=174.0)
+band("wall", WALL_ALL, 0, 0.0, 0, WALL_H, period=BOARD_P)
 band("black", ALL, 0, WALL_H, CAP, WALL_H)
 band("riser", ALL, CAP, WALL_H, CAP, Z[0])
 tunnel_holes = [(t, TW / 2) for t in TUNNELS]
@@ -474,7 +504,7 @@ def suites(sl, ribbon_mat):
     # The slab over them, its soffit out over the balcony, and its face -
     # the ribbon board.
     band("fascia", ALL, DB, zc, dg, zc)
-    band(ribbon_mat, RIB_ALL, DB, zc + 0.4, DB, zc + 3.8, period=L / 3)
+    band(ribbon_mat, RIB_ALL, DB, zc + 0.4, DB, zc + 3.8, period=BOARD_P)
     band("fascia", ALL, DB, zc, DB, zc + 0.4)
     band("fascia", ALL, DB, zc + 3.8, DB, zc + 4.2)
     # Each room: walls between, frames up the glass, a light in the middle.
@@ -519,16 +549,17 @@ for a in AISLES:
         band("stepLight", [a - 0.2, a + 0.2], dm - 0.02, UZ[r] + 0.05, dm - 0.02, UZ[r] + 0.25)
 
 # ---- The floor ----
-F = acc("floor")
+# (Not for the game, which has its own.)
+F = acc("floor" if not EXPORT else "_floor")
 F.poly([(-300, -300, -0.02), (400, -300, -0.02), (400, 400, -0.02), (-300, 400, -0.02)])
 # The apron: the court's color out to the stands, round at the corners.
-AP = acc("apron")
+AP = acc("apron" if not EXPORT else "_apron")
 ring = [P(u, 0, -0.005) for u in samples(0, L, 2.0)[:-1]]
 cxy = ((X0 + X1) / 2, (Y0 + Y1) / 2, -0.005)
 for i in range(len(ring)):
     AP.poly([cxy, ring[i], ring[(i + 1) % len(ring)]])
 # The court picture, where the game lays it (it draws it over this too).
-C = acc("court")
+C = acc("court" if not EXPORT else "_court")
 C.poly(
     [(-5, -2.5, 0.0), (99, -2.5, 0.0), (99, 52.5, 0.0), (-5, 52.5, 0.0)],
     [(0, 1), (1, 1), (1, 0), (0, 0)],
@@ -597,7 +628,7 @@ for i, y in enumerate(np.arange(-4, 56, 7.5)):
     A.poly([(x, y, ZROOF - 16), (x, y + 5.5, ZROOF - 16), (x, y + 5.5, ZROOF - 30), (x, y, ZROOF - 30)])
 
 # ---- Seats and fans ----
-CELL = INFO["cell"]
+CELL = INFO.get("cell") or {"P": 16, "CW": 42, "CH": 54, "COLS": 1, "n": 1, "ybFromBottom": 0.3}
 ATW = CELL["CW"] * CELL["COLS"]
 ATH = CELL["CH"] * math.ceil(CELL["n"] / CELL["COLS"])
 CELL_W = CELL["CW"] / CELL["P"]
@@ -648,8 +679,9 @@ for r in range(UR):
     row_seats(UD[r + 1] - 1.1, UZ[r], aisle_holes, "upper")
 print("seats", len(SEATS))
 
-# Seat: a pan and a back, each a thin box (as quads).
-S = acc("seat")
+# Seat: a pan and a back, each a thin box (as quads) - in the game, drawn
+# by it (see bowlGl.ts).
+S = acc("seat" if not EXPORT else "_seat")
 for x, y, z, fx, fy, kind in SEATS:
     # (fx, fy): the way he faces, toward the floor.
     rx, ry = -fy, fx  # along the row
@@ -660,13 +692,15 @@ for x, y, z, fx, fy, kind in SEATS:
 
 FILL = {"lower": 0.94, "bal": 0.7, "upper": 0.88}
 FANS = []
+if EXPORT:
+    FILL = {"lower": 0.0, "bal": 0.0, "upper": 0.0}
 for i, (x, y, z, fx, fy, kind) in enumerate(SEATS):
     if rng.random() < FILL[kind]:
         FANS.append((x + fx * 0.15 + (rng.random() - 0.5) * 0.3, y + fy * 0.15, z, rng.randrange(CELL["n"])))
 # A few up in the suites, stood about behind the glass.
 for sl in (SL1, SL2):
     u = 0.0
-    while u < L:
+    while u < L and not EXPORT:
         if rng.random() < 0.6:
             for _ in range(rng.randrange(1, 4)):
                 uu = u + rng.random() * SUITE_W
@@ -677,32 +711,48 @@ for sl in (SL1, SL2):
 print("fans", len(FANS))
 
 # ---- Build it ----
+def near_side(a):
+    # For the game: none of it beyond the near sideline's stands - the
+    # cameras look away from them (and over them, upright, they would rise
+    # up over the floor).
+    out = Acc()
+    for f in a.f:
+        cy = sum(a.v[i][1] for i in f) / len(f)
+        if cy > Y1 + 0.5:
+            continue
+        out.poly([a.v[i] for i in f], [a.uv[i] for i in f])
+    return out
+
+
 OBJ = {}
 for name, a in ACC.items():
+    if EXPORT and name.startswith("_"):
+        continue
     m = MATS.get(name) or MATS.get("concrete")
-    OBJ[name] = to_blender(name, a, m)
+    OBJ[name] = to_blender(name, near_side(a) if EXPORT else a, m)
 
 # The fans: one quad each, turned to face the camera (see aim_fans).
-fan_me = bpy.data.meshes.new("fans")
-nF = len(FANS)
-fan_me.vertices.add(nF * 4)
-fan_me.loops.add(nF * 4)
-fan_me.polygons.add(nF)
-fan_me.polygons.foreach_set("loop_start", np.arange(0, nF * 4, 4, dtype=np.int32))
-fan_me.polygons.foreach_set("loop_total", np.full(nF, 4, dtype=np.int32))
-fan_me.loops.foreach_set("vertex_index", np.arange(nF * 4, dtype=np.int32))
-uv = np.zeros((nF, 4, 2), dtype=np.float32)
-for i, (_, _, _, c) in enumerate(FANS):
-    col, row = c % CELL["COLS"], c // CELL["COLS"]
-    u0, u1 = col * CELL["CW"] / ATW, (col + 1) * CELL["CW"] / ATW
-    v1 = 1 - row * CELL["CH"] / ATH
-    v0 = 1 - (row + 1) * CELL["CH"] / ATH
-    uv[i] = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
-fan_me.uv_layers.new(name="uv").data.foreach_set("uv", uv.ravel())
-fan_me.materials.append(MATS["fans"])
-fan_ob = bpy.data.objects.new("fans", fan_me)
-scene.collection.objects.link(fan_ob)
-FAN_ARR = np.array([(x, y, z) for x, y, z, _ in FANS], dtype=np.float64)
+if not EXPORT:
+    fan_me = bpy.data.meshes.new("fans")
+    nF = len(FANS)
+    fan_me.vertices.add(nF * 4)
+    fan_me.loops.add(nF * 4)
+    fan_me.polygons.add(nF)
+    fan_me.polygons.foreach_set("loop_start", np.arange(0, nF * 4, 4, dtype=np.int32))
+    fan_me.polygons.foreach_set("loop_total", np.full(nF, 4, dtype=np.int32))
+    fan_me.loops.foreach_set("vertex_index", np.arange(nF * 4, dtype=np.int32))
+    uv = np.zeros((nF, 4, 2), dtype=np.float32)
+    for i, (_, _, _, c) in enumerate(FANS):
+        col, row = c % CELL["COLS"], c // CELL["COLS"]
+        u0, u1 = col * CELL["CW"] / ATW, (col + 1) * CELL["CW"] / ATW
+        v1 = 1 - row * CELL["CH"] / ATH
+        v0 = 1 - (row + 1) * CELL["CH"] / ATH
+        uv[i] = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+    fan_me.uv_layers.new(name="uv").data.foreach_set("uv", uv.ravel())
+    fan_me.materials.append(MATS["fans"])
+    fan_ob = bpy.data.objects.new("fans", fan_me)
+    scene.collection.objects.link(fan_ob)
+    FAN_ARR = np.array([(x, y, z) for x, y, z, _ in FANS], dtype=np.float64)
 
 
 def aim_fans(cam_pos):
@@ -795,6 +845,206 @@ scene.view_settings.look = os.environ.get("LOOK", "AgX - Medium High Contrast")
 scene.view_settings.exposure = float(os.environ.get("EXPOSURE", "-0.3"))
 scene.render.image_settings.file_format = "PNG"
 scene.render.film_transparent = False
+
+# ---- For the game ----
+# The materials the game knows, by number (see bowlGl.ts MATERIALS - in
+# the same order); glass and rails drawn last, see-through.
+GAME_MATS = [
+    "concrete", "tread", "riser", "black", "fascia", "seat", "suiteWall",
+    "suiteFloor", "suiteCeil", "suiteLight", "mullion", "glass", "rail",
+    "floor", "apron", "stepLight", "tunnelLight", "concourse", "tunnelWall",
+    "roof", "steel", "fixture", "portal", "banner0", "banner1", "ribbon",
+    "wall", "tunnelFloor",
+]
+SEE_THROUGH = {"glass", "rail"}
+KINDS = {"lower": 0, "bal": 1, "upper": 2}
+
+
+def export_bowl(path):
+    import struct
+
+    import bmesh
+    from mathutils import kdtree  # noqa: F401
+
+    # A probe at each seat: a little card where a fan's chest is, facing the
+    # floor - the light he sits in.
+    seats = [st for st in SEATS if st[1] <= Y1 + 0.5]
+    pm = bpy.data.meshes.new("probes")
+    pv, pf = [], []
+    for x, y, z, fx, fy, kind in seats:
+        rx, ry = -fy, fx
+        c = (x + fx * 0.25, y + fy * 0.25, z + 1.6)
+        q = [
+            (c[0] - rx * 0.3, c[1] - ry * 0.3, c[2] - 0.3),
+            (c[0] + rx * 0.3, c[1] + ry * 0.3, c[2] - 0.3),
+            (c[0] + rx * 0.3, c[1] + ry * 0.3, c[2] + 0.3),
+            (c[0] - rx * 0.3, c[1] - ry * 0.3, c[2] + 0.3),
+        ]
+        q = [Vector((a, -b, cz)) for a, b, cz in q]
+        n = (q[1] - q[0]).cross(q[2] - q[0])
+        if n.dot(Vector((fx, -fy, 0))) < 0:
+            q = list(reversed(q))
+        i = len(pv)
+        pv += [tuple(v) for v in q]
+        pf.append([i, i + 1, i + 2, i + 3])
+    pm.from_pydata(pv, [], pf)
+    pm.materials.append(mat_diffuse("probe", hexrgb("#2a2a2e")))
+    probe = bpy.data.objects.new("probes", pm)
+    scene.collection.objects.link(probe)
+
+    objs = [o for o in scene.objects if o.type == "MESH"]
+    for o in objs:
+        if o is not probe:
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.002)
+            bm.to_mesh(o.data)
+            bm.free()
+        # (On each face's corners: where a row's tread meets its riser the
+        # two are lit differently.)
+        a = o.data.color_attributes.new("light", "FLOAT_COLOR", "CORNER")
+        o.data.color_attributes.active_color = a
+        try:
+            o.data.color_attributes.render_color_index = o.data.color_attributes.active_color_index
+        except Exception:
+            pass
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = int(os.environ.get("BAKE_SAMPLES", "128"))
+    scene.render.bake.target = "VERTEX_COLORS"
+    for o in bpy.context.view_layer.objects:
+        o.select_set(o.type == "MESH")
+    bpy.context.view_layer.objects.active = objs[0]
+    print("baking", len(objs), "meshes", len(bpy.context.view_layer.objects.selected), "selected")
+    import time
+
+    t0 = time.time()
+    with bpy.context.temp_override(selected_objects=objs, selected_editable_objects=objs, active_object=objs[0], object=objs[0]):
+        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, target="VERTEX_COLORS")
+    print("baked", round(time.time() - t0, 1), "s")
+
+    def light_of(o):
+        me = o.data
+        a = me.color_attributes["light"]
+        buf = np.zeros(len(me.loops) * 4, dtype=np.float32)
+        a.data.foreach_get("color", buf)
+        return buf.reshape(-1, 4)[:, :3]
+
+    def smooth(me, lt):
+        # Each corner the mean of the corners at its point on faces turned
+        # the same way (the bake's noise out, the creases kept).
+        nrm = [None] * len(me.loops)
+        at = {}
+        for poly in me.polygons:
+            n = poly.normal.copy()
+            for li in poly.loop_indices:
+                nrm[li] = n
+                at.setdefault(me.loops[li].vertex_index, []).append(li)
+        out = lt.copy()
+        for lis in at.values():
+            for li in lis:
+                same = [lj for lj in lis if nrm[lj].dot(nrm[li]) > 0.9]
+                out[li] = lt[same].mean(axis=0)
+        return out
+
+    # Each seat's light: its probe's four corners.
+    pl = light_of(probe).reshape(-1, 4, 3).mean(axis=1)
+
+    pos, uvs, lights, mats, opaque, clear = [], [], [], [], [], []
+    for o in objs:
+        if o is probe or o.name.split(".")[0] not in GAME_MATS:
+            continue
+        name = o.name.split(".")[0]
+        mid = GAME_MATS.index(name)
+        me = o.data
+        lt = smooth(me, light_of(o))
+        uvl = me.uv_layers[0].data if me.uv_layers else None
+        out = clear if name in SEE_THROUGH else opaque
+        index = {}
+        for poly in me.polygons:
+            ids = []
+            for li in poly.loop_indices:
+                vi = me.loops[li].vertex_index
+                uv = tuple(round(c, 5) for c in uvl[li].uv) if uvl else (0.0, 0.0)
+                c = tuple(float(v) for v in lt[li])
+                k = (vi, uv, tuple(round(v, 4) for v in c))
+                if k not in index:
+                    index[k] = len(pos)
+                    co = me.vertices[vi].co
+                    pos.append((co.x, -co.y, co.z))
+                    # (Blender's v runs up the picture; the game's down it.)
+                    uvs.append((uv[0], 1 - uv[1]))
+                    lights.append(c)
+                    mats.append(mid)
+                ids.append(index[k])
+            # Wound as the game sees it (y turned back round).
+            ids = list(reversed(ids))
+            for k in range(1, len(ids) - 1):
+                out += [ids[0], ids[k], ids[k + 1]]
+    L_ALL = np.array(lights + [tuple(c) for c in pl], dtype=np.float64)
+    lmax = float(np.percentile(L_ALL.max(axis=1), 99.5) * 1.1) or 1.0
+    enc = lambda c: [int(round(255 * math.sqrt(min(1.0, max(0.0, v / lmax))))) for v in c]
+    nv = len(pos)
+    wide = nv > 65535
+    POS = 16.0
+    with open(path, "wb") as f:
+        f.write(struct.pack("<4sIIIIIfffI", b"BOWL", 1, nv, len(opaque), len(clear), len(seats), 1 / POS, 1 / 65535, lmax, 4 if wide else 2))
+        # Where things are, for what the game lays on it (see bowlGl.ts
+        # ANCHORS - in the same order).
+        anchors = [X0, X1, Y0, Y1, RC, DB, SL1["zc"] + 0.4, SL1["zc"] + 3.8, SL2["zc"] + 0.4, SL2["zc"] + 3.8, ZU, UZ[-1], DTOP, ZROOF, CZ]
+        f.write(struct.pack("<I", len(anchors)) + struct.pack(f"<{len(anchors)}f", *anchors))
+        f.write(np.array(pos, dtype=np.float64).__mul__(POS).round().astype("<i2").tobytes())
+        if (nv * 6) % 4:
+            f.write(b"\0\0")
+        f.write((np.clip(np.array(uvs), 0, 1) * 65535).round().astype("<u2").tobytes())
+        f.write(np.array([enc(c) + [m] for c, m in zip(lights, mats)], dtype=np.uint8).tobytes())
+        idx = np.array(opaque + clear, dtype="<u4" if wide else "<u2")
+        f.write(idx.tobytes())
+        if idx.nbytes % 4:
+            f.write(b"\0\0")
+        sp = []
+        for x, y, z, fx, fy, kind in seats:
+            sp.append((round(x * POS), round(y * POS), round(z * POS), round(math.atan2(fy, fx) / math.pi * 32767)))
+        f.write(np.array(sp, dtype="<i2").tobytes())
+        f.write(np.array([enc(c) + [KINDS[st[5]]] for c, st in zip(pl, seats)], dtype=np.uint8).tobytes())
+    print("wrote", path, "verts", nv, "tris", (len(opaque) + len(clear)) // 3, "seats", len(seats), "lmax", round(lmax, 3), "bytes", os.path.getsize(path))
+
+
+# The look of the pictures (AgX, its contrast) for the game to draw with:
+# a 33 x 33 x 33 table of what each color comes out as, its colors in
+# stops - from 2^-12.47 (black) to 2^4.03 - blue across in 33 blocks, red
+# along each block, green down.
+TONE_N = 33
+TONE_LO, TONE_HI = -12.47393, 4.026069
+
+
+def export_tone(path):
+    n = TONE_N
+    t = np.linspace(0, 1, n)
+    v = 2.0 ** (TONE_LO + t * (TONE_HI - TONE_LO))
+    v[0] = 0.0
+    img = bpy.data.images.new("tone", n * n, n, alpha=False, float_buffer=True)
+    px = np.zeros((n, n * n, 4), dtype=np.float32)
+    for b in range(n):
+        for g in range(n):
+            px[g, b * n : (b + 1) * n, 0] = v
+            px[g, b * n : (b + 1) * n, 1] = v[g]
+            px[g, b * n : (b + 1) * n, 2] = v[b]
+    px[..., 3] = 1
+    # (Blender's rows run up the picture.)
+    img.pixels.foreach_set(px[::-1].ravel())
+    scene.view_settings.exposure = 0.0
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGB"
+    scene.render.image_settings.color_depth = "8"
+    img.save_render(path, scene=scene)
+    print("wrote", path)
+
+
+if EXPORT:
+    export_tone(os.path.join(os.path.dirname(EXPORT), "bowl-tone.png"))
+    export_bowl(EXPORT)
+    sys.exit(0)
 
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "bowl.blend"))
 

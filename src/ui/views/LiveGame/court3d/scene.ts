@@ -14,6 +14,7 @@ import {
 	RAFTERS,
 	RIBBON,
 	RIBBON_SCORE,
+	RIBBON_SCORE_FT,
 	STANDS,
 	standsPoint,
 	END_STANDS,
@@ -28,6 +29,9 @@ import {
 	type HoopFx,
 } from "./arena.ts";
 import { drawJumbotron, ribbonScore, type Jumbotron } from "./jumbotron.ts";
+import type { Bowl } from "./bowlData.ts";
+import type { SeatedCrowd } from "./bowlFans.ts";
+import { drawBowl } from "./bowlGl.ts";
 import {
 	BASELINE_RIG,
 	depthOf,
@@ -639,6 +643,10 @@ export type ArenaPaint = {
 	tableTop: HTMLCanvasElement;
 	tableFront: HTMLCanvasElement;
 	bench: [HTMLCanvasElement, HTMLCanvasElement];
+	// The bowl built in Blender, drawn on the graphics card in place of the
+	// stands' pictures (see bowlGl.ts) - and the crowd in its seats, the
+	// seats' color.
+	bowl?: { data: Bowl; crowd: SeatedCrowd; seatColor: string };
 };
 
 // The court picture's plane: the 2D court's own frame, in feet.
@@ -1963,20 +1971,62 @@ const floorQuad = (
 	x1: number,
 	y1: number,
 	color: string,
+	// Its corners rounded this much (feet).
+	corner = 0,
 ) => {
 	ctx.fillStyle = color;
 	ctx.beginPath();
-	for (const [x, y] of [
-		[x0, y0],
-		[x1, y0],
-		[x1, y1],
-		[x0, y1],
-	] as const) {
-		const p = project(cam, { x, y, z: 0 });
-		ctx.lineTo(p.x, p.y);
+	const corners: [number, number, number][] = [
+		[x1 - corner, y0 + corner, -Math.PI / 2],
+		[x1 - corner, y1 - corner, 0],
+		[x0 + corner, y1 - corner, Math.PI / 2],
+		[x0 + corner, y0 + corner, Math.PI],
+	];
+	const steps = corner > 0 ? 6 : 0;
+	const ring: Pt3[] = [];
+	for (const [cx, cy, a0] of corners) {
+		for (let k = 0; k <= steps; k++) {
+			const a = a0 + (k / Math.max(1, steps)) * (Math.PI / 2);
+			ring.push({
+				x: cx + Math.cos(a) * corner,
+				y: cy + Math.sin(a) * corner,
+				z: 0,
+			});
+		}
+	}
+	// (Only what is in front of the camera: a camera down on the floor has
+	// some of it behind it, which projected would be flung up over the
+	// whole picture.)
+	for (const p of clipInFront(cam, ring)) {
+		const q = project(cam, p);
+		ctx.lineTo(q.x, q.y);
 	}
 	ctx.closePath();
 	ctx.fill();
+};
+
+// A flat shape cut off where it goes nearer the camera than this (feet).
+const IN_FRONT = 0.6;
+const clipInFront = (cam: Camera, ring: Pt3[]): Pt3[] => {
+	const out: Pt3[] = [];
+	for (let i = 0; i < ring.length; i++) {
+		const a = ring[i]!;
+		const b = ring[(i + 1) % ring.length]!;
+		const da = depthOf(cam, a) - IN_FRONT;
+		const db = depthOf(cam, b) - IN_FRONT;
+		if (da >= 0) {
+			out.push(a);
+		}
+		if (da * db < 0) {
+			const t = da / (da - db);
+			out.push({
+				x: a.x + (b.x - a.x) * t,
+				y: a.y + (b.y - a.y) * t,
+				z: a.z + (b.z - a.z) * t,
+			});
+		}
+	}
+	return out;
 };
 
 export const drawFrame = (f: Frame) => {
@@ -2021,119 +2071,160 @@ export const drawFrame = (f: Frame) => {
 		return;
 	}
 
-	// The building: the stands (on their feet after a big play), the LED
-	// ribbon, the floor round the court, the court, the table, the benches.
-	// Fewer in their seats: the half-empty stands, the full ones over them
-	// as faint as the seats are empty.
-	const full = seatsAt(tl, t);
-	const thin = full < 0.999 && arena.standsSparse !== undefined;
-	const fill = thin ? Math.max(0, (full - 0.55) / 0.45) : 1;
-	if (thin) {
-		drawTexturedPlane(ctx, cam, STANDS, arena.standsSparse!, 24, 6);
-	}
-	if (fill > 0.01) {
-		drawTexturedPlane(
-			ctx,
-			cam,
-			STANDS,
-			f.crowd.clap && arena.standsClap ? arena.standsClap : arena.stands,
-			24,
-			6,
-			fill,
-		);
-	}
-	if (f.crowd.up > 0.01) {
-		drawTexturedPlane(
-			ctx,
-			cam,
-			STANDS,
-			f.crowd.wave ? arena.standsWave : arena.standsUp,
-			24,
-			6,
-			f.crowd.up,
-		);
-	}
-	// The ribbon round the upper deck and the banners over it, the boards
-	// along the front of the stands - showing what the moment calls for.
+	// The boards round the building - showing what the moment calls for.
 	const screen = boardAt(tl, t);
 	const venueBoards = f.venue?.boards;
 	const ribbon = venueBoards?.ribbon ?? arena.boards.ribbon[screen];
 	const wall = venueBoards?.wall ?? arena.boards.wall[screen];
-	drawTexturedPlane(ctx, cam, RIBBON, ribbon, 24, 1);
-	// (The score along the middle of it, in the game's own building.)
-	if (!venueBoards && arena.jumbotron && f.score) {
-		drawTexturedPlane(
-			ctx,
-			cam,
-			RIBBON_SCORE,
-			ribbonScore(arena.jumbotron, RIBBON_SCORE.w, RIBBON_SCORE.h, {
-				score: f.score,
-				clock: f.clock ?? "",
-				period: f.period ?? "",
-			}),
-			6,
-			1,
-		);
-	}
-	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
-	drawTexturedPlane(ctx, cam, LED_WALL, wall, 24, 1);
-	// (And round the near side, if the cameras look back at it.)
-	if (f.venue?.round) {
-		drawTexturedPlane(
-			ctx,
-			cam,
-			NEAR_STANDS,
-			f.crowd.up > 0.5
-				? f.crowd.wave
-					? arena.standsWave
-					: arena.standsUp
-				: f.crowd.clap && arena.standsClap
-					? arena.standsClap
-					: arena.stands,
-			24,
-			6,
-		);
-		drawTexturedPlane(ctx, cam, NEAR_RIBBON, ribbon, 24, 1);
-		drawTexturedPlane(ctx, cam, NEAR_RAFTERS, arena.rafters, 24, 2);
-		drawTexturedPlane(ctx, cam, NEAR_WALL, wall, 24, 1);
-	}
-	floorQuad(
-		ctx,
-		cam,
-		FLOOR.origin.x,
-		FLOOR.origin.y,
-		FLOOR.origin.x + FLOOR.w * FLOOR.alongX.x,
-		FLOOR.origin.y + FLOOR.h * FLOOR.alongY.y,
-		"#241e18",
-	);
-	// Round the ends: the stands, and the boards along their front.
-	for (const side of [0, 1] as const) {
-		if (arena.endStands) {
-			// (This end's own, if it is up to more than the building is.)
-			const own = f.crowd.ends?.[side];
-			const c = own && own.up > f.crowd.up ? own : f.crowd;
-			// (All at once: see drawTexturedLayers.)
-			drawTexturedLayers(
+	// The crowd behind each basket: its own, if it is up to more than the
+	// building is.
+	const endCrowd = (side: Side) => {
+		const own = f.crowd.ends?.[side];
+		return own && own.up > f.crowd.up ? own : f.crowd;
+	};
+	// THE BOWL, if it is built (see bowlGl.ts) - in place of all of the
+	// stands' pictures below. (Not for somewhere else on the floor: draft
+	// night has its own building.)
+	const bowl =
+		!f.venue &&
+		arena.bowl !== undefined &&
+		drawBowl(ctx, cam, arena.bowl.data, {
+			crowd: arena.bowl.crowd,
+			seatColor: arena.bowl.seatColor,
+			full: seatsAt(tl, t),
+			stands: [f.crowd, endCrowd(0), endCrowd(1)],
+			wall,
+			ribbon,
+			...(arena.jumbotron && f.score
+				? {
+						score: {
+							pic: ribbonScore(
+								arena.jumbotron,
+								RIBBON_SCORE.w,
+								RIBBON_SCORE.h,
+								{
+									score: f.score,
+									clock: f.clock ?? "",
+									period: f.period ?? "",
+								},
+							),
+							ft: RIBBON_SCORE_FT,
+						},
+					}
+				: {}),
+			rafters: arena.rafters,
+		});
+	if (!bowl) {
+		// The building: the stands (on their feet after a big play), the LED
+		// ribbon, the floor round the court, the court, the table, the benches.
+		// Fewer in their seats: the half-empty stands, the full ones over them
+		// as faint as the seats are empty.
+		const full = seatsAt(tl, t);
+		const thin = full < 0.999 && arena.standsSparse !== undefined;
+		const fill = thin ? Math.max(0, (full - 0.55) / 0.45) : 1;
+		if (thin) {
+			drawTexturedPlane(ctx, cam, STANDS, arena.standsSparse!, 24, 6);
+		}
+		if (fill > 0.01) {
+			drawTexturedPlane(
 				ctx,
 				cam,
-				END_STANDS[side],
-				[
-					...(thin && arena.endStandsSparse
-						? [{ img: arena.endStandsSparse, alpha: 1 }]
-						: []),
-					{ img: arena.endStands[0], alpha: fill > 0.01 ? fill : 0 },
-					{
-						img: arena.endStands[c.wave ? 2 : 1],
-						alpha: c.up > 0.01 ? c.up : 0,
-					},
-				],
-				12,
-				4,
+				STANDS,
+				f.crowd.clap && arena.standsClap ? arena.standsClap : arena.stands,
+				24,
+				6,
+				fill,
 			);
 		}
-		const end = venueBoards ? venueBoards.end : arena.boards.end?.[screen];
-		if (end) {
-			drawTexturedPlane(ctx, cam, END_WALL[side], end, 12, 1);
+		if (f.crowd.up > 0.01) {
+			drawTexturedPlane(
+				ctx,
+				cam,
+				STANDS,
+				f.crowd.wave ? arena.standsWave : arena.standsUp,
+				24,
+				6,
+				f.crowd.up,
+			);
+		}
+		// The ribbon round the upper deck and the banners over it, the boards
+		// along the front of the stands.
+		drawTexturedPlane(ctx, cam, RIBBON, ribbon, 24, 1);
+		// (The score along the middle of it, in the game's own building.)
+		if (!venueBoards && arena.jumbotron && f.score) {
+			drawTexturedPlane(
+				ctx,
+				cam,
+				RIBBON_SCORE,
+				ribbonScore(arena.jumbotron, RIBBON_SCORE.w, RIBBON_SCORE.h, {
+					score: f.score,
+					clock: f.clock ?? "",
+					period: f.period ?? "",
+				}),
+				6,
+				1,
+			);
+		}
+		drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
+		drawTexturedPlane(ctx, cam, LED_WALL, wall, 24, 1);
+		// (And round the near side, if the cameras look back at it.)
+		if (f.venue?.round) {
+			drawTexturedPlane(
+				ctx,
+				cam,
+				NEAR_STANDS,
+				f.crowd.up > 0.5
+					? f.crowd.wave
+						? arena.standsWave
+						: arena.standsUp
+					: f.crowd.clap && arena.standsClap
+						? arena.standsClap
+						: arena.stands,
+				24,
+				6,
+			);
+			drawTexturedPlane(ctx, cam, NEAR_RIBBON, ribbon, 24, 1);
+			drawTexturedPlane(ctx, cam, NEAR_RAFTERS, arena.rafters, 24, 2);
+			drawTexturedPlane(ctx, cam, NEAR_WALL, wall, 24, 1);
+		}
+		floorQuad(
+			ctx,
+			cam,
+			FLOOR.origin.x,
+			FLOOR.origin.y,
+			FLOOR.origin.x + FLOOR.w * FLOOR.alongX.x,
+			FLOOR.origin.y + FLOOR.h * FLOOR.alongY.y,
+			"#241e18",
+		);
+		// Round the ends: the stands, and the boards along their front.
+		for (const side of [0, 1] as const) {
+			if (arena.endStands) {
+				// (This end's own, if it is up to more than the building is.)
+				const own = f.crowd.ends?.[side];
+				const c = own && own.up > f.crowd.up ? own : f.crowd;
+				// (All at once: see drawTexturedLayers.)
+				drawTexturedLayers(
+					ctx,
+					cam,
+					END_STANDS[side],
+					[
+						...(thin && arena.endStandsSparse
+							? [{ img: arena.endStandsSparse, alpha: 1 }]
+							: []),
+						{ img: arena.endStands[0], alpha: fill > 0.01 ? fill : 0 },
+						{
+							img: arena.endStands[c.wave ? 2 : 1],
+							alpha: c.up > 0.01 ? c.up : 0,
+						},
+					],
+					12,
+					4,
+				);
+			}
+			const end = venueBoards ? venueBoards.end : arena.boards.end?.[screen];
+			if (end) {
+				drawTexturedPlane(ctx, cam, END_WALL[side], end, 12, 1);
+			}
 		}
 	}
 	if (f.soft) {
@@ -2147,6 +2238,8 @@ export const drawFrame = (f: Frame) => {
 		// The apron: the court's own color carried out past the lines all the
 		// way back to the stands - under the seats behind the baskets, the
 		// benches and the table along the far side.
+		// (In the bowl, round its corners as its stands are.)
+		const round = bowl ? arena.bowl!.data.anchors : undefined;
 		floorQuad(
 			ctx,
 			cam,
@@ -2155,6 +2248,7 @@ export const drawFrame = (f: Frame) => {
 			FLOOR_EDGE.x1,
 			FLOOR_EDGE.y1,
 			f.apron ?? f.padColor,
+			round?.corner,
 		);
 		if (arena.court) {
 			drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
