@@ -19,6 +19,7 @@ import {
 	FLOOR_EDGE,
 	END_WALL,
 	drawCourtside,
+	drawPhotoBoxes,
 	TABLE_FRONT,
 	TABLE_TOP,
 	type BoardScreen,
@@ -2148,6 +2149,7 @@ export const drawFrame = (f: Frame) => {
 		} else {
 			floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 		}
+		drawPhotoBoxes(ctx, cam, f.apron ?? f.padColor);
 		// The lit boards along the far side - the front of the scorer's table,
 		// the wall behind the benches - shine back off the floor in front of
 		// them (under the table, the benches and everybody stood there): their

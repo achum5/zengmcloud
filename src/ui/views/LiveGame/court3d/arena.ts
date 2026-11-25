@@ -1500,6 +1500,59 @@ const luminance = (c: string): number => {
 		255
 	);
 };
+// THE PHOTOGRAPHERS' BOXES on the floor behind each baseline, either side
+// of the basket: a line along the front of each, a line down each side
+// back to the courtside seats - black, or on a dark floor white - each of
+// them sat or knelt in there (see crew's PHOTO_ROW).
+const PHOTO_BOXES: [number, number][] = [
+	[2.6, 14.4],
+	[COURT_H - 14.4, COURT_H - 2.6],
+];
+const BOX_FRONT = 1.2;
+const BOX_BACK = 6.8;
+const BOX_LINE = 2 / 12;
+export const drawPhotoBoxes = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	floor: string,
+) => {
+	ctx.fillStyle =
+		luminance(floor) > 0.22
+			? "rgba(12, 12, 14, 0.85)"
+			: "rgba(236, 236, 232, 0.6)";
+	const quad = (x0: number, y0: number, x1: number, y1: number) => {
+		ctx.beginPath();
+		for (const [x, y] of [
+			[x0, y0],
+			[x1, y0],
+			[x1, y1],
+			[x0, y1],
+		] as const) {
+			const q = project(cam, { x, y, z: 0 });
+			ctx.lineTo(q.x, q.y);
+		}
+		ctx.closePath();
+		ctx.fill();
+	};
+	for (const end of [0, 1]) {
+		const at = (d: number) => (end === 0 ? -d : COURT_W + d);
+		for (const [y0, y1] of PHOTO_BOXES) {
+			if (
+				[y0, y1].some(
+					(y) =>
+						depthOf(cam, { x: at(BOX_FRONT), y, z: 0 }) < 1 ||
+						depthOf(cam, { x: at(BOX_BACK), y, z: 0 }) < 1,
+				)
+			) {
+				continue;
+			}
+			quad(at(BOX_FRONT), y0, at(BOX_FRONT + BOX_LINE), y1);
+			for (const y of [y0, y1 - BOX_LINE]) {
+				quad(at(BOX_FRONT), y, at(BOX_BACK), y + BOX_LINE);
+			}
+		}
+	}
+};
 // Lettering that reads on a background: white, or near-black on a light one.
 const inkOn = (bg: string) => (luminance(bg) > 0.62 ? "#111216" : "#ffffff");
 
