@@ -103,12 +103,9 @@ const Head = ({
 const eta = (games: number | undefined) =>
 	games === undefined ? "" : games <= 1 ? "Next game" : `~${games} games`;
 
-const CAREER_LEADERS = helpers.leagueUrl([
-	"leaders",
-	"career",
-	"totals",
-	"regularSeason",
-]);
+// (Built when it's shown: the league isn't known yet when this file loads.)
+const careerLeaders = () =>
+	helpers.leagueUrl(["leaders", "career", "totals", "regularSeason"]);
 
 const recordNote = (row: PaceRow) =>
 	row.record.pid === row.pid ? (
@@ -342,7 +339,7 @@ const Ladders = ({
 		<section className="mw-sec mw-ladders-wrap">
 			<Head
 				title="All-time lists"
-				more={{ href: CAREER_LEADERS, text: "Career leaders" }}
+				more={{ href: careerLeaders(), text: "Career leaders" }}
 			/>
 			<div className="mw-tabs" role="tablist">
 				{lists.map((c) => (
