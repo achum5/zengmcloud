@@ -13295,6 +13295,30 @@ export const poseFor = (anim: AnimName, frame: number): Pose => {
 // stride.
 export const bounceAt = (anim: AnimName, phase: number): number =>
 	isGait(anim) ? gaitLift(anim, phase) : 0;
+// How high his hips ride (feet, a typical man's) at a point through a
+// stride, its steps so much of their whole length (see shortSteps) - rising
+// and falling as smoothly as a body's do each step - lowest over the foot
+// down running, highest over it walking (see hipsAt) - whichever of his
+// stride picture's legs is the lower just then.
+// (Longer strides than a full one, on toward the next gait up's.)
+export const strideHips = (
+	anim: AnimName,
+	phase: number,
+	len?: readonly [number, number],
+): number | undefined => {
+	const mode = gaitModeOf(anim);
+	if (!mode || !isGait(mode)) {
+		return undefined;
+	}
+	const k = len ? (len[0] + len[1]) / 2 : 1;
+	const ph = frac(phase);
+	const g = GAITS[mode];
+	const here = hipsAt({ ...g, bob: g.bob * Math.min(1, k) }, ph);
+	const up = RUNS_UP[mode];
+	return k > 1 && up
+		? here + (hipsAt(GAITS[up], ph) - here) * towardUp(mode, up, k)
+		: here;
+};
 
 // The pose partway through an animation - an act from start (0) to finish
 // (1), a cycle or loop through one turn - blended between its key frames, so
@@ -14123,14 +14147,34 @@ export type FootAt = {
 	w: number;
 	down: boolean;
 	air?: boolean;
+	// (Swinging through from one step to the next: how far through, 0 to 1 -
+	// and where it comes down and where it came up from, each from under
+	// him as he is then, in his own frame, and how much his leg goes there,
+	// as w for a foot down.)
+	swing?: number;
+	land?: { f: number; s: number; w: number };
+	lifted?: { f: number; s: number; w: number };
 };
-export type Posed = Pose & { feetAt?: readonly [FootAt, FootAt] };
+// (And how high his hips ride over them - a typical man's, see
+// strideHips - and how much of that is so, rather than where his move's own
+// legs put them, 0 to 1.)
+export type Posed = Pose & {
+	feetAt?: readonly [FootAt, FootAt];
+	hips?: readonly [number, number];
+};
 // (Sunk at the hips no further than this, feet, to reach a foot planned
 // further out than his legs go.)
 const SINK_MOST = 0.7;
 // (Up on its toes no further than this, degrees, to reach a foot down
 // behind him.)
 const ROLL_REACH = 65;
+// (And let down toward a foot coming down before it lands, over the last
+// of its swing - this share of it: his weight dropping onto it as it
+// reaches for the floor, not all at once the moment it touches - and back
+// up from one gone up off it over the first so much: not all at once the
+// moment it leaves.)
+const SINK_INTO = 0.5;
+const SINK_OUT = 0.5;
 // Each leg from his hip to where its foot is planned: the knee bent as much
 // as that takes, out over the way the foot points - and his hips let down,
 // if they must be, to get to a foot down on the floor (one swinging through
@@ -14151,44 +14195,99 @@ const reachFeet = (
 	// reaches, on up over its toes as far as that takes (to ROLL_REACH): his
 	// heel comes up as he pushes off it, his hips not sunk to get to it.)
 	const rolls = feet.map((p) => Math.min(1, p.roll) * POINT);
-	const at = feet.map((p, i) => {
-		const o = legs[i]!.end;
-		const R = legs[i]!.root;
-		const w = Math.min(1, Math.max(0, p.w));
-		const place = (deg: number): V3 => {
-			const a = p.air ? 0 : deg * rad;
-			const over = toe * (1 - Math.cos(a)) + b.ankleH * Math.sin(a);
-			const up = toe * Math.sin(a) + b.ankleH * (Math.cos(a) - 1);
-			const f = p.f + over * Math.cos(p.yaw);
-			const s = p.s + over * Math.sin(p.yaw);
-			return v3(
-				o.f + (f - o.f) * w,
-				o.s + (s - o.s) * w,
-				p.air ? o.u : o.u + (b.ankleH + p.lift + up - o.u) * w,
-			);
-		};
-		let E = place(rolls[i]!);
-		if (p.down && w >= 1 && E.f < R.f) {
+	// (Its ankle for a foot at f, s on the floor, so far up off it, pointing
+	// yaw, rolled so far up onto its toes - w of the way from o, his pose's.)
+	const place = (
+		o: V3,
+		w: number,
+		f0: number,
+		s0: number,
+		lift: number,
+		yaw: number,
+		deg: number,
+		air?: boolean,
+	): V3 => {
+		const a = air ? 0 : deg * rad;
+		const over = toe * (1 - Math.cos(a)) + b.ankleH * Math.sin(a);
+		const up = toe * Math.sin(a) + b.ankleH * (Math.cos(a) - 1);
+		const f = f0 + over * Math.cos(yaw);
+		const s = s0 + over * Math.sin(yaw);
+		return v3(
+			o.f + (f - o.f) * w,
+			o.s + (s - o.s) * w,
+			air ? o.u : o.u + (b.ankleH + lift + up - o.u) * w,
+		);
+	};
+	// (Down behind him, further back than his leg reaches: on up over its
+	// toes as far as that takes, to ROLL_REACH - and how far that is.)
+	const rolledUp = (
+		R: V3,
+		w: number,
+		at: (deg: number) => V3,
+		deg0: number,
+	): [V3, number] => {
+		let deg = deg0;
+		let E = at(deg);
+		if (w >= 1 && E.f < R.f) {
 			while (
-				rolls[i]! < ROLL_REACH &&
+				deg < ROLL_REACH &&
 				Math.hypot(E.f - R.f, E.s - R.s, E.u - R.u) > most
 			) {
-				rolls[i] = Math.min(ROLL_REACH, rolls[i]! + 5);
-				E = place(rolls[i]!);
+				deg = Math.min(ROLL_REACH, deg + 5);
+				E = at(deg);
 			}
 		}
+		return [E, deg];
+	};
+	const at = feet.map((p, i) => {
+		const o = legs[i]!.end;
+		const w = Math.min(1, Math.max(0, p.w));
+		const spot = (deg: number) =>
+			place(o, w, p.f, p.s, p.lift, p.yaw, deg, p.air);
+		if (!p.down) {
+			return spot(rolls[i]!);
+		}
+		const [E, deg] = rolledUp(legs[i]!.root, w, spot, rolls[i]!);
+		rolls[i] = deg;
 		return E;
 	});
+	// How far his hips come down for a leg to reach a foot at E (zero, if
+	// they need not - or if no letting down would get it there).
+	const needOf = (l: Limb, E: V3) => {
+		const h = Math.hypot(E.f - l.root.f, E.s - l.root.s);
+		return h < most ? l.root.u - (E.u + Math.sqrt(most * most - h * h)) : 0;
+	};
+	const ease = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 	let sink = 0;
 	legs.forEach((l, i) => {
-		if (!feet[i]!.down) {
+		const p = feet[i]!;
+		if (p.down) {
+			sink = Math.max(sink, needOf(l, at[i]!));
 			return;
 		}
-		const E = at[i]!;
-		const h = Math.hypot(E.f - l.root.f, E.s - l.root.s);
-		if (h < most) {
-			const top = E.u + Math.sqrt(most * most - h * h);
-			sink = Math.max(sink, l.root.u - top);
+		if (p.air || p.swing === undefined) {
+			return;
+		}
+		const o = l.end;
+		// (Coming down: where it will, flat on the floor.)
+		const k = ease((p.swing - (1 - SINK_INTO)) / SINK_INTO);
+		if (p.land && k > 0) {
+			const w = Math.min(1, Math.max(0, p.land.w));
+			const E = place(o, w, p.land.f, p.land.s, 0, p.yaw, 0);
+			sink = Math.max(sink, k * needOf(l, E));
+		}
+		// (Just up: where it came up off the floor, up on its toes.)
+		const j = 1 - ease(p.swing / SINK_OUT);
+		if (p.lifted && j > 0) {
+			const w = Math.min(1, Math.max(0, p.lifted.w));
+			const { f, s } = p.lifted;
+			const [E] = rolledUp(
+				l.root,
+				w,
+				(deg) => place(o, w, f, s, 0, p.yaw, deg),
+				POINT,
+			);
+			sink = Math.max(sink, j * needOf(l, E));
 		}
 	});
 	sink = Math.min(SINK_MOST, Math.max(0, sink));
@@ -14332,8 +14431,16 @@ export const skeleton = (b: Body, q0: Posed): Skeleton => {
 	const flex0 = b.H === TYPICAL.H ? flex : flexOf(q, TYPICAL);
 	const downR = leg(q.hipN + flex, q.kneeN, -1, q.hipN + flex0);
 	const downL = leg(q.hipF + flex, q.kneeF, 1, q.hipF + flex0);
-	// Down onto the floor: the lower ankle sits at ankle height.
-	const off = b.ankleH - Math.min(downR.end.u, downL.end.u);
+	// Down onto the floor: the lower ankle sits at ankle height. (Stepping
+	// on his own feet, his hips ride as his stride has them, as much as it
+	// does: see strideHips.)
+	const lower = b.ankleH - Math.min(downR.end.u, downL.end.u);
+	const ride = q0.feetAt ? q0.hips : undefined;
+	const off = ride
+		? lower +
+			((ride[0] * b.hipH) / TYPICAL.hipH - b.hipH - lower) *
+				Math.min(1, Math.max(0, ride[1]))
+		: lower;
 	// (His hips are where his legs put them before his heels come up - so a
 	// man hanging in the air draws his feet up under him, and doesn't sink.)
 	const legR =
@@ -15900,7 +16007,13 @@ export const holdBall = (
 		// (His planned feet the other way round with him: his right foot's
 		// where his left's would be.)
 		const feet = (q0 as Posed).feetAt;
-		const flip = (p: FootAt): FootAt => ({ ...p, s: -p.s, yaw: -p.yaw });
+		const flip = (p: FootAt): FootAt => ({
+			...p,
+			s: -p.s,
+			yaw: -p.yaw,
+			...(p.land ? { land: { ...p.land, s: -p.land.s } } : {}),
+			...(p.lifted ? { lifted: { ...p.lifted, s: -p.lifted.s } } : {}),
+		});
 		const q1: Posed = feet
 			? { ...mirror(q0), feetAt: [flip(feet[1]), flip(feet[0])] }
 			: mirror(q0);

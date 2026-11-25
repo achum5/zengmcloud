@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 628,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): players no longer skip and drop into a lunge with every step. Feet land where legs can reach, and hips rise and fall smoothly like a real runner's instead of snapping down when a foot touches the floor.",
+	},
+	{
 		n: 627,
 		date: "2026-11-25",
 		text: "Daily Schedule: on games still to be played, a team's logo, name and record now take you to that team's page.",

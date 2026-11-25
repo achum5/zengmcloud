@@ -114,8 +114,10 @@ const STAY_OVER = 0.4;
 const STAY_TURN = (40 * Math.PI) / 180;
 const SET_STEP = 260;
 // Stepping any way but running, a foot stays to its own side of the other,
-// at least this far (feet, for a man 6 ft 6 in).
+// at least this far (feet, for a man 6 ft 6 in) - sliding, in his stance,
+// further: his feet closing, never together.
 const SIDE_LEAST = 0.3;
+const SLIDE_LEAST = 0.5;
 // Stood in a stance of his move's own (see StepIn.own): a foot further than
 // this from where it has it (feet, for a man 6 ft 6 in) steps there - looked
 // at so far ahead (ms), as a step takes that long to get there. It comes down
@@ -138,8 +140,10 @@ const SLIDE_RATE = [2.4, 0.36, 5.5] as const;
 // Leaned no further than this (feet off under him): what is left of a pull
 // harder than that he takes on more steps.
 const LEAN_MOST = 1.6;
-// And no further out from under him, as a foot comes down, than this (feet).
-const REACH_MOST = 2.3;
+// And no further out from under him, as a foot comes down, than this (feet):
+// about half as far as his leg is long (a hard stop's plant - further, and
+// his hips would have to sink a long way down to get to it).
+const REACH_MOST = 1.7;
 // A foot down holds him only till his hips are this far past it (feet):
 // then it is up - and, running, the other down no more than so long after
 // (ms). (Looked for so far ahead, ms.)
@@ -153,6 +157,11 @@ const OUTRUN_LOOK = 2000;
 const UNDER = 0.42;
 // (His weight this high, as a share of his height: what he leans on.)
 const HIPS = 0.55;
+// Walking under this pace (feet a second), running from it - or going it
+// as the step to come comes down: getting going hard, the step after a
+// walking one is a running one (a foot down a run's short time, not a
+// walk's, out in front of him only as far as a runner's).
+const RUN_FROM = 6;
 // Going, he steps the way he goes; under this pace (feet a second), the way
 // he faces.
 const POINT_WITH = 4;
@@ -286,7 +295,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		if (off >= Math.PI * 0.72 && pace < 11) {
 			return "back";
 		}
-		return pace < 6 ? "walk" : "run";
+		return pace < RUN_FROM ? "walk" : "run";
 	};
 	// Out to his right (a unit), going that way at t: for stepping forward
 	// or back, square to the way he goes; stood or sliding, to the way he
@@ -345,8 +354,11 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		}
 		const r = rightAt(mid, mode);
 		const w = spreadOf(mid, mode) * (foot === 0 ? 1 : -1);
-		const at = { x: c.x + lx + r.x * w, y: c.y + ly + r.y * w };
-		// (No further out from under him as it comes down than he reaches.)
+		return within({ x: c.x + lx + r.x * w, y: c.y + ly + r.y * w }, t0);
+	};
+	// (No further out from under him as it comes down, at t0, than he
+	// reaches.)
+	const within = (at: Pt, t0: number): Pt => {
 		const c0 = posAt(t0);
 		const d = Math.hypot(at.x - c0.x, at.y - c0.y);
 		const reach = REACH_MOST * scale;
@@ -504,8 +516,8 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	};
 	const planTo = (limit: number) => {
 		while (t < limit && guard++ < 1e6) {
-			const mode = modeAt(t);
-			if (mode === "stand") {
+			const how = modeAt(t);
+			if (how === "stand") {
 				// Stood: a foot still up comes down under him; one down stays.
 				for (const f of [0, 1] as const) {
 					const s = steps[last[f]]!;
@@ -639,6 +651,11 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 			// Going: the next step on his own beat (sliding, quick short steps).
 			// (On the beat of how fast he is going over this step, not as it
 			// starts: getting going hard, his steps quicken with him.)
+			const mode: Exclude<StepMode, "stand"> =
+				how === "walk" &&
+				paceAt(Math.min(to, t + beatOf(how, paceAt(t)).beat)) >= RUN_FROM
+					? "run"
+					: how;
 			const { beat: beat0 } = beatOf(mode, paceAt(t));
 			const { beat, down } = beatOf(mode, paceAt(Math.min(to, t + beat0 / 2)));
 			const swingLeast = mode === "run" ? SWING_LEAST_RUN : SWING_LEAST;
@@ -745,16 +762,21 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 					at = last;
 				}
 			}
+			// (However it came to be put there, no further out from under him
+			// than he reaches - only then kept to its own side of the other.)
+			at = within(at, land);
 			if (mode !== "run") {
 				// Never across the other foot, stepping any way but running: if it
 				// would be, the other steps instead (out first, then this one
-				// closes) - kept to its own side whichever.
+				// closes) - kept to its own side whichever. (This one down only
+				// till he is past it, as any: not left down behind him while the
+				// other steps on and on.)
 				const o = steps[last[foot === 0 ? 1 : 0]]!;
 				if (sideOf(foot, at, o, r) < SIDE_LEAST * scale && !setOff) {
 					const other: 0 | 1 = foot === 0 ? 1 : 0;
 					const mine = steps[last[foot]]!;
 					if (mine.t1 === Infinity || mine.t1 > t) {
-						mine.t1 = Infinity;
+						mine.t1 = outrun(mine, Math.max(t, mine.t0), TRAIL * scale);
 						foot = other;
 						at = spotFor(foot, land, land + down, mode);
 					}
@@ -764,7 +786,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 					at,
 					steps[last[foot === 0 ? 1 : 0]]!,
 					r,
-					SIDE_LEAST * scale,
+					(mode === "slide" ? SLIDE_LEAST : SIDE_LEAST) * scale,
 				);
 			}
 			const prev = steps[last[foot]]!;

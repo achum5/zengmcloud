@@ -702,6 +702,58 @@ off the flicks (432 with it, 438 without) and had men off their spots
 when a screen or a fight for the ball pinned them there - four more
 teleports on real_11.
 
+## Bodies that skip (after 8b)
+
+Alex, on the 8b film (clip 2, a man jogging off the ball): it still feels
+skippy and glitchy - weird movements.
+
+What it was, frame by frame: at every footfall his hips dropped 6 to 8
+inches in one frame (0.57-0.68 ft in 33 ms), his knees down near the
+floor, then climbed back over the next four. Three things:
+
+- His foot came down about 2 ft out in front of his hips, past where the
+  figure's legs reach at a jog - his hips let down all at once, the moment
+  it touched, to get to it. A step taken speeding up was planned as a
+  walking one (the pace as the last foot came down: under 6 ft/s), so a
+  walk's long time down, out in front as far as a walk's; and a braking
+  step went out as far as 2.3 ft.
+- In the air between steps his hips went down, not up: his stride
+  picture's lower foot put on the floor, and only 40% of its height given
+  back. And as one picture leg or the other was the lower, his hips jumped.
+- Walking, a foot that would have stepped across the other stayed down
+  while the other stepped again - and again: left planted 3-4 ft behind
+  him, his hips sunk as far as they go to reach it.
+
+What changed:
+
+1. Walking or running by the pace he goes as the step comes down, when he
+   is speeding up (`footsteps.ts` RUN_FROM).
+2. No foot down further out from under him than about half his leg
+   (REACH_MOST 2.3 -> 1.7 ft for a man 6 ft 6 in), however it came to be
+   put there - and sliding, his feet at least half a foot apart.
+3. His hips let down toward a foot over the last half of its swing as it
+   comes down, and back up over the first half after one leaves the floor
+   (`poses.ts` reachFeet), not all at once.
+4. Stepping on his own feet, his hips ride as his stride has them - its
+   own rise and fall, lowest over the foot down running, highest walking
+   (`poses.ts` strideHips, `evaluate.ts` ridingOf) - not wherever its
+   picture's lower foot puts them.
+5. A foot kept down while the other steps is down only till he is past it.
+
+| Hips (first 10 min, every man, every frame) | real_11 before | now | real_22 before | now |
+| --- | --- | --- | --- | --- |
+| Up or down over 1 in. in a frame (a man-minute) | 158 | 51 | 150 | 52 |
+| ... over 2.4 in. | 64 | 13 | 62 | 13 |
+| ... over 4.2 in. | 24 | 2.4 | 24 | 2.5 |
+| Running with a knee down under 14 in. | 8.6% | 0.3% | 8.8% | 0.3% |
+| Running, hips at their lowest (p10, of stood) | 0.86 | 0.91 | 0.86 | 0.90 |
+
+(A real runner's hips go up and down 3 inches or so a step - well under an
+inch a frame. Switch off unchanged: the same hash.)
+
+Still short: what is left is mostly a jump or a quick move taking his legs
+over from his steps, and a stop with both feet down far apart.
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it
