@@ -336,6 +336,62 @@ const LeagueNight = ({
 	);
 };
 
+// The league's night the plain way, as Daily Schedule's strip of days has
+// it: the date, how many games, and the user's team's little logo in the
+// corner the nights it plays.
+const PlainNight = ({
+	date,
+	night,
+	season,
+	userLogo,
+}: {
+	date: string;
+	night:
+		| {
+				count: number;
+				day: number | undefined;
+				maybe: number;
+				mine: CalendarGame | undefined;
+				planned: boolean;
+		  }
+		| undefined;
+	season: number;
+	userLogo: string | undefined;
+}) => {
+	const inner = (
+		<>
+			<span className="lc-p-num">{Number(date.slice(8))}</span>
+			<span className="lc-p-games">
+				{night
+					? `${night.count}${night.maybe > 0 ? "*" : ""} ${helpers.plural("game", night.count)}`
+					: null}
+			</span>
+			{night?.mine && userLogo ? (
+				<img className="lc-p-logo" src={userLogo} alt="" />
+			) : null}
+		</>
+	);
+	const href =
+		night?.day !== undefined
+			? helpers.leagueUrl(["daily_schedule", season, night.day])
+			: night?.planned
+				? helpers.leagueUrl(["playoffs", season])
+				: undefined;
+	return href ? (
+		<a
+			className="lc-p"
+			href={href}
+			title={
+				night && night.maybe > 0 ? `${night.maybe} if necessary` : undefined
+			}
+		>
+			{inner}
+		</a>
+	) : (
+		<span className="lc-p">{inner}</span>
+	);
+};
+
 export const MonthCalendar = ({
 	className,
 	compact = false,
@@ -343,6 +399,7 @@ export const MonthCalendar = ({
 	keyDates,
 	monthChips = false,
 	nightDays,
+	plain = false,
 	season,
 	selected,
 	tid,
@@ -356,6 +413,8 @@ export const MonthCalendar = ({
 	nightDays?: Record<string, number>;
 	// Month buttons along the top, with a team's record in each.
 	monthChips?: boolean;
+	// The league's nights the plain way (see PlainNight).
+	plain?: boolean;
 	season: number;
 	// The night a page is showing, like Daily Schedule's day.
 	selected?: string;
@@ -486,6 +545,9 @@ export const MonthCalendar = ({
 		}
 	}
 
+	const userInfo = teamInfoCache[userTid];
+	const userLogo = userInfo?.imgURLSmall ?? userInfo?.imgURL;
+
 	const monthIndex = months.indexOf(month);
 	const todayMonth = today !== undefined ? monthOf(today) : undefined;
 	const isTeam = typeof tid === "number";
@@ -496,6 +558,7 @@ export const MonthCalendar = ({
 				"lc",
 				compact && "lc-compact",
 				isTeam ? "lc-team" : "lc-league",
+				plain && !isTeam && "lc-plain",
 				className,
 			)}
 			style={
@@ -622,6 +685,26 @@ export const MonthCalendar = ({
 								const game = isTeam ? teamByDate.get(date) : undefined;
 								const night = nights.get(date);
 								const keyDate = keyByDate.get(date);
+								if (plain && !isTeam) {
+									return (
+										<td
+											key={date}
+											className={clsx(
+												night ? "lc-night" : "lc-off",
+												date === today && "lc-today",
+												date === selected && "lc-selected",
+											)}
+											title={formatGameDate(date, "full")}
+										>
+											<PlainNight
+												date={date}
+												night={night}
+												season={season}
+												userLogo={userLogo}
+											/>
+										</td>
+									);
+								}
 								return (
 									<td
 										key={date}

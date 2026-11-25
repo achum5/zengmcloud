@@ -43,8 +43,6 @@ import {
 import { drawCourtLines } from "./courtLines.ts";
 import { callAt, rowSpot } from "./intro.ts";
 import { drawLights } from "./lights.ts";
-import type { ShowFx } from "./pregameShow.ts";
-import { drawShowFx } from "./showFx.ts";
 import { atTable } from "./crew.ts";
 import {
 	drawTableBack,
@@ -711,8 +709,6 @@ export type Frame = {
 	black?: boolean;
 	// Not a game's floor at all (see Venue): somewhere else on it.
 	venue?: Venue;
-	// The pregame show's fire, beams and phones (see pregameShow.ts).
-	showFx?: ShowFx;
 };
 
 // THE BUILDING DRESSED FOR SOMETHING ELSE - draft night (see draftVenue.ts):
@@ -2505,11 +2501,7 @@ export const drawFrame = (f: Frame) => {
 		t,
 		players,
 		f.teamColors ?? DEFAULT_TEAM_COLORS,
-		f.showFx,
 	);
-	if (f.showFx) {
-		drawShowFx(ctx, cam, f.showFx, f.now ?? t);
-	}
 	// The board over center court, when the picture takes it in.
 	if (arena.jumbotron && !venue) {
 		drawJumbotron(

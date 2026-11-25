@@ -7,6 +7,7 @@ import {
 	seriesOf,
 	standingsAsOf,
 	streakBefore,
+	tapeOf,
 	totalAsOf,
 } from "./liveGameInfo.ts";
 import {
@@ -444,5 +445,85 @@ describe("each team's leading scorer going in", () => {
 		const l = leadersOf(g2, [regular, p1, g2])!;
 		assert.strictEqual(l[0].pts, 40);
 		assert.strictEqual(l[1].pts, 2);
+	});
+});
+
+describe("the matchup board's numbers going in", () => {
+	const totals = (
+		gid: number,
+		day: number,
+		home: [number, number, number, number, number, number],
+		away: [number, number, number, number, number, number],
+		playoffs = false,
+	) =>
+		({
+			gid,
+			day,
+			playoffs,
+			teams: [home, away].map(([tid, pts, drb, ast, tp, tpa]) => ({
+				tid,
+				pts,
+				orb: 10,
+				drb,
+				ast,
+				tp,
+				tpa,
+			})),
+		}) as any;
+
+	test("a game's numbers over the games before this one, not after it or the same day", () => {
+		const watched = totals(30, 10, [1, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0]);
+		const played = [
+			totals(1, 1, [1, 100, 30, 20, 10, 30], [3, 90, 30, 20, 10, 30]),
+			totals(2, 2, [4, 120, 30, 20, 10, 30], [1, 110, 34, 26, 14, 30]),
+			totals(29, 10, [1, 150, 50, 50, 50, 50], [5, 80, 30, 20, 10, 30]),
+			watched,
+			totals(40, 12, [1, 150, 50, 50, 50, 50], [2, 80, 30, 20, 10, 30]),
+		];
+		const [home, away] = tapeOf(watched, played);
+		assert.strictEqual(home!.gp, 2);
+		assert.strictEqual(home!.pts, 105);
+		assert.strictEqual(home!.opp, 105);
+		assert.strictEqual(home!.trb, 42);
+		assert.strictEqual(home!.ast, 23);
+		assert.closeTo(home!.tpPct!, 40, 1e-9);
+		assert.deepEqual(home!.last10, [1, 1]);
+		assert.isUndefined(away);
+	});
+
+	test("its last ten are its latest ten", () => {
+		const watched = totals(99, 50, [1, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0]);
+		const played = Array.from({ length: 14 }, (_, k) =>
+			// Four losses first, then ten wins.
+			totals(
+				k + 1,
+				k + 1,
+				[1, k < 4 ? 90 : 110, 30, 20, 0, 0],
+				[3, 100, 30, 20, 0, 0],
+			),
+		);
+		const [home] = tapeOf(watched, played);
+		assert.deepEqual(home!.last10, [10, 0]);
+		assert.isUndefined(home!.tpPct);
+	});
+
+	test("in the playoffs, the playoffs' numbers once there are any", () => {
+		const regular = totals(
+			1,
+			1,
+			[1, 100, 30, 20, 10, 30],
+			[2, 90, 30, 20, 10, 30],
+		);
+		const g1 = totals(50, 90, [1, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0], true);
+		assert.strictEqual(tapeOf(g1, [regular, g1])[0]!.pts, 100);
+		const p1 = totals(
+			50,
+			90,
+			[1, 120, 30, 20, 10, 30],
+			[2, 80, 30, 20, 10, 30],
+			true,
+		);
+		const g2 = totals(51, 92, [1, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0], true);
+		assert.strictEqual(tapeOf(g2, [regular, p1, g2])[0]!.pts, 120);
 	});
 });

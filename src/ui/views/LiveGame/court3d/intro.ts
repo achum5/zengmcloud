@@ -29,6 +29,9 @@ export type Intro = {
 
 // How long the lights take to go down, and to come back up (ms).
 export const INTRO_DARK = 1100;
+// The title, "STARTING LINEUPS", for this long before the first name.
+export const TITLE_MS = 3200;
+
 export const INTRO_LIGHT = 900;
 // They are called out in the pregame show, while the game itself is still
 // being staged (see pregameShow.ts) - so there is time to make something of

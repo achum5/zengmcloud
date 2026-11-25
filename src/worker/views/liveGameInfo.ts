@@ -109,6 +109,23 @@ export type GamecastInfo = {
 	// Each team's leading scorer going in (see leadersOf) - a live game's
 	// only. Box score order: home first.
 	leaders?: [GameLeader, GameLeader];
+	// Each team's numbers going in, for the pregame show's matchup board (see
+	// tapeOf) - a live game's only. Box score order: home first.
+	tape?: [TeamTape | undefined, TeamTape | undefined];
+};
+
+// A team's numbers going into a game: a game's points for and against,
+// rebounds and assists, its three-point shooting, and its last ten.
+export type TeamTape = {
+	tid: number;
+	gp: number;
+	pts: number;
+	opp: number;
+	trb: number;
+	ast: number;
+	// Undefined with no threes tried.
+	tpPct?: number;
+	last10: [number, number];
 };
 
 // A team's leading scorer going into a game, and his averages then.
@@ -451,6 +468,69 @@ export const leadersOf = (
 	return (game.playoffs ? pick(sums(true)) : undefined) ?? pick(sums(false));
 };
 
+// EACH TEAM'S NUMBERS GOING IN, for the matchup board in the pregame show:
+// over its games this season before this one (the day's others left out,
+// as the standings leave them - see standingsAsOf), the playoffs' in the
+// playoffs once it has played one there. Undefined for a team with none.
+export const tapeOf = (
+	game: Played,
+	played: readonly Played[],
+): [TeamTape | undefined, TeamTape | undefined] => {
+	const sameDay = (p: Played) =>
+		p.day !== undefined && game.day !== undefined && p.day === game.day;
+	const one = (tid: number): TeamTape | undefined => {
+		const mine = (playoffs: boolean) =>
+			played
+				.filter(
+					(p) =>
+						p.gid !== game.gid &&
+						!!p.playoffs === playoffs &&
+						(p.teams[0].tid === tid || p.teams[1].tid === tid) &&
+						before(p, game) &&
+						!sameDay(p),
+				)
+				.sort((a, b) => (before(a, b) ? 1 : before(b, a) ? -1 : 0));
+		const games =
+			(game.playoffs ? mine(true) : []).length > 0 ? mine(true) : mine(false);
+		if (games.length === 0) {
+			return undefined;
+		}
+		let pts = 0;
+		let opp = 0;
+		let trb = 0;
+		let ast = 0;
+		let tp = 0;
+		let tpa = 0;
+		const last10: [number, number] = [0, 0];
+		games.forEach((p, k) => {
+			const us = p.teams[0].tid === tid ? 0 : 1;
+			const t = p.teams[us];
+			const o = p.teams[us === 0 ? 1 : 0];
+			pts += t.pts;
+			opp += o.pts;
+			trb += (t.orb ?? 0) + (t.drb ?? 0);
+			ast += t.ast ?? 0;
+			tp += t.tp ?? 0;
+			tpa += t.tpa ?? 0;
+			if (k < 10 && t.pts !== o.pts) {
+				last10[t.pts > o.pts ? 0 : 1] += 1;
+			}
+		});
+		const gp = games.length;
+		return {
+			tid,
+			gp,
+			pts: pts / gp,
+			opp: opp / gp,
+			trb: trb / gp,
+			ast: ast / gp,
+			...(tpa > 0 ? { tpPct: (100 * tp) / tpa } : {}),
+			last10,
+		};
+	};
+	return [one(game.teams[0].tid), one(game.teams[1].tid)];
+};
+
 // The bracket as it stood (see BracketRound), from the playoff series and
 // the season's games: each series' wins counted from the games themselves,
 // so an old game's page, or a live one, shows that night's - not today's.
@@ -654,6 +734,7 @@ export const gamecastInfo = async (
 		await getTotalsPrior(game.season),
 	);
 	const leaders = final ? undefined : leadersOf(game, played);
+	const tape = final ? undefined : tapeOf(game, played);
 
 	return {
 		series,
@@ -663,6 +744,7 @@ export const gamecastInfo = async (
 		...(playIn ? { playIn } : {}),
 		...(total !== undefined ? { total } : {}),
 		...(leaders ? { leaders } : {}),
+		...(tape && (tape[0] || tape[1]) ? { tape } : {}),
 	};
 };
 

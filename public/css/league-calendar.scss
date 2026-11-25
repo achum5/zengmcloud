@@ -881,3 +881,93 @@ $lc-dark: lightness($white) < 50%;
 	font-weight: 700;
 	color: var(--bs-body-color);
 }
+
+// THE LEAGUE'S NIGHTS THE PLAIN WAY (Daily Schedule's calendar, like its
+// strip of days): the date, how many games, the user's team's little logo in
+// the corner; the night shown filled in, today's date in red.
+.lc-plain .lc-grid {
+	td,
+	td.lc-night {
+		height: auto;
+		padding: 0;
+		background: none;
+		box-shadow: none;
+	}
+	td.lc-off {
+		opacity: 0.35;
+	}
+	@media (hover: hover) {
+		td:has(> a.lc-p):hover {
+			background: var(--bs-tertiary-bg);
+			box-shadow: none;
+		}
+	}
+	td.lc-selected,
+	td.lc-selected:hover {
+		color: var(--bs-body-bg);
+		background: var(--bs-emphasis-color);
+		box-shadow: none;
+		.lc-p-num,
+		.lc-p-games {
+			color: inherit;
+		}
+		.lc-p-games {
+			opacity: 0.75;
+		}
+	}
+	td.lc-today,
+	td.lc-today:hover {
+		box-shadow: none;
+		.lc-p-num {
+			color: var(--bs-danger);
+		}
+	}
+}
+.lc-p {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 0.4rem 0 0.25rem;
+	color: inherit;
+	text-decoration: none;
+	&:hover {
+		color: inherit;
+		text-decoration: none;
+	}
+}
+.lc-p-num {
+	font-size: 0.95rem;
+	font-weight: 800;
+	line-height: 1.15;
+	color: var(--bs-emphasis-color);
+	font-variant-numeric: tabular-nums;
+}
+.lc-p-games {
+	max-width: 100%;
+	overflow: hidden;
+	min-height: 0.8rem;
+	font-size: 0.56rem;
+	font-weight: 600;
+	line-height: 0.8rem;
+	white-space: nowrap;
+	color: var(--bs-secondary-color);
+}
+.lc-p-logo {
+	position: absolute;
+	top: 0.06rem;
+	right: 0.06rem;
+	width: 0.6rem;
+	height: 0.6rem;
+	object-fit: contain;
+}
+// (The narrowest phones: smaller, to fit a night's cell.)
+@media (max-width: 359.98px) {
+	.lc-p-games {
+		font-size: 0.48rem;
+	}
+	.lc-p-logo {
+		width: 0.52rem;
+		height: 0.52rem;
+	}
+}
