@@ -127,11 +127,25 @@ frustum("column", COL_FOOT, COL_TOP, "pad", bevel=0.22, segs=2)
 for name, y0, y1 in (("earNear", 25.42, 26.12), ("earFar", 23.88, 24.58)):
     box(name, (-7.75, y0, 10.5), (-6.6, y1, 11.95), "pad", bevel=0.16, segs=1)
 # The boom out to the board, deep at the post and slimmer at the board, and
-# the padding round it where it meets the board.
+# the padding round it where it meets the board. Each part goes on from
+# where the last leaves off - the boom from the post's face to the pad, the
+# pad on to the mount - and none runs through another: the court draws
+# them one over another, and two parts through each other have no right
+# way round (see arenaModel.ts drawOrder).
 BOOM_Z = 11.55
 BOOM = ((-8.25, 0.72, 0.96), (3.62, 0.56, 0.64))
-beam("boom", (BOOM[0][0], 25, BOOM_Z), (BOOM[1][0], 25, BOOM_Z), BOOM[0][1], BOOM[0][2], BOOM[1][1], BOOM[1][2], "metal", flex=along)
-box("boomPad", (0.5, 24.56, BOOM_Z - 0.48), (3.5, 25.44, BOOM_Z + 0.46), "pad", bevel=0.14, segs=1, flex=along)
+POST_FACE = -7.75
+PAD = (0.5, 3.62)
+
+
+def boom_at(d):
+    # Its width and depth d along: narrowing from the post to the board.
+    t = (d - BOOM[0][0]) / (BOOM[1][0] - BOOM[0][0])
+    return BOOM[0][1] + (BOOM[1][1] - BOOM[0][1]) * t, BOOM[0][2] + (BOOM[1][2] - BOOM[0][2]) * t
+
+
+beam("boom", (POST_FACE, 25, BOOM_Z), (PAD[0], 25, BOOM_Z), *boom_at(POST_FACE), *boom_at(PAD[0]), "metal", flex=along)
+box("boomPad", (PAD[0], 24.56, BOOM_Z - 0.48), (PAD[1], 25.44, BOOM_Z + 0.46), "pad", bevel=0.14, segs=1, flex=along)
 # The lit box along the top of the boom by the column.
 BOX = (-6.15, -2.45, 24.5, 25.5, BOOM_Z + 0.44, BOOM_Z + 1.78)
 box("adBox", (BOX[0], BOX[2], BOX[4]), (BOX[1], BOX[3], BOX[5]), "pad", bevel=0.1, segs=1, flex=along)

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 626,
+		date: "2026-11-25",
+		text: "3D game: the basket's stanchion no longer glitches as the camera moves. The pad on the arm by the backboard stopped blinking in and out, and the post behind the padded column stopped flickering.",
+	},
+	{
 		n: 625,
 		date: "2026-11-25",
 		text: "3D game score bugs: BONUS no longer covers a team's abbreviation. On the bug the Magic, Spurs, Wolves, Clippers, Grizzlies, Hornets, Pistons, Pacers and Heat share, a team in the bonus now has its end of the bar slide out to make room for the BONUS tag, like on TV. On the Mavericks' bug the scores sit higher, so BONUS under them no longer runs into the numbers.",

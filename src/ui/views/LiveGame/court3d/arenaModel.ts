@@ -67,6 +67,170 @@ export type ModelPlace = {
 	mirrored: boolean;
 };
 
+// WHICH PART GOES OVER WHICH. Not by how far away each part's middle is:
+// the stanchion's parts are all down its middle, so to the main camera -
+// which reads how far away a thing is off the floor beneath it, straight
+// across the court - most of them are the same distance away, and which
+// went over which came down to rounding, different every frame as the
+// camera slid: the pad on the boom, the post behind the column, flickering
+// in and out. Instead, between each two parts a flat wall with one on each
+// side of it (the parts are solid boxes, none through another but for a
+// hair at a joint): the part on the camera's side of it can't be hidden by
+// the other, so it goes over it. Worked out once for the piece; each frame
+// only which side of each wall the camera is on.
+type Split = { a: number; b: number; n: number[]; d: number };
+// (Further in than this, two parts have no wall between them: left to how
+// far away they are.)
+const JOINT = 0.3;
+const splitsOf = new WeakMap<ArenaModel, Split[]>();
+const planesOf = (part: ArenaModel["parts"][number]) =>
+	part.faces.map((f) => {
+		// (Each face's plane, facing out - Newell's, for a face not quite flat.)
+		let nx = 0;
+		let ny = 0;
+		let nz = 0;
+		let d = 0;
+		for (let i = 0; i < f.length; i++) {
+			const p = part.pts[f[i]!]!;
+			const q = part.pts[f[(i + 1) % f.length]!]!;
+			nx += (p[1]! - q[1]!) * (p[2]! + q[2]!);
+			ny += (p[2]! - q[2]!) * (p[0]! + q[0]!);
+			nz += (p[0]! - q[0]!) * (p[1]! + q[1]!);
+		}
+		const l = Math.hypot(nx, ny, nz) || 1;
+		const n = [nx / l, ny / l, nz / l];
+		for (const i of f) {
+			const p = part.pts[i]!;
+			d += n[0]! * p[0]! + n[1]! * p[1]! + n[2]! * p[2]!;
+		}
+		return { n, d: d / f.length };
+	});
+export const splits = (model: ArenaModel): Split[] => {
+	let out = splitsOf.get(model);
+	if (!out) {
+		out = [];
+		const planes = model.parts.map(planesOf);
+		for (let i = 0; i < model.parts.length; i++) {
+			for (let j = i + 1; j < model.parts.length; j++) {
+				// The face of either that the other is furthest out past (or
+				// least far in): the wall, halfway into the joint if they meet
+				// in one. Part a on its inside, b out past it.
+				let best: Split | undefined;
+				let bestIn = Infinity;
+				for (const [a, b] of [
+					[i, j],
+					[j, i],
+				] as const) {
+					for (const { n, d } of planes[a]!) {
+						let inside = 0;
+						for (const p of model.parts[b]!.pts) {
+							inside = Math.max(
+								inside,
+								d - (n[0]! * p[0]! + n[1]! * p[1]! + n[2]! * p[2]!),
+							);
+						}
+						if (inside < bestIn) {
+							bestIn = inside;
+							best = { a, b, n, d: d - inside / 2 };
+						}
+					}
+				}
+				if (best && bestIn <= JOINT) {
+					out.push(best);
+				}
+			}
+		}
+		splitsOf.set(model, out);
+	}
+	return out;
+};
+
+// Where the camera sees from, in the world. Upright (see camera.ts project),
+// not where it stands: what it draws is in true perspective from a point
+// behind and below it - the point every line of sight runs back to.
+export const eyeOf = (cam: Camera): Pt3 => {
+	if (!cam.upright) {
+		return cam.pos;
+	}
+	const { pos, fwd, up } = cam;
+	const h2 = fwd.x * fwd.x + fwd.y * fwd.y;
+	if (h2 < 1e-9) {
+		return pos;
+	}
+	const s = (pos.z * fwd.z) / h2;
+	const gx = fwd.x * s;
+	const gy = fwd.y * s;
+	return {
+		x: pos.x + gx,
+		y: pos.y + gy,
+		z: -(gx * up.x + gy * up.y - pos.z * up.z),
+	};
+};
+
+// The parts in the order to draw them: each after every part it could be in
+// front of.
+export const drawOrder = (
+	cam: Camera,
+	model: ArenaModel,
+	place: ModelPlace,
+	depths: number[],
+): number[] => {
+	// The eye in the piece's own frame (place.at, still, undone).
+	const o = place.at([0, 0, 0], 0);
+	const ax = place.at([1, 0, 0], 0);
+	const ay = place.at([0, 1, 0], 0);
+	const az = place.at([0, 0, 1], 0);
+	const u = [ax.x - o.x, ax.y - o.y, ax.z - o.z];
+	const v = [ay.x - o.x, ay.y - o.y, ay.z - o.z];
+	const w = [az.x - o.x, az.y - o.y, az.z - o.z];
+	const e = eyeOf(cam);
+	const r = [e.x - o.x, e.y - o.y, e.z - o.z];
+	const det3 = (a: number[], b: number[], c: number[]) =>
+		a[0]! * (b[1]! * c[2]! - b[2]! * c[1]!) -
+		a[1]! * (b[0]! * c[2]! - b[2]! * c[0]!) +
+		a[2]! * (b[0]! * c[1]! - b[1]! * c[0]!);
+	// (Cramer's rule: r = eye[0] u + eye[1] v + eye[2] w.)
+	const D = det3(u, v, w) || 1;
+	const eye = [det3(r, v, w) / D, det3(u, r, w) / D, det3(u, v, r) / D];
+	const n = model.parts.length;
+	const before = model.parts.map(() => 0);
+	const next: number[][] = model.parts.map(() => []);
+	for (const s of splits(model)) {
+		const side =
+			s.n[0]! * eye[0]! + s.n[1]! * eye[1]! + s.n[2]! * eye[2]! - s.d;
+		const [first, last] = side > 0 ? [s.a, s.b] : [s.b, s.a];
+		next[first]!.push(last);
+		before[last]! += 1;
+	}
+	// Each time, of the parts with nothing left to go under, the furthest
+	// away (the first of them, if as far); should the walls ever go round in
+	// a ring, the furthest of what is left.
+	const done = model.parts.map(() => false);
+	const order: number[] = [];
+	while (order.length < n) {
+		let pick = -1;
+		let fallback = -1;
+		for (let i = 0; i < n; i++) {
+			if (done[i]) {
+				continue;
+			}
+			if (fallback < 0 || depths[i]! > depths[fallback]! + 1e-6) {
+				fallback = i;
+			}
+			if (before[i] === 0 && (pick < 0 || depths[i]! > depths[pick]! + 1e-6)) {
+				pick = i;
+			}
+		}
+		const i = pick >= 0 ? pick : fallback;
+		done[i] = true;
+		order.push(i);
+		for (const j of next[i]!) {
+			before[j]! -= 1;
+		}
+	}
+	return order;
+};
+
 // Draws the piece, and - in each part's turn, as it is drawn - `after` (a
 // picture on it, say).
 export const drawModel = (
@@ -87,10 +251,15 @@ export const drawModel = (
 		}
 		return { part, world, screen, depth: depth / world.length };
 	});
-	placed.sort((a, b) => b.depth - a.depth);
+	const order = drawOrder(
+		cam,
+		model,
+		place,
+		placed.map((p) => p.depth),
+	);
 	const flip = place.mirrored ? -1 : 1;
 	ctx.lineJoin = "round";
-	for (const { part, world, screen } of placed) {
+	for (const { part, world, screen } of order.map((i) => placed[i]!)) {
 		const front = part.faces.map((f) => {
 			// (Wound to face out: turned toward the camera if it goes round
 			// the right way on the screen.)
