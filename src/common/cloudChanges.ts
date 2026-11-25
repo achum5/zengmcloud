@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 608,
+		date: "2026-11-25",
+		text: "3D game: the starting lineups are gone. Before the tip, a matchup board now comes up over the arena while both teams warm up: records and standings, points, points allowed, rebounds, assists, 3PT % and last 10 going in, each team's leading scorer, and the line. It stays up at least 10 seconds, then the game starts from the tip.",
+	},
+	{
 		n: 607,
 		date: "2026-11-25",
 		text: "Daily Schedule: the upcoming game cards no longer show team overalls in a league with No Visible Team Ratings on.",
