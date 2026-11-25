@@ -813,13 +813,70 @@ export const toMoves = (
 		i = j;
 	}
 	const out = pullUpsIn(moves, pinned);
-	// (His own steps: run the way they had him - see evenShape.)
+	// (His own steps: run the way they had him - see evenShape - and down in
+	// his stance or up out of it for a good moment at a time.)
 	if (calm) {
 		for (const m of out) {
 			m.steady = true;
 		}
+		heldStance(out, "low");
+		heldStance(out, "up");
 	}
 	return out;
+};
+
+// HIS STANCE HELD (the new possession sim's men). Down in his stance for
+// less than STANCE_LEAST ms between runs up on his feet, he stays up on his
+// feet through it; up out of it for less than UP_LEAST between two spells in
+// it, he stays down in it. A man gets down into his stance and back up over
+// the best part of a second - his arms out, his feet spread, his trunk over
+// them - not for a moment and back, which looks like a man flinching.
+const STANCE_LEAST = 700;
+const UP_LEAST = 400;
+const LOW_STANCE = new Set<string>(["shuffle", "slide"]);
+const UP_GAITS = new Set<string>(["walk", "jog", "run", "sprint"]);
+const heldStance = (moves: Move[], short: "low" | "up"): void => {
+	const kind = (m: Move) =>
+		LOW_STANCE.has(m.anim) ? "low" : UP_GAITS.has(m.anim) ? "up" : "other";
+	// (Spells of the one or the other, run on one into the next.)
+	const spells: { kind: string; a: number; b: number }[] = [];
+	for (let k = 0; k < moves.length; k++) {
+		const m = moves[k]!;
+		const last = spells.at(-1);
+		if (
+			last &&
+			last.kind === kind(m) &&
+			m.t0 - moves[last.b]!.t1 <= STEP_MS + 1
+		) {
+			last.b = k;
+		} else {
+			spells.push({ kind: kind(m), a: k, b: k });
+		}
+	}
+	const other = short === "low" ? "up" : "low";
+	const least = short === "low" ? STANCE_LEAST : UP_LEAST;
+	const span = (x: { a: number; b: number }) => moves[x.b]!.t1 - moves[x.a]!.t0;
+	for (let k = 1; k + 1 < spells.length; k++) {
+		const p = spells[k - 1]!;
+		const q = spells[k]!;
+		const n = spells[k + 1]!;
+		if (
+			q.kind !== short ||
+			p.kind !== other ||
+			n.kind !== other ||
+			span(q) >= least ||
+			moves[q.a]!.t0 - moves[p.b]!.t1 > STEP_MS + 1 ||
+			moves[n.a]!.t0 - moves[q.b]!.t1 > STEP_MS + 1
+		) {
+			continue;
+		}
+		// (As he goes either side of it - the longer.)
+		const anim = (span(p) >= span(n) ? moves[p.b]! : moves[n.a]!).anim;
+		for (let j = q.a; j <= q.b; j++) {
+			moves[j]!.anim = anim;
+		}
+		q.kind = other;
+	}
 };
 
 // A short run pulling up to all but stand, going on the way the run before

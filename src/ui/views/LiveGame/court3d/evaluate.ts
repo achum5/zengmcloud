@@ -1870,8 +1870,11 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 			return angleTo(here, nx.look, fallback);
 		}
 	}
-	// How he is going: a slide too fast to be one is a run, say.
-	const gait = here.run ? paceAnim(tl, tr, here.run) : mv?.anim;
+	// How he is going: a slide too fast to be one is a run, say. (Or held
+	// up on his feet through a moment's slide - see stepsOf: opened up the
+	// same.)
+	const paced = here.run ? paceAnim(tl, tr, here.run) : mv?.anim;
+	const gait = here.run ? heldPace(tl, tr, here.run) : paced;
 	if (
 		mv &&
 		here.moving &&
@@ -1894,7 +1897,7 @@ const plannedYaw = (tl: CourtTimeline, tr: Track, t: number): number => {
 		mv &&
 		here.moving &&
 		(mv.anim === "slide" || mv.anim === "shuffle") &&
-		(gait === "run" || gait === "sprint")
+		(gait === "run" || gait === "sprint" || gait !== paced)
 	) {
 		const heading =
 			here.hx * here.hx + here.hy * here.hy > 1e-6
@@ -2976,6 +2979,16 @@ const SET_OFF_TURN_MS = 150;
 // frame or two and back up - see possession/README.md, calm decisions.)
 const GAIT_HOLD = 45;
 const GAIT_HOLD_OWN = 200;
+// (The new possession sim's men going backward up on their feet - not in
+// their stance - at a walk, or at no more than a walk's pace off a jog or a
+// run: walking backward, not dropped into a defender's backpedal, arms out,
+// for a step or two. Feet a second.)
+const BACK_WALK_FTPS = 8.5;
+const backWalks = (run: Run, anim: AnimName): boolean =>
+	anim === "walk" ||
+	anim === "drift" ||
+	((anim === "jog" || anim === "run") &&
+		Math.max(shapeOf(run).vc, run.v0, run.v1) <= BACK_WALK_FTPS);
 const FORWARD = new Set<AnimName>([
 	"walk",
 	"jog",
@@ -3058,7 +3071,7 @@ const shownSteps = (
 	) {
 		// (The new possession sim's men, at a walk: walking backward, up on
 		// their feet, the same as a run laid going backward - see stepsOf.)
-		return own && (anim === "walk" || anim === "drift") ? "backWalk" : "back";
+		return own && backWalks(run, anim) ? "backWalk" : "back";
 	}
 	if (anim === "back" && off < TURN_ROUND) {
 		const ahead = paceAnim(tl, tr, run);
@@ -3158,9 +3171,75 @@ const paceAnim = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 		: own;
 };
 
+// HIS STANCE HELD (the new possession sim's men): down in his stance -
+// sliding with his man - for less than STANCE_LEAST ms between runs up on
+// his feet either side, he stays up on his feet through it, at his pace. A
+// man gets down into his stance and back up over the best part of a second,
+// not for a moment and straight back up: his arms flung out, his feet
+// spread and his trunk down over them, and up again, is a flinch.
+const STANCE_LEAST = 700;
+const STANCE_GAP = 60;
+const LOW_PACE = new Set<AnimName>(["slide", "shuffle"]);
+const UP_PACE = new Set<AnimName>(["walk", "jog", "run", "sprint", "drift"]);
+const heldPaces = new WeakMap<Run["mv"], AnimName>();
+const rawPaces = new WeakMap<Run["mv"], AnimName>();
+const heldPace = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
+	const own = tl.gaits?.get(tr.pid);
+	if (!own) {
+		return paceAnim(tl, tr, run);
+	}
+	let got = heldPaces.get(run.mv);
+	if (got === undefined) {
+		let k = lastT0(tr.moves, run.mv.t0);
+		while (k > 0 && tr.moves[k] !== run.mv) {
+			k -= 1;
+		}
+		const raw = (j: number) => {
+			const mv = tr.moves[j]!;
+			let p = rawPaces.get(mv);
+			if (p === undefined) {
+				p = paceAnim(tl, tr, mv === run.mv ? run : runOf(tr, j));
+				rawPaces.set(mv, p);
+			}
+			return p;
+		};
+		got = tr.moves[k] === run.mv ? raw(k) : paceAnim(tl, tr, run);
+		if (LOW_PACE.has(got) && tr.moves[k] === run.mv) {
+			const joined = (j: number) =>
+				tr.moves[j + 1]!.t0 - tr.moves[j]!.t1 <= STANCE_GAP;
+			let a = k;
+			let b = k;
+			while (a > 0 && joined(a - 1) && LOW_PACE.has(raw(a - 1))) {
+				a -= 1;
+			}
+			while (b + 1 < tr.moves.length && joined(b) && LOW_PACE.has(raw(b + 1))) {
+				b += 1;
+			}
+			if (
+				tr.moves[b]!.t1 - tr.moves[a]!.t0 < STANCE_LEAST &&
+				a > 0 &&
+				b + 1 < tr.moves.length &&
+				joined(a - 1) &&
+				joined(b) &&
+				UP_PACE.has(raw(a - 1)) &&
+				UP_PACE.has(raw(b + 1))
+			) {
+				const r = shapeOf(run);
+				got = ownGaitFor(
+					Math.max(r.vc, run.v0, run.v1, groundSpeed(tr, run)),
+					own,
+					"walk",
+				);
+			}
+		}
+		heldPaces.set(run.mv, got);
+	}
+	return got;
+};
+
 // The steps he takes on a run.
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
-	const anim = paceAnim(tl, tr, run);
+	const anim = heldPace(tl, tr, run);
 	// Sliding with his man - or shuffling a step or two: push steps when he
 	// goes across the way he faces, drop steps when he gives ground, short
 	// steps up when he steps up.
@@ -3193,9 +3272,7 @@ const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 	) {
 		// (The new possession sim's men, at a walk: up on their feet,
 		// walking backward - down in a backpedal only in their stance.)
-		return (anim === "walk" || anim === "drift") && tl.gaits?.has(tr.pid)
-			? "backWalk"
-			: "back";
+		return tl.gaits?.has(tr.pid) && backWalks(run, anim) ? "backWalk" : "back";
 	}
 	return anim;
 };
@@ -3633,9 +3710,15 @@ const doingNow = (
 			steppingAt(tr, t)
 		) {
 			// Eased aside off a man: he steps over, not slides (up on his
-			// feet, a step across).
+			// feet, a step across). (The new possession sim's men down in
+			// their stance only up on the man with the ball: anybody else
+			// eased over a step is not thrown down into a defender's slide,
+			// arms out, and straight back up out of it.)
 			asideAt(tr, t);
-			anim = anim === "help" ? "sideStep" : "shuffle";
+			anim =
+				anim === "help" || (tl.gaits?.has(pid) === true && anim !== "guard")
+					? "sideStep"
+					: "shuffle";
 			phase = asideD / strideOf(anim);
 			aside = true;
 		} else if (life) {
@@ -3657,7 +3740,8 @@ const doingNow = (
 			gait = { k: here.moveIndex, at: t };
 		} else if (steppingAt(tr, t)) {
 			asideAt(tr, t);
-			stride = { anim: "shuffle", phase: asideD / strideOf("shuffle"), w: 1 };
+			const over = tl.gaits?.has(pid) ? "sideStep" : "shuffle";
+			stride = { anim: over, phase: asideD / strideOf(over), w: 1 };
 		}
 	}
 	const bi = ballIndexAt(tl, t);
@@ -4000,6 +4084,7 @@ const blendInto = (
 	let lo = t - Math.max(BLEND_MS, START_MS);
 	let before = doingAt(tl, tr, lo);
 	let settling = false;
+	let stancing = false;
 	if (same(before)) {
 		// The same as a moment ago - but maybe something else in between,
 		// and back: out of that, then. (Looked for at the same moments of
@@ -4024,9 +4109,22 @@ const blendInto = (
 				: [t - back, t - (back + BLEND_MS) / 2]
 						.map((at) => ({ at, d: doingAt(tl, tr, at) }))
 						.find((x) => !same(x.d));
+		// (The new possession sim's men, down into their stance off a run or
+		// up out of it: looked for as far back as that takes - see
+		// STANCE_MS.)
+		const down =
+			flick || settle || !tl.gaits?.has(tr.pid)
+				? undefined
+				: [t - STANCE_MS, t - (STANCE_MS + BLEND_MS) / 2]
+						.map((at) => ({ at, d: doingAt(tl, tr, at) }))
+						.find((x) => !same(x.d) && dropsIn(x.d.anim, anim));
 		if (flick) {
 			lo = flick.at;
 			before = flick.d;
+		} else if (down) {
+			lo = down.at;
+			before = down.d;
+			stancing = true;
 		} else if (settle) {
 			// Still settling, maybe - out of whatever came last before this,
 			// found below: not whatever he was doing the whole settle ago (a
@@ -4086,6 +4184,10 @@ const blendInto = (
 	if (settling && !slowOver(before.anim, anim)) {
 		return armsDown(tl, tr, t, now);
 	}
+	const stance = tl.gaits?.has(tr.pid) === true && dropsIn(before.anim, anim);
+	if (stancing && !stance) {
+		return armsDown(tl, tr, t, now);
+	}
 	// (A moment of something else between an arm thrown up and this - his
 	// feet catching up with him - is no change of its own: out of that arm,
 	// then, or it comes down in fits and starts.)
@@ -4114,11 +4216,13 @@ const blendInto = (
 		startsOff(before.anim, anim) ||
 		(crossesOver(before.anim, anim) && paceAt(tr, lo) < STEP_OFF_PACE);
 	const w = ease(
-		blendMsOf(
-			stepOff,
-			slowOver(before.anim, anim),
-			STOOD.has(anim) && PIVOTS.has(before.anim),
-		),
+		stance
+			? STANCE_MS
+			: blendMsOf(
+					stepOff,
+					slowOver(before.anim, anim),
+					STOOD.has(anim) && PIVOTS.has(before.anim),
+				),
 	);
 	const slowArms = armsComeDown(tr, t, before.anim, anim);
 	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
@@ -7784,6 +7888,14 @@ const crossesOver = (from: AnimName, to: AnimName) =>
 	(FORWARD.has(from) && SIDEWAYS.has(to)) ||
 	(SIDEWAYS.has(from) && FORWARD.has(to));
 const STEP_OFF_PACE = 3;
+// (The new possession sim's men, down into their stance off a run, or up
+// out of it onto one - arms out, feet spread, trunk down over them, or back
+// up - over this long, ms: a body's pace, not a flinch.)
+const STANCE_MS = 320;
+const LOW_STANCE = new Set<AnimName>(["back", "shuffle", "slide"]);
+const dropsIn = (from: AnimName, to: AnimName) =>
+	(FORWARD.has(from) && LOW_STANCE.has(to)) ||
+	(LOW_STANCE.has(from) && FORWARD.has(to));
 // (Out of something done where he stands, his feet are where it left them -
 // see legsKept.)
 // (One gone back into his stance at its end: something done, held, and

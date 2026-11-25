@@ -849,6 +849,45 @@ percentile over 30 ft/s²): the play's own runs, laid the court's way,
 come through it. New: 4 moonwalk flags in the two games (a man pulled
 along after the play, eyes on the ball, going away from it at a jog).
 
+## No flinching into the stance (fix list, first item)
+
+Alex's clip: a man off the ball stood up straight, then all at once down in
+a defender's slide, arms thrown out wide, feet spread and trunk tipped,
+and a moment later snapped back upright. Measured over the first ten
+minutes of real_11 (100 man-minutes), a man went down into his stance
+(slide, shuffle, backpedal) for less than 0.7 s between spells up on his
+feet 1.2 times a man-minute. Three causes, all in how the court shows the
+new sim's men (`evaluate.ts`, gated on their own gaits; the old sim as it
+was):
+
+- A man eased a step aside off another (keep-apart) was drawn in a
+  defender's slide, whoever he was. Now he steps over up on his feet
+  (`sideStep`); only the man up on the ball slides.
+- A run below a slide's pace near the ball, or a defender's run slowing
+  for a moment between two quicker ones, was a slide for that run alone
+  (`heldPace`): down for a moment between runs up on his feet, he stays up
+  through it, at his pace (`STANCE_LEAST`, 700 ms), turned the way he goes
+  as far as running lets him, eyes on the ball.
+- Going backward at no more than a walk's pace off a jog (`BACK_WALK_FTPS`,
+  8.5 ft/s), he walks backward up on his feet, not down in a backpedal.
+
+And into his stance off a run, or up out of it, he goes over a third of a
+second (`STANCE_MS`, 320 ms), not a sixth. `stepper.ts` (`heldStance`)
+does the same for the slides the sim itself asks for: a moment's slide
+between runs is run.
+
+| Measure (real_11, first 10 minutes) | Before | Now |
+| --- | --- | --- |
+| Down in his stance under 0.7 s between spells up, a man-minute | 1.22 | 0.71 |
+| Frames a hand flies past 10 ft/s against his chest, a man-minute | 26.8 | 21.6 |
+| His hips dropping or rising 0.35 ft in 0.1 s, a man-minute | 9.6 | 6.5 |
+
+Whole-game tape flags (real_11 + real_22) are the same as before (210):
+this changes how men look, not where they go. Still there: the slide's own
+arms, both out wide of a man up on the ball, read as a plane's wings from
+in front; the brief drops left are mostly a defender slowing near the ball
+between two runs.
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it
