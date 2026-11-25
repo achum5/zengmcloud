@@ -4,6 +4,7 @@ import type { DraftPick } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
 import { groupByUnique } from "../../common/utils.ts";
 import { addPowerRankingsStuffToTeams } from "./powerRankings.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { getEstPicks } from "../core/team/ValueChangeCalculator.ts";
 import { PLAYER } from "../../common/constants.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
@@ -57,18 +58,23 @@ const adjustProjectedPick = ({
 export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	const draftPicks = [];
 
+	// (Projected from the records as shown: a game still being played live
+	// isn't in them yet.)
+	const liveShown = await getLiveShown();
 	const teamsRaw = await team.getFormattedAll({
 		attrs: ["tid", "abbrev", "playThroughInjuries"],
 		seasonAttrs: ["lastTen", "won", "lost", "tied", "otl"],
 		stats: ["gp", "mov"],
 		season: g.get("season"),
 		showNoStats: true,
+		liveShown,
 	});
 
 	const teamsWithRankings = await addPowerRankingsStuffToTeams(
 		teamsRaw,
 		g.get("season"),
 		"regularSeason",
+		liveShown,
 	);
 
 	const teams = groupByUnique(teamsWithRankings, "tid");

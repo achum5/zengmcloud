@@ -1,6 +1,7 @@
 import { NUM_PLAYERS_PER_INDIVIDUAL_AWARD } from "../../../common/awards.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import type {
+	LiveShown,
 	Award,
 	AwardInfoIndividual,
 	AwardInfoTeam,
@@ -119,6 +120,8 @@ export type AwardCandidateOptions = {
 	numPlayersPerIndividualAward?: number;
 	// How each score adds up, for the Award Races popup.
 	breakdown?: boolean;
+	// Pages only: games still being played live left out (liveGameShown.ts).
+	liveShown?: LiveShown;
 };
 
 export const getAwardCandidates = async (
@@ -145,6 +148,7 @@ export const getAwardCandidates = async (
 		season,
 		statOverridesByMatchup,
 		transformPlayers: options.transformPlayers,
+		liveShown: options.liveShown,
 	});
 
 	const playersByPid = groupByUnique(players, "pid");

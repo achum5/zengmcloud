@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import type { PlayerFeat } from "../../common/types.ts";
 import { g, helpers } from "../util/index.ts";
@@ -38,8 +39,12 @@ export default defineView({
 			const watchPids =
 				inputs.team === "watch" ? await getWatchPids() : undefined;
 
+			// (None from a game still being played live on somebody's screen.)
+			const liveShown = await getLiveShown();
+
 			// Applied while reading feats, so feats that won't be shown are not all held in memory
 			const filter = (feat: PlayerFeat) =>
+				!liveShown?.hides(feat.gid) &&
 				(typeof inputs.team !== "number" || feat.tid === inputs.team) &&
 				(watchPids === undefined || watchPids.has(feat.pid)) &&
 				(inputs.season === "all" || feat.season === inputs.season);

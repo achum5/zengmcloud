@@ -484,6 +484,29 @@ const lastAt = <T extends { t: number }>(list: T[], t: number): number => {
 export const gameClockAt = (c: Clocks, t: number): number | undefined =>
 	clockAt(c.marks, t);
 
+// THE LAST TWO MINUTES: from two minutes left in the last period a team can
+// use only two more timeouts, and an overtime gives each team two of its own,
+// so from then on - the breaks after included, and the final - the score bug
+// carries the game's own count (see CustomScoreBug). Whether that's so at t.
+export const FINAL_STRETCH = 2 * 60;
+export const finalStretchAt = (
+	c: Clocks,
+	t: number,
+	numPeriods: number,
+): boolean => {
+	const m = c.marks[lastAt(c.marks, t)];
+	if (!m) {
+		return false;
+	}
+	if (m.period > numPeriods) {
+		return true;
+	}
+	const clock = gameClockAt(c, t);
+	return (
+		m.period === numPeriods && clock !== undefined && clock <= FINAL_STRETCH
+	);
+};
+
 export const shotClockAt = (c: Clocks, t: number): number | undefined => {
 	const game = gameClockAt(c, t);
 	const i = lastAt(c.resets, t);

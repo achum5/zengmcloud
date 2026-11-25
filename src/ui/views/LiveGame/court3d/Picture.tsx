@@ -156,6 +156,7 @@ export const GameBug = ({
 	away,
 	home,
 	quarter,
+	late,
 	series,
 	day,
 	refs,
@@ -167,6 +168,8 @@ export const GameBug = ({
 	away: CustomBugTeam | undefined;
 	home: CustomBugTeam | undefined;
 	quarter: string;
+	// The last two minutes or overtime (see finalStretchAt).
+	late?: boolean;
 	series?: string;
 	// The game's weekday ("Tuesday"), if it has a date.
 	day?: string;
@@ -188,6 +191,7 @@ export const GameBug = ({
 				<CustomScoreBug
 					style={own}
 					{...bug}
+					late={late}
 					series={shortSeries(series)}
 					day={day}
 				/>

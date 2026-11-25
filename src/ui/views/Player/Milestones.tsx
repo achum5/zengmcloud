@@ -1,21 +1,26 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { toWorker } from "../../util/toWorker.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
+import HideableSection from "../../components/HideableSection.tsx";
 import {
+	STAT_TITLES,
 	STAT_WORDS,
+	careerLeadersUrl,
 	chaseNote,
 	gamesAway,
+	n,
 	paceNote,
 } from "../../components/MilestoneNotes.tsx";
-import type { getPlayerMilestones } from "../../../worker/util/milestoneWatch.ts";
+import type { getPlayerAllTime } from "../../../worker/util/milestoneWatch.ts";
 
-// A player's part of the Milestone Watch: where he stands on the all-time
-// lists he is high on, the round number he's closest to, and a season on a
-// record pace. Worked out after the page is up, since it reads the whole
-// league, and nothing shows when there's nothing to watch.
+// A player's place on each of the league's all-time lists, for anyone who has
+// played: his rank and career total in each stat, each opening that list.
+// Still playing, who he passes next, the round number he's closest to and a
+// season on a record pace. Worked out after the page is up, since it reads
+// the whole league.
 
-type Data = Awaited<ReturnType<typeof getPlayerMilestones>>;
+type Data = Awaited<ReturnType<typeof getPlayerAllTime>>;
 
 const Milestones = ({ pid }: { pid: number }) => {
 	const { gameSimInProgress } = useLocal(["gameSimInProgress"]);
@@ -27,7 +32,7 @@ const Milestones = ({ pid }: { pid: number }) => {
 		}
 		let cancelled = false;
 		(async () => {
-			const value = await toWorker("main", "getPlayerMilestones", pid);
+			const value = await toWorker("main", "getPlayerAllTime", pid);
 			if (!cancelled) {
 				setData({ pid, value });
 			}
@@ -42,55 +47,62 @@ const Milestones = ({ pid }: { pid: number }) => {
 		return null;
 	}
 
-	const n = helpers.numberWithCommas;
-	const items: {
-		key: string;
-		figure: string;
-		label: string;
-		note: ReactNode;
-	}[] = [];
-	if (value.pace) {
-		items.push({
-			key: "pace",
-			figure: n(value.pace.projected),
-			label: `${STAT_WORDS[value.pace.stat]} pace`,
-			note: paceNote(value.pace),
-		});
-	}
-	for (const row of value.chase) {
-		items.push({
-			key: `chase:${row.stat}`,
-			figure: helpers.ordinal(row.rank),
-			label: `all-time in ${STAT_WORDS[row.stat]}`,
-			note: chaseNote(row),
-		});
-	}
-	if (value.round) {
-		const r = value.round;
-		items.push({
-			key: "round",
-			figure: n(r.mark - r.total),
-			label: `to ${n(r.mark)} ${STAT_WORDS[r.stat]}`,
-			note: gamesAway(r.games),
-		});
-	}
+	const { round, pace } = value;
 
 	return (
-		<section className="pm">
-			<div className="pm-head">
-				<h2 className="pm-title">Milestone Watch</h2>
-				<a href={helpers.leagueUrl(["milestone_watch"])}>All players</a>
-			</div>
-			<ul className="pm-items">
-				{items.map((item) => (
-					<li key={item.key} className="pm-item">
-						<b className="pm-figure">{item.figure}</b>
-						<span className="pm-label">{item.label}</span>
-						<span className="pm-note">{item.note}</span>
-					</li>
+		<HideableSection
+			title="All-Time Ranks"
+			description={
+				<a href={helpers.leagueUrl(["milestone_watch"])}>Milestone Watch</a>
+			}
+		>
+			<div className="atr-grid">
+				{value.ranks.map((row) => (
+					<div key={row.stat} className="atr-tile">
+						<a className="atr-head" href={careerLeadersUrl(row.stat)}>
+							<span className="atr-rank">
+								{row.rank === undefined ? "-" : helpers.ordinal(row.rank)}
+							</span>
+							<span className="atr-stat">{STAT_TITLES[row.stat]}</span>
+						</a>
+						<div className="atr-total">
+							{n(row.total)}
+							{row.rank !== undefined ? (
+								<span className="atr-of"> · of {n(row.of)}</span>
+							) : null}
+						</div>
+						{value.active && row.rank !== undefined ? (
+							<div className="atr-note">
+								{chaseNote({ ...row, rank: row.rank })}
+							</div>
+						) : null}
+					</div>
 				))}
-			</ul>
-		</section>
+			</div>
+			{round || pace ? (
+				<ul className="atr-extra">
+					{round ? (
+						<li>
+							<b>{n(round.mark - round.total)}</b> to {n(round.mark)}{" "}
+							{STAT_WORDS[round.stat]}
+							{round.games !== undefined ? (
+								<span className="atr-extra-note">
+									{" "}
+									· {gamesAway(round.games)}
+								</span>
+							) : null}
+						</li>
+					) : null}
+					{pace ? (
+						<li>
+							On pace for <b>{n(pace.projected)}</b> {STAT_WORDS[pace.stat]}{" "}
+							this season
+							<span className="atr-extra-note"> · {paceNote(pace)}</span>
+						</li>
+					) : null}
+				</ul>
+			) : null}
+		</HideableSection>
 	);
 };
 

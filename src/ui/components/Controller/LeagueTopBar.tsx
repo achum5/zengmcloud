@@ -1,11 +1,4 @@
-import {
-	memo,
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useState,
-	type CSSProperties,
-} from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
@@ -13,7 +6,6 @@ import { isAllStarGame } from "../../../common/specialGames.ts";
 import { addDays } from "../../../common/calendarDates.ts";
 import type { LocalStateUI } from "../../../common/types.ts";
 import { TopBarDay } from "./TopBarDay.tsx";
-import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
 
 // The strip of recent scores under the navbar. Shown or hidden from Global
 // Settings (Scores Bar) rather than by a chevron pinned to its own right edge -
@@ -103,7 +95,6 @@ export const LeagueTopBar = memo(() => {
 		liveGameInProgress,
 		mpLiveGames,
 		showLeagueTopBar,
-		userTid,
 	} = useLocal([
 		"calendarDate",
 		"calendarOpeningNight",
@@ -112,21 +103,14 @@ export const LeagueTopBar = memo(() => {
 		"liveGameInProgress",
 		"mpLiveGames",
 		"showLeagueTopBar",
-		"userTid",
 	]);
 
-	// On the calendar, home days in the team's color.
-	const allColors = useAllTeamColors(calendarDate !== undefined);
-	const home = bannerColors(allColors?.[userTid]);
-	const homeColors = allColors
-		? ({ "--tbd-home-bg": home.bg, "--tbd-home-fg": home.fg } as CSSProperties)
-		: undefined;
-
-	// (A league mate's game being played live: its score as it stands.)
-	const livePtsOf = (game: BarGame) =>
+	// (A league mate's game being played live: as it stands.)
+	const liveOf = (game: BarGame) =>
 		game.teams[0].pts === undefined
-			? mpLiveGames.find((live) => live.gid === game.gid)?.score?.pts
+			? mpLiveGames.find((live) => live.gid === game.gid)
 			: undefined;
+	const livePtsOf = (game: BarGame) => liveOf(game)?.score?.pts;
 
 	const [wrapperElement, setWrapperElement] = useState<HTMLDivElement | null>(
 		null,
@@ -252,7 +236,6 @@ export const LeagueTopBar = memo(() => {
 		<div
 			className="league-top-bar league-top-bar-calendar flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row-reverse mt-2"
 			ref={setWrapperElement}
-			style={homeColors}
 		>
 			<div className="d-flex flex-shrink-0 ps-1" ref={contentRef}>
 				<div className="tbd-track d-flex flex-shrink-0">
@@ -261,7 +244,7 @@ export const LeagueTopBar = memo(() => {
 							key={date}
 							date={date}
 							game={game}
-							livePts={game ? livePtsOf(game) : undefined}
+							live={game ? liveOf(game) : undefined}
 							today={calendarDate}
 						/>
 					))}

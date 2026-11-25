@@ -109,6 +109,7 @@
 	}
 }
 .lh-week-day {
+	position: relative;
 	flex: 1 1 0;
 	min-width: 0;
 	display: flex;
@@ -137,7 +138,7 @@
 		color: var(--bs-body-bg);
 		background: var(--bs-emphasis-color);
 		.lh-week-top,
-		.lh-week-games:not(.lh-week-mine) {
+		.lh-week-games {
 			color: inherit;
 			opacity: 0.75;
 		}
@@ -148,8 +149,7 @@
 		opacity: 1;
 	}
 }
-// How many games, under the date - on the user's team's color the nights
-// it plays.
+// How many games, under the date.
 .lh-week-games {
 	min-height: 1rem;
 	margin-top: 0.1rem;
@@ -161,10 +161,14 @@
 	color: var(--bs-secondary-color);
 	border-radius: 999px;
 }
-.lh-week-mine {
-	font-weight: 700;
-	color: var(--lh-mine-fg);
-	background: var(--lh-mine-bg);
+// The nights the user's team plays: its little logo in the corner.
+.lh-week-logo {
+	position: absolute;
+	top: 0.2rem;
+	right: 0.2rem;
+	width: 0.9rem;
+	height: 0.9rem;
+	object-fit: contain;
 }
 .lh-week-off {
 	opacity: 0.35;
@@ -621,6 +625,12 @@
 		padding: 0 0.25rem;
 		font-size: 0.56rem;
 	}
+	.lh-week-logo {
+		top: 0.05rem;
+		right: 0.05rem;
+		width: 0.65rem;
+		height: 0.65rem;
+	}
 }
 
 // A PLAYED GAME, as NBA.com's scoreboard shows one (LeagueHub/GameCard):
@@ -770,10 +780,11 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-// The score, and the record beside it on the inner side.
+// The score, and the record beside it on the inner side - or, on a card
+// too narrow for a three-digit score and a record side by side, under it.
+// The card decides, not the side, so the two sides always match.
 .lh-gc-scoreline {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: baseline;
 	column-gap: 0.4rem;
 }
@@ -786,6 +797,14 @@
 	font-weight: 700;
 	opacity: 0.8;
 	font-variant-numeric: tabular-nums;
+}
+@container (max-width: 499px) {
+	.lh-gc-scoreline {
+		flex-wrap: wrap;
+	}
+	.lh-gc-record {
+		flex-basis: 100%;
+	}
 }
 .lh-gc-name {
 	font-size: clamp(1rem, 5.2cqw, 1.55rem);
@@ -1007,6 +1026,82 @@
 	}
 }
 
+// A GAME STILL TO BE PLAYED (LeagueHub/UpcomingCard): the played card, its
+// record where the score goes, when it is and the line between them, and
+// watch or sim it on a tab hung from its foot.
+.lh-gc-up-record {
+	font-size: clamp(1.3rem, 6.4cqw, 2rem);
+	font-weight: 800;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.lh-gc-when {
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	white-space: nowrap;
+	.national-tag {
+		color: #fff;
+		img {
+			width: auto;
+			height: 1.25rem;
+			max-width: 3.4rem;
+			max-height: none;
+		}
+	}
+}
+// (The over/under under the spread, under one hairline.)
+.lh-gc-line-2 {
+	margin-top: 0.05rem;
+	padding-top: 0;
+	border-top: 0;
+}
+// (Room under the line for the tab.)
+.lh-gc-has-acts .lh-gc-mid {
+	margin-bottom: 1.3rem;
+}
+.lh-gc-card > .lh-gc-acts {
+	position: absolute;
+	bottom: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	background: rgb(16 18 22 / 0.72);
+	border-radius: 0.45rem 0.45rem 0 0;
+	overflow: hidden;
+	button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.2rem 0.65rem 0.22rem;
+		border: 0;
+		background: none;
+		color: #fff;
+		font-size: 0.68rem;
+		font-weight: 800;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		white-space: nowrap;
+		&:hover:not(:disabled) {
+			background: rgb(255 255 255 / 0.14);
+		}
+		&:disabled {
+			opacity: 0.45;
+		}
+		& + button {
+			border-left: 1px solid rgb(255 255 255 / 0.22);
+		}
+	}
+	svg {
+		width: 0.6rem;
+		height: 0.6rem;
+	}
+}
+// (Your own team's game: the tab in the go color.)
+.lh-gc-card > .lh-gc-acts-own {
+	background: rgb(25 135 84 / 0.92);
+}
+
 // ON A PHONE, the same card made small: the colored ends with their
 // stripes and logos, each side's city, name, score and record, how it ended
 // between them - a little over half the height.
@@ -1054,10 +1149,31 @@
 		font-size: 1.6rem;
 		line-height: 1.05;
 	}
+	.lh-gc-up-record {
+		font-size: 1.15rem;
+	}
+	.lh-gc-has-acts .lh-gc-mid {
+		margin-bottom: 1.3rem;
+	}
+	// (Its overall under its record, clear of the tab.)
+	.lh-gc-upcoming {
+		.lh-gc-scoreline {
+			flex-wrap: wrap;
+		}
+		.lh-gc-record {
+			flex-basis: 100%;
+		}
+	}
+	.lh-gc-card > .lh-gc-acts button {
+		padding: 0.14rem 0.5rem 0.16rem;
+		font-size: 0.58rem;
+	}
 	.lh-gc-scoreline {
+		flex-wrap: nowrap;
 		column-gap: 0.3rem;
 	}
 	.lh-gc-record {
+		flex-basis: auto;
 		font-size: 0.66rem;
 	}
 	.lh-gc-mid {
@@ -1081,6 +1197,15 @@
 		margin-top: 0.1rem;
 		padding-top: 0.1rem;
 		font-size: 0.58rem;
+	}
+}
+// (The narrowest phones: the record under the score.)
+@container lh-gc (max-width: 359px) {
+	.lh-gc-scoreline {
+		flex-wrap: wrap;
+	}
+	.lh-gc-record {
+		flex-basis: 100%;
 	}
 }
 // A phone's frame, tight around it.

@@ -2,6 +2,7 @@ import { team } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import type {
+	LiveShown,
 	Team,
 	TeamAttr,
 	TeamFiltered,
@@ -44,6 +45,7 @@ const processSeasonAttrs = async <
 	seasonAttrs: SeasonAttrs,
 	addDummySeason: boolean,
 	season: Season,
+	liveShown: LiveShown | undefined,
 ) => {
 	let seasons;
 
@@ -65,6 +67,10 @@ const processSeasonAttrs = async <
 		const dummySeason = team.genSeasonRow(t);
 		dummySeason.season = season;
 		seasons = [dummySeason];
+	}
+
+	if (liveShown) {
+		seasons = seasons.map((ts) => liveShown.teamSeason(ts));
 	}
 
 	// 2020-05-02 - these were moved into TeamSeason, but I'm wary of doing an IDB upgrade, so here we are.
@@ -251,8 +257,12 @@ const processStats = async <
 	addDummySeason: boolean,
 	showNoStats: boolean,
 	season: Season | undefined,
+	liveShown: LiveShown | undefined,
 ) => {
 	let teamStats = await idb.merged.teamStats.getAll({ tid: t.tid, season });
+	if (liveShown) {
+		teamStats = teamStats.map((ts) => liveShown.teamStats(ts));
+	}
 
 	// Handle playoffs/regularSeason
 	teamStats = filterOrderStats(teamStats, playoffs, regularSeason);
@@ -292,6 +302,7 @@ const processTeam = async <
 		statType,
 		addDummySeason,
 		showNoStats,
+		liveShown,
 	}: {
 		season?: number;
 		attrs?: Attrs;
@@ -302,6 +313,7 @@ const processTeam = async <
 		statType: TeamStatType;
 		addDummySeason: boolean;
 		showNoStats: boolean;
+		liveShown: LiveShown | undefined;
 	},
 ) => {
 	// @ts-expect-error
@@ -320,6 +332,7 @@ const processTeam = async <
 			seasonAttrs,
 			addDummySeason,
 			season,
+			liveShown,
 		);
 	}
 
@@ -335,6 +348,7 @@ const processTeam = async <
 			addDummySeason,
 			showNoStats,
 			season,
+			liveShown,
 		);
 	}
 
@@ -367,6 +381,7 @@ const processTeam = async <
  * @param {string=} options.statType What type of stats to return, 'perGame' or 'totals' (default is 'perGame).
  * @param {boolean=} options.addDummySeason If season is specified, should we return data for this team if it is missing a TeamStats or TeamSeasons entry?
  * @param {boolean=} options.showNoStats If season is specified, should we return data for this team if it is missing a TeamStats entry, but has a TeamSeason entry? Since TeamStats is now lazily created, this is needed to return anything in preseason or regular season before games are played.
+ * @param {LiveShown=} options.liveShown Pages only: games still being played live on somebody's screen taken back out of the records and stats (worker/util/liveGameShown.ts). Never for anything that decides something.
  * @return {Promise.(Object|Array.<Object>)} Filtered team object or array of filtered team objects, depending on the inputs.
  */
 export async function getFormattedAll<
@@ -386,6 +401,7 @@ export async function getFormattedAll<
 	addDummySeason = false,
 	active,
 	showNoStats = false,
+	liveShown,
 }: {
 	tid?: number;
 	season?: Season;
@@ -398,6 +414,7 @@ export async function getFormattedAll<
 	addDummySeason?: boolean;
 	active?: boolean;
 	showNoStats?: boolean;
+	liveShown?: LiveShown;
 } = {}): Promise<TeamFiltered<Attrs, SeasonAttrs, StatAttrs, Season>[]> {
 	const options = {
 		season,
@@ -409,6 +426,7 @@ export async function getFormattedAll<
 		statType,
 		addDummySeason,
 		showNoStats,
+		liveShown,
 	};
 
 	if (tid === undefined) {
@@ -462,6 +480,7 @@ export const getFormatted = async <
 	regularSeason,
 	statType,
 	addDummySeason,
+	liveShown,
 }: {
 	tid: number;
 	season?: Season;
@@ -472,6 +491,7 @@ export const getFormatted = async <
 	regularSeason?: boolean;
 	statType?: TeamStatType;
 	addDummySeason?: boolean;
+	liveShown?: LiveShown;
 }) => {
 	const result = await getFormattedAll<Attrs, SeasonAttrs, StatAttrs, Season>({
 		tid,
@@ -483,6 +503,7 @@ export const getFormatted = async <
 		regularSeason,
 		statType,
 		addDummySeason,
+		liveShown,
 	});
 	return result[0];
 };

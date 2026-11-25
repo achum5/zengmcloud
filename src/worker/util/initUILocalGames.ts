@@ -6,6 +6,7 @@ import { getUpcomingGamesForUI } from "./recomputeLocalUITeamOvrs.ts";
 import { updateTickerItems } from "./updateTickerItems.ts";
 import { hideLiveResults } from "./liveSpoilers.ts";
 import { getLiveGate } from "./liveGameGate.ts";
+import { nationalTagsPlayed } from "../views/nationalBroadcast.ts";
 
 export const initUILocalGames = async ({
 	freshTicker = false,
@@ -47,6 +48,17 @@ export const initUILocalGames = async ({
 		],
 	}));
 	games.reverse();
+
+	// On the NBA calendar, the network each was on, for its day on the bar.
+	if (games.some((game) => game.date !== undefined)) {
+		const national = await nationalTagsPlayed(games.map((game) => game.gid));
+		for (const game of games) {
+			const tag = national.get(game.gid);
+			if (tag) {
+				game.national = tag;
+			}
+		}
+	}
 
 	// Add the next game - and on the NBA calendar, the coming nights' games
 	games.push(...(await getUpcomingGamesForUI()));

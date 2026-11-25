@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { getContractSummaryOrThrow } from "../core/contract/index.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import { player, team } from "../core/index.ts";
@@ -56,6 +57,7 @@ export default defineView({
 				: undefined;
 
 		const playersFiltered = await player.formatAll(playersRaw, {
+			liveShown: await getLiveShown(),
 			attrs: [
 				"pid",
 				"name",

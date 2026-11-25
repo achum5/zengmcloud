@@ -80,7 +80,7 @@ export const watchLiveAction = (gid: number, byName?: string) => ({
 // Where a game being played live stands, the way a scoreboard puts it: the
 // period over the clock, Half or End Q3 on a break, Final at the buzzer,
 // Delayed while the screen playing it has gone quiet.
-const statusLines = (game: MpLiveGame): string[] => {
+export const statusLines = (game: MpLiveGame): string[] => {
 	if (game.gameOver) {
 		return ["Final"];
 	}

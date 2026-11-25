@@ -4,50 +4,44 @@ import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { TeamLogoInline } from "../TeamLogoInline.tsx";
 import { NationalTag } from "../NationalTag.tsx";
+import { statusLines } from "../LiveGames.tsx";
 import getWinner from "../../../common/getWinner.ts";
 import {
 	isAllStarGame,
 	isTradeDeadline,
 } from "../../../common/specialGames.ts";
 import { formatGameDate, weekdayOf } from "../../../common/calendarDates.ts";
-import type { LocalStateUI } from "../../../common/types.ts";
+import type { LocalStateUI, MpLiveGame } from "../../../common/types.ts";
 
 // ONE DAY OF THE SCORES BAR on the NBA calendar: the strip is the team's
-// calendar laid out in a single row, every day, bye days too. Like the team
-// calendar (components/MonthCalendar.tsx) - the day on top ("SAT 11/15"),
-// then the opponent ("@" on the road) and the result as a W or L coin with
-// the score, home nights filled black, today outlined red.
+// calendar laid out in a single row, every day, bye days too. Each game is a
+// scoreboard cell like the networks': the day and where the game stands on
+// top ("SAT 11/15", the quarter and clock while it's live, the network on a
+// national game), then both teams on their own rows, away over home, logo,
+// abbreviation, score. A game played is green if the team won it, red if it
+// lost; one still to come plain; today outlined red.
 
 type BarGame = LocalStateUI["games"][number];
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// The favorite and its line, "BOS -4.5" - or "PK".
-const lineText = (game: BarGame, abbrevOf: (tid: number) => string) => {
-	const spread = game.spread;
-	if (spread === undefined) {
-		return;
-	}
-	if (spread === 0) {
-		return "PK";
-	}
-	const favorite = spread > 0 ? game.teams[0].tid : game.teams[1].tid;
-	return `${abbrevOf(favorite)} -${Math.abs(spread).toLocaleString("en-US", {
+// The favorite's line, "-4.5", for its row.
+const lineText = (spread: number) =>
+	`-${Math.abs(spread).toLocaleString("en-US", {
 		maximumFractionDigits: 1,
 	})}`;
-};
 
 export const TopBarDay = memo(
 	({
 		date,
 		game,
-		livePts,
+		live,
 		today,
 	}: {
 		date: string;
 		game: BarGame | undefined;
-		// A game being played live: the score as it stands (home, away).
-		livePts?: [number, number];
+		// A league mate's game being played live, as it stands.
+		live?: MpLiveGame;
 		today: string | undefined;
 	}) => {
 		const { season, teamInfoCache, userTid } = useLocal([
@@ -58,14 +52,8 @@ export const TopBarDay = memo(
 
 		const isToday = date === today;
 		const past = today !== undefined && date < today;
-		const head = (
-			<div className="tbd-head">
-				<span className="tbd-weekday">{WEEKDAYS[weekdayOf(date)]}</span>
-				<span className="tbd-num">
-					{Number(date.slice(5, 7))}/{Number(date.slice(8))}
-				</span>
-			</div>
-		);
+		const weekday = WEEKDAYS[weekdayOf(date)];
+		const dayNum = `${Number(date.slice(5, 7))}/${Number(date.slice(8))}`;
 		const title = `${isToday ? "Today, " : ""}${formatGameDate(date, "full")}`;
 
 		// A day off: a slim faded column, the weekday over the date.
@@ -79,7 +67,7 @@ export const TopBarDay = memo(
 					)}
 					title={`${title}, no game`}
 				>
-					<span className="tbd-off-weekday">{WEEKDAYS[weekdayOf(date)]}</span>
+					<span className="tbd-off-weekday">{weekday}</span>
 					<span className="tbd-off-num">{Number(date.slice(8))}</span>
 				</div>
 			);
@@ -93,7 +81,7 @@ export const TopBarDay = memo(
 		const opp = game.teams[userIndex === 0 ? 1 : 0];
 		const winner = getWinner(game.teams);
 		const final = winner !== undefined;
-		const live = !final && livePts !== undefined;
+		const livePts = !final ? live?.score?.pts : undefined;
 
 		const href = final
 			? helpers.leagueUrl([
@@ -106,92 +94,100 @@ export const TopBarDay = memo(
 				])
 			: helpers.leagueUrl(["schedule"]);
 
-		let matchup: ReactNode;
-		if (allStar || deadline) {
-			matchup = (
-				<span className="tbd-special">{allStar ? "All-Star" : "Deadline"}</span>
-			);
-		} else {
-			const branding = teamInfoCache[opp.tid];
-			// (The logo and abbreviation open the team's roster; the rest of the
-			// day, its game.)
-			matchup = (
-				<>
-					<span className="tbd-at">{home ? "vs" : "@"}</span>
-					<a
-						className="tbd-team"
-						href={helpers.leagueUrl([
-							"roster",
-							`${abbrevOf(opp.tid)}_${opp.tid}`,
-							season,
-						])}
-						title={`${branding?.region ?? ""} ${branding?.name ?? ""} roster`}
-					>
-						<TeamLogoInline
-							imgURL={branding?.imgURL}
-							imgURLSmall={branding?.imgURLSmall}
-							includePlaceholderIfNoLogo
-							size={16}
-							className="tbd-logo"
-						/>
-						<span className="tbd-abbrev">{branding?.abbrev}</span>
-					</a>
-				</>
-			);
-		}
-
-		let result: ReactNode = null;
-		if (final) {
-			const pts = game.teams[userIndex].pts!;
-			const oppPts = game.teams[userIndex === 0 ? 1 : 0].pts!;
-			const wl = allStar
+		// The result, for the user's team: the whole day green on a win, red
+		// on a loss.
+		const wl =
+			!final || allStar
 				? undefined
 				: winner === -1
 					? "T"
 					: winner === userIndex
 						? "W"
 						: "L";
-			const overtimes = helpers.overtimeText(game.overtimes, game.numPeriods);
-			result = (
-				<>
-					{wl ? (
-						<span
-							className={clsx(
-								"tbd-wl",
-								wl === "W" ? "tbd-w" : wl === "L" ? "tbd-l" : "tbd-t",
-							)}
-						>
-							{wl}
+
+		// On the right of the day's head: the network on a national game (live,
+		// the clock takes the date's place - it's tonight - as on the networks'
+		// scoreboards), and OT on a game that went to overtime.
+		const overtimes = final
+			? helpers.overtimeText(game.overtimes, game.numPeriods)
+			: "";
+		const status = (
+			<>
+				{overtimes ? <span className="tbd-ot">{overtimes}</span> : null}
+				{!final && game.ifNecessary ? (
+					<span className="tbd-note">If nec.</span>
+				) : game.national ? (
+					<NationalTag className="tbd-national" tag={game.national} />
+				) : null}
+			</>
+		);
+
+		let body: ReactNode;
+		if (allStar || deadline) {
+			body = (
+				<div className="tbd-special">
+					<span>{allStar ? "All-Star" : "Deadline"}</span>
+					{final && allStar ? (
+						<span className="tbd-special-score">
+							{game.teams[1].pts}-{game.teams[0].pts}
 						</span>
 					) : null}
-					<span className="tbd-score">
-						{allStar
-							? `${game.teams[1].pts}-${game.teams[0].pts}`
-							: `${pts}-${oppPts}`}
-						{overtimes ? <span className="tbd-ot"> {overtimes}</span> : null}
-					</span>
-				</>
+				</div>
 			);
-		} else if (live) {
-			result = (
-				<span className="tbd-live">
-					<span className="tbd-live-dot" />
-					{livePts[userIndex]}-{livePts[userIndex === 0 ? 1 : 0]}
-				</span>
-			);
-		} else if (game.ifNecessary) {
-			result = <span className="tbd-note">If nec.</span>;
-		} else if (game.national) {
-			result = <NationalTag className="tbd-national" tag={game.national} />;
 		} else {
-			const line = lineText(game, abbrevOf);
-			if (line) {
-				result = (
-					<span className="tbd-note" title="Point spread">
-						{line}
-					</span>
+			// Away over home, as on a scoreboard. (The logo and abbreviation
+			// open the team's roster; the rest of the day, its game.)
+			body = ([1, 0] as const).map((i) => {
+				const t = game.teams[i];
+				const other = game.teams[i === 0 ? 1 : 0];
+				const branding = teamInfoCache[t.tid];
+				const pts = final ? t.pts : livePts?.[i];
+				const otherPts = final ? other.pts : livePts?.[i === 0 ? 1 : 0];
+				const trailing =
+					pts !== undefined && otherPts !== undefined && pts < otherPts;
+				// (Before tip-off, the favorite's line where its score will be.)
+				const spread = game.spread;
+				const line =
+					!final &&
+					livePts === undefined &&
+					spread !== undefined &&
+					spread !== 0 &&
+					spread > 0 === (i === 0)
+						? lineText(spread)
+						: undefined;
+				return (
+					<div
+						key={i}
+						className={clsx("tbd-row", trailing && "tbd-row-trailing")}
+					>
+						<a
+							className="tbd-team"
+							href={helpers.leagueUrl([
+								"roster",
+								`${abbrevOf(t.tid)}_${t.tid}`,
+								season,
+							])}
+							title={`${branding?.region ?? ""} ${branding?.name ?? ""} roster`}
+						>
+							<TeamLogoInline
+								imgURL={branding?.imgURL}
+								imgURLSmall={branding?.imgURLSmall}
+								includePlaceholderIfNoLogo
+								size={16}
+								className="tbd-logo"
+							/>
+							<span className="tbd-abbrev">{branding?.abbrev}</span>
+						</a>
+						{pts !== undefined ? (
+							<span className="tbd-pts">{pts}</span>
+						) : line ? (
+							<span className="tbd-line" title="Point spread">
+								{line}
+							</span>
+						) : null}
+					</div>
 				);
-			}
+			});
 		}
 
 		const label = `${title}${
@@ -200,26 +196,38 @@ export const TopBarDay = memo(
 				: `, ${home ? "vs" : "@"} ${teamInfoCache[opp.tid]?.region ?? ""} ${
 						teamInfoCache[opp.tid]?.name ?? ""
 					}`
-		}${game.ifNecessary ? " (if necessary)" : ""}`;
+		}${game.ifNecessary ? " (if necessary)" : ""}${
+			wl
+				? `, ${wl === "W" ? "won" : wl === "L" ? "lost" : "tied"} ${game.teams[userIndex].pts}-${game.teams[userIndex === 0 ? 1 : 0].pts}`
+				: ""
+		}${game.national ? `, on ${game.national.network}` : ""}`;
 
-		// The whole day is the game's link, laid over it, under the team's.
+		// The whole day is the game's link, laid over it, under the teams'.
 		return (
 			<div
 				className={clsx(
 					"tbd tbd-link",
-					home && "tbd-home",
+					wl === "W" && "tbd-won",
+					wl === "L" && "tbd-lost",
 					isToday && "tbd-today",
 					past && "tbd-past",
+					livePts !== undefined && "tbd-is-live",
 					game.ifNecessary && "tbd-maybe",
 				)}
 			>
 				<a className="tbd-cover" href={href} title={label} aria-label={label} />
-				{head}
-				{/* (A game still to come with nothing under it sits centered.) */}
-				<div className="tbd-body">
-					<div className="tbd-matchup">{matchup}</div>
-					{result ? <div className="tbd-result">{result}</div> : null}
+				<div className="tbd-head">
+					{live && !final ? (
+						<span className="tbd-live">{statusLines(live).join(" · ")}</span>
+					) : (
+						<>
+							<span className="tbd-weekday">{weekday}</span>
+							<span className="tbd-num">{dayNum}</span>
+						</>
+					)}
+					<span className="tbd-status">{status}</span>
 				</div>
+				<div className="tbd-body">{body}</div>
 			</div>
 		);
 	},

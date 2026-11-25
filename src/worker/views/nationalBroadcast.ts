@@ -320,3 +320,62 @@ export const nationalTags = async (schedule: ScheduleGame[]) => {
 	}
 	return out;
 };
+
+// THE NETWORKS THESE PLAYED GAMES WERE ON, by gid - the same pick as each
+// game's own page (nationalBroadcastOf), told in one pass over their nights,
+// for the scores bar. Cosmetic, so nothing when it can't be told.
+export const nationalTagsPlayed = async (gids: number[]) => {
+	const out = new Map<number, NationalTag>();
+	const networks = nationalNetworks();
+	if (gids.length === 0 || networks.length === 0) {
+		return out;
+	}
+	const picks = new Map<number, NationalBroadcast>();
+	try {
+		const season = g.get("season");
+		const wanted = new Set(gids);
+		const games = (
+			(await idb.merged.games.getAll({ season })) as Game[]
+		).filter((p) => wanted.has(p.gid));
+		const nights = new Set(games.filter(isRegular).map((p) => p.day));
+		if (nights.size > 0) {
+			for (const [gid, n] of await regularSeasonPicks(season, (day) =>
+				nights.has(day),
+			)) {
+				if (wanted.has(gid)) {
+					picks.set(gid, n);
+				}
+			}
+		}
+		for (const p of games) {
+			if (
+				p.playoffs &&
+				!(p as any).exhibition &&
+				p.teams[0].tid >= 0 &&
+				p.teams[1].tid >= 0
+			) {
+				const n = networkFor(
+					networks,
+					{
+						season,
+						playoffs: true,
+						finals: p.finals,
+						tids: [p.teams[0].tid, p.teams[1].tid],
+					},
+					undefined,
+					false,
+				);
+				if (n) {
+					picks.set(p.gid, n);
+				}
+			}
+		}
+	} catch {
+		return out;
+	}
+	const logos = new Map<string, string | undefined>();
+	for (const [gid, n] of picks) {
+		out.set(gid, await nationalTag(n, logos));
+	}
+	return out;
+};

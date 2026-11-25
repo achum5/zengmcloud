@@ -466,9 +466,10 @@ import {
 import { augmentOffers } from "../views/trade.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
 import { setAutoSave } from "../core/league/setAutoSave.ts";
-import { getPlayerMilestones } from "../util/milestoneWatch.ts";
+import { getPlayerAllTime } from "../util/milestoneWatch.ts";
 import { getTradeTrees } from "../util/tradeTree.ts";
 import { getSeasonReview } from "../util/seasonReview.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -4712,6 +4713,10 @@ const ratingsStatsPopoverInfo = async ({
 		showRetired: true,
 		oldStats: true,
 		fuzz: true,
+		// (A game still being played live on somebody's screen isn't in his
+		// line yet - liveGameShown.ts. Not for the exhibition and 82-0 players,
+		// who aren't in the league's games.)
+		liveShown: includeAbbrev ? await getLiveShown() : undefined,
 		// This popover is the ONLY place a draft class's ratings are read from
 		// the Draft History and Draft Scouting tables, so it has to honour the
 		// "prospects exempt" option or the exemption may as well not exist.
@@ -5369,10 +5374,17 @@ const runBeforeView = async (
 	}
 
 	if (view) {
+		// A game starting or stopping being held back as still live changes
+		// everything a page builds from results (liveGameShown.ts), so every
+		// page that redoes itself after a sim redoes itself then too.
+		const viewUpdateEvents =
+			updateEvents.has("liveGames") && !updateEvents.has("gameSim")
+				? new Set<UpdateEvent>([...updateEvents, "gameSim"])
+				: updateEvents;
 		const data = await runLoad(() =>
 			view.load({
 				inputs,
-				updateEvents,
+				updateEvents: viewUpdateEvents,
 				prevInputs,
 				prevOutput,
 				conditions,
@@ -9130,7 +9142,7 @@ const api = {
 		getReplayFeed,
 		getRecapFeed,
 		getNightlyRecap,
-		getPlayerMilestones,
+		getPlayerAllTime,
 		getTradeTrees,
 		getSeasonReview,
 		getTeamColorsUI,

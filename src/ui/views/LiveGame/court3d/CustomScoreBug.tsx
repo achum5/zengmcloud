@@ -34,7 +34,10 @@ export type CustomBugTeam = BugTeam & {
 const MAX_TIMEOUTS = 7;
 // The timeouts a team has on TV: basketball's seven, where the game keeps
 // only the last two (see STARTING_NUM_TIMEOUTS) - the five before them
-// shown still up. (An overtime's two are its own.)
+// shown still up, until two minutes are left in the last period: from then
+// on only two can be used, and an overtime has two of its own, so the bug
+// shows the game's own count. Always in seven places, the way TV keeps its
+// marks where they are.
 const TV_TIMEOUTS = __SPORT === "basketball" ? 7 : 0;
 // The smallest a bug is drawn, px - at least this wide, and at least this
 // tall: a corner box or a bar across the bottom the size it is on TV is too
@@ -92,6 +95,7 @@ export const CustomScoreBug = ({
 	away,
 	home,
 	quarter,
+	late,
 	totalTimeouts,
 	refs,
 	hidden,
@@ -103,6 +107,9 @@ export const CustomScoreBug = ({
 	away: CustomBugTeam | undefined;
 	home: CustomBugTeam | undefined;
 	quarter: string;
+	// The last two minutes or overtime: the game's own timeouts (see
+	// TV_TIMEOUTS).
+	late?: boolean;
 	// A playoff game's series as it stands ("Game 3 · BOS leads 2-1").
 	series?: string;
 	// The game's weekday ("Tuesday"), if it has a date.
@@ -388,13 +395,13 @@ export const CustomScoreBug = ({
 				const total =
 					totalTimeouts === undefined
 						? undefined
-						: quarter.endsWith("OT")
-							? totalTimeouts
-							: Math.max(TV_TIMEOUTS, totalTimeouts);
+						: Math.max(TV_TIMEOUTS, totalTimeouts);
 				const left =
 					t?.timeouts === undefined
 						? undefined
-						: t.timeouts + (total ?? 0) - (totalTimeouts ?? 0);
+						: late || quarter.endsWith("OT")
+							? t.timeouts
+							: t.timeouts + (total ?? 0) - (totalTimeouts ?? 0);
 				if (left !== undefined && p.text !== undefined) {
 					inner = p.text.replace("{n}", String(left));
 				} else if (left !== undefined && total !== undefined) {

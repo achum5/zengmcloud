@@ -12,6 +12,51 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 607,
+		date: "2026-11-25",
+		text: "Daily Schedule: the upcoming game cards no longer show team overalls in a league with No Visible Team Ratings on.",
+	},
+	{
+		n: 606,
+		date: "2026-11-25",
+		text: "Daily Schedule: in the strip of days across the top, the days your team plays show its little logo in the corner, instead of the games count in your team's colors.",
+	},
+	{
+		n: 605,
+		date: "2026-11-25",
+		text: "Daily Schedule: games still to be played get the same cards as played ones, in the teams' colors with each team's record where the score goes, the spread and over/under in the middle, and each team's best player beside it. Watch and Sim sit right on the card, only on games you can sim.",
+	},
+	{
+		n: 604,
+		date: "2026-11-25",
+		text: "On the NBA calendar, a game in the scores bar turns green when your team won it and red when it lost. Games that were on national TV show the network's logo in the top right corner, and the scores line up now that the arrow by the winner's score is gone.",
+	},
+	{
+		n: 603,
+		date: "2026-11-25",
+		text: "While a league mate's game is still being played live, no other page gives it away: team records, rank and games back on the roster page, the dashboard and power rankings, team and player stats, league leaders, season highs, injuries picked up in it, head-to-head records and the playoff picture all show how things stood going in, until it's over.",
+	},
+	{
+		n: 602,
+		date: "2026-11-25",
+		text: "Scores: both teams' records now sit the same way on every game card, under the score on both sides or beside it on both, instead of one jumping up next to a two-digit score.",
+	},
+	{
+		n: 601,
+		date: "2026-11-25",
+		text: "Player pages: the all-time milestones moved to the bottom as All-Time Ranks, shown for everyone who has played, retired players too: where they stand on the career lists for points, rebounds, assists, steals, blocks and 3-pointers. Tap one to open Player Stats' career totals sorted by that stat, the same as Full list on Milestone Watch.",
+	},
+	{
+		n: 600,
+		date: "2026-11-25",
+		text: "3D game: with two minutes left in the 4th, a team or network score bug's timeouts drop to the two a team can still use and count down from there as they're called. In overtime it shows each team's two.",
+	},
+	{
+		n: 599,
+		date: "2026-11-25",
+		text: "On the NBA calendar, the scores bar's games look like a TV score strip: the date and the W or L on top, then both teams on their own rows with logo and score, the winner marked. A game being played live shows the quarter and clock up top, and the next game shows the favorite's spread.",
+	},
+	{
 		n: 598,
 		date: "2026-11-25",
 		text: "In leagues on the NBA calendar, trades, signings and releases now say the day they happened: on Trade Summary, Transactions, the News Feed, player pages, Free Agents and the best and worst trades. Moves made before this update, and anything in the offseason, still show the season.",

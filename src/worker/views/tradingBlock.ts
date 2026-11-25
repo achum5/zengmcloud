@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
@@ -31,6 +32,7 @@ export default defineView({
 			);
 			const userRoster = addFirstNameShort(
 				await player.formatAll(userRosterAll, {
+					liveShown: await getLiveShown(),
 					attrs: [
 						"pid",
 						"firstName",

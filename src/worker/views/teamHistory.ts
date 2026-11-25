@@ -1,6 +1,7 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { TeamSeason, Player } from "../../common/types.ts";
+import type { LiveShown, TeamSeason, Player } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
 import { getBestPos } from "../core/player/checkJerseyNumberRetirement.ts";
 import { bySport } from "../../common/sportFunctions.ts";
@@ -175,6 +176,8 @@ export const getHistoryPlayerProcessor = (
 	teamSeasons: TeamSeason[],
 	history: ReturnType<typeof getHistoryTeam>["history"],
 	gmHistory: boolean,
+	// Games still being played live left out (liveGameShown.ts).
+	liveShown?: LiveShown,
 ) => {
 	const formatOptions = {
 		attrs: [
@@ -190,6 +193,7 @@ export const getHistoryPlayerProcessor = (
 		],
 		ratings: ["pos", "season"],
 		stats: ["season", "abbrev", ...historyStats],
+		liveShown,
 	} as const;
 	// Stats are already filtered to these team seasons, so they're the only ones that abbrevs are needed for
 	const abbrevs = player.abbrevsFromTeamSeasons(teamSeasons);
@@ -255,9 +259,14 @@ export default defineView({
 				throw new Error("Invalid team ID number");
 			}
 
-			const teamSeasons = await idb.merged.teamSeasons.getAll({
-				tid: inputs.tid,
-			});
+			// (A game still being played live on somebody's screen isn't in this
+			// season's line yet.)
+			const liveShown = await getLiveShown();
+			const teamSeasons = (
+				await idb.merged.teamSeasons.getAll({
+					tid: inputs.tid,
+				})
+			).map((ts) => (liveShown ? liveShown.teamSeason(ts) : ts));
 
 			const retiredJerseyNumbers = await Promise.all(
 				(t.retiredJerseyNumbers ?? []).map(async (row) => {
@@ -349,6 +358,7 @@ export default defineView({
 					userTeamSeasons,
 					history,
 					false,
+					liveShown,
 				);
 			}
 
@@ -356,6 +366,7 @@ export default defineView({
 				teamSeasons,
 				teamHistory.history,
 				false,
+				liveShown,
 			);
 
 			// Same as players, but only counting stats from userSeasons

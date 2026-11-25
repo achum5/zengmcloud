@@ -13,6 +13,7 @@ import type {
 	WatchStat,
 } from "../../worker/util/milestoneWatch.ts";
 import {
+	careerLeadersUrl,
 	STAT_ABBREVS,
 	STAT_TITLES,
 	STAT_WORDS,
@@ -123,7 +124,13 @@ const Chase = ({
 	rows: ChaseRow[];
 	season: number;
 }) => (
-	<RailCard title={STAT_TITLES[stat]}>
+	<RailCard
+		title={STAT_TITLES[stat]}
+		more={{
+			href: careerLeadersUrl(stat),
+			text: "Full list",
+		}}
+	>
 		<ol className="lh-list">
 			{rows.map((row) => (
 				<Row

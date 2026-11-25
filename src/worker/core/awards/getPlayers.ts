@@ -1,4 +1,5 @@
 import type {
+	LiveShown,
 	AwardInfoIndividual,
 	AwardPlayer,
 	NonEmptyArray,
@@ -157,6 +158,7 @@ const getProcessedPlayers = async (
 	playersAll: Player[],
 	statRanges: Set<StatRange>,
 	variables: Set<string> | undefined,
+	liveShown: LiveShown | undefined,
 ) => {
 	const statsFromVariables = variables
 		? new Set(AWARD_STATS).intersection(variables)
@@ -195,6 +197,7 @@ const getProcessedPlayers = async (
 		seasonType,
 		fuzz: true,
 		mergeStats: "totOnly",
+		liveShown,
 	})) as unknown as (Pick<
 		Player,
 		| "pid"
@@ -367,6 +370,8 @@ export const getPlayers = async (
 	statRanges: Set<StatRange>,
 	statOverridesByMatchup: StatOverridesByMatchup | undefined,
 	variables: FormulaEvaluators["variables"] | undefined,
+	// Pages only: games still being played live left out (liveGameShown.ts).
+	liveShown?: LiveShown,
 ) => {
 	const playersAll = await idb.merged.players.getAll(
 		getActiveSeasonSelector(season),
@@ -376,10 +381,14 @@ export const getPlayers = async (
 		playersAll,
 		statRanges,
 		variables?.normal,
+		liveShown,
 	);
 
 	// Cache some stuff for later
-	const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
+	const teamSeasonsStored = await idb.merged.teamSeasons.getAll({ season });
+	const teamSeasons = liveShown
+		? teamSeasonsStored.map((ts) => liveShown.teamSeason(ts))
+		: teamSeasonsStored;
 	const teamInfos: Record<
 		number,
 		{

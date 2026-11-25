@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { allStar, player } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
@@ -43,6 +44,7 @@ const getPlayerInfo = async (
 	}
 
 	const p2 = await player.format(p, {
+		liveShown: await getLiveShown(),
 		attrs: ["pid", "injury", "watch", "age", "numAllStar"],
 		ratings: ["ovr", "skills", "pos"],
 		season,

@@ -9,6 +9,7 @@ import {
 	type BaseTeam,
 } from "../../util/orderTeams.ts";
 import type {
+	LiveShown,
 	DraftPickWithoutKey,
 	DraftType,
 	PlayInTournament,
@@ -318,6 +319,9 @@ export const getFirstRoundTeams = async <
 const getTeamsByRound = async (
 	draftType: DraftType,
 	draftPicksIndexed: DraftPickWithoutKey[][],
+	// The projected order on a page only, from the records as shown
+	// (liveGameShown.ts). Never for a real lottery.
+	liveShown?: LiveShown,
 ) => {
 	const allTeams = await team.getFormattedAll({
 		// draftLottery is needed by getLotteryChances, for COLA and nba2027
@@ -327,6 +331,7 @@ const getTeamsByRound = async (
 		season: g.get("season"),
 		addDummySeason: true,
 		active: true,
+		liveShown,
 	});
 
 	// If the playoffs haven't started yet, need to project who would be in the playoffs
@@ -337,7 +342,7 @@ const getTeamsByRound = async (
 	const predictPlayoffs = async () => {
 		let info;
 		try {
-			info = await genPlayoffSeriesFromTeams(allTeams);
+			info = await genPlayoffSeriesFromTeams(allTeams, { liveShown });
 		} catch (error) {
 			if (error instanceof InvalidPlayoffSettingsError) {
 				// Project the draft order as if no teams make the playoffs. The user will be told about the invalid settings when the playoffs are supposed to start
@@ -385,8 +390,11 @@ const getTeamsByRound = async (
 		TIEBREAKER === "random"
 			? {
 					tiebreakersOverride: ["coinFlip"],
+					liveShown,
 				}
-			: undefined;
+			: liveShown
+				? { liveShown }
+				: undefined;
 
 	////
 	// Many special cases in first round

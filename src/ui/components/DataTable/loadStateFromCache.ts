@@ -22,7 +22,12 @@ export type State = {
 
 export type LoadStateFromCacheProps = Pick<
 	Props,
-	"cols" | "disableSettingsCache" | "defaultSort" | "defaultStickyCols" | "name"
+	| "cols"
+	| "disableSettingsCache"
+	| "defaultSort"
+	| "defaultStickyCols"
+	| "name"
+	| "sortOverride"
 > &
 	Pick<State, "hideAllControls">;
 
@@ -33,6 +38,7 @@ const loadStateFromCache = ({
 	defaultStickyCols,
 	hideAllControls,
 	name,
+	sortOverride,
 }: LoadStateFromCacheProps): State => {
 	const settingsCache = new SettingsCache(name, !!disableSettingsCache);
 
@@ -46,7 +52,9 @@ const loadStateFromCache = ({
 	let sortBys: SortBy[] | undefined;
 
 	if (defaultSort !== "disableSort") {
-		if (sortBysFromStorage === undefined) {
+		if (sortOverride !== undefined && sortOverride[0] < cols.length) {
+			sortBys = [sortOverride];
+		} else if (sortBysFromStorage === undefined) {
 			sortBys = [defaultSort];
 		} else {
 			sortBys = sortBysFromStorage as SortBy[];
