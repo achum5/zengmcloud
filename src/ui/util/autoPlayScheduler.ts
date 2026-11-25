@@ -395,6 +395,20 @@ class AutoPlayScheduler {
 					// can't use their own rules for this - those are per-device
 					// and are not the schedule that is actually running.
 					scheduleRules: enabledRules,
+					...(this.settings.stopAfter
+						? {
+								stopAfter: {
+									season: this.settings.stopAfter.season,
+									day: this.settings.stopAfter.day,
+								},
+							}
+						: {}),
+					...(this.settings.stopAfterSims !== undefined
+						? { stopAfterSims: this.settings.stopAfterSims }
+						: {}),
+					...(this.settings.stopAt !== undefined
+						? { stopAt: this.settings.stopAt }
+						: {}),
 				}
 			: {
 					enabled: false,

@@ -9,6 +9,7 @@ import {
 import { isAllStarGame } from "../../common/specialGames.ts";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
+import { useSimTimes } from "../util/simTimes.ts";
 
 // A TEAM'S SEASON AS ONE PICTURE, the way Basketball-Reference draws it: a
 // slot for every date, grouped by month, a bar on each game day - up and
@@ -41,6 +42,8 @@ type Entry = {
 	result: "W" | "L" | "T" | undefined;
 	margin: number;
 	label: string;
+	// When auto play sims a game still to come (see simTimes.ts).
+	simTime?: string;
 };
 
 const STEP = 8;
@@ -69,6 +72,7 @@ export const SeasonStrip = ({
 }) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const [hover, setHover] = useState<number | undefined>();
+	const simTimes = useSimTimes();
 
 	// The month names under the groups need the strip's real width.
 	const axisRef = useRef<HTMLDivElement>(null);
@@ -164,6 +168,9 @@ export const SeasonStrip = ({
 			result: undefined,
 			margin: 0,
 			label: `${head}. ${when(game.date)}${abbrev} ${home ? "vs" : "at"} ${oppAbbrev(opp.tid)}${game.live ? ", live" : ""}`,
+			simTime: game.live
+				? undefined
+				: (simTimes.date(game.date) ?? simTimes.day(season, game.day)),
 		});
 	}
 	if (entries.length === 0) {
@@ -327,6 +334,12 @@ export const SeasonStrip = ({
 						}}
 					>
 						{tip.label}
+						{tip.simTime ? (
+							<>
+								<br />
+								{tip.simTime}
+							</>
+						) : null}
 					</div>
 				) : null}
 			</div>

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 638,
+		date: "2026-11-25",
+		text: "Shared leagues with auto play on: put your mouse over a day still to come on any calendar (the scores bar, the team calendars, the Daily Schedule's days and its month calendar, the date at the top) to see when auto play sims it, on your own clock, like 1:15 – 1:30 PM. On a phone, press and hold the day.",
+	},
+	{
 		n: 637,
 		date: "2026-11-25",
 		text: 'NBA Calendar: injuries now show how many games a player will miss next to his days out, like "9 days (5 games)", counted from his own team\'s schedule. It\'s in the injury tooltip, the Injuries page, his injury history, the game page and the injury news. "12+ games" means more may come (the playoffs, or a series going long). Also fixed: when the game skipped a date with no games, like Christmas Eve, injury days only went down by one. Now every day that passed counts.',

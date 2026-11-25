@@ -400,6 +400,12 @@ export class FirebaseTransport implements SyncTransport {
 						const { label, ...rest } = rule;
 						return label === undefined ? rest : { ...rest, label };
 					}),
+					// (null, not left out: a merge write would keep the last one.)
+					stopAfter: state.stopAfter
+						? { season: state.stopAfter.season, day: state.stopAfter.day }
+						: null,
+					stopAfterSims: state.stopAfterSims ?? null,
+					stopAt: state.stopAt ?? null,
 				},
 			},
 			{ merge: true },
@@ -430,6 +436,21 @@ export class FirebaseTransport implements SyncTransport {
 									scheduleRules: Array.isArray(raw.scheduleRules)
 										? raw.scheduleRules
 										: undefined,
+									...(typeof raw.stopAfter?.season === "number" &&
+									typeof raw.stopAfter?.day === "number"
+										? {
+												stopAfter: {
+													season: raw.stopAfter.season,
+													day: raw.stopAfter.day,
+												},
+											}
+										: {}),
+									...(typeof raw.stopAfterSims === "number"
+										? { stopAfterSims: raw.stopAfterSims }
+										: {}),
+									...(typeof raw.stopAt === "number"
+										? { stopAt: raw.stopAt }
+										: {}),
 								}
 							: undefined,
 					);

@@ -1684,6 +1684,11 @@ export type SyncedAutoPlay = {
 	// Optional because the simmer might be on an older build that never sends
 	// them; readers fall back to the summary lines above.
 	scheduleRules?: ScheduleRule[];
+	// The simmer's own stops (see AutoPlayStopConditions), so no device shows
+	// a day sim time past the point auto play stops. Absent from an older build.
+	stopAfter?: { season: number; day: number };
+	stopAfterSims?: number;
+	stopAt?: number;
 };
 
 // A live-sim broadcast this device is part of, mirrored into UI local state so

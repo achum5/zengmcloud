@@ -10,6 +10,7 @@ import {
 import { PHASE } from "../../../common/constants.ts";
 import { helpers } from "../../util/helpers.ts";
 import { localActions, useLocal } from "../../util/local.ts";
+import { useSimTimes } from "../../util/simTimes.ts";
 import { useViewData } from "../../util/viewManager.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import LogoAndText from "../LogoAndText.tsx";
@@ -59,6 +60,8 @@ const PhaseStatusBlock = () => {
 	// game is on screen: the sim is already past it, and the next night - or
 	// none, once the Finals are over - would give the result away.
 	const [date, setDate] = useState(calendarDate);
+	// When auto play sims today, on this device's clock.
+	const simTime = useSimTimes().date(date);
 	useEffect(() => {
 		if (!liveGameInProgress) {
 			setDate(calendarDate);
@@ -106,8 +109,9 @@ const PhaseStatusBlock = () => {
 				>
 					<a
 						href={helpers.leagueUrl(["daily_schedule"])}
-						className="league-date-tile-link"
+						className={clsx("league-date-tile-link", simTime && "sim-time-day")}
 						title={`Daily Schedule: ${formatGameDate(date, "full")}`}
+						data-sim-time={simTime}
 						aria-label="Daily Schedule"
 					>
 						<DateTile date={date} />

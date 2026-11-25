@@ -200,3 +200,62 @@ export const nextFireForRule = (
 	}
 	return undefined;
 };
+
+// The most recent time a rule fired, at or before `now`, or undefined if it
+// didn't in the last week. The mirror of nextFireForRule.
+export const prevFireForRule = (
+	rule: ScheduleRule,
+	now: Date,
+): number | undefined => {
+	if (!rule.enabled) {
+		return undefined;
+	}
+	const nowMs = now.getTime();
+	let best: number | undefined;
+	const consider = (at: number) => {
+		if (at <= nowMs && (best === undefined || at > best)) {
+			best = at;
+		}
+	};
+
+	if (rule.mode === "at") {
+		const times = rule.times
+			.map(parseHHMM)
+			.filter((t): t is { h: number; m: number } => t !== undefined);
+		for (let offset = 0; offset >= -7; offset--) {
+			const dow = new Date(atOffset(now, offset, 0, 0)).getDay();
+			if (!dayMatches(rule.days, dow)) {
+				continue;
+			}
+			for (const t of times) {
+				consider(atOffset(now, offset, t.h, t.m));
+			}
+		}
+		return best;
+	}
+
+	// mode "every": the last slot of each window opened by now (an overnight
+	// window opened yesterday can hold the latest one).
+	const start = parseHHMM(rule.start);
+	const end = parseHHMM(rule.end);
+	if (!start || !end) {
+		return undefined;
+	}
+	const overnight = end.h * 60 + end.m < start.h * 60 + start.m;
+	const everyMs = Math.max(1, rule.everyMinutes) * 60_000;
+	for (let offset = 0; offset >= -8; offset--) {
+		const dayStart = atOffset(now, offset, start.h, start.m);
+		if (dayStart > nowMs) {
+			continue;
+		}
+		const dayEnd = overnight
+			? atOffset(now, offset + 1, end.h, end.m)
+			: atOffset(now, offset, end.h, end.m);
+		if (!dayMatches(rule.days, new Date(dayStart).getDay())) {
+			continue;
+		}
+		const last = Math.min(nowMs, dayEnd);
+		consider(dayStart + Math.floor((last - dayStart) / everyMs) * everyMs);
+	}
+	return best;
+};

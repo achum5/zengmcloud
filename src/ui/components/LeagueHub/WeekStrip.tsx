@@ -17,6 +17,7 @@ import type {
 } from "../../../worker/views/calendar.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
+import { useSimTimes } from "../../util/simTimes.ts";
 import { MonthCalendar } from "../MonthCalendar.tsx";
 
 // THE NIGHTS ACROSS THE TOP, as NBA.com and ESPN have them: the month and a
@@ -293,6 +294,7 @@ const DatedStrip = ({
 	}
 	const pager = usePager(weeks.length, weeks.indexOf(weekOf(date)), day);
 	const nightTitle = useNightTitle();
+	const simTimes = useSimTimes();
 
 	// The month of the week in view: the shown night's, if it's in it.
 	const inView = weeks[pager.shown] ?? weekOf(date);
@@ -324,16 +326,19 @@ const DatedStrip = ({
 								</>
 							);
 							// (A day still to come with no games is a day to open too.)
+							const simTime = night ? simTimes.date(d) : undefined;
 							return night ? (
 								<a
 									key={d}
 									className={clsx(
 										"lh-week-day",
 										night.numGames === 0 && "lh-week-off",
+										simTime && "sim-time-day",
 										{ selected, today },
 									)}
 									href={dayUrl(season, night.day)}
 									title={night.numGames > 0 ? nightTitle(night) : "No games"}
+									data-sim-time={simTime}
 								>
 									{inner}
 								</a>
@@ -385,6 +390,7 @@ const DayNumberStrip = ({
 	);
 	const playoffs = (pages[pager.shown] ?? pages[0])?.[0]?.playoffs;
 	const nightTitle = useNightTitle();
+	const simTimes = useSimTimes();
 
 	return (
 		<div className="lh-week">
@@ -401,22 +407,26 @@ const DayNumberStrip = ({
 						{Array.from({ length: SPAN - page.length }, (_, i) => (
 							<span key={`pad${i}`} className="lh-week-day lh-week-pad" />
 						))}
-						{page.map((night) => (
-							<a
-								key={night.day}
-								className={clsx("lh-week-day", {
-									selected: night.day === day,
-									today: night.day === todayDay,
-								})}
-								href={dayUrl(season, night.day)}
-								title={nightTitle(night)}
-							>
-								<span className="lh-week-top">Day</span>
-								<span className="lh-week-num">{night.day}</span>
-								<Games night={night} />
-								<Mine night={night} />
-							</a>
-						))}
+						{page.map((night) => {
+							const simTime = simTimes.day(season, night.day);
+							return (
+								<a
+									key={night.day}
+									className={clsx("lh-week-day", simTime && "sim-time-day", {
+										selected: night.day === day,
+										today: night.day === todayDay,
+									})}
+									href={dayUrl(season, night.day)}
+									title={nightTitle(night)}
+									data-sim-time={simTime}
+								>
+									<span className="lh-week-top">Day</span>
+									<span className="lh-week-num">{night.day}</span>
+									<Games night={night} />
+									<Mine night={night} />
+								</a>
+							);
+						})}
 					</div>
 				))}
 			</Track>

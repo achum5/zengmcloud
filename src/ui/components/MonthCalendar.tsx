@@ -23,6 +23,7 @@ import type {
 } from "../../worker/views/calendar.ts";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
+import { useSimTimes } from "../util/simTimes.ts";
 import { bannerColors, useAllTeamColors } from "./TeamBanner.tsx";
 import { NationalTag } from "./NationalTag.tsx";
 
@@ -628,6 +629,8 @@ export const MonthCalendar = ({
 		teamInfoCache,
 		userTid,
 	} = useLocal(["games", "season", "teamInfoCache", "userTid"]);
+	// When auto play sims each day still to come, on this device's clock.
+	const simTimes = useSimTimes();
 
 	// The next game's line, as the scores bar has it.
 	const spreads = new Map<number, number>();
@@ -769,6 +772,8 @@ export const MonthCalendar = ({
 		const game = isTeam ? teamByDate.get(date) : undefined;
 		const night = nights.get(date);
 		const keyDate = keyByDate.get(date);
+		const simTime = simTimes.date(date);
+		const title = formatGameDate(date, "full");
 		if (plain && !isTeam) {
 			return (
 				<td
@@ -777,8 +782,10 @@ export const MonthCalendar = ({
 						night ? "lc-night" : "lc-off",
 						date === today && "lc-today",
 						date === selected && "lc-selected",
+						simTime && "sim-time-day",
 					)}
-					title={formatGameDate(date, "full")}
+					title={title}
+					data-sim-time={simTime}
 				>
 					<PlainNight
 						date={date}
@@ -806,8 +813,10 @@ export const MonthCalendar = ({
 						game?.ifNecessary && "lc-maybe",
 						date === today && "lc-today",
 						date === selected && "lc-selected",
+						simTime && "sim-time-day",
 					)}
-					title={formatGameDate(date, "full")}
+					title={title}
+					data-sim-time={simTime}
 				>
 					<TeamDay
 						compact={compact}
@@ -832,8 +841,10 @@ export const MonthCalendar = ({
 					night?.mine?.awayTid === userTid && "lc-road",
 					date === today && "lc-today",
 					date === selected && "lc-selected",
+					simTime && "sim-time-day",
 				)}
-				title={formatGameDate(date, "full")}
+				title={title}
+				data-sim-time={simTime}
 			>
 				<div className="lc-day-head">
 					<span className="lc-num">{Number(date.slice(8))}</span>

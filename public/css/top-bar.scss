@@ -379,3 +379,35 @@ $tbd-lost: #b4252f;
 .tbd-off.tbd-today {
 	color: var(--bs-danger);
 }
+
+// A day's auto play sim time in a bubble like Bootstrap's tooltips, on hover
+// or press and hold (see simTimeTip.ts): no link menu or text selection over
+// the day while it's held.
+.sim-time-day,
+.sim-time-day a {
+	-webkit-touch-callout: none;
+}
+.sim-time-day {
+	-webkit-user-select: none;
+	user-select: none;
+}
+.sim-time-tip {
+	position: fixed;
+	z-index: 1080;
+	padding: 0.25rem 0.5rem;
+	border-radius: var(--bs-border-radius);
+	background: var(--bs-emphasis-color);
+	color: var(--bs-body-bg);
+	font-size: 0.875rem;
+	font-weight: 600;
+	white-space: nowrap;
+	pointer-events: none;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+	animation: sim-time-tip-in 0.12s ease-out;
+}
+@keyframes sim-time-tip-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+}

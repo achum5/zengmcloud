@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { memo, type ReactNode } from "react";
 import { useLocal } from "../../util/local.ts";
+import { useSimTimes } from "../../util/simTimes.ts";
 import { helpers } from "../../util/helpers.ts";
 import { TeamLogoInline } from "../TeamLogoInline.tsx";
 import { NationalTag } from "../NationalTag.tsx";
@@ -49,6 +50,8 @@ export const TopBarDay = memo(
 			"teamInfoCache",
 			"userTid",
 		]);
+		// When auto play sims the day, on this device's clock.
+		const simTimes = useSimTimes();
 
 		const isToday = date === today;
 		const past = today !== undefined && date < today;
@@ -58,14 +61,17 @@ export const TopBarDay = memo(
 
 		// A day off: a slim faded column, the weekday over the date.
 		if (!game) {
+			const simTime = past ? undefined : simTimes.date(date);
 			return (
 				<div
 					className={clsx(
 						"tbd tbd-off",
 						isToday && "tbd-today",
 						past && "tbd-past",
+						simTime && "sim-time-day",
 					)}
 					title={`${title}, no game`}
+					data-sim-time={simTime}
 				>
 					<span className="tbd-off-weekday">{weekday}</span>
 					<span className="tbd-off-num">{Number(date.slice(8))}</span>
@@ -81,6 +87,7 @@ export const TopBarDay = memo(
 		const opp = game.teams[userIndex === 0 ? 1 : 0];
 		const winner = getWinner(game.teams);
 		const final = winner !== undefined;
+		const simTime = final || past ? undefined : simTimes.date(date);
 		const livePts = !final ? live?.score?.pts : undefined;
 
 		const href = final
@@ -213,7 +220,9 @@ export const TopBarDay = memo(
 					past && "tbd-past",
 					livePts !== undefined && "tbd-is-live",
 					game.ifNecessary && "tbd-maybe",
+					simTime && "sim-time-day",
 				)}
+				data-sim-time={simTime}
 			>
 				<a className="tbd-cover" href={href} title={label} aria-label={label} />
 				<div className="tbd-head">

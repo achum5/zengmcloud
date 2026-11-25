@@ -14,6 +14,7 @@ import { NavBar } from "./NavBar.tsx";
 import { Notifications } from "./Notifications.tsx";
 import SyncDebugOverlay from "./SyncDebugOverlay.tsx";
 import { SideBar } from "./SideBar.tsx";
+import SimTimesWatcher from "./SimTimesWatcher.tsx";
 import { Skyscraper } from "./Skyscraper.tsx";
 import { TitleBar } from "./TitleBar.tsx";
 import { useViewData } from "../../util/viewManager.tsx";
@@ -206,6 +207,7 @@ export const Controller = () => {
 			</div>
 			<Notifications />
 			<SyncDebugOverlay />
+			{inLeague ? <SimTimesWatcher key={lid} /> : null}
 			{/* LAST, and in the flow. The ticker is position:sticky against the
 			    document, so it has to be the final child of #content for its natural
 			    position to be the bottom of the page. */}
