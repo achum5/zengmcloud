@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 586,
+		date: "2026-11-25",
+		text: "3D game: the far sideline is laid out like a real NBA arena. The scorer's table is longer, with courtside seats between it and each bench, and the benches sit further toward the baselines, with black padded chairs and the drinks coolers in the row behind. Coaches pace and huddle in front of their own bench, inside the coaching box.",
+	},
+	{
 		n: 585,
 		date: "2026-11-25",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): rebounders go up for the ball on the move, still coming as it gets to their hands, instead of getting to the spot and waiting for it to drop to them. How fast each one is going is drawn from how real rebounders move. Also fixed a one-frame hitch when the ball changed hands.",

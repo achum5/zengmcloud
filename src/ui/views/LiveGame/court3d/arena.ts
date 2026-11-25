@@ -18,6 +18,8 @@ import {
 	viewFrame,
 } from "./gameBall.ts";
 import {
+	BENCH_END,
+	BENCH_LEN,
 	BENCH_SEATS,
 	BENCH_Y,
 	benchStart,
@@ -26,9 +28,12 @@ import {
 	RIM_R,
 	RIM_Z,
 	SEAT_GAP,
+	TABLE_X0,
+	TABLE_X1,
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+export { TABLE_X0, TABLE_X1 };
 
 // THE BUILDING: the stands, the LED boards along their front, the scorer's
 // table and the benches - flat pictures painted once per game and stood up in
@@ -159,8 +164,6 @@ export const END_WALL: [Plane, Plane] = [0, 1].map((side) =>
 	),
 ) as [Plane, Plane];
 
-export const TABLE_X0 = 37;
-export const TABLE_X1 = 57;
 export const TABLE_Y = -5;
 export const TABLE_D = 2.2;
 export const TABLE_H = 2.7;
@@ -184,11 +187,10 @@ export const TABLE_FRONT = plane(
 	TABLE_H,
 	24,
 );
-// Each team's bench: a row of high-backed padded chairs beside the table,
-// the backs up to a sitting man's shoulders - just behind where each sits
-// (see seatSpot).
-const BENCH_LEN = BENCH_SEATS * SEAT_GAP + 0.6;
-const BENCH_H = 4;
+// Each team's bench: a row of black padded chairs, the backs up to a
+// sitting man's shoulder blades - just behind where each sits (see
+// seatSpot).
+const BENCH_H = 3.4;
 const BENCH_SEAT_Z = 1.45;
 export const benchPlane = (t: Side) =>
 	plane(
@@ -881,8 +883,8 @@ export const paintStands = (
 // the road team has it (blinking: two pictures), and a shout after a big
 // play by the home side.
 // THE SEATS ON THE FLOOR: rows of padded chairs behind each baseline, past
-// the photographers - the back row up a step - and in the far corners past
-// the ends of the benches; the best seats in the building, every one taken
+// the photographers - the back row up a step - and either side of the
+// scorer's table, between it and each bench; the best seats in the building, every one taken
 // (see ArenaSpec.courtside). Each of the people in them drawn once, sat in
 // his chair, into one picture (see courtsideFor), and stood up in the world
 // where he sits each frame, the size the camera has him there (see
@@ -894,14 +896,17 @@ const CS_STEP = 1.1;
 const CS_Y0 = -3;
 const CS_Y1 = COURT_H + 3;
 const CS_AISLES = [8.5, COURT_H - 8.5];
-// In the far corners: from past the corner of the floor to the bench.
-const CS_CORNER_Y = BENCH_Y - 0.4;
-// Behind each bench, up a step: its staff - so many of them, this far back
-// of the bench (feet), the step this high.
-const STAFF_N = 7;
+// Beside the table: from the bench's end to the table's.
+const CS_BESIDE_Y = BENCH_Y - 0.4;
+const CS_BESIDE_W = TABLE_X0 - BENCH_END - 1.6;
+// Behind each bench, up a step: its second row - the assistants, the
+// trainers, the video staff - so many places along it, this far back of the
+// bench (feet), the step this high; and the two of those places a third of
+// the way out from the table that its drinks coolers stand in.
+const STAFF_N = 12;
 const STAFF_Y = BENCH_Y - 2;
 const STAFF_Z = 0.6;
-const CS_CORNER_W = 9.5;
+const COOLER_AT = [7, 8];
 // Waving his arms, each way this long (ms); clapping, hands together and
 // apart.
 const WAVE_MS = 260;
@@ -931,7 +936,7 @@ export type Courtside = {
 	fans: { at: Pt3; cell: number; home: boolean; end?: Side; rise: number }[];
 	// The steps the back rows are up on: each a box along the floor.
 	steps: { x0: number; x1: number; y0: number; y1: number; z: number }[];
-	// At the far end of each bench, its cooler and its towels.
+	// Each bench's drinks coolers, and the towels by the table.
 	props: { at: Pt3; kind: "cooler" | "towels" }[];
 	cooler: string;
 	towels: string;
@@ -974,22 +979,22 @@ export const courtsideFor = (
 				endOf.push(side);
 			}
 		}
-		const x0 =
-			side === 0
-				? benchStart(0) - 0.8 - CS_CORNER_W
-				: benchStart(1) + BENCH_LEN + 0.8;
+		const x0 = side === 0 ? BENCH_END + 0.8 : TABLE_X1 + 0.8;
 		for (let r = 0; r < cs.cornerRows; r++) {
-			const y = CS_CORNER_Y - r * CS_ROW;
+			const y = CS_BESIDE_Y - r * CS_ROW;
 			if (r > 0) {
 				steps.push({
 					x0,
-					x1: x0 + CS_CORNER_W,
+					x1: x0 + CS_BESIDE_W,
 					y0: y - CS_ROW / 2,
 					y1: y + CS_ROW / 2,
 					z: r * CS_STEP,
 				});
 			}
-			for (let x = x0 + CS_CHAIR / 2; x < x0 + CS_CORNER_W; x += CS_CHAIR) {
+			// (Centred in the space, however many fit.)
+			const n = Math.floor(CS_BESIDE_W / CS_CHAIR);
+			const first = x0 + (CS_BESIDE_W - n * CS_CHAIR) / 2 + CS_CHAIR / 2;
+			for (let x = first; x < x0 + CS_BESIDE_W; x += CS_CHAIR) {
 				at.push({ x, y, z: r * CS_STEP });
 				endOf.push(undefined);
 			}
@@ -1009,6 +1014,9 @@ export const courtsideFor = (
 			z: STAFF_Z,
 		});
 		for (let k = 0; k < STAFF_N; k++) {
+			if (COOLER_AT.includes(t === 0 ? k : STAFF_N - 1 - k)) {
+				continue;
+			}
 			at.push({
 				x: x0 + ((x1 - x0) * k) / (STAFF_N - 1),
 				y: STAFF_Y,
@@ -1189,17 +1197,25 @@ export const courtsideFor = (
 			);
 		}
 	});
+	// Each bench's two coolers, side by side in its second row; the towels,
+	// a stack on the floor at each end of the table.
 	const props: Courtside["props"] = [];
 	for (const t of [0, 1] as const) {
-		// (Its end away from the table.)
-		const x = t === 0 ? benchStart(0) - 0.9 : benchStart(1) + BENCH_LEN + 0.9;
-		props.push(
-			{ at: { x, y: BENCH_Y + 0.4, z: 0 }, kind: "cooler" },
-			{
-				at: { x: x + (t === 0 ? 1.6 : -1.6), y: BENCH_Y + 0.9, z: 0 },
-				kind: "towels",
-			},
-		);
+		const x0 = benchStart(t) + 1.5;
+		const x1 = benchStart(t) + BENCH_LEN - 1.5;
+		const slot = (k: number) =>
+			x0 + ((x1 - x0) * (t === 0 ? k : STAFF_N - 1 - k)) / (STAFF_N - 1);
+		const mid = (slot(COOLER_AT[0]!) + slot(COOLER_AT[1]!)) / 2;
+		for (const side of [-1, 1]) {
+			props.push({
+				at: { x: mid + side * (COOLER_W / 2 + 0.06), y: STAFF_Y, z: STAFF_Z },
+				kind: "cooler",
+			});
+		}
+		props.push({
+			at: { x: t === 0 ? TABLE_X0 - 0.75 : TABLE_X1 + 0.75, y: -5.9, z: 0 },
+			kind: "towels",
+		});
 	}
 	return {
 		atlas,
@@ -1973,36 +1989,46 @@ export const paintBench = (team: ArenaTeam | undefined): HTMLCanvasElement => {
 	const ctx = canvas.getContext("2d")!;
 	const px = p.w / BENCH_LEN;
 	const c = teamColor(team, 0, "#333a44");
-	const trim = teamColor(team, 1, "#d9d9d9");
 	const seat = BENCH_SEAT_Z * px;
+	const black = "#16171b";
 	for (let i = 0; i < BENCH_SEATS; i++) {
 		const x = (0.15 + i * SEAT_GAP) * px;
-		const w = 1.8 * px;
-		// Legs, the seat's padded front, the high back - a stripe of the
-		// team's other color across its top.
-		ctx.fillStyle = "#111";
+		const w = (SEAT_GAP - 0.25) * px;
+		// Legs, the seat's padded front, the back - black, piped in a dark
+		// shade of the team's color, a patch of it across the top.
+		ctx.fillStyle = "#0b0b0d";
 		ctx.fillRect(x + 0.15 * px, p.h - seat, 0.12 * px, seat);
 		ctx.fillRect(x + w - 0.27 * px, p.h - seat, 0.12 * px, seat);
-		ctx.fillStyle = shade(c, -0.25);
+		ctx.fillStyle = shade(black, -0.2);
 		ctx.beginPath();
 		ctx.roundRect(x, p.h - seat - 0.3 * px, w, 0.38 * px, 0.12 * px);
 		ctx.fill();
 		const g = ctx.createLinearGradient(x, 0, x + w, 0);
-		g.addColorStop(0, shade(c, -0.18));
-		g.addColorStop(0.5, shade(c, 0.08));
-		g.addColorStop(1, shade(c, -0.18));
+		g.addColorStop(0, shade(black, -0.1));
+		g.addColorStop(0.5, shade(black, 0.22));
+		g.addColorStop(1, shade(black, -0.1));
+		ctx.fillStyle = shade(c, -0.45);
+		ctx.beginPath();
+		ctx.roundRect(x, 0, w, p.h - seat - 0.2 * px, 0.3 * px);
+		ctx.fill();
 		ctx.fillStyle = g;
 		ctx.beginPath();
-		ctx.roundRect(x, 0, w, p.h - seat - 0.2 * px, 0.35 * px);
+		ctx.roundRect(
+			x + 0.07 * px,
+			0.07 * px,
+			w - 0.14 * px,
+			p.h - seat - 0.34 * px,
+			0.25 * px,
+		);
 		ctx.fill();
-		ctx.fillStyle = trim;
-		ctx.fillRect(x + 0.25 * px, 0.35 * px, w - 0.5 * px, 0.16 * px);
-		// A towel over the back of most of them, white, a stripe of the
-		// team's color near its hem - and a fold where it goes over.
-		if ((i * 7 + 3) % 10 < 7) {
+		ctx.fillStyle = shade(c, -0.15);
+		ctx.fillRect(x + w / 2 - 0.22 * px, 0.45 * px, 0.44 * px, 0.24 * px);
+		// A towel over the back of some of them, white, a stripe of the
+		// team's color near its hem.
+		if ((i * 7 + 3) % 10 < 3) {
 			const tw = w - 0.36 * px;
 			const tx = x + 0.18 * px;
-			const th = (0.85 + ((i * 5) % 3) * 0.12) * px;
+			const th = (0.75 + ((i * 5) % 3) * 0.12) * px;
 			ctx.fillStyle = "#f2f2ef";
 			ctx.beginPath();
 			ctx.roundRect(tx, 0.05 * px, tw, th, 0.1 * px);
