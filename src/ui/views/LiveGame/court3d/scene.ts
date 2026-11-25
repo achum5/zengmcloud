@@ -2470,7 +2470,7 @@ export const drawFrame = (f: Frame) => {
 				ctx.save();
 				hug.clip(ctx);
 				if (f.sprites) {
-					restamp(ctx, f.sprites, hug.fig.st, 1);
+					restamp(ctx, f.sprites, hug.fig.st);
 				} else {
 					drawSprite(
 						ctx,

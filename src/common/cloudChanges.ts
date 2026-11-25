@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 580,
+		date: "2026-11-24",
+		text: "Fixed the 3D game crashing on iPhones during the starting lineups. Players shown up close are drawn a little coarser now, so they no longer use up the phone's memory.",
+	},
+	{
 		n: 579,
 		date: "2026-11-24",
 		text: "Draft History's Redraft column now goes by more than career win shares. A player's best five seasons count twice, so stars outrank long careers off the bench, and anyone still playing also gets credit for the seasons he's likely to have left, from his rating and age.",
