@@ -232,6 +232,7 @@ const MonthDropdown = ({
 				<div className="lh-month-pop">
 					<MonthCalendar
 						compact
+						plain
 						games={calendar.games}
 						keyDates={calendar.keyDates}
 						nightDays={calendar.nightDays}
