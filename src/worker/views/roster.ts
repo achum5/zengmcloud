@@ -3,7 +3,10 @@ import { confByCid } from "../../common/confs.ts";
 import { PHASE, POSITIONS } from "../../common/constants.ts";
 import { finances, player, season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
-import { playThroughCalendar } from "../core/game/classicDays.ts";
+import {
+	playThroughCalendar,
+	playThroughDaysTonight,
+} from "../core/game/classicDays.ts";
 import { g, helpers } from "../util/index.ts";
 import type { Player, TeamSeasonAttr } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
@@ -424,6 +427,7 @@ export default defineView({
 					accountForInjuredPlayers: {
 						numDaysInFuture: 0,
 						playThroughInjuries: getActualPlayThroughInjuries(t),
+						byDays: await playThroughDaysTonight(t, playoffsOvr),
 					},
 					playoffs: playoffsOvr,
 				}),

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 639,
+		date: "2026-11-25",
+		text: "NBA Calendar, Play Through Injuries: the betting line, the sportsbook and team strength now judge your hurt players by the days they'll have left on game day, the same way the game decides who plays. A player at 3 days today whose next game is two days away counts as 2 days, so a 2-day setting already includes him. Also, if you never moved the slider with the calendar on, it now always shows the same number of days. Before, it could move a day on its own.",
+	},
+	{
 		n: 638,
 		date: "2026-11-25",
 		text: "Shared leagues with auto play on: put your mouse over a day still to come on any calendar (the scores bar, the team calendars, the Daily Schedule's days and its month calendar, the date at the top) to see when auto play sims it, on your own clock, like 1:15 – 1:30 PM. On a phone, press and hold the day.",

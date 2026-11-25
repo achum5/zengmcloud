@@ -6,6 +6,7 @@ import { getPlayoffsByConf } from "../season/getPlayoffsByConf.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { injuryTicksUntil } from "../game/calendarTicks.ts";
 import { getInjuryClock } from "../game/classicDays.ts";
+import { calendarPlayThrough } from "../game/calendarPlayThrough.ts";
 import getAwardRaceOdds, {
 	legacyAwardKey,
 	playerName,
@@ -641,6 +642,7 @@ export const getLines = async () => {
 			"name",
 			"disabled",
 			"playThroughInjuries",
+			"playThroughInjuryDays",
 		],
 		seasonAttrs: ["won", "lost", "tied", "otl"],
 		stats: ["pts", "oppPts", "gp"],
@@ -696,11 +698,13 @@ export const getLines = async () => {
 
 	// Shared with the per-game prop board, so a spread/moneyline/total quoted on
 	// a game's page is the same number this board carries - see gameLines.ts.
+	const injuryClock = await getInjuryClock();
 	const pricer = await buildGameLinePricer({
 		activeTeams,
 		season,
 		todayDay: schedule[0]?.day ?? 0,
-		ticksUntil: injuryTicksUntil(schedule, await getInjuryClock()),
+		ticksUntil: injuryTicksUntil(schedule, injuryClock),
+		calendar: calendarPlayThrough(schedule, injuryClock),
 		spreadBiases,
 	});
 

@@ -1,5 +1,8 @@
 import { helpers } from "../../util/index.ts";
-import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
+import {
+	injuryAtGame,
+	type PlayThroughDays,
+} from "../../../common/playThroughInjuriesFactor.ts";
 import compositeRating from "../player/compositeRating.ts";
 import { COMPOSITE_WEIGHTS } from "../../../common/constants.ts";
 import type { MinimalPlayerRatings } from "../../../common/types.ts";
@@ -335,7 +338,7 @@ export const pregameLineupSynergy = (
 // harnesses) fall back to value.
 export const pregameLineupSynergyFromPlayers = (
 	players: readonly {
-		injury: { gamesRemaining: number };
+		injury: { gamesRemaining: number; daysRemaining?: number };
 		ratings: MinimalPlayerRatings[] | readonly MinimalPlayerRatings[];
 		value: number;
 		rosterOrder?: number;
@@ -344,10 +347,15 @@ export const pregameLineupSynergyFromPlayers = (
 		numDaysInFuture,
 		playThroughInjuries,
 		playoffs,
+		byDays,
+		calendarDaysAhead,
 	}: {
 		numDaysInFuture: number;
 		playThroughInjuries: [number, number];
 		playoffs: boolean;
+		// As in team.ovr's accountForInjuredPlayers.
+		byDays?: PlayThroughDays;
+		calendarDaysAhead?: number;
 	},
 ): number | undefined => {
 	if (__SPORT !== "basketball") {
@@ -360,13 +368,13 @@ export const pregameLineupSynergyFromPlayers = (
 		compositeRating: SynergyCompositeRating;
 	}[] = [];
 	for (const p of players) {
-		const gamesRemaining = p.injury.gamesRemaining - numDaysInFuture;
-		let factor;
-		if (gamesRemaining <= 0) {
-			factor = 1;
-		} else if (gamesRemaining <= currentPlayThroughInjuries) {
-			factor = playThroughInjuriesFactor(gamesRemaining);
-		} else {
+		const { plays, factor } = injuryAtGame(
+			p.injury,
+			currentPlayThroughInjuries,
+			byDays,
+			{ games: numDaysInFuture, days: calendarDaysAhead ?? 0 },
+		);
+		if (!plays) {
 			continue;
 		}
 		const ratings = p.ratings.at(-1);

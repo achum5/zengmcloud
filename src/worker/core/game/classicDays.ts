@@ -5,12 +5,12 @@ import {
 	type CalendarClock,
 	calendarClock,
 	clockBeforeFirstNight,
-	daysOut,
 	daysOutHurtTonight,
 	DEFAULT_SEASON_CLOCK,
 	nbaCalendarLeague,
-	PLAYOFF_START_CLOCK,
+	PLAYOFF_CLASSIC_DAYS_PER_DAY,
 } from "./calendarTicks.ts";
+import type { PlayThroughDays } from "../../../common/playThroughInjuriesFactor.ts";
 
 // THE CLASSIC DAY COUNT of this season, for a calendar season to tick at the
 // classic pace (calendarTicks.ts). Stored with the league when the season's
@@ -136,58 +136,95 @@ const PLAY_THROUGH_MAX = 10;
 // playThroughInjuriesDayFactor); `days`, the team's setting.
 export type PlayThroughCalendar = { max: number; rate: number; days: number };
 
-// For the Play Through Injuries sliders on the NBA calendar (regular season,
-// playoffs): days instead of classic games, as far as the classic setting
-// goes (10 classic days - about 19 days in the regular season). Before a team
-// picks days, its classic setting as days: the most days left a player can
-// show and still play. Undefined off the calendar.
-export const playThroughCalendar = async (t: {
+// A classic setting as days, at a stretch's pace. A fixed conversion - not
+// the days a classic count would take from tonight, which come out a day more
+// or less from one day to the next - so a setting never moves on its own.
+const classicAsDays = (classic: number, rate: number) =>
+	classic <= 0 ? 0 : Math.max(1, Math.round(classic / rate));
+
+// The classic days a calendar day is worth in the regular season or the
+// playoffs, for games on this clock (getInjuryClock's). Undefined for the
+// regular season once it's over.
+export const playThroughRate = (
+	playoffs: boolean,
+	clock: CalendarClock,
+	phase: number = g.get("phase"),
+) =>
+	playoffs
+		? PLAYOFF_CLASSIC_DAYS_PER_DAY
+		: phase >= PHASE.REGULAR_SEASON && phase < PHASE.PLAYOFFS
+			? clock.rate
+			: undefined;
+
+type PlayThroughTeam = {
+	tid: number;
 	playThroughInjuries: [number, number];
 	playThroughInjuryDays?: [number, number];
-}): Promise<[PlayThroughCalendar, PlayThroughCalendar] | undefined> => {
+};
+
+// A team's setting in days, at this pace: the user's choice in days, or
+// before one is made, the classic setting as days.
+const settingInDays = (
+	t: Omit<PlayThroughTeam, "tid">,
+	i: 0 | 1,
+	rate: number,
+) =>
+	t.playThroughInjuryDays?.[i] ?? classicAsDays(t.playThroughInjuries[i], rate);
+
+// For the Play Through Injuries sliders on the NBA calendar (regular season,
+// playoffs): days instead of classic games, as far as the classic setting
+// goes (10 classic days - about 19 days in the regular season). Undefined off
+// the calendar.
+export const playThroughCalendar = async (
+	t: Omit<PlayThroughTeam, "tid">,
+): Promise<[PlayThroughCalendar, PlayThroughCalendar] | undefined> => {
 	const now = await currentDayClock();
 	if (!now) {
 		return;
 	}
-	const playoffs = g.get("phase") === PHASE.PLAYOFFS;
-	const regular = playoffs
-		? { clock: await seasonStartClock(), tonight: "" }
-		: now;
-	const post = playoffs ? now : { clock: PLAYOFF_START_CLOCK, tonight: "" };
-	const slider = (
-		{ clock, tonight }: { clock: CalendarClock; tonight: string },
-		i: 0 | 1,
-	): PlayThroughCalendar => {
-		const asDays = (v: number) => daysOut(v, clock, tonight);
-		const days =
-			t.playThroughInjuryDays?.[i] ?? asDays(t.playThroughInjuries[i]);
+	const regularRate =
+		g.get("phase") === PHASE.PLAYOFFS
+			? (await seasonStartClock()).rate
+			: now.clock.rate;
+	const slider = (rate: number, i: 0 | 1): PlayThroughCalendar => {
+		const days = settingInDays(t, i, rate);
 		return {
-			max: Math.max(asDays(PLAY_THROUGH_MAX), days),
-			rate: clock.rate,
+			max: Math.max(classicAsDays(PLAY_THROUGH_MAX, rate), days),
+			rate,
 			days,
 		};
 	};
-	return [slider(regular, 0), slider(post, 1)];
+	return [slider(regularRate, 0), slider(PLAYOFF_CLASSIC_DAYS_PER_DAY, 1)];
 };
 
-// The user's team's setting in days, for tonight's game (see processTeam):
-// on the calendar, once it's been set in days. Its rate prorates the
-// performance (playThroughInjuriesDayFactor).
-export const playThroughDaysTonight = async (
-	t: { tid: number; playThroughInjuryDays?: [number, number] },
+// A team's setting in days for a game on the NBA calendar (see injuryAtGame),
+// at the stretch's pace (playThroughRate): the user's teams', the same days
+// their slider shows. A CPU team (or any, watching as a spectator) keeps its
+// classic setting.
+export const playThroughDays = (
+	t: PlayThroughTeam,
 	playoffs: boolean,
-) => {
-	const days = t.playThroughInjuryDays?.[playoffs ? 1 : 0];
+	rate: number | undefined,
+): PlayThroughDays | undefined => {
 	if (
-		days === undefined ||
+		rate === undefined ||
 		g.get("spectator") ||
 		!g.get("userTids").includes(t.tid)
 	) {
 		return;
 	}
+	return { days: settingInDays(t, playoffs ? 1 : 0, rate), rate };
+};
+
+// The user's team's setting in days, for tonight's game (see processTeam).
+// Its rate prorates the performance (playThroughInjuriesDayFactor).
+export const playThroughDaysTonight = async (
+	t: PlayThroughTeam,
+	playoffs: boolean,
+) => {
 	const now = await getInjuryClock();
 	if (!now) {
 		return;
 	}
-	return { days, rate: now.clock.rate };
+	return playThroughDays(t, playoffs, playThroughRate(playoffs, now.clock));
 };

@@ -218,6 +218,9 @@ export const processTeam = async (
 	const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 
 	const actualPlayThroughInjuries = getActualPlayThroughInjuries(teamInput);
+	// On the NBA calendar, the user's setting in days - the days the slider
+	// shows: who plays by the days he has left, and how well prorated by them.
+	const byDays = await playThroughDaysTonight(teamInput, playoffs);
 
 	// Injury-adjusted ovr
 	const playersCurrent = players.map((p) => {
@@ -237,6 +240,7 @@ export const processTeam = async (
 		accountForInjuredPlayers: {
 			numDaysInFuture: 0,
 			playThroughInjuries: actualPlayThroughInjuries,
+			byDays,
 		},
 		playoffs,
 	});
@@ -265,9 +269,6 @@ export const processTeam = async (
 	};
 
 	const playThroughInjuries = actualPlayThroughInjuries[playoffs ? 1 : 0];
-	// On the NBA calendar, the user's setting in days, if set that way: who
-	// plays by the days he has left, and how well prorated by them.
-	const byDays = await playThroughDaysTonight(teamInput, playoffs);
 
 	let game6EliminationGameOrGame7: boolean | undefined;
 	const compositeWeights = Object.entries(COMPOSITE_WEIGHTS);

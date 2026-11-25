@@ -3,6 +3,7 @@ import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { injuryTicksUntil } from "../game/calendarTicks.ts";
 import { getInjuryClock } from "../game/classicDays.ts";
+import { calendarPlayThrough } from "../game/calendarPlayThrough.ts";
 import {
 	simGameOutcomes,
 	type SimmedGame,
@@ -204,6 +205,7 @@ export const getGameProps = async (gid: number) => {
 			"name",
 			"disabled",
 			"playThroughInjuries",
+			"playThroughInjuryDays",
 		],
 		stats: ["pts", "oppPts", "gp"],
 		season,
@@ -219,12 +221,15 @@ export const getGameProps = async (gid: number) => {
 	// spread/moneyline/total bet placed from this page validates against the
 	// board it was quoted from.
 	const todayDay = schedule[0]?.day ?? 0;
-	const ticksUntil = injuryTicksUntil(schedule, await getInjuryClock());
+	const injuryClock = await getInjuryClock();
+	const ticksUntil = injuryTicksUntil(schedule, injuryClock);
+	const calendar = calendarPlayThrough(schedule, injuryClock);
 	const pricer = await buildGameLinePricer({
 		activeTeams: teams.filter((t) => !t.disabled) as any,
 		season,
 		todayDay,
 		ticksUntil,
+		calendar,
 	});
 	const main = pricer.priceGame(matchup);
 
@@ -239,6 +244,7 @@ export const getGameProps = async (gid: number) => {
 				ticksUntil(home.tid, matchup.gid, matchup.day),
 				ticksUntil(away.tid, matchup.gid, matchup.day),
 			],
+			calendarDaysAhead: calendar?.daysUntil(matchup.gid),
 		});
 	} catch (error) {
 		console.error("Failed to simulate game for props", error);

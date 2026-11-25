@@ -30,13 +30,20 @@
 //
 // The fix is not to mutate. A player who would be healed by then is returned as
 // a COPY that says so, and the row in the league is left exactly as it is.
+//
+// On the NBA calendar a hurt player's days left come forward too (the
+// `calendarDaysAhead` counted down before the game), as he'll show them that
+// night: what playing through his injury goes by (see injuryAtGame).
 export const healedForward = <
-	T extends { injury: { type: string; gamesRemaining: number } },
+	T extends {
+		injury: { type: string; gamesRemaining: number; daysRemaining?: number };
+	},
 >(
 	players: readonly T[],
 	daysInFuture: number,
+	calendarDaysAhead = 0,
 ): T[] => {
-	if (!(daysInFuture > 0)) {
+	if (!(daysInFuture > 0) && !(calendarDaysAhead > 0)) {
 		return [...players];
 	}
 
@@ -44,12 +51,27 @@ export const healedForward = <
 		if (p.injury.gamesRemaining <= 0) {
 			return p;
 		}
-		const gamesRemaining = Math.max(0, p.injury.gamesRemaining - daysInFuture);
+		const gamesRemaining = Math.max(
+			0,
+			p.injury.gamesRemaining - Math.max(0, daysInFuture),
+		);
+		const { daysRemaining } = p.injury;
 		return {
 			...p,
 			injury:
 				gamesRemaining > 0
-					? { ...p.injury, gamesRemaining }
+					? {
+							...p.injury,
+							gamesRemaining,
+							...(daysRemaining !== undefined && calendarDaysAhead > 0
+								? {
+										daysRemaining: Math.max(
+											1,
+											daysRemaining - calendarDaysAhead,
+										),
+									}
+								: {}),
+						}
 					: // Fully recovered by then, so say so the way the real countdown
 						// does. A type left sitting on a zeroed counter is the exact
 						// zombie state this whole file exists to keep out of the league.

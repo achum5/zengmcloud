@@ -44,6 +44,7 @@ import {
 } from "../../common/specialGames.ts";
 import { injuryTicksUntil } from "../core/game/calendarTicks.ts";
 import { getInjuryClock } from "../core/game/classicDays.ts";
+import { calendarPlayThrough } from "../core/game/calendarPlayThrough.ts";
 import { getCalendarIfDated } from "./calendar.ts";
 import { nationalTags } from "./nationalBroadcast.ts";
 import {
@@ -80,7 +81,10 @@ export const getUpcoming = async ({
 
 	// Injury healing from today until each game: days, or on a calendar the
 	// calendar's days at the classic rate.
-	const gamesInFuture = injuryTicksUntil(schedule, await getInjuryClock());
+	const injuryClock = await getInjuryClock();
+	const gamesInFuture = injuryTicksUntil(schedule, injuryClock);
+	// And the user's hurt players by the days they'll have left that night.
+	const calendar = calendarPlayThrough(schedule, injuryClock);
 
 	let cidFilter:
 		| ((game: { awayTid: number; homeTid: number }) => boolean)
@@ -128,7 +132,7 @@ export const getUpcoming = async ({
 	}
 
 	const teams = await team.getFormattedAll({
-		attrs: ["playThroughInjuries", "tid"],
+		attrs: ["playThroughInjuries", "playThroughInjuryDays", "tid"],
 		seasonAttrs: ["won", "lost", "tied", "otl"],
 		season: g.get("season"),
 		active: true,
@@ -188,7 +192,20 @@ export const getUpcoming = async ({
 			: playoffSeries.series[playoffSeries.currentRound]
 		: undefined;
 
-	const getTeam = (tid: number, numDaysInFuture: number) => {
+	// How a team's hurt players stand for a game (see injuryAtGame).
+	const injuredFor = (tid: number, gid: number, day: number) => {
+		const t = teamsByTid[tid];
+		const byDays = t && calendar?.byDays(t, !!roundSeries);
+		return {
+			numDaysInFuture: gamesInFuture(tid, gid, day),
+			playThroughInjuries: getActualPlayThroughInjuries(t ?? "default"),
+			...(byDays
+				? { byDays, calendarDaysAhead: calendar!.daysUntil(gid) }
+				: {}),
+		};
+	};
+
+	const getTeam = (tid: number, gid: number, day: number) => {
 		// All-Star Game or trade deadline
 		if (tid < 0) {
 			return { tid };
@@ -198,10 +215,7 @@ export const getUpcoming = async ({
 
 		// For basketball this is fast, but for other sports it's a bit slow. Could cache sometimes, depending on which players are injured (if nobody is in playThroughInjuries window). This would apply by default in the regular season, which is what matters, since the default is 0
 		const ovr = team.ovr(playersByTid.get(tid) ?? [], {
-			accountForInjuredPlayers: {
-				numDaysInFuture,
-				playThroughInjuries: getActualPlayThroughInjuries(t ?? "default"),
-			},
+			accountForInjuredPlayers: injuredFor(tid, gid, day),
 
 			// This is better than checking g.get("phase"), because g.get("phase") will still show up as regular season when this is called (via setSchedule) from newDayPlayoffSeries
 			playoffs: !!roundSeries,
@@ -270,12 +284,9 @@ export const getUpcoming = async ({
 	// Same availability window as the ovr above, so the two inputs describe the
 	// same roster. Undefined (non-basketball, or a roster too thin to field a
 	// five) falls back to the ovr-only model inside getGameSpread.
-	const getSynergy = (tid: number, numDaysInFuture: number) =>
+	const getSynergy = (tid: number, gid: number, day: number) =>
 		pregameLineupSynergyFromPlayers(playersRawByTid.get(tid) ?? [], {
-			numDaysInFuture,
-			playThroughInjuries: getActualPlayThroughInjuries(
-				teamsByTid[tid] ?? "default",
-			),
+			...injuredFor(tid, gid, day),
 			playoffs: !!roundSeries,
 		});
 
@@ -382,8 +393,8 @@ export const getUpcoming = async ({
 	}[] = filteredSchedule.map(
 		({ awayTid, date, day, finals, forceWin, gid, homeTid }) => {
 			const teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>] = [
-				getTeam(homeTid, gamesInFuture(homeTid, gid, day)),
-				getTeam(awayTid, gamesInFuture(awayTid, gid, day)),
+				getTeam(homeTid, gid, day),
+				getTeam(awayTid, gid, day),
 			];
 			const tag = national.get(gid);
 			return {
@@ -400,8 +411,8 @@ export const getUpcoming = async ({
 								finals,
 								ovr0: teams[0].ovr,
 								ovr1: teams[1].ovr,
-								synergy0: getSynergy(homeTid, gamesInFuture(homeTid, gid, day)),
-								synergy1: getSynergy(awayTid, gamesInFuture(awayTid, gid, day)),
+								synergy0: getSynergy(homeTid, gid, day),
+								synergy1: getSynergy(awayTid, gid, day),
 								homeTid,
 								awayTid,
 							})

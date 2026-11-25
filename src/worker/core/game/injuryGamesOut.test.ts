@@ -9,7 +9,12 @@ import {
 	playoffGamesByTid,
 	regularSeason,
 } from "./injuryGamesOut.ts";
-import { countFrom, daysLeft } from "./refreshCalendarDays.ts";
+import {
+	calendarDaysUntil,
+	countFrom,
+	daysLeft,
+} from "./refreshCalendarDays.ts";
+import { addDays } from "../../../common/calendarDates.ts";
 
 const row = (homeTid: number, awayTid: number, date: string) => ({
 	gid: 0,
@@ -225,5 +230,80 @@ describe("days left after a skipped date", () => {
 			daysLeft(after25, count("2025-12-25", "2025-12-25")),
 			days - 3,
 		);
+	});
+});
+
+describe("a hurt player's days left on a game's night", () => {
+	const game = (gid: number, date: string) =>
+		({
+			gid,
+			day: gid,
+			season: 2025,
+			date,
+			teams: [{ tid: 0 }, { tid: 1 }],
+		}) as unknown as Game;
+	const clock = calendarClock({
+		games: [game(1, "2024-10-22"), game(2, "2025-04-13")],
+		schedule: [],
+		season: 2025,
+		phase: PHASE.REGULAR_SEASON,
+		classicDays: 89,
+	})!;
+	const dated = (gid: number, date: string) => ({ ...row(0, 1, date), gid });
+
+	test("the days counted down before it", () => {
+		// After Fri Dec 27: Saturday's night (other teams), then his on Sunday.
+		const until = calendarDaysUntil(
+			[{ ...row(2, 3, "2024-12-28"), gid: 4 }, dated(5, "2024-12-29")],
+			"2024-12-27",
+		);
+		assert.strictEqual(until(4), 0);
+		assert.strictEqual(until(5), 1);
+		// A season that skips Christmas Eve: after the 23rd, the 25th is next.
+		const skipping = calendarDaysUntil(
+			[dated(6, "2024-12-25"), dated(7, "2024-12-27")],
+			"2024-12-23",
+		);
+		assert.strictEqual(skipping(6), 0);
+		assert.strictEqual(skipping(7), 2);
+		// Before the first night: from the day before it.
+		assert.strictEqual(
+			calendarDaysUntil(
+				[dated(8, "2024-10-22"), dated(9, "2024-10-25")],
+				undefined,
+			)(9),
+			3,
+		);
+	});
+
+	test("the days shown now, less those, are the days he'll show that night", () => {
+		const schedule: { gid: number; date: string }[] = [];
+		for (let i = 1; i <= 20; i++) {
+			schedule.push({ gid: i, date: addDays("2024-12-27", i) });
+		}
+		const count = (tonight: string) => ({
+			clock,
+			tonight,
+			from: tonight,
+			gamesOut: () => undefined,
+		});
+		const tonight = "2024-12-27";
+		const until = calendarDaysUntil(schedule, tonight);
+		for (let gamesRemaining = 1; gamesRemaining <= 8; gamesRemaining++) {
+			const now = daysLeft(gamesRemaining, count(tonight));
+			for (const { gid, date } of schedule) {
+				// That night: the countdown has run through the night before.
+				const before = addDays(date, -1);
+				const left = gamesRemaining - ticksBetween(clock, tonight, before);
+				if (left <= 0) {
+					continue;
+				}
+				assert.strictEqual(
+					Math.max(1, now - until(gid)),
+					daysLeft(left, count(before)),
+					`${gamesRemaining} classic days, the game on ${date}`,
+				);
+			}
+		}
 	});
 });

@@ -232,7 +232,11 @@ const cacheSet = (key: string, value: SimmedGame) => {
 // Injuries are healed forward the same way the game's spread is computed (see
 // gameLines.ts), so a board pulled up three days early doesn't sim a player as
 // out when he'll be back by tipoff.
-const loadSide = async (tid: number, daysInFuture: number) => {
+const loadSide = async (
+	tid: number,
+	daysInFuture: number,
+	calendarDaysAhead: number,
+) => {
 	const [t, teamSeason, players] = await Promise.all([
 		idb.cache.teams.get(tid),
 		idb.cache.teamSeasons.indexGet("teamSeasonsByTidSeason", [
@@ -256,7 +260,10 @@ const loadSide = async (tid: number, daysInFuture: number) => {
 	return processTeam(
 		t,
 		teamSeason,
-		await rosterAtTipoff(tid, healedForward(players, daysInFuture)),
+		await rosterAtTipoff(
+			tid,
+			healedForward(players, daysInFuture, calendarDaysAhead),
+		),
 	);
 };
 
@@ -266,6 +273,7 @@ export const simGameOutcomes = async ({
 	awayTid,
 	neutralSite,
 	daysInFuture = 0,
+	calendarDaysAhead = 0,
 }: {
 	gid: number;
 	homeTid: number;
@@ -274,14 +282,17 @@ export const simGameOutcomes = async ({
 	// How many days out the game is, so rosters can be healed forward to it -
 	// or, on a calendar, each side's injury ticks before it [home, away].
 	daysInFuture?: number | [number, number];
+	// On the NBA calendar, the days counted down before it (see
+	// healedForward).
+	calendarDaysAhead?: number;
 }): Promise<SimmedGame | undefined> => {
 	const [homeDays, awayDays] =
 		typeof daysInFuture === "number"
 			? [daysInFuture, daysInFuture]
 			: daysInFuture;
 	const [home, away] = await Promise.all([
-		loadSide(homeTid, homeDays),
-		loadSide(awayTid, awayDays),
+		loadSide(homeTid, homeDays, calendarDaysAhead),
+		loadSide(awayTid, awayDays, calendarDaysAhead),
 	]);
 	if (!home || !away) {
 		return undefined;

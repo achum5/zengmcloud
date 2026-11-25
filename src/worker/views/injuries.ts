@@ -5,6 +5,15 @@ import { getPlayers } from "./playerRatings.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { idb } from "../db/index.ts";
 import { getActualPlayThroughInjuries } from "../core/game/loadTeams.ts";
+import {
+	getInjuryClock,
+	playThroughDays,
+	playThroughRate,
+} from "../core/game/classicDays.ts";
+import {
+	playingThroughInjury,
+	type PlayThroughDays,
+} from "../../common/playThroughInjuriesFactor.ts";
 import { actualPhase } from "../util/actualPhase.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
@@ -113,19 +122,38 @@ export default defineView({
 
 			if (inputs.season === "current") {
 				const teams = await idb.cache.teams.getAll();
-				const playingThrough: Record<number, number> = {};
-				const index = actualPhase() === PHASE.PLAYOFFS ? 1 : 0;
+				const playoffs = actualPhase() === PHASE.PLAYOFFS;
+				const index = playoffs ? 1 : 0;
+				const injuryClock = await getInjuryClock();
+				const rate = injuryClock
+					? playThroughRate(playoffs, injuryClock.clock)
+					: undefined;
+				const settings = new Map<
+					number,
+					{ cutoff: number; byDays: PlayThroughDays | undefined }
+				>();
 				for (const t of teams) {
 					if (t.disabled) {
 						continue;
 					}
 
-					playingThrough[t.tid] = getActualPlayThroughInjuries(t)[index];
+					settings.set(t.tid, {
+						cutoff: getActualPlayThroughInjuries(t)[index],
+						// On the NBA calendar, the user's setting in days.
+						byDays: playThroughDays(t, playoffs, rate),
+					});
 				}
 
 				for (const injury of injuries) {
-					const cutoff = playingThrough[injury.tid];
-					if (cutoff !== undefined && injury.games <= cutoff) {
+					const setting = settings.get(injury.tid);
+					if (
+						setting &&
+						playingThroughInjury(
+							{ gamesRemaining: injury.games, daysRemaining: injury.days },
+							setting.cutoff,
+							setting.byDays,
+						).playingThrough
+					) {
 						injury.playingThrough = true;
 					}
 				}

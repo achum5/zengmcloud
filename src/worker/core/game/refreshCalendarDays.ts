@@ -59,6 +59,35 @@ export const countFrom = (
 	return next === undefined ? tonight : addDays(next, -1);
 };
 
+// For a scheduled game on the calendar, beside the classic days that pass
+// before it (injuryTicksUntil): the days counted down before its night, from
+// the day the days left count from (countFrom; before the first night, the
+// day before it). A hurt player's days left that night are his days left now
+// less these (see injuryAtGame). `lastNight`: getInjuryClock's.
+export const calendarDaysUntil = (
+	schedule: readonly { gid: number; date?: string }[],
+	lastNight: string | undefined,
+) => {
+	let from: string | undefined;
+	if (lastNight === undefined) {
+		for (const { date } of schedule) {
+			if (date !== undefined && (from === undefined || date < from)) {
+				from = date;
+			}
+		}
+		from = from === undefined ? undefined : addDays(from, -1);
+	} else {
+		from = countFrom(lastNight, schedule);
+	}
+	const dateByGid = new Map(schedule.map((game) => [game.gid, game.date]));
+	return (gid: number | undefined) => {
+		const date = gid === undefined ? undefined : dateByGid.get(gid);
+		return from === undefined || date === undefined
+			? 0
+			: Math.max(0, daysBetween(from, date) - 1);
+	};
+};
+
 export const loadDayCount = async (
 	clock: CalendarClock,
 	tonight: string,

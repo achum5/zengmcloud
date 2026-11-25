@@ -1,5 +1,8 @@
 import { bySport } from "../../../common/sportFunctions.ts";
-import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
+import {
+	injuryAtGame,
+	type PlayThroughDays,
+} from "../../../common/playThroughInjuriesFactor.ts";
 import type { PlayerInjury } from "../../../common/types.ts";
 import * as ovrBaseball from "./ovr.baseball.ts";
 import * as ovrBasketball from "./ovr.basketball.ts";
@@ -19,8 +22,13 @@ type Player = {
 type Options = {
 	// When defined, only healthy players and players playing through injury are included
 	accountForInjuredPlayers?: {
+		// Classic days (injury ticks) before the game.
 		numDaysInFuture: number;
 		playThroughInjuries: [number, number];
+		// On the NBA calendar, the user's setting in days, and the calendar
+		// days counted down before the game (see injuryAtGame).
+		byDays?: PlayThroughDays;
+		calendarDaysAhead?: number;
 	};
 	onlyPos?: string;
 	playoffs?: boolean;
@@ -33,25 +41,30 @@ type Options = {
 const ovr = (players: Player[], options: Options = {}) => {
 	let players2;
 	if (options.accountForInjuredPlayers) {
-		const { numDaysInFuture, playThroughInjuries } =
+		const { numDaysInFuture, playThroughInjuries, byDays, calendarDaysAhead } =
 			options.accountForInjuredPlayers;
 		const currentPlayThroughInjuries =
 			playThroughInjuries[options.playoffs ? 1 : 0];
+		const ahead = { games: numDaysInFuture, days: calendarDaysAhead ?? 0 };
 
 		players2 = [];
 		for (const p of players) {
-			const gamesRemaining = p.injury.gamesRemaining - numDaysInFuture;
-			if (gamesRemaining <= 0) {
+			const { healthy, plays, factor } = injuryAtGame(
+				p.injury,
+				currentPlayThroughInjuries,
+				byDays,
+				ahead,
+			);
+			if (healthy) {
 				players2.push(p);
-			} else if (gamesRemaining <= currentPlayThroughInjuries) {
+			} else if (plays) {
 				// Adjust for playing through injury
-				const injuryFactor = playThroughInjuriesFactor(gamesRemaining);
 				const p2 = { ...p };
 				p2.ratings = { ...p2.ratings };
-				p2.ratings.ovr *= injuryFactor;
+				p2.ratings.ovr *= factor;
 				if (p2.ratings.ovrs) {
 					for (const key of Object.keys(p2.ratings.ovrs)) {
-						p2.ratings.ovrs[key]! *= injuryFactor;
+						p2.ratings.ovrs[key]! *= factor;
 					}
 				}
 				players2.push(p2);

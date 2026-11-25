@@ -9,6 +9,7 @@ import {
 	roundHalf,
 } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
+import type { CalendarPlayThrough } from "../game/calendarPlayThrough.ts";
 import { PHASE } from "../../../common/constants.ts";
 import {
 	probToAmerican,
@@ -105,6 +106,7 @@ export type GameLine = {
 type PricerTeam = {
 	tid: number;
 	playThroughInjuries: [number, number];
+	playThroughInjuryDays?: [number, number];
 	stats?: unknown;
 };
 
@@ -183,6 +185,7 @@ export const buildGameLinePricer = async ({
 	season,
 	todayDay,
 	ticksUntil,
+	calendar,
 	spreadBiases,
 }: {
 	activeTeams: PricerTeam[];
@@ -193,6 +196,9 @@ export const buildGameLinePricer = async ({
 	// Or, on a calendar, how many injury ticks each team has before the game
 	// (see injuryTicksUntil).
 	ticksUntil?: (tid: number, gid: number | undefined, day: number) => number;
+	// And on the calendar, the user's hurt players by the days they'll have
+	// left that night (see calendarPlayThrough.ts).
+	calendar?: CalendarPlayThrough;
 	// Per-team form correction (see getTeamSpreadBias.ts). Passed in by callers
 	// that already swept the season's games for something else; fetched here
 	// otherwise, so every caller prices the same line either way.
@@ -258,12 +264,21 @@ export const buildGameLinePricer = async ({
 			? ticksUntil(t.tid, matchup.gid, matchup.day)
 			: matchup.day - todayDay;
 
+	// How a team's hurt players stand for a game (see injuryAtGame).
+	const injuredFor = (t: PricerTeam, matchup: Matchup) => {
+		const byDays = calendar?.byDays(t, !!roundSeries);
+		return {
+			numDaysInFuture: ticksBefore(t, matchup),
+			playThroughInjuries: getActualPlayThroughInjuries(t),
+			...(byDays
+				? { byDays, calendarDaysAhead: calendar!.daysUntil(matchup.gid) }
+				: {}),
+		};
+	};
+
 	const gameOvr = (t: PricerTeam, matchup: Matchup): number | undefined =>
 		teamOvr(playersByTid.get(t.tid) ?? [], {
-			accountForInjuredPlayers: {
-				numDaysInFuture: ticksBefore(t, matchup),
-				playThroughInjuries: getActualPlayThroughInjuries(t),
-			},
+			accountForInjuredPlayers: injuredFor(t, matchup),
 			playoffs: !!roundSeries,
 		});
 
@@ -272,8 +287,7 @@ export const buildGameLinePricer = async ({
 	// same synergy-aware line.
 	const gameSynergy = (t: PricerTeam, matchup: Matchup): number | undefined =>
 		pregameLineupSynergyFromPlayers(playersRawByTid.get(t.tid) ?? [], {
-			numDaysInFuture: ticksBefore(t, matchup),
-			playThroughInjuries: getActualPlayThroughInjuries(t),
+			...injuredFor(t, matchup),
 			playoffs: !!roundSeries,
 		});
 
