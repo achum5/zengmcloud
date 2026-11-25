@@ -3,7 +3,6 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
-import { useSimTimes } from "../util/simTimes.ts";
 import { decideOwnGameSim } from "../../common/ownGameSim.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
@@ -123,11 +122,6 @@ const DailySchedule = ({
 		"userTid",
 		"userTids",
 	]);
-
-	// When auto play sims the night, on this device's clock: on each card, as
-	// a TV listing gives a tip-off time.
-	const simTimes = useSimTimes();
-	const simTime = simTimes.date(date) ?? simTimes.day(season, day);
 
 	// A league-mate's live sim that is still running. The game itself has already
 	// been simmed and synced - watching is only the animation - so the score
@@ -512,7 +506,6 @@ const DailySchedule = ({
 																: `Day ${game.day}`
 													}
 													actions={cardActions}
-													simTime={simTime}
 												/>
 											) : (
 												<ScoreBox
