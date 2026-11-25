@@ -17,7 +17,8 @@ import { getRealSchedule } from "./getRealSchedule.basketball.ts";
 import { generateCalendar } from "./generateCalendar.ts";
 import { teamLocation, type HomeCity } from "../../../common/teamLocation.ts";
 import { countClassicDays } from "../game/calendarTicks.ts";
-import { featureMarquee, type MarqueeDraw } from "./marqueeNights.ts";
+import { featureMarqueeNights, type MarqueeDraw } from "./marqueeNights.ts";
+import { rankRivalries } from "./rivalries.ts";
 
 // THE REGULAR SEASON ON REAL DATES (basketball): every game gets the night
 // it's played on, and each night is one sim day. A league shaped like the
@@ -33,6 +34,8 @@ export type DatedSchedule = {
 	// With dates: how many classic days the season would have taken, for its
 	// end-of-day rules to keep the classic pace (game/calendarTicks.ts).
 	classicDays?: number;
+	// With dates: the rivalries Rivals Week has (marqueeNights.ts).
+	rivals?: [number, number][];
 };
 
 type CalendarScheduleTeam = {
@@ -152,7 +155,7 @@ export const assembleDatedSchedule = (
 	games: { homeTid: number; awayTid: number; date: string }[],
 	allStarDate: string | undefined,
 	tradeDeadline: number,
-): Required<Omit<DatedSchedule, "classicDays">> => {
+): Required<Omit<DatedSchedule, "classicDays" | "rivals">> => {
 	const sorted = games
 		.map((game, i) => ({ ...game, i }))
 		.sort((a, b) => (a.date === b.date ? a.i - b.i : a.date < b.date ? -1 : 1));
@@ -196,8 +199,8 @@ export const assembleDatedSchedule = (
 	return { tids, dates };
 };
 
-// `marquee`: who the league wants to see, for opening night and Christmas
-// (see marqueeNights.ts) - without it, they're as they fall.
+// `marquee`: who the league wants to see, for opening night, Christmas and
+// Rivals Week (see marqueeNights.ts) - without it, they're as they fall.
 const newCalendarSchedule = (
 	teams: CalendarScheduleTeam[],
 	conditions?: Conditions,
@@ -215,11 +218,36 @@ const newCalendarSchedule = (
 		teamLocation({ region: t.seasonAttrs.region, homeCity: t.homeCity });
 
 	const locations = new Map(teams.map((t) => [t.tid, locationOf(t)]));
+	let rivals: [number, number][] | undefined;
 	const featured = <
 		T extends { homeTid: number; awayTid: number; date: string },
 	>(
 		games: T[],
-	) => (marquee ? featureMarquee(games, marquee, locations) : games);
+	) => {
+		if (!marquee) {
+			return games;
+		}
+		const out = featureMarqueeNights(
+			games,
+			{
+				...marquee,
+				rivals: rankRivalries({
+					teams: teams.map((t) => ({
+						tid: t.tid,
+						cid: t.seasonAttrs.cid,
+						did: t.seasonAttrs.did,
+					})),
+					locations,
+					draw: marquee.draw,
+					users: marquee.users,
+					playoffs: marquee.playoffs,
+				}),
+			},
+			locations,
+		);
+		rivals = out.rivals;
+		return out.games;
+	};
 
 	const real = getRealSchedule(
 		teams.map((t) => ({
@@ -245,6 +273,7 @@ const newCalendarSchedule = (
 		return {
 			...assembleDatedSchedule(featured(real), allStarDate, tradeDeadline),
 			classicDays: countClassicDays(newSchedule(teams)),
+			rivals,
 		};
 	}
 
@@ -275,6 +304,7 @@ const newCalendarSchedule = (
 			tradeDeadline,
 		),
 		classicDays: countClassicDays(classic),
+		rivals,
 	};
 };
 

@@ -299,8 +299,8 @@ export const nightNetworks = (
 };
 
 // A NIGHT'S NATIONAL GAMES, by gid: the biggest of its games (see
-// biggestGame; in Rivals Week, the division rivals' first), as many as the
-// night has (nationalGamesOn), shared out among its networks
+// biggestGame; in Rivals Week, the biggest rivals' first, by `rivals`), as
+// many as the night has (nationalGamesOn), shared out among its networks
 // (nightNetworks) in their order - the first ones the bigger games.
 export const nationalNight = <
 	T extends { gid: number; tids: [number, number] },
@@ -313,7 +313,7 @@ export const nationalNight = <
 		openingDate: string | undefined;
 	},
 	strength: (tid: number) => number,
-	rivals?: (a: number, b: number) => boolean,
+	rivals?: (a: number, b: number) => number | boolean,
 ): Map<number, NationalBroadcast> => {
 	const out = new Map<number, NationalBroadcast>();
 	const slate =
@@ -329,7 +329,9 @@ export const nationalNight = <
 		return out;
 	}
 	const rival = (game: T) =>
-		slate === "rivalsWeek" && rivals?.(game.tids[0], game.tids[1]) ? 1 : 0;
+		slate === "rivalsWeek"
+			? Number(rivals?.(game.tids[0], game.tids[1]) ?? 0)
+			: 0;
 	const score = (game: T) => strength(game.tids[0]) + strength(game.tids[1]);
 	const ranked = [...games].sort(
 		(a, b) =>

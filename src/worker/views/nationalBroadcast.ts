@@ -39,13 +39,23 @@ const ratedOf = (teamSeasons: { tid: number; ovrStart?: number }[]) => {
 	);
 };
 
-// Two teams of one division, by their team seasons.
+// How much two teams are rivals in Rivals Week, by their team seasons: 2 for
+// a matchup the week has as one of the league's rivalries (TeamSeason.rivals,
+// season/rivalries.ts), 1 for two teams of one division.
 const rivalsBy =
-	(teamSeasons: { tid: number; cid: number; did: number }[]) =>
+	(
+		teamSeasons: { tid: number; cid: number; did: number; rivals?: number[] }[],
+	) =>
 	(a: number, b: number) => {
 		const ta = teamSeasons.find((ts) => ts.tid === a);
 		const tb = teamSeasons.find((ts) => ts.tid === b);
-		return !!ta && !!tb && ta.cid === tb.cid && ta.did === tb.did;
+		if (!ta || !tb) {
+			return 0;
+		}
+		if (ta.rivals?.includes(b)) {
+			return 2;
+		}
+		return ta.cid === tb.cid && ta.did === tb.did ? 1 : 0;
 	};
 
 // The season's first night, of the dates given.

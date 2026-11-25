@@ -26,6 +26,7 @@ import { isAllStarGame } from "../../../common/specialGames.ts";
 import { smartBrainOn } from "../realisticFrontOffice/isOn.ts";
 import { calendarOn } from "../season/newCalendarSchedule.ts";
 import { marqueeDraw } from "../season/marqueeDraw.ts";
+import { saveRivals } from "../season/rivalries.ts";
 import { withOffDays } from "../season/offDays.ts";
 
 class GameHasYourTeamCache {
@@ -186,7 +187,8 @@ const newPhaseRegularSeason = async (
 		await team.checkRosterSizes("other");
 	}
 
-	// Opening night and Christmas get the matchups the league wants to see.
+	// Opening night, Christmas and Rivals Week get the matchups the league
+	// wants to see.
 	let marquee;
 	if (calendarOn()) {
 		try {
@@ -196,7 +198,7 @@ const newPhaseRegularSeason = async (
 		}
 	}
 	const built = season.newCalendarSchedule(teams, undefined, marquee);
-	const { classicDays } = built;
+	const { classicDays, rivals } = built;
 	let { tids, dates } = built;
 	if (dates !== undefined) {
 		// Every date from opening night to the last night is a day
@@ -208,6 +210,8 @@ const newPhaseRegularSeason = async (
 	if (classicDays !== undefined) {
 		await saveClassicDays(classicDays);
 	}
+	// Rivals Week's rivalries, for its national games.
+	await saveRivals(g.get("season"), rivals ?? []);
 	// Trade waits to the NBA's dates, on this season's own (tradableOn.ts).
 	await tradableOnForNewSeason(dates !== undefined);
 	// Injuries and trade waits carried over: the days of this season they take.

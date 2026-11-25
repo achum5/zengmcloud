@@ -4138,6 +4138,11 @@ export type TeamSeasonWithoutKey = {
 		winTotal?: number;
 	};
 
+	// On an NBA calendar, the teams it plays in Rivals Week as one of the
+	// league's rivalries (season/rivalries.ts), for that week's national
+	// games. Basketball only.
+	rivals?: number[];
+
 	// Copied over from Team
 	cid: number;
 	did: number;

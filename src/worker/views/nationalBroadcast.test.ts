@@ -39,6 +39,7 @@ const game = (gid: number, day: number, home: number, away: number) =>
 const setup = async (
 	games: any[],
 	records: Record<number, [number, number]> = {},
+	rivals: Record<number, number[]> = {},
 ) => {
 	resetG();
 	g.setWithoutSavingToDB("season", 2026);
@@ -56,6 +57,7 @@ const setup = async (
 			won: records[tid]?.[0] ?? 0,
 			lost: records[tid]?.[1] ?? 0,
 			tied: 0,
+			...(rivals[tid] ? { rivals: rivals[tid] } : {}),
 		})),
 	});
 	for (const game of games) {
@@ -170,6 +172,38 @@ describe("national broadcasts", () => {
 				[8, "NBC"],
 			],
 		);
+	});
+
+	test("Rivals Week: the week's own rivalries first", async () => {
+		const dated = (
+			gid: number,
+			day: number,
+			date: string,
+			home: number,
+			away: number,
+		) => ({ ...game(gid, day, home, away), date });
+		// Opening night, then Rivals Week's Tuesday: two national games.
+		const opening = [dated(1, 1, "2025-10-21", 2, 3)];
+		const tuesday = [
+			dated(2, 2, "2026-01-20", 5, 4),
+			dated(3, 2, "2026-01-20", 2, 3),
+			dated(4, 2, "2026-01-20", 0, 1),
+		];
+		const network = async (x: any) => (await nationalBroadcastOf(x))?.network;
+		// 0 v 1, the worst-rated, the week's rivalry: on, beside 5 v 4.
+		await setup([...opening, ...tuesday], {}, { 0: [1], 1: [0] });
+		assert.deepStrictEqual(await Promise.all(tuesday.map(network)), [
+			"NBC",
+			undefined,
+			"NBC",
+		]);
+		// Without it, the two biggest.
+		await setup([...opening, ...tuesday]);
+		assert.deepStrictEqual(await Promise.all(tuesday.map(network)), [
+			"NBC",
+			"NBC",
+			undefined,
+		]);
 	});
 
 	test("previews: a night still to come has the game it'll have once played", async () => {

@@ -1,9 +1,23 @@
 import { assert, describe, test } from "vitest";
 import { resetG } from "../../../test/helpers.ts";
 import { g, helpers } from "../../util/index.ts";
-import { featureMarquee, type DatedGame } from "./marqueeNights.ts";
+import {
+	featureMarquee,
+	featureMarqueeNights,
+	type DatedGame,
+} from "./marqueeNights.ts";
+import { pairKey, rankRivalries } from "./rivalries.ts";
+import { teamLocation } from "../../../common/teamLocation.ts";
+import {
+	nationalGamesOn,
+	slateOf,
+} from "../../../common/nationalBroadcasts.ts";
 import newCalendarSchedule from "./newCalendarSchedule.ts";
-import { dayNumber, fromDayNumber } from "../../../common/calendarDates.ts";
+import {
+	dayNumber,
+	fromDayNumber,
+	weekdayOf,
+} from "../../../common/calendarDates.ts";
 import {
 	isAllStarGame,
 	isTradeDeadline,
@@ -227,6 +241,153 @@ describe("featureMarquee", () => {
 				opening.some((game) => game.homeTid === champion),
 				`champion ${champion} at home on opening night`,
 			);
+		}
+	});
+	test("Rivals Week: rivalries on its nights, nobody more tired", () => {
+		resetG();
+		g.setWithoutSavingToDB("nbaCalendar", true);
+		const regular = ({ tids, dates }: ReturnType<typeof newCalendarSchedule>) =>
+			tids.flatMap(([homeTid, awayTid], i) =>
+				isAllStarGame(homeTid, awayTid) || isTradeDeadline(homeTid, awayTid)
+					? []
+					: [{ homeTid, awayTid, date: dates![i]! }],
+			);
+		const load = (games: DatedGame[]) => {
+			const nights = new Map<number, number[]>();
+			for (const game of games) {
+				for (const tid of [game.homeTid, game.awayTid]) {
+					nights.set(tid, [...(nights.get(tid) ?? []), dayNumber(game.date)]);
+				}
+			}
+			const out = new Map<
+				number,
+				{ b2b: number; three: number; four: number }
+			>();
+			for (const [tid, list] of nights) {
+				list.sort((a, b) => a - b);
+				const l = { b2b: 0, three: 0, four: 0 };
+				for (let i = 0; i < list.length; i++) {
+					if (i > 0 && list[i]! - list[i - 1]! === 1) {
+						l.b2b += 1;
+					}
+					if (i + 2 < list.length && list[i + 2]! - list[i]! <= 2) {
+						l.three += 1;
+					}
+					if (i + 3 < list.length && list[i + 3]! - list[i]! <= 4) {
+						l.four += 1;
+					}
+				}
+				out.set(tid, l);
+			}
+			return out;
+		};
+		// A real season (30 teams) and a generated one (24 teams, 60 games).
+		for (const [season, numTeams, numGames] of [
+			[2027, 30, 82],
+			[2028, 24, 60],
+		] as const) {
+			g.setWithoutSavingToDB("season", season);
+			g.setWithoutSavingToDB("numGames", numGames);
+			const teams = helpers
+				.getTeamsDefault()
+				.slice(0, numTeams)
+				.map((t) => ({
+					tid: t.tid,
+					seasonAttrs: {
+						cid: t.cid,
+						did: t.did,
+						abbrev: t.abbrev,
+						region: t.region,
+					},
+				}));
+			const games = regular(newCalendarSchedule(teams));
+			const locations = new Map(
+				teams.map((t) => [
+					t.tid,
+					teamLocation({ region: t.seasonAttrs.region }),
+				]),
+			);
+			const draw = new Map(
+				teams.map((t) => [t.tid, ((t.tid * 7) % numTeams) / numTeams]),
+			);
+			const rivals = rankRivalries({
+				teams: teams.map((t) => ({
+					tid: t.tid,
+					cid: t.seasonAttrs.cid,
+					did: t.seasonAttrs.did,
+				})),
+				locations,
+				draw,
+			});
+			const plain = featureMarqueeNights(
+				games,
+				{ draw, champion: 1 },
+				locations,
+			);
+			assert.deepStrictEqual(plain.rivals, []);
+			const out = featureMarqueeNights(
+				games,
+				{ draw, champion: 1, rivals },
+				locations,
+			);
+			checkSame(games, out.games);
+
+			const opening = out.games.map((game) => game.date).sort()[0]!;
+			const week = out.games.filter(
+				(game) => slateOf(game.date, opening) === "rivalsWeek",
+			);
+			const nights = [...new Set(week.map((game) => game.date))];
+			assert.strictEqual(nights.length, 5);
+			const room = nights.reduce(
+				(sum, date) =>
+					sum +
+					nationalGamesOn(
+						date,
+						weekdayOf(date),
+						opening,
+						week.filter((game) => game.date === date).length,
+					),
+				0,
+			);
+			assert.strictEqual(room, 11);
+			assert.isAtLeast(out.rivals.length, 6, `${season}: rivalries placed`);
+			assert.isAtMost(out.rivals.length, room);
+			// Each in the week, a matchup once, a team twice at most.
+			const inWeek = new Set(
+				week.map((game) => pairKey(game.homeTid, game.awayTid)),
+			);
+			const times = new Map<number, number>();
+			for (const [a, b] of out.rivals) {
+				assert.ok(inWeek.has(pairKey(a, b)), `${a}-${b} in Rivals Week`);
+				times.set(a, (times.get(a) ?? 0) + 1);
+				times.set(b, (times.get(b) ?? 0) + 1);
+			}
+			assert.strictEqual(
+				new Set(out.rivals.map(([a, b]) => pairKey(a, b))).size,
+				out.rivals.length,
+			);
+			assert.isAtMost(Math.max(...times.values()), 2);
+			// Opening night and Christmas as they were without it.
+			for (const date of [opening, `${season - 1}-12-25`]) {
+				assert.deepStrictEqual(
+					out.games
+						.filter((game) => game.date === date)
+						.map(key)
+						.sort(),
+					plain.games
+						.filter((game) => game.date === date)
+						.map(key)
+						.sort(),
+				);
+			}
+			// No team a back-to-back more, or more crowded, than without it.
+			const before = load(plain.games);
+			for (const [tid, l] of load(out.games)) {
+				const was = before.get(tid)!;
+				assert.isAtMost(l.b2b, was.b2b, `${tid} back-to-backs`);
+				assert.isAtMost(l.three, was.three, `${tid} three in three`);
+				assert.isAtMost(l.four, was.four, `${tid} four in five`);
+			}
 		}
 	});
 });

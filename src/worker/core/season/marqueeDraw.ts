@@ -1,11 +1,14 @@
 import { idb } from "../../db/index.ts";
+import { g } from "../../util/index.ts";
 import { ovrsIn } from "../game/primeTime.ts";
 import type { MarqueeDraw } from "./marqueeNights.ts";
+import { playoffHistory } from "./rivalries.ts";
 
 // HOW MUCH EACH TEAM DRAWS, for the season's marquee nights (see
 // marqueeNights.ts): how good it is as the season begins, its hype, its
 // market, and last season's finals - the champion most, the team it beat
-// next.
+// next. And for Rivals Week, the user teams and the playoff series played
+// (rivalries.ts).
 export const marqueeDraw = async (season: number): Promise<MarqueeDraw> => {
 	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
 		"teamSeasonsBySeasonTid",
@@ -51,5 +54,11 @@ export const marqueeDraw = async (season: number): Promise<MarqueeDraw> => {
 				(ts.tid === champion ? 0.2 : finalists.has(ts.tid) ? 0.1 : 0),
 		);
 	}
-	return { draw, champion };
+	return {
+		draw,
+		champion,
+		users: g.get("userTids"),
+		// (A garnish: without it, rivalries are as the teams stand.)
+		playoffs: await playoffHistory(season).catch(() => undefined),
+	};
 };

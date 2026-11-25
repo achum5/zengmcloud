@@ -278,7 +278,7 @@ describe("the NBA's national slate", () => {
 		const picks = (
 			date: string,
 			networks: NationalBroadcast[],
-			rivals?: (a: number, b: number) => boolean,
+			rivals?: (a: number, b: number) => number | boolean,
 		) =>
 			[
 				...nationalNight(
@@ -307,6 +307,13 @@ describe("the NBA's national slate", () => {
 		assert.deepStrictEqual(
 			picks("2026-01-20", [NBC], (a, b) => a + b === 7),
 			["3 NBC", "2 NBC"],
+		);
+		// The week's own rivalries before the division rivals, however weak.
+		assert.deepStrictEqual(
+			picks("2026-01-20", [NBC], (a, b) =>
+				a + b === 3 ? 2 : a + b === 7 ? 1 : 0,
+			),
+			["1 NBC", "3 NBC"],
 		);
 	});
 });
