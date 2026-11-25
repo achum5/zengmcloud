@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
@@ -101,6 +102,9 @@ export default defineView({
 				seasonType: inputs.playoffs,
 				mergeStats: "totOnly",
 				statType: inputs.statType,
+				// (A game still being played live on somebody's screen isn't in
+				// these yet.)
+				liveShown: await getLiveShown(),
 			} as const;
 			const abbrevs = await player.loadAbbrevs(formatOptions);
 			const createSeasonFormatter = (season: number) =>

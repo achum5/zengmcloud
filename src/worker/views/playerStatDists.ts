@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { getPlayerStatsTableStats } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { getActiveSeasonSelector } from "../db/merged/players.ts";
@@ -44,6 +45,7 @@ export default defineView({
 				stats: getPlayerStatsTableStats(statsTable.stats),
 				season: inputs.season,
 				statType: playerStatType,
+				liveShown: await getLiveShown(),
 			});
 			const onlyShowIf = statsTable.onlyShowIf;
 			if (onlyShowIf) {

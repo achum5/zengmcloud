@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import type {
 	DiscriminateUnion,
@@ -330,6 +331,8 @@ const getSeasonsToPlot = async (
 	tids: [number, number],
 	statSumsBySeason: StatSumsBySeasons,
 ) => {
+	const liveShown = await getLiveShown();
+
 	// Default range of the plot, relative to the season of the trade
 	const start = season - (phase <= PHASE.PLAYOFFS ? 2 : 1);
 	let end = season + 5;
@@ -372,7 +375,16 @@ const getSeasonsToPlot = async (
 			},
 		];
 		for (const [j, tid] of tids.entries()) {
-			const teamSeason = await idb.merged.teamSeasons.getByTidSeason(tid, i);
+			const teamSeasonStored = await idb.merged.teamSeasons.getByTidSeason(
+				tid,
+				i,
+			);
+			// (A game still being played live on somebody's screen isn't in the
+			// record yet.)
+			const teamSeason =
+				teamSeasonStored && liveShown
+					? liveShown.teamSeason(teamSeasonStored)
+					: teamSeasonStored;
 
 			if (
 				teamSeason &&

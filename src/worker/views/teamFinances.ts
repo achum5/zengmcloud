@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import {
 	getContractAmount,
 	getCurrentContract,
@@ -295,9 +296,13 @@ const updateTeamFinances = async ({
 					(a.slot ?? Infinity) - (b.slot ?? Infinity),
 			);
 
+		// (A game still being played live on somebody's screen isn't in this
+		// season's record yet.)
+		const liveShown = await getLiveShown();
 		const teamSeasons = (
 			await idb.merged.teamSeasons.getAll({ tid: inputs.tid })
 		)
+			.map((ts) => (liveShown ? liveShown.teamSeason(ts) : ts))
 			.reverse() // Most recent season first
 			.map((teamSeason) => {
 				// Add in luxuryTaxShare if it's missing

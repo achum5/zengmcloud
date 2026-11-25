@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 603,
+		date: "2026-11-25",
+		text: "While a league mate's game is still being played live, no other page gives it away: team records, rank and games back on the roster page, the dashboard and power rankings, team and player stats, league leaders, season highs, injuries picked up in it, head-to-head records and the playoff picture all show how things stood going in, until it's over.",
+	},
+	{
 		n: 602,
 		date: "2026-11-25",
 		text: "Scores: both teams' records now sit the same way on every game card, under the score on both sides or beside it on both, instead of one jumping up next to a two-digit score.",

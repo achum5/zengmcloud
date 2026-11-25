@@ -91,6 +91,7 @@ import {
 } from "../../common/socialWriting.ts";
 import { recapGamesForDay } from "./getDayGamesForRecap.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
+import { getLiveShown } from "./liveGameShown.ts";
 
 export type FeedPost = {
 	id: string;
@@ -310,6 +311,9 @@ export type FeedSnapshot = {
 	dateByDay: Map<number, string>;
 	// What one day's cache entries depend on, and nothing else.
 	dayKey: (day: number) => string;
+	// A game still being played live on somebody's screen: nobody is posting
+	// about it yet (liveGameShown.ts).
+	liveHides: (gid: number) => boolean;
 };
 
 let snapshotMemo: FeedSnapshot | undefined;
@@ -317,12 +321,20 @@ let snapshotMemo: FeedSnapshot | undefined;
 export const getFeedSnapshot = async (
 	season: number,
 ): Promise<FeedSnapshot> => {
+	// (Nothing about a game still being played live on somebody's screen:
+	// it isn't over yet.)
+	const liveShown =
+		season === g.get("season") ? await getLiveShown() : undefined;
+	const liveHides = (gid: number) => !!liveShown?.hides(gid);
 	const games = (await idb.merged.games.getAll({ season })).filter(
-		(game: any) => game.won && game.lost,
+		(game: any) => game.won && game.lost && !liveHides(game.gid),
 	);
 	let rows: any[] = [];
 	try {
 		rows = await idb.merged.events.getAll({ season });
+		if (liveShown) {
+			rows = liveShown.events(rows);
+		}
 	} catch {
 		// A league with no event log still gets a feed from its games.
 	}
@@ -523,6 +535,7 @@ export const getFeedSnapshot = async (
 		playedByDay,
 		dateByDay,
 		dayKey,
+		liveHides,
 	};
 	return snapshotMemo;
 };
@@ -1109,7 +1122,9 @@ const eventsForDay = async (
 	if (day === OFFSEASON_DAY) {
 		events = trimDayEvents(news, { limit: OFFSEASON_EVENTS });
 	} else {
-		const recapGames = await recapGamesForDay({ season: snapshot.season, day });
+		const recapGames = (
+			await recapGamesForDay({ season: snapshot.season, day })
+		).filter((game) => !snapshot.liveHides(game.gid));
 		const gameEvents = recapGames.flatMap((game) =>
 			eventsFromGame(
 				gameForEvents(snapshot.season, game as any, snapshot.seriesEnders),

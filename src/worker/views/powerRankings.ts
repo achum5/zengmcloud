@@ -1,6 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
-import type { TeamFiltered } from "../../common/types.ts";
+import type { LiveShown, TeamFiltered } from "../../common/types.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { defineView } from "../util/defineView.ts";
 import { player, team } from "../core/index.ts";
 import {
@@ -79,6 +80,8 @@ export const addPowerRankingsStuffToTeams = async <
 	teams: T[],
 	season: number,
 	playoffs: "regularSeason" | "playoffs",
+	// Games still being played live left out (liveGameShown.ts).
+	liveShown?: LiveShown,
 ) => {
 	const currentSeason = g.get("season") === season;
 
@@ -100,6 +103,7 @@ export const addPowerRankingsStuffToTeams = async <
 		// values would put the whole league in a handful of ties. The UI floors
 		// what it shows.
 		coarsenRatings: false,
+		liveShown,
 	} as const;
 	const abbrevs = await player.loadAbbrevs(formatOptions);
 	const formattersByTid = new Map(
@@ -253,6 +257,10 @@ export default defineView({
 			season !== prevInputs?.season ||
 			playoffs !== prevInputs?.playoffs
 		) {
+			// A game still being played live on somebody's screen isn't in the
+			// records, margins or injuries yet.
+			const liveShown = await getLiveShown();
+
 			const teams = await team.getFormattedAll({
 				attrs: ["tid", "depth", "playThroughInjuries"],
 				seasonAttrs: [
@@ -272,15 +280,24 @@ export default defineView({
 				stats: ["gp", "mov", "pts", "oppPts"],
 				season,
 				showNoStats: true,
+				liveShown,
 			});
 
 			const teamsWithRankings = await addPowerRankingsStuffToTeams(
 				teams,
 				season,
 				playoffs,
+				liveShown,
 			);
 
-			const atsRecords = await getTeamAtsRecords(season);
+			const atsRecords = await getTeamAtsRecords(
+				season,
+				liveShown
+					? (await idb.merged.games.getAll({ season })).filter(
+							(game) => !liveShown.hides(game.gid),
+						)
+					: undefined,
+			);
 
 			// "Team Ratings Delay": when this page may not show its own season's
 			// ratings, it shows the newest ones it is allowed to instead. The rankings

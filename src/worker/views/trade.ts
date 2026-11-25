@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { player, team, trade } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -110,6 +111,7 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 	}
 
 	const teams = await team.getFormattedAll({
+		liveShown: await getLiveShown(),
 		attrs: ["strategy", "tid"],
 		seasonAttrs: ["won", "lost", "tied", "otl"],
 		season: g.get("season"),
@@ -150,6 +152,7 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 				);
 				return addFirstNameShort(
 					await player.formatAll(playersAll, {
+						liveShown: await getLiveShown(),
 						attrs: [
 							"pid",
 							"firstName",
@@ -228,6 +231,7 @@ export default defineView({
 		const stats = TRADE_STATS;
 		const userRoster = addFirstNameShort(
 			await player.formatAll(userRosterAll, {
+				liveShown: await getLiveShown(),
 				attrs,
 				ratings,
 				stats,
@@ -263,6 +267,7 @@ export default defineView({
 		);
 		const otherPicks = await idb.merged.draftPicks.getAll({ tid: otherTid });
 		const t = await team.getFormatted({
+			liveShown: await getLiveShown(),
 			tid: otherTid,
 			season: g.get("season"),
 			seasonAttrs: ["won", "lost", "tied", "otl"],
@@ -279,6 +284,7 @@ export default defineView({
 
 		const otherRoster = addFirstNameShort(
 			await player.formatAll(otherRosterAll, {
+				liveShown: await getLiveShown(),
 				attrs,
 				ratings,
 				stats,

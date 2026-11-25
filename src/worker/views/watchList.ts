@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { PLAYER } from "../../common/constants.ts";
 import { player } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -46,6 +47,7 @@ export const formatPlayersWatchList = async (
 
 	const players = addFirstNameShort(
 		await player.formatAll(playersAll, {
+			liveShown: await getLiveShown(),
 			attrs: [
 				"pid",
 				"firstName",

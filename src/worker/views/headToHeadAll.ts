@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { g, helpers } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import { headToHead } from "../core/index.ts";
@@ -45,6 +46,9 @@ export default defineView({
 					tid: "all",
 					type,
 					season,
+					// (A game still being played live on somebody's screen isn't
+					// in these yet.)
+					liveShown: await getLiveShown(),
 				},
 				(info) => {
 					let infoByTid = infoByTidByTid.get(info.tid2);

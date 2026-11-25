@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { nationalTags } from "./nationalBroadcast.ts";
 import { g } from "../util/index.ts";
@@ -76,9 +77,12 @@ export const updateHub = async ({ updateEvents }: ViewArgs) => {
 			preview: plain(message.text).slice(0, 180),
 		}));
 
-	const eventsAll = (await idb.merged.events.getAll({ season })).filter(
+	const eventsGated = (await idb.merged.events.getAll({ season })).filter(
 		(event) => !eventGivesAwayLiveGame(event, gate),
 	);
+	// (Nor an injury picked up in it.)
+	const liveShown = await getLiveShown();
+	const eventsAll = liveShown ? liveShown.events(eventsGated) : eventsGated;
 	eventsAll.reverse();
 	const teamNews = (
 		await processEvents(eventsAll, { level: "all", limit: 16, tid: userTid })

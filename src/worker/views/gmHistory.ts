@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { TeamSeason, Player } from "../../common/types.ts";
@@ -18,6 +19,9 @@ export default defineView({
 			updateEvents.has("gameSim") ||
 			updateEvents.has("gameAttributes")
 		) {
+			// (A game still being played live on somebody's screen isn't in this
+			// season's line yet.)
+			const liveShown = await getLiveShown();
 			const seasonsByTid: Record<number, Set<number>> = {};
 			const teamSeasonsByTeam: TeamSeason[][] = [];
 			let prevTid: number | undefined;
@@ -32,7 +36,12 @@ export default defineView({
 					teamSeasonsByTeam.push([]);
 				}
 
-				const ts = await idb.merged.teamSeasons.getByTidSeason(tid, season);
+				const tsStored = await idb.merged.teamSeasons.getByTidSeason(
+					tid,
+					season,
+				);
+				const ts =
+					tsStored && liveShown ? liveShown.teamSeason(tsStored) : tsStored;
 				if (ts) {
 					teamSeasonsByTeam.at(-1)!.push(ts);
 
@@ -67,6 +76,7 @@ export default defineView({
 				allTeamSeasons,
 				teamHistory.history,
 				true,
+				liveShown,
 			);
 
 			// Only keep stats from the user's seasons. This makes a new object, so the player in the cache is not changed.

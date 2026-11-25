@@ -1,7 +1,7 @@
 import { orderBy } from "../../common/utils.ts";
 import helpers from "./helpers.ts";
 import type { TIEBREAKERS } from "../../common/constants.ts";
-import type { HeadToHead } from "../../common/types.ts";
+import type { HeadToHead, LiveShown } from "../../common/types.ts";
 import { team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import g from "./g.ts";
@@ -621,8 +621,12 @@ export const orderTeams = async <T extends BaseTeam>(
 		skipTiebreakers,
 		season = g.get("season"),
 		tiebreakersOverride,
+		liveShown,
 	}: {
 		addTiebreakersField?: boolean;
+		// Pages only: games still being played live left out of the
+		// head-to-head records (liveGameShown.ts).
+		liveShown?: LiveShown;
 
 		// If you already called getDivisionRanks for all teams in allTeams with the same settings, pass the result here so it doesn't need to be computed again. This is for when orderTeams is called many times on the same standings.
 		divisionRanks?: Map<number, number>;
@@ -739,7 +743,9 @@ export const orderTeams = async <T extends BaseTeam>(
 			tiebreakers.includes("strengthOfSchedule") ||
 			tiebreakers.includes("strengthOfVictory"))
 	) {
-		breakTiesOptions.headToHead = await idb.merged.headToHeads.get(season);
+		const headToHead = await idb.merged.headToHeads.get(season);
+		breakTiesOptions.headToHead =
+			headToHead && liveShown ? liveShown.headToHead(headToHead) : headToHead;
 	}
 
 	// Break ties

@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { g } from "../util/index.ts";
 import { getAwardCandidates } from "../core/awards/getAwardCandidates.ts";
 import { groupByUnique } from "../../common/utils.ts";
@@ -16,8 +17,14 @@ export default defineView({
 				(updateEvents.has("gameSim") || updateEvents.has("playerMovement"))) ||
 			inputs.season !== prevInputs?.season
 		) {
+			// (A game still being played live on somebody's screen isn't in the
+			// numbers yet.)
+			const liveShown = await getLiveShown();
 			const awardCandidates = (
-				await getAwardCandidates(inputs.season, undefined, { breakdown: true })
+				await getAwardCandidates(inputs.season, undefined, {
+					breakdown: true,
+					liveShown,
+				})
 			).awardCandidates.flat();
 
 			// Live odds come from the shared award-race model (getAwardRaceOdds), the
@@ -47,6 +54,7 @@ export default defineView({
 			}
 
 			const teams = await team.getFormattedAll({
+				liveShown,
 				attrs: ["tid"],
 				seasonAttrs: ["won", "lost", "tied", "otl"],
 				season: inputs.season,

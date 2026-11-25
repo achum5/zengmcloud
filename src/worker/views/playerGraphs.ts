@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import {
 	PLAYER,
 	PLAYER_STATS_TABLES,
@@ -119,6 +120,8 @@ const getPlayerStats = async (
 		? getPlayerStatsTableStats(statsTable.stats)
 		: (["gp"] as const);
 
+	// (A game still being played live on somebody's screen isn't in these yet.)
+	const liveShown = await getLiveShown();
 	const formatOptions = {
 		attrs: [
 			"pid",
@@ -137,6 +140,7 @@ const getPlayerStats = async (
 		seasonType: playoffs,
 		mergeStats: "totOnly",
 		fuzz: true,
+		liveShown,
 	} as const;
 
 	// Normalize to a single ratings row and a single stats row per player. These are copies, because they get modified below. The UI accesses them dynamically based on the selected stat, so they're just records here

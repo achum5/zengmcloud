@@ -51,6 +51,7 @@ import {
 import type { ContractValueBreakdown } from "../../common/contractValue.ts";
 import { getGroupPrefix } from "../core/awards/prefixes.ts";
 import { getPlayerImpact } from "../util/getPlayerImpact.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
 import type { LeagueUrlParts } from "../../ui/router/types.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 
@@ -132,6 +133,10 @@ export const getPlayer = async <
 ) => {
 	const stats = getPlayerProfileStats();
 
+	// A game still being played live on somebody's screen isn't in his line,
+	// highs or injuries yet.
+	const liveShown = await getLiveShown();
+
 	const p = await player.format(pRaw, {
 		attrs: [
 			"pid",
@@ -192,6 +197,7 @@ export const getPlayer = async <
 		seasonRange,
 		seasons,
 		tid,
+		liveShown,
 	});
 
 	if (!p) {
@@ -204,7 +210,7 @@ export const getPlayer = async <
 		// Filter out rows with no games played
 		stats: p.stats.filter((row) => (row.gp ?? 0) > 0),
 
-		injuries: shownInjuries(pRaw),
+		injuries: shownInjuries(liveShown ? liveShown.player(pRaw) : pRaw),
 
 		// When he can be traded, if he can't yet: "Dec 15", or the wait left.
 		tradableWhen: tradableWhen(pRaw),
@@ -754,8 +760,9 @@ export default defineView({
 			}
 
 			const p = topStuff.player;
+			const liveShown = await getLiveShown();
 
-			const eventsAll = orderBy(
+			const eventsAllStored = orderBy(
 				[
 					...(await idb.merged.events.getAll({ pid: topStuff.pid })),
 					...(p.draft.dpid !== undefined
@@ -765,6 +772,11 @@ export default defineView({
 				"eid",
 				"asc",
 			);
+			// (Nothing from a game still being played live: his feat in it, the
+			// injury he picked up.)
+			const eventsAll = liveShown
+				? liveShown.events(eventsAllStored)
+				: eventsAllStored;
 			const feats = eventsAll
 				.filter((event) => event.type === "playerFeat")
 				.map((event) => {
@@ -809,7 +821,12 @@ export default defineView({
 			// mean reading the whole league's games to draw one table.
 			let impact;
 			if (__SPORT === "basketball" && p.tid >= 0) {
-				const raw = await getPlayerImpact(p.pid, p.tid, g.get("season"));
+				const raw = await getPlayerImpact(
+					p.pid,
+					p.tid,
+					g.get("season"),
+					liveShown?.hides,
+				);
 				if (raw) {
 					const partners = [];
 					for (const partner of raw.partners) {

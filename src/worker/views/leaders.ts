@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { PHASE } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { getActiveSeasonSelector } from "../db/merged/players.ts";
@@ -487,6 +488,7 @@ export class GamesPlayedCache {
 
 				// This is needed if teamStats row is deleted but teamSeason is still there, such as historical real players seasons
 				showNoStats: true,
+				liveShown: await getLiveShown(),
 			});
 
 			const cache: Record<number, number> = {};
@@ -781,6 +783,9 @@ export default defineView({
 			] as const;
 			const allStats = ["abbrev", "tid", ...stats, ...extraStats] as const;
 
+			// (A game still being played live on somebody's screen isn't in
+			// these yet.)
+			const liveShown = await getLiveShown();
 			const careerFormatOptions = {
 				attrs,
 				// season and ovr only needed for bestPos
@@ -789,6 +794,7 @@ export default defineView({
 				seasonType: inputs.playoffs,
 				mergeStats: "totOnly",
 				statType: inputs.statType,
+				liveShown,
 			} as const;
 
 			// Load abbrevs ahead of time, so there is no database access while iterating over players, which would make the IndexedDB transaction auto commit. For a single season, only load abbrevs for that season. Otherwise, the career options (with no season) load abbrevs for every season, which are shared by the career formatter and all the single season formatters.
@@ -810,6 +816,7 @@ export default defineView({
 						seasonType: inputs.playoffs,
 						mergeStats: "totOnly",
 						statType: inputs.statType,
+						liveShown,
 					},
 					abbrevs,
 				);

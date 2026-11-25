@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { confByCid, type ConfIdentity } from "../../common/confs.ts";
 import { season, team } from "../core/index.ts";
 import { InvalidPlayoffSettingsError } from "../core/season/genPlayoffSeries.ts";
@@ -81,7 +82,9 @@ export default defineView({
 			} else {
 				let result;
 				try {
-					result = await season.genPlayoffSeries();
+					// (Projected from the records as shown: a game still being
+					// played live isn't in them yet.)
+					result = await season.genPlayoffSeries(await getLiveShown());
 				} catch (error) {
 					if (error instanceof InvalidPlayoffSettingsError) {
 						return {

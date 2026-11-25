@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { PHASE, NO_LOTTERY_DRAFT_TYPES } from "../../common/constants.ts";
 import { draft, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -129,6 +130,11 @@ export default defineView({
 				}
 			}
 
+			// (Records as shown: a game still being played live on somebody's
+			// screen isn't in them yet.)
+			const liveShown =
+				season === g.get("season") ? await getLiveShown() : undefined;
+
 			const seasonDraftPicks = await idb.cache.draftPicks.indexGetAll(
 				"draftPicksBySeason",
 				season,
@@ -152,6 +158,7 @@ export default defineView({
 						"imgURLSmall",
 					],
 					season,
+					liveShown,
 				}),
 				"tid",
 			);
@@ -282,6 +289,9 @@ export default defineView({
 			try {
 				const result = (await draft.genOrder(
 					true,
+					undefined,
+					undefined,
+					liveShown,
 				)) as unknown as GenOrderResult<false>;
 				draftLotteryResult = result.draftLotteryResult;
 				draftPicks = result.draftPicks;

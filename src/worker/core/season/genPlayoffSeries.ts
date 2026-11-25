@@ -6,6 +6,7 @@ import type {
 	PlayoffSeriesTeam,
 	PlayInTournament,
 	ByConf,
+	LiveShown,
 } from "../../../common/types.ts";
 import genPlayoffSeeds from "./genPlayoffSeeds.ts";
 import { getPlayoffsByConf } from "./getPlayoffsByConf.ts";
@@ -153,9 +154,14 @@ export const genPlayoffSeriesFromTeams = async (
 		divisionRanks,
 		season = g.get("season"),
 		skipTiebreakers,
+		liveShown,
 	}: {
 		// Pass this to skip looking it up, for when this is called many times
 		byConf?: ByConf;
+
+		// Pages only: games still being played live left out of the
+		// tiebreakers (liveGameShown.ts).
+		liveShown?: LiveShown;
 
 		// See orderTeams
 		divisionRanks?: Map<number, number>;
@@ -187,7 +193,12 @@ export const genPlayoffSeriesFromTeams = async (
 
 	let playoffsByConf = byConfOverride ?? (await getPlayoffsByConf(season));
 
-	const orderTeamsOptions = { divisionRanks, season, skipTiebreakers };
+	const orderTeamsOptions = {
+		divisionRanks,
+		season,
+		skipTiebreakers,
+		liveShown,
+	};
 
 	let series: PlayoffSeries["series"] = range(numRounds).map(() => []);
 
@@ -337,16 +348,19 @@ export const genPlayoffSeriesFromTeams = async (
 	};
 };
 
-const genPlayoffSeries = async () => {
+// liveShown: for the projected bracket on the page, from the records as
+// shown (liveGameShown.ts). Never when the bracket is for real.
+const genPlayoffSeries = async (liveShown?: LiveShown) => {
 	const teams = await team.getFormattedAll({
 		attrs: ["tid"],
 		seasonAttrs: ORDER_TEAMS_SEASON_ATTRS,
 		stats: ORDER_TEAMS_STATS,
 		season: g.get("season"),
 		showNoStats: true,
+		liveShown,
 	});
 
-	return genPlayoffSeriesFromTeams(teams);
+	return genPlayoffSeriesFromTeams(teams, { liveShown });
 };
 
 export default genPlayoffSeries;

@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { PLAYER } from "../../common/constants.ts";
 import { player, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -40,6 +41,7 @@ export default defineView({
 		).filter((p) => negotiationPids.has(p.pid));
 
 		const playersFiltered = await player.formatAll(playersAll, {
+			liveShown: await getLiveShown(),
 			attrs: [
 				"pid",
 				"name",
@@ -95,6 +97,7 @@ export default defineView({
 		const capSpace = (g.get("salaryCap") - payroll) / 1000;
 
 		const userPlayers = await player.formatAll(userPlayersAll, {
+			liveShown: await getLiveShown(),
 			attrs: [],
 			ratings: ["pos"],
 			stats: [],
