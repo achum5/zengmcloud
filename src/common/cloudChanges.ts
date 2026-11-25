@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 614,
+		date: "2026-11-25",
+		text: "Links underline again when you hover or tap them: player names everywhere, recap sentences, the ticker, team banners, the league feed and the leaders on Daily Schedule game cards. The date in the top bar is a button now: no underline, just a soft shade on hover and a press when you tap it, and it's no longer cut off at the top and bottom. The yesterday/today arrows at the end of the scores bar no longer go blank on iPhones.",
+	},
+	{
 		n: 613,
 		date: "2026-11-25",
 		text: "Shared leagues: a game being played live no longer gets stuck as Delayed on everyone else's screen when the person playing it loses their connection. If they get back within a couple of minutes the game carries on; if not, it ends for everyone within a few minutes instead of hanging around. The dot by the date also gets itself back to green when uploads stall, instead of staying red until you refresh.",

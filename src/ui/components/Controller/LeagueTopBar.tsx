@@ -17,7 +17,7 @@ import { TopBarDay } from "./TopBarDay.tsx";
 // the classic bar's ways: every day of the season so far through the team's
 // next game, from opening night (the team playing or not), bye days too,
 // each with the team's game that day if it has one (TopBarDay.tsx), opening
-// on its right end with the same two buttons there.
+// on its right end with the same two buttons beside it.
 
 type BarGame = LocalStateUI["games"][number];
 
@@ -232,26 +232,30 @@ export const LeagueTopBar = memo(() => {
 
 	const nights = nightsOf(games2, calendarDate, calendarOpeningNight);
 
+	// (The buttons sit beside the scrolling days, not inside them: pinned
+	// inside with position: sticky, iPhones sometimes left them blank.)
 	return (
-		<div
-			className="league-top-bar league-top-bar-calendar flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row-reverse mt-2"
-			ref={setWrapperElement}
-		>
-			<div className="d-flex flex-shrink-0 ps-1" ref={contentRef}>
-				<div className="tbd-track d-flex flex-shrink-0">
-					{nights.map(({ date, game }) => (
-						<TopBarDay
-							key={date}
-							date={date}
-							game={game}
-							live={game ? liveOf(game) : undefined}
-							today={calendarDate}
-						/>
-					))}
+		<div className="tbd-bar d-flex">
+			<div
+				className="league-top-bar league-top-bar-calendar d-flex overflow-auto small-scrollbar flex-row-reverse"
+				ref={setWrapperElement}
+			>
+				<div className="d-flex flex-shrink-0 ps-1" ref={contentRef}>
+					<div className="tbd-track d-flex flex-shrink-0">
+						{nights.map(({ date, game }) => (
+							<TopBarDay
+								key={date}
+								date={date}
+								game={game}
+								live={game ? liveOf(game) : undefined}
+								today={calendarDate}
+							/>
+						))}
+					</div>
 				</div>
-				<div className="tbd-buttons d-flex align-items-center ps-2">
-					<DayButtons height={64} />
-				</div>
+			</div>
+			<div className="tbd-buttons d-flex align-items-center ps-2">
+				<DayButtons height={64} />
 			</div>
 		</div>
 	);

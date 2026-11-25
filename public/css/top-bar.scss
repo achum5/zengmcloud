@@ -13,9 +13,19 @@ $tbd-live: #f28b20;
 $tbd-won: #1e7d3e;
 $tbd-lost: #b4252f;
 
-.league-top-bar.league-top-bar-calendar {
-	height: auto;
+// The days scroll; the yesterday/today buttons stay put at the right end,
+// beside them rather than pinned inside the scrolling (position: sticky in
+// there sometimes painted blank on iPhones, the buttons still tappable).
+.tbd-bar {
+	flex-shrink: 0;
+	margin-top: 0.5rem;
 	margin-bottom: 0.25rem;
+}
+
+.league-top-bar.league-top-bar-calendar {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: auto;
 	overflow-y: hidden;
 
 	@include media-breakpoint-up(sm) {
@@ -31,15 +41,9 @@ $tbd-lost: #b4252f;
 	border-left: 1px solid var(--bs-border-color);
 }
 
-// The yesterday/today buttons stay at the window's right edge while the
-// days scroll under them.
 .tbd-buttons {
 	align-self: flex-start;
-	position: sticky;
-	right: 0;
-	z-index: 1;
 	flex-shrink: 0;
-	background: var(--bs-body-bg);
 }
 
 .tbd {

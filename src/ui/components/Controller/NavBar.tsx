@@ -92,9 +92,14 @@ const PhaseStatusBlock = () => {
 					helpers.upperCaseFirstLetter(phaseText.slice(seasonPrefix.length)),
 				]
 			: [phaseText, undefined];
-		// The tile opens the night's games; the words, the phase's page.
+		// The tile opens the night's games; the words, the phase's page. (Only
+		// the inner box clips, so the tile and its hover keep the bar's full
+		// height: the outer one is 16px shorter and cut the tile's edges off.)
 		return (
-			<div className="dropdown-links navbar-nav flex-shrink-1 overflow-hidden text-nowrap">
+			<div
+				className="dropdown-links navbar-nav flex-shrink-1 text-nowrap"
+				style={{ minWidth: 0 }}
+			>
 				<div
 					className="nav-item d-flex align-items-center overflow-hidden"
 					style={{ padding: "4px 0 4px 16px" }}
