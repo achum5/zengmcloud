@@ -159,6 +159,9 @@ export type Props<Type extends MetadataType = undefined> = {
 	rows: DataTableRow<Type>[];
 	showRowLabels?: boolean;
 	small?: boolean;
+	// Opens sorted by this instead of the saved sort, as if its column had just
+	// been clicked (a link to the table sorted by one stat).
+	sortOverride?: SortBy;
 	sortableRows?: {
 		disableRow?: DisableRow;
 		highlightHandle?: HighlightHandle;
@@ -220,6 +223,7 @@ export const DataTable = <Type extends MetadataType = undefined>({
 	showRowLabels,
 	small,
 	sortableRows,
+	sortOverride,
 	stickyHeader,
 	striped,
 	style,
@@ -256,6 +260,7 @@ export const DataTable = <Type extends MetadataType = undefined>({
 		disableSettingsCache,
 		hideAllControls: hideAllControlsBool,
 		name,
+		sortOverride,
 	});
 
 	useEffect(() => {
@@ -479,6 +484,7 @@ export const DataTable = <Type extends MetadataType = undefined>({
 			disableSettingsCache,
 			hideAllControls: hideAllControlsBool,
 			name,
+			sortOverride,
 		});
 	}
 
@@ -577,6 +583,26 @@ export const DataTable = <Type extends MetadataType = undefined>({
 		stickyHeader,
 		tableRef,
 	});
+
+	// Opened sorted by a column off the edge of a wide table: scroll it in,
+	// when the names stay pinned at the left to read it by.
+	const sortOverrideCol = sortOverride?.[0];
+	const pinned = state.stickyCols > 0;
+	useEffect(() => {
+		const wrapper = responsiveTableWrapperRef.current;
+		if (sortOverrideCol === undefined || !pinned || !wrapper) {
+			return;
+		}
+		const th = wrapper.querySelector<HTMLElement>("thead th.sorting_highlight");
+		if (!th) {
+			return;
+		}
+		const box = wrapper.getBoundingClientRect();
+		const col = th.getBoundingClientRect();
+		if (col.right > box.right) {
+			wrapper.scrollLeft += col.left - box.left - (box.width - col.width) / 2;
+		}
+	}, [sortOverrideCol, pinned]);
 
 	const table = (
 		<DataTableContext value={dataTableContext}>

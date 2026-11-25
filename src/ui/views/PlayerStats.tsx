@@ -8,10 +8,11 @@ import type { View } from "../../common/types.ts";
 import { wrappedAgeAtDeath } from "../components/AgeAtDeath.tsx";
 import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import { expandFieldingStats } from "../util/expandFieldingStats.baseball.ts";
-import type { DataTableRow } from "../components/DataTable/index.tsx";
+import type { DataTableRow, SortBy } from "../components/DataTable/index.tsx";
 import { PlusMinus } from "../components/PlusMinus.tsx";
 import { useLocal } from "../util/local.ts";
 import { contractValueCell } from "../util/contractValueCell.tsx";
+import { router } from "../router/index.ts";
 
 export const formatStatGameHigh = (
 	ps: any,
@@ -260,6 +261,15 @@ const PlayerStats = ({
 	// so one's are never put on the other's columns, shifted one over.
 	const layout = season === "all" ? "All" : season === "career" ? "Career" : "";
 
+	// A link can open the table sorted by one stat, as if its column had been
+	// clicked: ?sort=pts (a player's All-Time Ranks link here that way).
+	const sortStat = new URLSearchParams(router.location.search).get("sort");
+	const sortIndex = (stats as string[]).indexOf(sortStat ?? "");
+	const sortOverride: SortBy | undefined =
+		sortIndex === -1
+			? undefined
+			: [cols.length - stats.length + sortIndex, "desc"];
+
 	return (
 		<>
 			<MoreLinks
@@ -278,12 +288,14 @@ const PlayerStats = ({
 			</p>
 
 			<DataTable
+				key={sortStat ?? ""}
 				cols={cols}
 				defaultSort={[sortCol, "desc"]}
 				defaultStickyCols={window.mobile ? 0 : 2}
 				name={`PlayerStats${statType}${layout}`}
 				rankCol={0}
 				rows={rows}
+				sortOverride={sortOverride}
 				superCols={superCols}
 				pagination
 			/>

@@ -13,6 +13,7 @@ import type {
 	WatchStat,
 } from "../../worker/util/milestoneWatch.ts";
 import {
+	careerLeadersUrl,
 	STAT_ABBREVS,
 	STAT_TITLES,
 	STAT_WORDS,
@@ -126,7 +127,7 @@ const Chase = ({
 	<RailCard
 		title={STAT_TITLES[stat]}
 		more={{
-			href: helpers.leagueUrl(["all_time_leaders", stat]),
+			href: careerLeadersUrl(stat),
 			text: "Full list",
 		}}
 	>

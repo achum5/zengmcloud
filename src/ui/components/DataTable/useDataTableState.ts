@@ -11,6 +11,7 @@ export const useDataTableState = ({
 	disableSettingsCache,
 	hideAllControls,
 	name,
+	sortOverride,
 }: LoadStateFromCacheProps) => {
 	const [state, setState] = useState<State>(() =>
 		loadStateFromCache({
@@ -20,6 +21,7 @@ export const useDataTableState = ({
 			disableSettingsCache,
 			hideAllControls,
 			name,
+			sortOverride,
 		}),
 	);
 

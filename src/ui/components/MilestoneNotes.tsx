@@ -38,6 +38,10 @@ export const n = (x: number) => helpers.numberWithCommas(x);
 
 export const playerUrl = (pid: number) => helpers.leagueUrl(["player", pid]);
 
+// Player Stats' career totals, sorted by the stat.
+export const careerLeadersUrl = (stat: WatchStat) =>
+	`${helpers.leagueUrl(["player_stats", "all", "career", "totals"])}?sort=${stat}`;
+
 // "41 to pass Name for 2nd", or the lead the man on top has.
 export const chaseNote = (
 	row: Pick<ChaseRow, "total" | "rank" | "next" | "behind">,

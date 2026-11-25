@@ -6,6 +6,7 @@ import HideableSection from "../../components/HideableSection.tsx";
 import {
 	STAT_TITLES,
 	STAT_WORDS,
+	careerLeadersUrl,
 	chaseNote,
 	gamesAway,
 	n,
@@ -58,10 +59,7 @@ const Milestones = ({ pid }: { pid: number }) => {
 			<div className="atr-grid">
 				{value.ranks.map((row) => (
 					<div key={row.stat} className="atr-tile">
-						<a
-							className="atr-head"
-							href={helpers.leagueUrl(["all_time_leaders", row.stat, pid])}
-						>
+						<a className="atr-head" href={careerLeadersUrl(row.stat)}>
 							<span className="atr-rank">
 								{row.rank === undefined ? "-" : helpers.ordinal(row.rank)}
 							</span>

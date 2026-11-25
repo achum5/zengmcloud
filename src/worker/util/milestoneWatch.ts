@@ -394,16 +394,6 @@ export const getMilestoneWatch = async () => {
 
 // ------------------------------------------------------ EVERYONE'S ALL-TIME
 
-// Where the man stands on the list: tied, he shares the place of the first
-// man on that total.
-const rankAt = (list: CareerRow[], i: number, stat: WatchStat) => {
-	let rank = i + 1;
-	while (rank > 1 && list[rank - 2]!.career[stat] === list[i]!.career[stat]) {
-		rank -= 1;
-	}
-	return rank;
-};
-
 export type AllTimeRank = {
 	stat: WatchStat;
 	total: number;
@@ -460,59 +450,4 @@ export const getPlayerAllTime = async (pid: number) => {
 			: undefined;
 
 	return { active: me.active, gp: me.career.gp, ranks, round, pace };
-};
-
-export type AllTimeLeader = WatchPlayer & {
-	rank: number;
-	active: boolean;
-	total: number;
-	gp: number;
-	// His first and last regular seasons.
-	from: number;
-	to: number;
-};
-
-const TOP = 100;
-
-// One all-time list, every player in the league's history on it: the top
-// hundred, and the man the page was opened for with those around him, when
-// he's further down.
-export const getAllTimeLeaders = async (
-	stat: WatchStat,
-	pid: number | undefined,
-) => {
-	const rows = await loadRows();
-	const list = ranked(rows, stat);
-	const leader = (i: number): AllTimeLeader => {
-		const row = list[i]!;
-		const seasons = [...row.seasons.keys()];
-		return {
-			...player(row),
-			rank: rankAt(list, i, stat),
-			active: row.active,
-			total: row.career[stat],
-			gp: row.career.gp,
-			from: Math.min(...seasons),
-			to: Math.max(...seasons),
-		};
-	};
-
-	const top: AllTimeLeader[] = [];
-	for (let i = 0; i < Math.min(TOP, list.length); i++) {
-		top.push(leader(i));
-	}
-
-	const around: AllTimeLeader[] = [];
-	const i = pid === undefined ? -1 : list.findIndex((row) => row.pid === pid);
-	if (i >= TOP) {
-		for (
-			let j = Math.max(TOP, i - 2);
-			j <= Math.min(list.length - 1, i + 2);
-			j++
-		) {
-			around.push(leader(j));
-		}
-	}
-
-	return { stat, of: list.length, top, around, pid };
 };
