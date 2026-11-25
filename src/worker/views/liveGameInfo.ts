@@ -663,9 +663,10 @@ export const gamecastInfo = async (
 			return gp > 0 ? (r.won + 0.5 * r.tied) / gp : 0;
 		};
 		rows.sort((a, b) => pct(b) - pct(a) || b.won - a.won || a.lost - b.lost);
+		const gb = helpers.gbFromBest(rows);
 		rows.forEach((r, k) => {
 			r.rank = k + 1;
-			r.gb = helpers.gb(rows[0]!, r);
+			r.gb = gb(r);
 		});
 		standings.push({
 			name: confs.find((c) => c.cid === cid)?.name ?? "Conference",

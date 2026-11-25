@@ -554,15 +554,17 @@ const updateStandings = async ({ updateEvents }: ViewArgs) => {
 		const pointsFormula = g.get("pointsFormula", "current");
 		const usePts = pointsFormula !== "";
 
+		const gb = helpers.gbFromBest(
+			confOrAllTeams
+				.filter((t) => !playoffsByConf || t.seasonAttrs.cid === cid)
+				.map((t) => t.seasonAttrs),
+		);
 		let rank = 1;
 		for (const t of confOrAllTeams) {
 			if (!playoffsByConf || t.seasonAttrs.cid === cid) {
 				t.rank = rank;
 				if (!usePts) {
-					t.gb =
-						rank === 1
-							? 0
-							: helpers.gb(confOrAllTeams[0]!.seasonAttrs, t.seasonAttrs);
+					t.gb = gb(t.seasonAttrs);
 				}
 
 				rank += 1;

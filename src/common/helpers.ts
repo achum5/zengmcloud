@@ -1398,6 +1398,21 @@ const overtimeText = (
 	return overtimes;
 };
 
+// Games back the way published standings print them: from the team with the
+// best won-lost difference, so never negative. Teams are listed by winning
+// percentage, and that can put a team above one it trails in games - 18-5
+// (.783) above 20-6 (.769). Then 20-6 gets the dash and 18-5 is half a game
+// back, rather than 20-6 showing -0.5. Give it the group the GB column is for
+// (a conference, a division); it returns each team's games back.
+const gbFromBest = (teams: { won: number; lost: number }[]) => {
+	let best = -Infinity;
+	for (const t of teams) {
+		best = Math.max(best, t.won - t.lost);
+	}
+	return (t: { won: number; lost: number }) =>
+		best === -Infinity ? 0 : Math.max(0, best - (t.won - t.lost)) / 2;
+};
+
 // This can't be replaced by Math.sumPrecise because this ignores undefined, like for byPos stats
 const sum = (values: (number | undefined)[]) => {
 	let total = 0;
@@ -1602,6 +1617,7 @@ export const helpers = {
 	ratio,
 	percentage,
 	formatRecord,
+	gbFromBest,
 	overtimeText,
 	sum,
 	justDrafted,

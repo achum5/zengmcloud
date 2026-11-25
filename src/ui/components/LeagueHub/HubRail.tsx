@@ -247,6 +247,9 @@ export const HubStandings = ({
 		return null;
 	}
 	const short = (name: string) => name.replace(/ Conference$/, "");
+	// Not t.gb: that is from the team listed first, and goes negative for a team
+	// below it with the better won-lost difference.
+	const gb = helpers.gbFromBest(conf.teams);
 	return (
 		<RailCard
 			title="Standings"
@@ -305,7 +308,7 @@ export const HubStandings = ({
 								</td>
 								<td>{t.won}</td>
 								<td>{t.lost}</td>
-								<td>{t.gb === 0 ? "-" : t.gb}</td>
+								<td>{gb(t) === 0 ? "-" : gb(t)}</td>
 								<td>
 									{played ? (
 										<span

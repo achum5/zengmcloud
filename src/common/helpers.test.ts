@@ -258,3 +258,26 @@ describe("leagueUrlBase", () => {
 		const parts: LeagueUrlParts = ["player_feats", undefined, 2015];
 	});
 });
+
+describe("gbFromBest", () => {
+	test("never negative: the best won-lost difference gets the dash", () => {
+		// Listed by winning percentage: 18-5 (.783) over 20-6 (.769).
+		const teams = [
+			{ won: 18, lost: 5 },
+			{ won: 20, lost: 6 },
+			{ won: 18, lost: 6 },
+			{ won: 17, lost: 7 },
+		];
+		const gb = helpers.gbFromBest(teams);
+		assert.deepStrictEqual(teams.map(gb), [0.5, 0, 1, 2]);
+	});
+
+	test("ties at the top and an empty group", () => {
+		const teams = [
+			{ won: 5, lost: 0 },
+			{ won: 6, lost: 1 },
+		];
+		assert.deepStrictEqual(teams.map(helpers.gbFromBest(teams)), [0, 0]);
+		assert.strictEqual(helpers.gbFromBest([])({ won: 3, lost: 1 }), 0);
+	});
+});

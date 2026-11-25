@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 622,
+		date: "2026-11-25",
+		text: "Standings: games back is never negative anymore. Teams are still ranked by winning percentage, like the NBA, so an 18-5 team sits above a 20-6 team. But the 20-6 team is half a game ahead, so it now gets the dash and the 18-5 team shows 0.5 back. Fixed on the Daily Schedule, the Standings page, the dashboard, team pages and the live game's standings.",
+	},
+	{
 		n: 621,
 		date: "2026-11-25",
 		text: "Month calendars: on a phone you can swipe left or right to go to the next or previous month, with the month sliding along under your finger. The arrows still work too.",

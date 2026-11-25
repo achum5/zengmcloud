@@ -280,7 +280,7 @@ const TopStuff = ({
 						) : (
 							"league"
 						)}
-						{t.gb >= 0 && t.rank > 1 ? (
+						{t.gb > 0 || (t.gb === 0 && t.rank > 1) ? (
 							<>
 								, {t.gb}{" "}
 								{usePts ? (

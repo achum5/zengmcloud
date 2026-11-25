@@ -265,10 +265,10 @@ export default defineView({
 
 			for (const [type, groups] of helpers.entries(rankingGroups)) {
 				for (const group of groups) {
+					const gb = helpers.gbFromBest(group.map((t) => t.seasonAttrs));
 					for (const [i, t] of group.entries()) {
 						if (!usePts) {
-							t.gb[type] =
-								i === 0 ? 0 : helpers.gb(group[0]!.seasonAttrs, t.seasonAttrs);
+							t.gb[type] = gb(t.seasonAttrs);
 						}
 						t.rank[type] = i + 1;
 					}

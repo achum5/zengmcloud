@@ -118,21 +118,31 @@ const getStandingsInfo = async (
 		for (const t of confOrAllTeams) {
 			if (!playoffsByConf || t.seasonAttrs.cid === cid) {
 				if (t.tid === info.tid) {
-					let gbOtherTeam;
-					if (t.tid === firstPlaceTeam.tid) {
-						// This team is in first place, so actually show how far ahead they are
-						gbOtherTeam = confOrAllTeams[1];
-					} else {
-						// Games back from first place
-						gbOtherTeam = firstPlaceTeam;
-					}
 					let gb;
-					if (gbOtherTeam) {
-						gb = usePts
-							? gbOtherTeam.seasonAttrs.pts - t.seasonAttrs.pts
-							: helpers.gb(gbOtherTeam.seasonAttrs, t.seasonAttrs);
+					if (usePts) {
+						// This team is in first place, so show how far ahead they are;
+						// otherwise points back from first place
+						const other =
+							t.tid === firstPlaceTeam.tid ? confOrAllTeams[1] : firstPlaceTeam;
+						gb = other ? other.seasonAttrs.pts - t.seasonAttrs.pts : 0;
 					} else {
-						gb = 0;
+						// Games back as the standings show them: from the best won-lost
+						// difference among the other teams, which is not always first
+						// place. Negative when this team has the best difference: then
+						// it's how far ahead of the next best it is.
+						let best: (typeof t)["seasonAttrs"] | undefined;
+						for (const t2 of confOrAllTeams) {
+							if (
+								t2.tid !== t.tid &&
+								(!playoffsByConf || t2.seasonAttrs.cid === cid) &&
+								(!best ||
+									t2.seasonAttrs.won - t2.seasonAttrs.lost >
+										best.won - best.lost)
+							) {
+								best = t2.seasonAttrs;
+							}
+						}
+						gb = best ? helpers.gb(best, t.seasonAttrs) : 0;
 					}
 
 					return {

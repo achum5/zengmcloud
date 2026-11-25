@@ -324,6 +324,38 @@ describe("the race", () => {
 		assert.notMatch(quiet ?? "", /Nuggets/);
 	});
 
+	test("a leader ahead only on percentage is not said to lead by -0.5 games", () => {
+		const raps = team(
+			1,
+			"Toronto",
+			"Raptors",
+			110,
+			[],
+			[player({ name: "A B" })],
+		);
+		const opp = team(
+			3,
+			"Detroit",
+			"Pistons",
+			100,
+			[],
+			[player({ name: "C D" })],
+		);
+		const text = night(
+			twelve([
+				row(1, "Raptors", 18, 5, 1, { rankBefore: 2 }),
+				row(2, "Bucks", 20, 6, 2),
+				row(3, "Pistons", 14, 9, 3),
+			]),
+			[game(1, raps, opp)],
+		)!;
+		assert.include(
+			text,
+			"The Raptors (18-5) lead the West by percentage points over the Bucks (20-6).",
+		);
+		assert.notMatch(text, /-0\.5|tied for first/);
+	});
+
 	test("who crossed a line, and how close the last play-in spot is", () => {
 		const kings = team(
 			9,
@@ -642,6 +674,41 @@ describe("worth watching", () => {
 
 	test("nothing without a next day", () => {
 		assert.isUndefined(worthWatching(undefined, standings, rngFromSeed(1)));
+	});
+
+	test("a leader on percentage alone leads by percentage points", () => {
+		// 18-5 (.783) is ranked over 20-6 (.769) but trails it by half a game.
+		const pctOnly: RecapDayStandings = {
+			day: 50,
+			race: { byConf: true, direct: 6, reach: 10 },
+			confs: [
+				{
+					name: "Eastern Conference",
+					teams: withGb([
+						row(1, "Raptors", 18, 5, 1),
+						row(2, "Bucks", 20, 6, 2),
+						row(3, "Cavaliers", 18, 6, 3),
+						row(4, "Knicks", 6, 16, 4),
+					]),
+				},
+			],
+		};
+		const meet = worthWatching(
+			{ day: 51, games: [{ homeTid: 1, awayTid: 2 }] },
+			pctOnly,
+			rngFromSeed(1),
+		)!;
+		assert.include(
+			meet,
+			"First place in the East is on the line: the Raptors lead by percentage points.",
+		);
+		const alone = worthWatching(
+			{ day: 51, games: [{ homeTid: 1, awayTid: 4 }] },
+			pctOnly,
+			rngFromSeed(1),
+		)!;
+		assert.include(alone, "The Raptors lead the East by percentage points");
+		assert.notMatch(`${meet}${alone}`, /-0\.5|tied/);
 	});
 });
 

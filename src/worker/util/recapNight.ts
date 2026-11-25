@@ -408,6 +408,15 @@ const LEAD_GAMES = 10;
 const RACE_GAMES = 15;
 const CUT_GAMES = 30;
 
+// Standings go by winning percentage, so a club can sit above one it trails
+// on games: 18-5 (.783) over 20-6 (.769), whose gb is -0.5. Then it leads by
+// percentage points, not by games - and it is tied only when the
+// percentages are.
+const samePct = (
+	a: { won: number; lost: number },
+	b: { won: number; lost: number },
+): boolean => a.won * (b.won + b.lost) === b.won * (a.won + a.lost);
+
 const confShort = (name: string): string => {
 	const m = /^(east|west|north|south)(?:ern)? conference$/i.exec(name.trim());
 	return m
@@ -520,10 +529,15 @@ export const raceSection = (
 					2,
 					`The ${first.name} are still perfect at ${first.won}-0 atop ${where}.`,
 				);
-			} else if (second && second.gb === 0) {
+			} else if (second && second.gb <= 0 && samePct(first, second)) {
 				add(
 					2,
 					`${cap(who)} and the ${second.name} (${second.won}-${second.lost}) are tied for first in ${where}.`,
+				);
+			} else if (second && second.gb <= 0) {
+				add(
+					2,
+					`${cap(who)} lead ${where} by percentage points over the ${second.name} (${second.won}-${second.lost}).`,
 				);
 			} else if (second) {
 				add(
@@ -615,7 +629,12 @@ export const raceSection = (
 					return;
 				}
 				const gap = Math.round((outside.gb - inside.gb) * 2) / 2;
-				if (gap <= 0) {
+				if (gap <= 0 && !samePct(inside, outside)) {
+					add(
+						2,
+						`The ${inside.name} (${inside.won}-${inside.lost}) hold ${what} in ${where} by percentage points over the ${outside.name} (${outside.won}-${outside.lost}).`,
+					);
+				} else if (gap <= 0) {
 					add(
 						2,
 						pick(
@@ -855,11 +874,14 @@ export const worthWatching = (
 		}
 	}
 	// How far each conference's leader is clear of second.
-	const clear = new Map<string, number>();
+	// "pct" when it leads only on winning percentage.
+	const clear = new Map<string, number | "pct">();
 	for (const c of standings.confs) {
+		const first = c.teams.find((t) => t.rank === 1);
 		const second = c.teams.find((t) => t.rank === 2);
-		if (second) {
-			clear.set(c.name, Math.round(second.gb * 2) / 2);
+		if (first && second) {
+			const by = Math.round(second.gb * 2) / 2;
+			clear.set(c.name, by > 0 || samePct(first, second) ? by : "pct");
 		}
 	}
 	const rules = standings.race;
@@ -883,13 +905,17 @@ export const worthWatching = (
 		const same = h.conf === a.conf;
 		const where = confShort(h.conf);
 		const [hi, lo] = h.rank <= a.rank ? [h, a] : [a, h];
-		const gap = Math.abs(hi.gb - lo.gb);
+		// Signed: hi is ranked above lo, so it is ahead on games unless it leads
+		// only on percentage.
+		const gap = Math.round((lo.gb - hi.gb) * 2) / 2;
+		const level = gap <= 0 && samePct(hi, lo);
+		const leadBy = gap > 0 ? `by ${gbText(gap)}` : "by percentage points";
 		if (same && gp >= RACE_GAMES && hi.rank === 1 && lo.rank === 2) {
 			weight += 1.5;
 			why.push(
-				gap === 0
+				level
 					? `They are tied for first in ${where}.`
-					: `First place in ${where} is on the line: the ${hi.name} lead by ${gbText(gap)}.`,
+					: `First place in ${where} is on the line: the ${hi.name} lead ${leadBy}.`,
 			);
 		} else if (same && gp >= RACE_GAMES && lo.rank <= 3) {
 			weight += 0.8;
@@ -917,9 +943,9 @@ export const worthWatching = (
 							? "the last guaranteed playoff spot"
 							: "the last playoff spot";
 				why.push(
-					gap === 0
+					level
 						? `They are tied for ${spot} in ${where}.`
-						: `The ${hi.name} hold ${spot} in ${where} by ${gbText(gap)} over the ${lo.name}.`,
+						: `The ${hi.name} hold ${spot} in ${where} ${leadBy} over the ${lo.name}.`,
 				);
 			}
 		}
@@ -949,17 +975,19 @@ export const worthWatching = (
 			const lead =
 				by === undefined
 					? `lead ${confShort(t.conf)}`
-					: by === 0
-						? `are tied for first in ${confShort(t.conf)}`
-						: pick(
-								rng,
-								[
-									`lead ${confShort(t.conf)} by ${gbText(by)}`,
-									`are ${gbText(by)} clear in ${confShort(t.conf)}`,
-									`sit ${gbText(by)} up in ${confShort(t.conf)}`,
-								],
-								"night:watch:leader",
-							);
+					: by === "pct"
+						? `lead ${confShort(t.conf)} by percentage points`
+						: by <= 0
+							? `are tied for first in ${confShort(t.conf)}`
+							: pick(
+									rng,
+									[
+										`lead ${confShort(t.conf)} by ${gbText(by)}`,
+										`are ${gbText(by)} clear in ${confShort(t.conf)}`,
+										`sit ${gbText(by)} up in ${confShort(t.conf)}`,
+									],
+									"night:watch:leader",
+								);
 			why.push(
 				streaky === t
 					? `The ${t.name} ${lead} and have ${run(t)}.`

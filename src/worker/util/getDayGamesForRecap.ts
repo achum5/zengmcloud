@@ -851,7 +851,11 @@ export type RecapDayStandings = {
 			name: string;
 			won: number;
 			lost: number;
-			gb: number; // games back of the conference leader
+			// Games back of the team ranked first, which goes negative for a team
+			// below it with a better won-lost difference (18-5 ranked over 20-6).
+			// The recap prose reads it that way; the standings table shows
+			// helpers.gbFromBest instead.
+			gb: number;
 			// The streak it is on, and where it stood the day before.
 			streak?: { won: boolean; count: number };
 			rankBefore?: number;
