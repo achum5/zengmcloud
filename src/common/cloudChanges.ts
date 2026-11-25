@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 643,
+		date: "2026-11-25",
+		text: "3D game, Key plays: fixed games where the whole 4th quarter (sometimes the whole second half) played out every possession even when it wasn't close, using up your key plays time so the first three quarters flew by. The time you pick is now also spread evenly over all four quarters, instead of about half of it going to the 4th. A close finish still plays in full on top of that time.",
+	},
+	{
 		n: 642,
 		date: "2026-11-25",
 		text: "3D jerseys: the chest number can now sit off to one side, like the real Mavericks, Kings and Blazers jerseys, and go much smaller, like the Warriors number inside their logo. Manage Teams, 3D jerseys, Lettering has a new Number left/right slider, and that window now fits on a phone.",

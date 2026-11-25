@@ -1,5 +1,5 @@
 import { assert, describe, test, vi } from "vitest";
-import { compile, fakeGame } from "./testGame.ts";
+import { compile, fakeGame, gidOf } from "./testGame.ts";
 import {
 	getKeyPlays,
 	KEY_PLAY_DEFAULTS,
@@ -258,6 +258,76 @@ describe("3D key plays", () => {
 				plan.some((s) => s.t0 <= from && s.t1 >= horn.actionStart),
 				`${minutes} min`,
 			);
+		}
+	}, 60_000);
+
+	// A whole game of four quarters (22 possessions each).
+	const four = (() => {
+		const game = fakeGame("spread", 88);
+		return {
+			...game,
+			tl: compileCourt({
+				events: game.events,
+				players: game.players,
+				gid: gidOf("spread"),
+			}),
+		};
+	})();
+
+	// A game that ends on a shot has no end-of-period line at the final horn
+	// (the sim writes one only when the clock runs out with nothing got up) -
+	// the last one in the play-by-play is an earlier period's. The reel is
+	// still its length: not that period's horn and everything after it.
+	test("a game ending on a shot: still the length asked, not the whole last quarter", () => {
+		const k = four.events.findLastIndex((e) => e.type === "endOfPeriod");
+		const lines = four.events.filter((_e, j) => j !== k);
+		const game = compileCourt({
+			events: lines,
+			players: four.players,
+			gid: gidOf("spread"),
+		});
+		for (const minutes of [2, 3]) {
+			const plan = planKeyPlays(
+				game,
+				lines,
+				{ ...on, minutes, closePoints: 0 },
+				{ rate: 1, numPeriods: 4 },
+			);
+			const ms = watchMs(game, plan);
+			assert.isBelow(ms, minutes * 60_000 * 1.15, `${minutes} min`);
+			assert.strictEqual(plan.at(-1)!.t1, game.end);
+		}
+	}, 60_000);
+
+	// The length spread through the game: every quarter its share, not most
+	// of it on the fourth (however good its plays, and decided or not). (The
+	// game's last seconds and the final, always in it, aside.)
+	test("every quarter gets its share of the length", () => {
+		const { tl: game, events: lines } = four;
+		// Where each quarter starts on the timeline.
+		const starts = game.beats
+			.filter((b) => lines[b.i]?.type === "period")
+			.map((b) => b.preStart);
+		assert.strictEqual(starts.length, 3);
+		const quarterAt = (t: number) => starts.filter((s) => s <= t).length;
+		for (const minutes of [2, 3]) {
+			const plan = planKeyPlays(
+				game,
+				lines,
+				{ ...on, minutes, closePoints: 0 },
+				{ rate: 1, numPeriods: 4 },
+			);
+			const per = [0, 0, 0, 0];
+			for (const s of plan.slice(0, -1)) {
+				for (let t = s.t0; t < s.t1; t += 50) {
+					per[quarterAt(t)]! += Math.min(50, s.t1 - t) / fastAt(game, t);
+				}
+			}
+			const all = per.reduce((a, b) => a + b, 0);
+			per.forEach((ms, q) => {
+				assert.isAbove(ms / all, 0.15, `${minutes} min, Q${q + 1}`);
+				assert.isBelow(ms / all, 0.4, `${minutes} min, Q${q + 1}`);
+			});
 		}
 	}, 60_000);
 

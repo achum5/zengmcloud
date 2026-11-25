@@ -161,8 +161,10 @@ const FINAL_MS = 3600;
 export const SWING_MIN = 0.04;
 export const SWING_W = 40;
 // Each play of a kind already in the reel counts for this much less than the
-// last; one from a period with none in it yet, this much more.
+// last, and each from a period already in it the same; one from a period
+// with none in it yet, this much more.
 const SAME_KIND = 0.82;
+const SAME_PERIOD = 0.85;
 const NEW_PERIOD = 1.35;
 // Two stretches this near each other (ms) run on as one.
 const JOIN_MS = 1500;
@@ -361,9 +363,12 @@ export const planKeyPlays = (
 	});
 	// And the last seconds of it before the horn, however it ends - dribbled
 	// out, or a look for a shot that never comes - not a cut from the last
-	// big play straight to the final.
+	// big play straight to the final. (The game's own horn only: a period
+	// that ends on a shot has no end-of-period line, so the last one in the
+	// play-by-play can be the third quarter's - and from there to the final
+	// is the whole fourth, every play of it, out of the length.)
 	const horn = beats.findLast((b) => typeOf(b) === "endOfPeriod");
-	if (horn) {
+	if (horn && before[horn.i]?.period === before.at(-1)!.period) {
 		picked.push({
 			t0: Math.max(horn.preStart, horn.actionStart - FINAL_MS),
 			t1: tl.end,
@@ -466,10 +471,9 @@ export const planKeyPlays = (
 			rest.push({ k, w: Math.abs(after(k).p0 - st.p0), t0, t1 });
 			return;
 		}
-		// Later and closer, more.
-		if (st.period >= numPeriods) {
-			w += 1;
-		}
+		// Closer, more. (Not later as such: the end of a game still in it
+		// counts for more through its swings, and a fourth quarter long
+		// decided is no better than any other.)
 		if (Math.abs(st.score[0] - st.score[1]) <= 6) {
 			w += 0.5;
 		}
@@ -555,12 +559,12 @@ export const fillReel = ({
 		(a, b) => b.w - a.w || ((a.k * 7919) % 101) - ((b.k * 7919) % 101),
 	);
 	// The best of them one at a time: the more of a kind already in it, the
-	// less the next of that kind counts, and a play from a period not yet
-	// shown counts for more - the whole game in it, not five dunks from the
-	// second quarter.
+	// less the next of that kind counts, and the same for the plays of a
+	// period - the whole game in it, every quarter its share, not five dunks
+	// from the second quarter or half the reel from the fourth.
 	const pool = sorted.map((c) => ({ ...c, cost: costOf(c.t0, c.t1) }));
 	const kinds = new Map<string, number>();
-	const periods = new Set<number>();
+	const periods = new Map<number, number>();
 	for (;;) {
 		let best = -1;
 		let value = -Infinity;
@@ -568,10 +572,11 @@ export const fillReel = ({
 			if (spent + c.cost > budget) {
 				return;
 			}
+			const inPeriod = periods.get(c.period) ?? 0;
 			const v =
 				c.w *
 				SAME_KIND ** (kinds.get(c.kind) ?? 0) *
-				(periods.has(c.period) ? 1 : NEW_PERIOD);
+				(inPeriod > 0 ? SAME_PERIOD ** inPeriod : NEW_PERIOD);
 			if (v > value) {
 				value = v;
 				best = i;
@@ -584,7 +589,7 @@ export const fillReel = ({
 		spent += c.cost;
 		shown.push({ t0: c.t0, t1: c.t1, close: false });
 		kinds.set(c.kind, (kinds.get(c.kind) ?? 0) + 1);
-		periods.add(c.period);
+		periods.set(c.period, (periods.get(c.period) ?? 0) + 1);
 	}
 	for (const c of [...rest].sort((a, b) => b.w - a.w || a.k - b.k)) {
 		const cost = costOf(c.t0, c.t1);
