@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 617,
+		date: "2026-11-25",
+		text: "Scores bar: a team's name now underlines when you hover or tap it. Tapping the team that lost a played game (or either team in an if-necessary playoff game) now opens that team's roster like it should, instead of the game.",
+	},
+	{
 		n: 616,
 		date: "2026-11-25",
 		text: "Daily Schedule on phones: each game card now has a player from each team under it, on his team's side. Upcoming games show each team's best player with his points, rebounds and assists a game; finished games show each team's top game score of the night with his points, rebounds and assists in it.",

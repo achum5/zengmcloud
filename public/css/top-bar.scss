@@ -87,6 +87,19 @@ $tbd-lost: #b4252f;
 	}
 }
 
+// A team's name is a text link (to its roster): it underlines on hover and
+// on a click or tap, the day around it doesn't.
+@media (hover: hover) {
+	.tbd-team:hover .tbd-abbrev {
+		text-decoration: underline;
+	}
+}
+
+.tbd-team:active .tbd-abbrev,
+.tbd-team:focus-visible .tbd-abbrev {
+	text-decoration: underline;
+}
+
 // Hover or tap: the day stays as it is, no underline, only a little lighter
 // (on a phone a tap would leave hover lit, so there it's the press only).
 @media (hover: hover) {
@@ -255,6 +268,12 @@ $tbd-lost: #b4252f;
 	.tbd-row-trailing,
 	.tbd-ot {
 		color: inherit;
+	}
+
+	// (Dimmed piece by piece, not the row: opacity on the row would sink the
+	// team's link under the day's and a click would open the game.)
+	.tbd-row-trailing > *,
+	.tbd-ot {
 		opacity: 0.7;
 	}
 }
@@ -325,8 +344,10 @@ $tbd-lost: #b4252f;
 	}
 }
 
-// A playoff game that may not be needed.
-.tbd-maybe .tbd-body {
+// A playoff game that may not be needed. (Faded piece by piece, so the
+// teams' links stay over the day's.)
+.tbd-maybe .tbd-row > *,
+.tbd-maybe .tbd-special {
 	opacity: 0.55;
 }
 
