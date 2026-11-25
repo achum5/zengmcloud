@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 641,
+		date: "2026-11-25",
+		text: "Shared leagues with auto play on: the Daily Schedule's game cards now show when auto play sims that day, on your own clock, on a tab at the top of each card like a tip-off time (for example 1:15 – 1:30 PM). Tap any day still to come to see its time on a phone.",
+	},
+	{
 		n: 640,
 		date: "2026-11-25",
 		text: "3D game, New sim: the ball moves around the floor before the play is run, out to a wing, around the arc and back, instead of sitting with the point guard at the top. Players catch it and move it on quickly or take a dribble or two first, and a player who catches it carries on a step instead of stopping dead.",

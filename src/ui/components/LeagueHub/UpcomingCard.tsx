@@ -20,8 +20,9 @@ import { spreadLine } from "./spreadLine.ts";
 // team's colors at its end, its city and name - and where a played game has
 // its score, its record, with its overall beside it; each end, and its words,
 // a link to that team's page. Between them, the line (under its network, if
-// it's on one); hung from the foot, watch it or sim it; beside it all (on a
-// phone, under it), each team's best player.
+// it's on one); hung from the top, when auto play sims it; hung from the foot,
+// watch it or sim it; beside it all (on a phone, under it), each team's best
+// player.
 
 export type UpcomingCardTeam = {
 	tid: number;
@@ -196,12 +197,15 @@ export const UpcomingCard = ({
 	game,
 	players,
 	actions,
+	simTime,
 	when,
 }: {
 	game: UpcomingCardGame;
 	// Each team's best player, home first (see getTopPlayers).
 	players?: [any, any];
 	actions?: UpcomingCardActions;
+	// When auto play sims it, on this device's clock (see simTimes.ts).
+	simTime?: string;
 	// "Today", or the day it's on: shown only when there's no line.
 	when: string;
 }) => {
@@ -239,9 +243,18 @@ export const UpcomingCard = ({
 			<div className="lh-gc-row">
 				<div className="lh-gc-main">
 					<div
-						className={clsx("lh-gc-card", actions && "lh-gc-has-acts")}
+						className={clsx(
+							"lh-gc-card",
+							actions && "lh-gc-has-acts",
+							simTime && "lh-gc-has-series",
+						)}
 						style={halves}
 					>
+						{/* (On a tab like a playoff game's series, which auto play
+						    never reaches.) */}
+						{simTime ? (
+							<div className="lh-gc-series lh-gc-time">{simTime}</div>
+						) : null}
 						<Side
 							t={away}
 							side="away"
