@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 615,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): a defender running up on a man in his way slows down in time instead of stopping dead on him, keeps up with a man running just ahead of him, and steps aside when someone walks into him instead of being shoved over in a blink.",
+	},
+	{
 		n: 614,
 		date: "2026-11-25",
 		text: "Links underline again when you hover or tap them: player names everywhere, recap sentences, the ticker, team banners, the league feed and the leaders on Daily Schedule game cards. The date in the top bar is a button now: no underline, just a soft shade on hover and a press when you tap it, and it's no longer cut off at the top and bottom. The yesterday/today arrows at the end of the scores bar no longer go blank on iPhones.",

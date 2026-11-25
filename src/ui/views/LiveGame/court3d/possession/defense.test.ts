@@ -152,6 +152,42 @@ describe("3D possession sim: a defender going about it", () => {
 		assert.isAbove(nearest, 1.5);
 	});
 
+	test("flat out at a man stood in his way, his spot beyond him: slowed for him in time, not stopped dead on him", () => {
+		let m = { ...stood({ x: 20, y: 25 }), vx: 18, vy: 0 };
+		const o = { x: 30, y: 25, vx: 0, vy: 0 };
+		let nearest = Infinity;
+		const paces = [Math.hypot(m.vx, m.vy)];
+		for (let k = 0; k < 30; k++) {
+			m = moveOn(m, { to: { x: 40, y: 25 }, effort: 1 }, d, [o]);
+			nearest = Math.min(nearest, dist(m, o));
+			paces.push(Math.hypot(m.vx, m.vy));
+		}
+		// (Never slower in a tenth of a second by more than a body brakes in
+		// one - well short of a jolt, 8 ft/s.)
+		for (let k = 2; k < paces.length; k++) {
+			assert.isBelow(paces[k - 2]! - paces[k]!, 4);
+		}
+		assert.isAbove(nearest, 1.5);
+		// (And by him, going on.)
+		assert.isAbove(m.x, o.x + 2);
+	});
+
+	test("on the heels of a man running on ahead of him the same way: kept up with, not stopped dead behind him", () => {
+		let m = { ...stood({ x: 20, y: 25 }), vx: 15.8, vy: 0.3 };
+		let o = { x: 22.5, y: 25.6, vx: 11.6, vy: -0.4 };
+		const paces = [Math.hypot(m.vx, m.vy)];
+		for (let k = 0; k < 10; k++) {
+			m = moveOn(m, { to: { x: o.x + 6, y: 29 }, effort: 1 }, d, [o]);
+			o = { ...o, x: o.x + o.vx * 0.05, y: o.y + o.vy * 0.05 };
+			paces.push(Math.hypot(m.vx, m.vy));
+		}
+		// (No jolt - 8 ft/s slower in a tenth of a second - and on at his pace.)
+		for (let k = 2; k < paces.length; k++) {
+			assert.isBelow(paces[k - 2]! - paces[k]!, 8);
+		}
+		assert.isAbove(Math.min(...paces), 9);
+	});
+
 	test("a man running through: he steps aside, not backed up the way he goes", () => {
 		let m = stood({ x: 20, y: 25 });
 		let o = { x: 26, y: 25.2, vx: -15, vy: 0 };
