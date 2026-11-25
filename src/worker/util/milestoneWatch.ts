@@ -23,7 +23,79 @@ export type WatchStat = (typeof WATCH_STATS)[number];
 
 type Totals = Record<WatchStat, number> & { gp: number };
 
-type CareerRow = {
+// Everything the All-Time Ranks rank (allTimeRanks.ts), summed over a
+// career's regular seasons or playoffs. PER and BPM by the minute, to be
+// divided back out.
+const SUM_KEYS = [
+	"gp",
+	"gs",
+	"min",
+	"pts",
+	"orb",
+	"drb",
+	// Rebounds from before offensive and defensive were kept apart.
+	"trb",
+	"ast",
+	"stl",
+	"blk",
+	"tp",
+	"tpa",
+	"fg",
+	"fga",
+	"ft",
+	"fta",
+	"tov",
+	"pf",
+	"dd",
+	"td",
+	"ows",
+	"dws",
+	"vorp",
+	"perMin",
+	"bpmMin",
+] as const;
+export type Sums = Record<(typeof SUM_KEYS)[number], number>;
+
+// (The box score's, which a game being played live takes back out.)
+const BOX_KEYS = [
+	"gs",
+	"min",
+	"pts",
+	"orb",
+	"drb",
+	"ast",
+	"stl",
+	"blk",
+	"tp",
+	"tpa",
+	"fg",
+	"fga",
+	"ft",
+	"fta",
+	"tov",
+	"pf",
+] as const;
+
+const zeroSums = () => {
+	const out = {} as Sums;
+	for (const key of SUM_KEYS) {
+		out[key] = 0;
+	}
+	return out;
+};
+
+const addSums = (t: Sums, row: Record<string, any>) => {
+	for (const key of SUM_KEYS) {
+		if (key !== "perMin" && key !== "bpmMin") {
+			t[key] += row[key] ?? 0;
+		}
+	}
+	const min = row.min ?? 0;
+	t.perMin += (row.per ?? 0) * min;
+	t.bpmMin += ((row.obpm ?? 0) + (row.dbpm ?? 0)) * min;
+};
+
+export type CareerRow = {
 	pid: number;
 	name: string;
 	tid: number;
@@ -33,6 +105,12 @@ type CareerRow = {
 	onFile: boolean;
 	career: Totals;
 	seasons: Map<number, Totals>;
+	// For the All-Time Ranks: all of it, regular season and playoffs, and his
+	// first and last regular seasons.
+	reg: Sums;
+	po: Sums;
+	from: number;
+	to: number;
 };
 
 const zero = (): Totals => ({
@@ -47,7 +125,9 @@ const zero = (): Totals => ({
 
 const add = (t: Totals, row: Record<string, any>, sign = 1, gp?: number) => {
 	t.pts += sign * (row.pts ?? 0);
-	t.trb += sign * ((row.orb ?? 0) + (row.drb ?? 0));
+	// (Seasons before offensive and defensive rebounds were kept apart have
+	// only a total.)
+	t.trb += sign * ((row.trb ?? 0) + (row.orb ?? 0) + (row.drb ?? 0));
 	t.ast += sign * (row.ast ?? 0);
 	t.stl += sign * (row.stl ?? 0);
 	t.blk += sign * (row.blk ?? 0);
@@ -58,10 +138,21 @@ const add = (t: Totals, row: Record<string, any>, sign = 1, gp?: number) => {
 const careerRow = (p: Player, season: number): CareerRow => {
 	const career = zero();
 	const seasons = new Map<number, Totals>();
+	const reg = zeroSums();
+	const po = zeroSums();
+	let from = Infinity;
+	let to = -Infinity;
 	for (const row of p.stats) {
-		if (!row || row.playoffs) {
+		if (!row) {
 			continue;
 		}
+		if (row.playoffs) {
+			addSums(po, row);
+			continue;
+		}
+		addSums(reg, row);
+		from = Math.min(from, row.season);
+		to = Math.max(to, row.season);
 		add(career, row);
 		let t = seasons.get(row.season);
 		if (!t) {
@@ -78,6 +169,10 @@ const careerRow = (p: Player, season: number): CareerRow => {
 		onFile: careerOnFile(p, season, g.get("startingSeason")),
 		career,
 		seasons,
+		reg,
+		po,
+		from: Number.isFinite(from) ? from : season,
+		to: Number.isFinite(to) ? to : season,
 	};
 };
 
@@ -106,7 +201,7 @@ const retiredRows = async () => {
 };
 
 // Everyone, with this season's games still being played live taken out.
-const loadRows = async () => {
+export const loadRows = async () => {
 	const season = g.get("season");
 	const active = (
 		await idb.cache.players.indexGetAll("playersByTid", [
@@ -132,6 +227,10 @@ const loadRows = async () => {
 					}
 					const played = (line.min ?? 0) > 0 ? 1 : 0;
 					add(row.career, line, -1, played);
+					row.reg.gp -= played;
+					for (const key of BOX_KEYS) {
+						row.reg[key] -= (line as any)[key] ?? 0;
+					}
 					const t2 = row.seasons.get(season);
 					if (t2) {
 						add(t2, line, -1, played);
@@ -392,50 +491,15 @@ export const getMilestoneWatch = async () => {
 	};
 };
 
-// ------------------------------------------------------ EVERYONE'S ALL-TIME
+// ------------------------------------------------------ A PLAYER'S PAGE
 
-export type AllTimeRank = {
-	stat: WatchStat;
-	total: number;
-	// Undefined with none of it.
-	rank: number | undefined;
-	// How many players are on the list.
-	of: number;
-	next?: ChaseRow["next"];
-	behind?: ChaseRow["behind"];
-};
-
-// A player's place on each all-time list, for his page: every player with a
-// regular season game or stat to his name, playing or retired. Still playing,
-// also the round number he's closest to and a season on a record pace.
-export const getPlayerAllTime = async (pid: number) => {
+// Still playing, the round number he's closest to and a season on a record
+// pace, under his All-Time Ranks.
+export const getPlayerMilestoneExtras = async (
+	rows: CareerRow[],
+	me: CareerRow,
+) => {
 	const season = g.get("season");
-	const rows = await loadRows();
-	const me = rows.find((row) => row.pid === pid);
-	if (
-		!me ||
-		(me.career.gp === 0 && WATCH_STATS.every((stat) => me.career[stat] === 0))
-	) {
-		return undefined;
-	}
-
-	const ranks: AllTimeRank[] = WATCH_STATS.map((stat) => {
-		const list = ranked(rows, stat);
-		const i = list.findIndex((row) => row.pid === pid);
-		if (i < 0) {
-			return { stat, total: 0, rank: undefined, of: list.length };
-		}
-		const { next, behind, rank } = chaseRow(list, i, stat);
-		return {
-			stat,
-			total: me.career[stat],
-			rank,
-			of: list.length,
-			next,
-			behind,
-		};
-	});
-
 	let round: RoundRow | undefined;
 	for (const stat of WATCH_STATS) {
 		const r = roundRow(me, stat, season);
@@ -446,8 +510,8 @@ export const getPlayerAllTime = async (pid: number) => {
 
 	const pace =
 		me.active && hasHistory(rows, season)
-			? (await paceRows(rows, season)).find((row) => row.pid === pid)
+			? (await paceRows(rows, season)).find((row) => row.pid === me.pid)
 			: undefined;
 
-	return { active: me.active, gp: me.career.gp, ranks, round, pace };
+	return { round, pace };
 };
