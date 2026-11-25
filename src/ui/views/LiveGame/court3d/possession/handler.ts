@@ -112,9 +112,19 @@ const THERE = 0.8;
 const HOME_LEAD = 1400;
 const HOME_SPARE = 900;
 const HOME_SURE = 450;
+// A move he could not be back from in time, cut down to these shares of
+// it - no smaller than this (feet).
+const SHRINK = [0.6, 0.35];
+const SHRINK_LEAST = 1.5;
 // Gathering, he stops in a stride or two: about this hard (a share of his
-// brakes).
-const GATHER = 0.75;
+// brakes), and in this far at the most (feet) - carried on by the catch,
+// not stopped dead on it. (Real, a catch he holds on to: caught at 4.2
+// ft/s, still going 2.5 half a second on, 2 ft gone in 0.7 s - all
+// medians, 17 games; stopped hard, ours had gone half a foot.)
+const GATHER = 0.15;
+const GATHER_MOST = 3.2;
+// (Easing into it, not pulled up hard on the spot: this hard at it.)
+const GATHER_EFFORT = 0.8;
 // Facing the way he goes from this fast (feet a second); slower, square to
 // the rim.
 const FACE_GOING = 8;
@@ -318,13 +328,17 @@ export const decide = (
 	if (!f.dribbling) {
 		// In his hands: a stride or two to stop, and there.
 		if (!mind.pivot) {
-			const k = v > 0.5 ? (v * v) / (2 * GATHER * a.body.brake) / v : 0;
+			const k =
+				v > 0.5
+					? Math.min(GATHER_MOST, (v * v) / (2 * GATHER * a.body.brake)) / v
+					: 0;
 			mind.pivot = { x: m.x + m.vx * k, y: m.y + m.vy * k };
 		}
 		// (Into something of the play's from where he is: a step into it.)
-		const to = f.handTo?.commit ? f.handTo.at : mind.pivot;
+		const into = f.handTo?.commit === true;
+		const to = into ? f.handTo!.at : mind.pivot;
 		return {
-			goal: { to, effort: 1, arrive: 0, face },
+			goal: { to, effort: into ? 1 : GATHER_EFFORT, arrive: 0, face },
 			anim: "walk",
 		};
 	}
@@ -350,16 +364,35 @@ export const decide = (
 			mind.n += 1;
 		} else {
 			pick(m, f, a, mind, pid);
-			// (Nor anything he could not be done with and back from in time.)
-			if (
-				f.home &&
+			// (Nor anything he could not be done with and back from in time -
+			// but a smaller one of the same that he could, not stood waiting
+			// on the spot.)
+			const fits = () =>
+				f.home === undefined ||
 				mind.until -
 					f.t +
 					(1000 * dist(mind.at!, f.home.at)) / BACK_PACE[0] +
-					HOME_SPARE >
-					f.home.in
-			) {
-				homeFrom();
+					HOME_SPARE <=
+					f.home.in;
+			if (!fits()) {
+				const A = mind.at!;
+				const go = mind.until - f.t;
+				for (const k of SHRINK) {
+					mind.at = {
+						x: here.x + (A.x - here.x) * k,
+						y: here.y + (A.y - here.y) * k,
+					};
+					mind.until = f.t + go * k;
+					if (fits()) {
+						break;
+					}
+				}
+				if (
+					!fits() ||
+					(mind.kind !== "size" && dist(here, mind.at) < SHRINK_LEAST)
+				) {
+					homeFrom();
+				}
 			}
 		}
 	}

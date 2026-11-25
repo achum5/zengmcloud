@@ -194,6 +194,9 @@ const MEET_LEAST = 8;
 const OFF_COMMIT_MOST = 6000;
 // How long the five take to see the ball going to the rim (ms).
 const TEAM_READ = 200;
+// Dribbling again for less than this (ms) between two moves with the ball
+// is not going anywhere again (see pickUpFor).
+const ON_AGAIN_LEAST = 500;
 // Something that pins him this soon (ms) after one he does wherever he is:
 // that one pins him too (see strict).
 const CHAIN_MS = 2000;
@@ -714,11 +717,19 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		}
 		turns.sort((a, b) => a - b);
 		let up: number | undefined;
-		for (const u of turns) {
+		for (let i = 0; i < turns.length; i++) {
+			const u = turns[i]!;
 			const on = dribblingAt(pid, u);
 			if (up === undefined && !on) {
 				up = u;
 			} else if (up !== undefined && on) {
+				// (On it again only for a blink between two moves of his with
+				// it - a hesitation, then the ball in his hands to throw it:
+				// all one, he goes nowhere in between.)
+				const off = turns.find((w, j) => j > i && !dribblingAt(pid, w));
+				if (off !== undefined && off - u < ON_AGAIN_LEAST) {
+					continue;
+				}
 				return { up, again: u };
 			}
 		}

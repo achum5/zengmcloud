@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 640,
+		date: "2026-11-25",
+		text: "3D game, New sim: the ball moves around the floor before the play is run, out to a wing, around the arc and back, instead of sitting with the point guard at the top. Players catch it and move it on quickly or take a dribble or two first, and a player who catches it carries on a step instead of stopping dead.",
+	},
+	{
 		n: 639,
 		date: "2026-11-25",
 		text: "NBA Calendar, Play Through Injuries: the betting line, the sportsbook and team strength now judge your hurt players by the days they'll have left on game day, the same way the game decides who plays. A player at 3 days today whose next game is two days away counts as 2 days, so a 2-day setting already includes him. Also, if you never moved the slider with the calendar on, it now always shows the same number of days. Before, it could move a day on its own.",

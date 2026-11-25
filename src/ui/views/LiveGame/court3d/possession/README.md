@@ -115,7 +115,8 @@ looks better.
      built: see below).
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
-     on the floor.
+     on the floor (the ball moved round before the set built: see Moving
+     it round).
    - 8d, transition: push or walk it up, lanes, a rim runner, a trailer.
    - 8e, team styles from the lineup's ratings.
 
@@ -753,6 +754,58 @@ inch a frame. Switch off unchanged: the same hash.)
 
 Still short: what is left is mostly a jump or a quick move taking his legs
 over from his steps, and a stop with both feet down far apart.
+
+## Moving it round (8c, first piece)
+
+Real teams pass it 2.6 times a trip and a man has it 1.4 s at the median
+(17 games of tracking). Ours brought it up and stood dribbling at the top
+while the set waited: 7.6 passes a live minute against a real 11.3, held
+2.5 s at the median.
+
+`director.ts` (`moveIt`, the new sim only - switched off, `sizeUp` as
+before):
+
+- Brought up with time on the clock, the ball goes round before the set:
+  out to a wing, on round the arc, up to a big at the elbow, and back to
+  the man the set starts with. How many passes goes by the clock the trip
+  took (`MOVE_PASSES`), so with the set's own and the shot's a trip has
+  about as many as a real one.
+- Who it goes to (`nextFor`): a man out of the paint a pass away (8 to 30
+  ft), the nearer the likelier, not straight back to the man who gave it
+  him, nor one the play has busy.
+- Each man has it a moment: straight off the catch (0.25-0.6 s) or a
+  dribble or two first (0.7-1.5 s). Now and then he takes it a few
+  dribbles before it goes on (`carryIt`): in at his man, or on round the
+  arc toward the man it goes to next, his man going with him - a better
+  handler more often.
+- Now and then the man with it calls the set first, a hand up.
+
+`possession/handler.ts`: a catch he holds on to carries him on a step or
+two, not stopped dead on it (real: caught at 4.2 ft/s, still going 2.5
+half a second on, 2 ft gone in 0.7 s; ours had gone half a foot). A move
+of his own he could not be back from in time for his pick-up is cut down
+to one he could, rather than dropped for standing on the spot.
+
+`possession/loop.ts` (`pickUpFor`): a blink of dribbling between two moves
+of his with the ball - a hesitation, then the ball in his hands to throw
+it - is one spell, not a chance to go somewhere. (Taking it as the end of
+one, a man dribbled 7 ft off where the play has him throw it, and was
+pulled back the 7 ft in a fifth of a second to throw it.)
+
+| Measure (real_11 + real_22, whole games) | Real | Before | Now |
+| --- | --- | --- | --- |
+| Passes a live minute | 11.3 | 7.6 | 9.5 |
+| Ball held, median (s) | 1.4 | 2.5 | 2.2 |
+| The man with it stood | 15% | 34% | 32% |
+| Flags (lurch, teleport, corner, statue, frozen and the rest) | | 362 | 324 |
+
+Still short: a man has it 3 s on a set's step with a quarter of a pass
+between (the set's own moments, 8c-2); he stands twice as much as a real
+one, most of all the first second after a catch (46% of it, real 18%) and
+the last half second before it goes (45%, real 17%); and everybody sets off
+from a standstill twice as often as real men do (81 a live minute, real
+41), mostly short hops of 4 to 15 ft from stood to stood, which is most of
+why they set off together (44% within 0.1 s of another man, real 26%).
 
 ## Natural and smooth (before step 8)
 

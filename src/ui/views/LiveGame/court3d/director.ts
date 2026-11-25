@@ -2875,6 +2875,38 @@ const DROP_DEEP = 13;
 const DROP_SHALLOW = 5;
 const SHOW_OFF = 3;
 
+// MOVING IT (see moveIt): how many passes go round before the set, by the
+// clock the trip took (seconds, the most first): the odds of none, then of
+// two (out and back), three, four - so with the set's own and the shot's
+// a trip has about as many as a real one (17 games: about one pass a trip
+// in 4 to 8 s over half court, two in 8 to 12, three in 12 to 16, four
+// past that).
+const MOVE_PASSES: [number, number[]][] = [
+	[16, [0.1, 0, 0.35, 0.35, 0.2]],
+	[12, [0.15, 0, 0.45, 0.3, 0.1]],
+	[0, [0.3, 0, 0.5, 0.2]],
+];
+// How often he calls the set first, a hand up.
+const MOVE_CALL = 0.15;
+// How long each man has it before it goes on (ms): straight off the catch,
+// or a dribble or two first (real: held 0.7 s at a quarter of touches, 1.4
+// s at the median, 2.9 at three quarters).
+const MOVE_SWING: [number, number] = [250, 600];
+const MOVE_LOOK: [number, number] = [700, 1500];
+// Who it goes to: out of the paint (feet from the rim), a pass away (feet).
+const MOVE_IN = 12;
+const MOVE_NEAR = 8;
+const MOVE_FAR = 30;
+// Not straight on, he takes it a few dribbles first (see carryIt), the
+// better his handle the likelier (the odds, a poor handler to a fine one):
+// this far (feet), this quick (feet a second), not in nearer the rim than
+// this (feet) - the man with it real teams have moving 85% of the time,
+// not stood bouncing it.
+const MOVE_CARRY: [number, number] = [3, 6];
+const MOVE_CARRY_ODDS: [number, number, number] = [0.65, 0.35, 0.9];
+const MOVE_CARRY_PACE: [number, number] = [6, 9];
+const MOVE_CARRY_IN = 18;
+
 // A set being run.
 type Running = {
 	play: Play;
@@ -8864,23 +8896,7 @@ class Director {
 		if (this.holder !== bh || (run.gap !== undefined && run.gap < 9)) {
 			return t;
 		}
-		// Whoever is still back from bringing it up - the inbounder trailing
-		// the play - comes on up over half court while he does.
-		for (const pid of run.roles) {
-			const P = this.posOf(pid);
-			if (pid !== bh && this.inBackcourt(run.team, P)) {
-				this.go(
-					pid,
-					clampPt({
-						x: COURT_W / 2 + attackDir(run.team) * 6,
-						y: P.y + (COURT_H / 2 - P.y) * 0.3,
-					}),
-					Math.max(t, this.free.get(pid) ?? 0),
-					RUN * 0.85,
-					"run",
-				);
-			}
-		}
+		this.comeUp(run, bh, t);
 		const r = this.rng();
 		if (r < 0.12) {
 			return t;
@@ -8951,6 +8967,200 @@ class Director {
 		);
 		this.hold(bh, back, "dribble");
 		return back + 120;
+	}
+
+	// Whoever is still back from bringing it up - the inbounder trailing the
+	// play - comes on up over half court while the man with it gets going.
+	private comeUp(run: Running, bh: number, t: number) {
+		for (const pid of run.roles) {
+			const P = this.posOf(pid);
+			if (pid !== bh && this.inBackcourt(run.team, P)) {
+				this.go(
+					pid,
+					clampPt({
+						x: COURT_W / 2 + attackDir(run.team) * 6,
+						y: P.y + (COURT_H / 2 - P.y) * 0.3,
+					}),
+					Math.max(t, this.free.get(pid) ?? 0),
+					RUN * 0.85,
+					"run",
+				);
+			}
+		}
+	}
+
+	// MOVING IT (8c, the new sim). Brought up with time on the clock, the
+	// ball does not sit with him while the set waits: it goes round the
+	// floor - out to a wing, on round the arc, up to a big at the elbow -
+	// each man who gets it passing it on straight off the catch or after a
+	// dribble or two, and back to the man the set starts with as it goes.
+	// Real teams pass it 2.6 times a trip and a man has it 1.4 s at the
+	// median (17 games of tracking); stood dribbling at the top while the
+	// set waits, ours passed it 1.4 times and held it 2.5 s.
+	private moveIt(run: Running, bh: number, t: number): number {
+		if (this.holder !== bh || (run.gap !== undefined && run.gap < 9)) {
+			return t;
+		}
+		this.comeUp(run, bh, t);
+		// Now and then he calls it first, a hand up.
+		if (this.rng() < MOVE_CALL) {
+			const dur = this.rand(850, 1150);
+			this.act(bh, "callPlay", t, t + dur);
+			t += dur;
+		}
+		const gap = run.gap ?? 12;
+		const odds = MOVE_PASSES.find(([least]) => gap >= least)![1];
+		let r = this.rng();
+		let n = 0;
+		while (n < odds.length - 1 && r >= odds[n]!) {
+			r -= odds[n]!;
+			n++;
+		}
+		if (n === 0) {
+			return t;
+		}
+		let has = bh;
+		let prev: number | undefined;
+		let at = t + this.rand(0, 600);
+		// (He has been dribbling it: off it at the side it goes to, or not.)
+		let carry = this.rng() < 0.5;
+		for (let k = 0; k < n; k++) {
+			const to =
+				k === n - 1 && has !== bh ? bh : this.nextFor(run, has, prev, at);
+			if (to === undefined) {
+				break;
+			}
+			if (carry) {
+				at = this.carryIt(run, has, to, at);
+			}
+			at = this.passTo(has, to, at);
+			const quick = this.rng() < this.byPassing(to, 0.55, 0.4, 0.7);
+			carry =
+				!quick &&
+				this.rng() <
+					this.byHandle(
+						to,
+						MOVE_CARRY_ODDS[0],
+						MOVE_CARRY_ODDS[1],
+						MOVE_CARRY_ODDS[2],
+					);
+			this.hold(
+				to,
+				carry ? at + GATHER_MS - 110 : at,
+				quick ? "hold" : "dribble",
+			);
+			this.guardStep(run, [], at, at + 500);
+			prev = has;
+			has = to;
+			if (carry) {
+				at += GATHER_MS - 110;
+			} else if (to !== bh || k < n - 1) {
+				at += quick
+					? this.rand(MOVE_SWING[0], MOVE_SWING[1])
+					: this.rand(MOVE_LOOK[0], MOVE_LOOK[1]);
+			}
+		}
+		if (has !== bh) {
+			at = this.passTo(has, bh, at);
+			this.hold(bh, at, "dribble");
+			this.guardStep(run, [], at, at + 500);
+		}
+		return at + 150;
+	}
+
+	// A few dribbles with it before it goes on (see moveIt): in at his man -
+	// not on into the lane - or on round the arc at the man it goes to
+	// next, never right up on him; his man going with him. Returns when he
+	// is there with it.
+	private carryIt(run: Running, pid: number, next: number, t: number): number {
+		const { team } = run;
+		const dir = attackDir(team);
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const A = this.posOf(pid);
+		const N = this.posOf(next);
+		const out = dist(A, rim);
+		const len = this.rand(MOVE_CARRY[0], MOVE_CARRY[1]);
+		const inn = unitVec(A, rim);
+		const at = unitVec(A, N);
+		const u =
+			out - len >= MOVE_CARRY_IN && this.rng() < 0.5
+				? inn
+				: // (Round, not in: no nearer the rim than he was.)
+					unitVec(
+						{ x: 0, y: 0 },
+						{
+							x: at.x - inn.x * Math.max(0, at.x * inn.x + at.y * inn.y),
+							y: at.y - inn.y * Math.max(0, at.x * inn.x + at.y * inn.y),
+						},
+					);
+		const far = Math.min(len, dist(A, N) - MOVE_NEAR);
+		if (far < MOVE_CARRY[0] * 0.6 || this.inBackcourt(team, A)) {
+			return t;
+		}
+		const P = clampPt({ x: A.x + u.x * far, y: A.y + u.y * far });
+		const start = Math.max(t, this.free.get(pid) ?? 0);
+		if (this.dribbleFrom(pid, start) === undefined) {
+			this.hold(pid, start, "dribble");
+		}
+		const there = this.go(
+			pid,
+			P,
+			start,
+			this.rand(MOVE_CARRY_PACE[0], MOVE_CARRY_PACE[1]),
+			"dribble",
+			dir,
+		);
+		const d = this.defenderOf(pid);
+		if (d !== undefined) {
+			this.shadow(
+				d,
+				this.defensePoint(team, P, P, true),
+				start + 120,
+				there + 120,
+				team,
+				pid,
+			);
+		}
+		return there;
+	}
+
+	// Who it goes to next, moving it round: a man out on the floor (a wing,
+	// the top, a corner, a big up at the elbow) a pass away - the nearer
+	// the likelier, the next man round more often than one across - not
+	// back to the man who just gave it him, nor to one the play has busy.
+	private nextFor(
+		run: Running,
+		has: number,
+		prev: number | undefined,
+		at: number,
+	): number | undefined {
+		const rim = { x: rimX(run.team), y: COURT_H / 2 };
+		const H = this.posOf(has);
+		const cands = run.roles.filter((p) => {
+			if (p === has || p === prev || (this.free.get(p) ?? 0) > at + 400) {
+				return false;
+			}
+			const P = this.posOf(p);
+			const d = dist(P, H);
+			return (
+				dist(P, rim) >= MOVE_IN &&
+				d >= MOVE_NEAR &&
+				d <= MOVE_FAR &&
+				!this.inBackcourt(run.team, P)
+			);
+		});
+		if (cands.length === 0) {
+			return undefined;
+		}
+		const w = cands.map((p) => 1 / dist(this.posOf(p), H) ** 2);
+		let r = this.rng() * w.reduce((a, b) => a + b, 0);
+		for (let i = 0; i < cands.length; i++) {
+			r -= w[i]!;
+			if (r <= 0) {
+				return cands[i];
+			}
+		}
+		return cands.at(-1);
 	}
 
 	// An inbound play: everybody to his spot in it as drawn up, the inbounder
@@ -9168,7 +9378,11 @@ class Director {
 		this.guardStep(run, [], t + 150, ready);
 		this.motionTeam = team;
 		this.motion = 0;
-		return sized ? this.sizeUp(run, bh, ready + 100) : ready + 100;
+		return !sized
+			? ready + 100
+			: this.possession
+				? this.moveIt(run, bh, ready + 100)
+				: this.sizeUp(run, bh, ready + 100);
 	}
 
 	// Who plays which part in a set is first who fits it - but of the men who
