@@ -1,5 +1,11 @@
 import type { BallSeg, Beat, CourtTimeline, Fx } from "../director.ts";
-import { BALL_R, CROSS_RATE, DOWN, beatTime } from "../evaluate.ts";
+import {
+	BALL_R,
+	CROSS_RATE,
+	DOWN,
+	beatTime,
+	floorSpotOf,
+} from "../evaluate.ts";
 import { floorTouches } from "../floorRoll.ts";
 import { rimX } from "../geometry.ts";
 import { spotAt } from "../possession/through.ts";
@@ -7,14 +13,16 @@ import { spotAt } from "../possession/through.ts";
 // WHAT IS HEARD ON THE FLOOR, AND WHEN: every sound the picture makes, read
 // off the timeline the game was staged into (see director.ts) - nothing new
 // worked out about the game, only when the ball hits the hardwood, the iron
-// or the net, and when an official blows his whistle or the horn goes. The
-// same for the device playing it (see engine.ts) and for a film made of it.
-// Sorted by when.
+// or the net, when a man's sneakers squeak, and when an official blows his
+// whistle or the horn goes. The same for the device playing it (see
+// engine.ts) and for a film made of it. Sorted by when.
 
 export type CueKind =
 	// The ball on the hardwood: a dribble, or loose.
 	| "dribble"
 	| "floor"
+	// Sneakers on it: a man planting hard.
+	| "squeak"
 	// Down through the net; off the iron; slammed through.
 	| "swish"
 	| "rim"
@@ -265,6 +273,128 @@ const fxCues = (tl: CourtTimeline, out: Cue[]) => {
 	) {
 		out.push({ t: over.actionStart, kind: "horn", hard: 1 });
 	}
+};
+
+// SNEAKERS ON THE HARDWOOD: a squeak where a man plants hard - cutting,
+// stopping short, changing direction down in his stance - at the moment he
+// turns hardest, read off where the picture has him. As often as the
+// footage has them (some 30 to 55 a minute of play), one a plant, and a
+// scramble only its hardest few. Worked out a stretch at a time, as the
+// game gets there (every man, every moment, is too much at once).
+const SQUEAK_STRETCH = 2000;
+// (Where he is, read this often (ms); how fast he goes, over twice it; how
+// hard that changes, over four times it.)
+const STEP_MS = 25;
+// Planted this hard (feet a second, a second) or harder, going at least so
+// fast (feet a second) one side of it or the other. The new sim's runs ease
+// in and out the way legs take them; today's turns its corners sharper, so
+// it takes a harder one to sound.
+const PLANT = 35;
+const PLANT_SHARP = 45;
+const PLANT_PACE = 4;
+// One a plant: the same man no sooner again than this (ms).
+const PLANT_AGAIN = 400;
+// No more than so many in a stretch, the hardest; none on top of another.
+const SQUEAKS_MOST = 8;
+const SQUEAK_APART = 60;
+const squeakStretch = (tl: CourtTimeline, k: number): Cue[] => {
+	const t0 = k * SQUEAK_STRETCH;
+	const t1 = t0 + SQUEAK_STRETCH;
+	const hard = tl.gaits ? PLANT : PLANT_SHARP;
+	// (Read from a little before to a little after, for how fast and how
+	// hard either side of its edges.)
+	const pad = 6 * STEP_MS;
+	const n = Math.round((t1 - t0 + 2 * pad) / STEP_MS) + 1;
+	const at = (i: number) => t0 - pad + i * STEP_MS;
+	const found: { t: number; a: number; x: number }[] = [];
+	for (const tr of tl.tracks.values()) {
+		const P: ({ x: number; y: number } | undefined)[] = [];
+		for (let i = 0; i < n; i++) {
+			P.push(floorSpotOf(tr, at(i)));
+		}
+		const V: (readonly [number, number] | undefined)[] = P.map((_, i) => {
+			const a = P[i - 1];
+			const b = P[i + 1];
+			return a && b
+				? [
+						((b.x - a.x) * 1000) / (2 * STEP_MS),
+						((b.y - a.y) * 1000) / (2 * STEP_MS),
+					]
+				: undefined;
+		});
+		const A = V.map((_, i) => {
+			const a = V[i - 2];
+			const b = V[i + 2];
+			return a && b
+				? Math.hypot(b[0] - a[0], b[1] - a[1]) / ((4 * STEP_MS) / 1000)
+				: 0;
+		});
+		const pace = (v: readonly [number, number] | undefined) =>
+			v ? Math.hypot(v[0], v[1]) : 0;
+		let last = -Infinity;
+		for (let i = 3; i < n - 3; i++) {
+			const a = A[i]!;
+			const t = at(i);
+			if (
+				a < hard ||
+				!(a > A[i - 1]! && a >= A[i + 1]!) ||
+				Math.max(pace(V[i - 3]), pace(V[i + 3])) < PLANT_PACE ||
+				t - last < PLANT_AGAIN
+			) {
+				continue;
+			}
+			last = t;
+			if (t >= t0 && t < t1 && t < tl.end) {
+				found.push({ t, a, x: P[i]!.x });
+			}
+		}
+	}
+	found.sort((p, q) => q.a - p.a);
+	const out: Cue[] = [];
+	for (const f of found) {
+		if (out.length >= SQUEAKS_MOST) {
+			break;
+		}
+		if (out.some((c) => Math.abs(c.t - f.t) < SQUEAK_APART)) {
+			continue;
+		}
+		out.push({
+			t: f.t,
+			kind: "squeak",
+			hard: Math.min(1, 0.35 + (0.65 * (f.a - hard)) / hard),
+			x: f.x,
+			fine: true,
+		});
+	}
+	return out.sort((p, q) => p.t - q.t);
+};
+const squeaksMade = new WeakMap<CourtTimeline, Map<number, Cue[]>>();
+// The squeaks from `from` up to `to` (timeline ms), in order.
+export const squeaksIn = (
+	tl: CourtTimeline,
+	from: number,
+	to: number,
+): Cue[] => {
+	let kept = squeaksMade.get(tl);
+	if (!kept) {
+		kept = new Map();
+		squeaksMade.set(tl, kept);
+	}
+	const out: Cue[] = [];
+	const k1 = Math.floor((Math.min(to, tl.end) - 1) / SQUEAK_STRETCH);
+	for (let k = Math.max(0, Math.floor(from / SQUEAK_STRETCH)); k <= k1; k++) {
+		let list = kept.get(k);
+		if (!list) {
+			list = squeakStretch(tl, k);
+			kept.set(k, list);
+		}
+		for (const c of list) {
+			if (c.t >= from && c.t < to) {
+				out.push(c);
+			}
+		}
+	}
+	return out;
 };
 
 // (Worked out once a timeline.)

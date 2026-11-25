@@ -1,6 +1,6 @@
 import type { CourtTimeline } from "../director.ts";
 import type { Bank, BedLevel, Slot } from "./bank.ts";
-import { cuesOf, firstCueAt, type Cue } from "./cues.ts";
+import { cuesOf, firstCueAt, squeaksIn, type Cue } from "./cues.ts";
 import { crowdOf, levelAt, type CrowdNight, type Reaction } from "./crowd.ts";
 
 // THE GAME'S SOUND, PLAYED: each sound on the floor and each roar of the
@@ -29,6 +29,7 @@ const BEDS: BedLevel[] = [0, 1, 2, 3];
 const MIX: Partial<Record<Slot, number>> = {
 	dribble: 0.45,
 	floor: 0.45,
+	squeak: 0.3,
 	swish: 0.6,
 	rim: 0.6,
 	dunk: 0.9,
@@ -212,16 +213,12 @@ export class GameSound {
 	) {
 		const cues = cuesOf(tl);
 		const at = (x: number) => now + Math.max(0, x - t) / rate / 1000;
-		for (; this.cue < cues.length && cues[this.cue]!.t < to; this.cue++) {
-			const c = cues[this.cue]!;
-			if (c.t < from) {
-				continue;
-			}
+		const out = (c: Cue) => {
 			if (rate > ANY_MOST && c.kind !== "horn") {
-				continue;
+				return;
 			}
 			if (rate > FINE_MOST && c.fine) {
-				continue;
+				return;
 			}
 			const slot = slotOf(c);
 			this.play(
@@ -233,6 +230,19 @@ export class GameSound {
 				this.floor,
 				!!c.fine,
 			);
+		};
+		for (; this.cue < cues.length && cues[this.cue]!.t < to; this.cue++) {
+			const c = cues[this.cue]!;
+			if (c.t >= from) {
+				out(c);
+			}
+		}
+		// (The sneakers, only at a pace they are heard at - worked out only
+		// then.)
+		if (rate <= FINE_MOST) {
+			for (const c of squeaksIn(tl, from, to)) {
+				out(c);
+			}
 		}
 		const reactions: Reaction[] = crowdOf(tl).reactions;
 		for (

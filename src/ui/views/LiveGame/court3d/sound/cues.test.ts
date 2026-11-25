@@ -1,6 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { compile } from "../testGame.ts";
-import { cuesOf, firstCueAt } from "./cues.ts";
+import { cuesOf, firstCueAt, squeaksIn } from "./cues.ts";
 import { crowdOf, levelAt } from "./crowd.ts";
 
 describe("game sound: what is heard, and when", () => {
@@ -49,6 +49,23 @@ describe("game sound: what is heard, and when", () => {
 				cues.some((c) => c.kind === "whistle" && Math.abs(c.t - h.t) < 1),
 			);
 		}
+	});
+
+	test("sneakers squeak about as often as on a real floor, however it is asked", () => {
+		const all = squeaksIn(tl, 0, tl.end);
+		const perMin = all.length / (tl.end / 60000);
+		assert.isAbove(perMin, 15);
+		assert.isBelow(perMin, 70);
+		assert.isTrue(all.every((c) => c.fine && c.hard > 0 && c.hard <= 1));
+		// (A frame at a time, as the device asks, the same as all at once.)
+		const parts: number[] = [];
+		for (let t = 0; t < tl.end; t += 137) {
+			parts.push(...squeaksIn(tl, t, t + 137).map((c) => c.t));
+		}
+		assert.deepEqual(
+			parts,
+			all.map((c) => c.t),
+		);
 	});
 
 	test("finding a moment's place in the list", () => {

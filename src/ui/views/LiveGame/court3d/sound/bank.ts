@@ -23,6 +23,7 @@ export const SOUND_FILES: Partial<Record<Slot, string[]>> = {};
 const SLOTS: Slot[] = [
 	"dribble",
 	"floor",
+	"squeak",
 	"swish",
 	"rim",
 	"dunk",
@@ -206,6 +207,22 @@ const made = (sr: number, slot: Slot, take: number): Float32Array => {
 				0.3,
 			);
 			return normal(x, slot === "floor" ? 0.9 : 0.8);
+		}
+		case "squeak": {
+			// (A rubber chirp: a tone bent up through a few kHz, short.)
+			const len = 0.06 + 0.03 * take;
+			const x = new Float32Array(n(len));
+			const f0 = 1500 + 350 * take;
+			const f1 = f0 * 1.6;
+			let ph = 0;
+			for (let i = 0; i < x.length; i++) {
+				const u = i / x.length;
+				const f = f0 + (f1 - f0) * Math.sin((u * Math.PI) / 2);
+				ph += (2 * Math.PI * f) / sr;
+				x[i] = Math.sin(ph) + 0.35 * Math.sin(2 * ph) + 0.15 * Math.sin(3 * ph);
+			}
+			add(x, band(white(x.length, seed), sr, f1, 2), 0.15);
+			return normal(shape(x, sr, 0.004, len * 0.5, len * 0.25), 0.5);
 		}
 		case "swish":
 			return normal(
