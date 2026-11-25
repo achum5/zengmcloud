@@ -1864,9 +1864,9 @@ tr.table-warning:hover > td {
 		margin-bottom: 0;
 	}
 }
-// A phone: the story's first paragraph, the rest behind "Read more".
+// The story's first paragraph, the rest behind "Read more".
 .recap-more {
-	display: none;
+	display: inline-flex;
 	align-items: center;
 	gap: 0.4rem;
 	margin: 0.6rem 0 0.2rem;
@@ -1881,16 +1881,13 @@ tr.table-warning:hover > td {
 		background: rgba(var(--bs-emphasis-color-rgb), 0.08);
 	}
 }
+.recap-rest:not(.recap-rest-open) {
+	display: none;
+}
+.recap-rest-open {
+	margin-top: 0.6rem;
+}
 @include media-breakpoint-down(md) {
-	.recap-more {
-		display: inline-flex;
-	}
-	.recap-rest:not(.recap-rest-open) {
-		display: none;
-	}
-	.recap-rest-open {
-		margin-top: 0.6rem;
-	}
 	.recap-headline {
 		font-size: 1.25rem;
 	}
