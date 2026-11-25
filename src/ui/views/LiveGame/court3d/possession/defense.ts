@@ -229,8 +229,9 @@ export const seenOf = (s: Seen, d: Defender): Seen => {
 // second.)
 const LEVEL = 0.5;
 const GOING = 6;
-// Off the ball, how hard he goes about it (0 to 1); on it, all he has.
-const OFF_EFFORT = 0.8;
+// Off the ball, how hard he goes about it (0 to 1) - shifting with the ball,
+// not bursting from spot to spot; on it, all he has.
+const OFF_EFFORT = 0.6;
 // Within this (feet) of the man he goes out to, he breaks down: going at it
 // faster than this (feet a second) from farther, a closeout.
 const CLOSE_FAR = 4.5;

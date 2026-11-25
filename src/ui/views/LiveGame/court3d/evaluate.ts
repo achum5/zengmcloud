@@ -12,7 +12,13 @@ import type {
 	Track,
 } from "./director.ts";
 import { COURT_H, rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
-import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
+import {
+	alongShape,
+	evenShape,
+	keepThrough,
+	runShape,
+	type RunShape,
+} from "./motion.ts";
 import { playAt } from "./physics.ts";
 import { floorRollAt } from "./floorRoll.ts";
 import {
@@ -928,7 +934,7 @@ const shapeOf = (run: Run): RunShape => {
 			s1,
 			v0,
 			v1,
-			shape: runShape(L, (s1 - s0) / 1000, v0, v1),
+			shape: (mv.steady ? evenShape : runShape)(L, (s1 - s0) / 1000, v0, v1),
 		};
 		shapes.set(mv, got);
 	}

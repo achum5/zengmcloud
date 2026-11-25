@@ -42,8 +42,8 @@ describe("3D possession sim: a man following today's play with his own body", ()
 			assert.isAtMost(off(out, sprint), 4.5);
 			// (Kept up with, if more than his body has: no faster than
 			// that, or the play, by more than he is pulled along - until
-			// he is put on it for the catch.)
-			for (const q of out.filter((x) => x.t <= 4500)) {
+			// he is put on it for the catch, over the last 0.8 s before it.)
+			for (const q of out.filter((x) => x.t <= 4200)) {
 				assert.isAtMost(pace(q), Math.max(b.top, 18) + 5 + 1e-9);
 			}
 		}

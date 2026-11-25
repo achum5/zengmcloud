@@ -143,6 +143,9 @@ export type RunShape = {
 	ta: number;
 	td: number;
 	L: number;
+	// Steady (see evenShape): his pace going from the one end's to the
+	// other's - eased, on at one and a ramp to the other, or evenly.
+	even?: "eased" | "ramped" | "evenly";
 };
 
 // The shape of a run L feet long taking T seconds, from pace v0 to pace v1:
@@ -297,6 +300,134 @@ const shapeAt = (
 	return { T, v0, v1, vc: b, ta: ramp(v0, b, k), td: ramp(b, v1, k), L };
 };
 
+// A STEADY RUN: the new possession sim's men, whose runs are cut from
+// their own steps (see stepper.ts toMoves) - his pace going from what it was
+// at the start to what it is at the end the way his steps had it, not got
+// up to a pace as hard as a man can and on at it, the court's way (see
+// runShape): a man drifting a few feet over a couple of seconds eases into
+// it and out of it, as real men do.
+// - Eased from the one pace to the other, the way that covers the run in
+//   its time - where that only ever gets quicker or only slower, as his
+//   steps did (see toMoves), or bulges up between two paces too slow to
+//   cover it (from standing to standing, say).
+// - Otherwise, getting quicker or slower: on at the one pace and evenly to
+//   the other over as much of it as covers the run - not eased through a
+//   standstill and on again, a stop his steps never made.
+// - A run too short for even the slower pace: evenly from the one to the
+//   other, a touch slower all through to cover it.
+export const evenShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
+	if (T <= 0.001 || L <= 0) {
+		return { T: Math.max(T, 0.001), v0, v1, vc: 0, ta: 0, td: 0, L };
+	}
+	const lo = Math.min(v0, v1);
+	const hi = Math.max(v0, v1);
+	const m = L / T;
+	// (The eased run's pace u of the way through it, and where it turns.)
+	const pace = (u: number) =>
+		(3 * u * u - 4 * u + 1) * v0 +
+		(6 * u - 6 * u * u) * m +
+		(3 * u * u - 2 * u) * v1;
+	const bend = 6 * v0 - 12 * m + 6 * v1;
+	const at = Math.abs(bend) > 1e-9 ? (4 * v0 - 6 * m + 2 * v1) / bend : -1;
+	const turn = at > 0 && at < 1 ? pace(at) : undefined;
+	if (m < lo) {
+		return {
+			T,
+			v0,
+			v1,
+			vc: (hi * m) / ((v0 + v1) / 2),
+			ta: T,
+			td: 0,
+			L,
+			even: "evenly",
+		};
+	}
+	if (
+		m > hi ||
+		hi - lo < 1e-6 ||
+		turn === undefined ||
+		(turn >= lo - 1e-9 && turn <= hi + 1e-9)
+	) {
+		return {
+			T,
+			v0,
+			v1,
+			vc: Math.max(hi, turn ?? 0),
+			ta: T,
+			td: 0,
+			L,
+			even: "eased",
+		};
+	}
+	// (On at the one pace, and the ramp to the other: first, if he covers
+	// more than evenly would - getting going early, or pulling up late.)
+	const early = v1 > v0 === L > ((v0 + v1) / 2) * T;
+	const span = Math.min(T, (2 * (early ? v1 * T - L : L - v0 * T)) / (v1 - v0));
+	return early
+		? { T, v0, v1, vc: v1, ta: span, td: 0, L, even: "ramped" }
+		: { T, v0, v1, vc: v0, ta: 0, td: span, L, even: "ramped" };
+};
+// (Along, pace and push, u of the way through a steady run.)
+const evenAlong = (r: RunShape, s: number): number => {
+	const { T, v0, v1, vc, ta, td, L } = r;
+	const u = s / T;
+	if (r.even === "evenly") {
+		const mean = ((v0 + v1) / 2) * T;
+		return mean > 1e-6
+			? (L * (v0 * s + ((v1 - v0) / T) * s * s * 0.5)) / mean
+			: L * u;
+	}
+	if (r.even === "ramped") {
+		if (ta > 0) {
+			return s < ta
+				? v0 * s + ((vc - v0) * s * s) / (2 * ta)
+				: ((v0 + vc) / 2) * ta + vc * (s - ta);
+		}
+		const w = s - (T - td);
+		return w <= 0 ? vc * s : vc * s + ((v1 - vc) * w * w) / (2 * td);
+	}
+	return (
+		(u * u * u - 2 * u * u + u) * T * v0 +
+		(3 * u * u - 2 * u * u * u) * L +
+		(u * u * u - u * u) * T * v1
+	);
+};
+const evenPace = (r: RunShape, s: number): number => {
+	const { T, v0, v1, vc, ta, td, L } = r;
+	const u = Math.min(1, Math.max(0, s / T));
+	if (r.even === "evenly") {
+		const mean = ((v0 + v1) / 2) * T;
+		return mean > 1e-6 ? (L * (v0 + (v1 - v0) * u)) / mean : L / T;
+	}
+	if (r.even === "ramped") {
+		if (ta > 0) {
+			return s < ta ? v0 + ((vc - v0) * s) / ta : vc;
+		}
+		const w = s - (T - td);
+		return w <= 0 ? vc : vc + ((v1 - vc) * Math.min(w, td)) / td;
+	}
+	return (
+		(3 * u * u - 4 * u + 1) * v0 +
+		(6 * u - 6 * u * u) * (L / T) +
+		(3 * u * u - 2 * u) * v1
+	);
+};
+const evenPush = (r: RunShape, s: number): number => {
+	const { T, v0, v1, vc, ta, td, L } = r;
+	const u = Math.min(1, Math.max(0, s / T));
+	if (r.even === "evenly") {
+		const mean = ((v0 + v1) / 2) * T;
+		return mean > 1e-6 ? (L * (v1 - v0)) / mean / T : 0;
+	}
+	if (r.even === "ramped") {
+		if (ta > 0) {
+			return s < ta ? (vc - v0) / ta : 0;
+		}
+		return s > T - td ? (v1 - vc) / td : 0;
+	}
+	return ((6 * u - 4) * v0 + (6 - 12 * u) * (L / T) + (6 * u - 2) * v1) / T;
+};
+
 // How far along it (feet) a run of this shape is, s seconds in.
 export const alongShape = (r: RunShape, s: number): number => {
 	const { T, v0, v1, vc, ta, td, L } = r;
@@ -305,6 +436,9 @@ export const alongShape = (r: RunShape, s: number): number => {
 	}
 	if (s >= T) {
 		return L;
+	}
+	if (r.even) {
+		return Math.min(L, Math.max(0, evenAlong(r, s)));
 	}
 	let d: number;
 	if (s < ta) {
@@ -325,6 +459,9 @@ export const alongShape = (r: RunShape, s: number): number => {
 // less than nothing).
 export const paceAlong = (r: RunShape, s: number): number => {
 	const { T, v0, v1, vc, ta, td } = r;
+	if (r.even) {
+		return evenPace(r, s);
+	}
 	if (s < ta) {
 		return rampPace(v0, vc, ta, Math.max(0, s));
 	}
@@ -334,6 +471,9 @@ export const pushAlong = (r: RunShape, s: number): number => {
 	const { T, v0, v1, vc, ta, td } = r;
 	if (s < 0 || s > T) {
 		return 0;
+	}
+	if (r.even) {
+		return evenPush(r, s);
 	}
 	if (s < ta) {
 		return rampPush(v0, vc, ta, s);

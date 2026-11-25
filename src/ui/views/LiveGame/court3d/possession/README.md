@@ -116,7 +116,7 @@ looks better.
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor (the ball moved round before the set built: see Moving
-     it round).
+     it round; runs eased in and out: see Easing in and out).
    - 8d, transition: push or walk it up, lanes, a rim runner, a trailer.
    - 8e, team styles from the lineup's ratings.
 
@@ -806,6 +806,48 @@ the last half second before it goes (45%, real 17%); and everybody sets off
 from a standstill twice as often as real men do (81 a live minute, real
 41), mostly short hops of 4 to 15 ft from stood to stood, which is most of
 why they set off together (44% within 0.1 s of another man, real 26%).
+
+## Easing in and out (stop-and-go, first piece)
+
+Real men get going and pull up gently: nine times in ten under 8.9 ft/s²
+speeding up and 8.3 slowing down (17 games of tracking). Ours went 12.0 and
+12.5, and the tape flagged a lurch (a stride's worth of jolt) about 120
+times a game.
+
+- `stepper.ts` (`toMoves`), `motion.ts` (`evenShape`), `evaluate.ts`,
+  `director.ts` (`shareAlong`): a run cut from a new-sim man's own steps is
+  marked `steady` and shown the way his steps went, his pace going from
+  what it was at one end to what it is at the other. Before, every one was
+  replayed the court's way (`runShape`: going as hard as a man can, on at a
+  pace, pulled up hard), so two or three feet over a second was a burst and
+  a stop; and a stood-to-stood step was laid as one such run (`wholeRun`,
+  not done for them now). The old sim is as it was.
+- `follow.ts`: a man the play pulls along builds the pull over most of a
+  second, not a sixth (`PULL_BUILD` 15 to 7); before something of his he
+  starts closing on the play 1.3 s ahead, not 1, and eases the last of it
+  in over 0.8 s, not 0.5 - each step taking its share of what is left, not
+  most of it in the last few steps.
+- `defense.ts`: off the ball a defender goes about it at 0.6 of what he
+  has, not 0.8 (`OFF_EFFORT`): shifting with the ball, not bursting from
+  spot to spot.
+
+| Measure (real_11 + real_22, whole games) | Real | Before | Now |
+| --- | --- | --- | --- |
+| Speeding up, 90th percentile (ft/s²) | 8.9 | 12.0 | 11.1 |
+| Slowing down, 90th percentile (ft/s²) | 8.3 | 12.5 | 11.3 |
+| Lurch flags | | 242 | 133 |
+| All flags (lurch, teleport, corner, statue, frozen and the rest) | | 324 | 210 |
+| Set off from a standstill, a live minute | 41.5 | 84 | 95 |
+
+Set-offs went up because the old way of showing runs hid some of the
+stopping: counted on the sim's own steps, they come out the same as now.
+The stopping and starting again is the sim's own, twice as often as real
+men - short stood-to-stood hops by men following the play (a third of
+them) and off-ball defenders (another third). Closing onto the play just
+before something of his (a pinned act) is still the sharpest moment (90th
+percentile over 30 ft/s²): the play's own runs, laid the court's way,
+come through it. New: 4 moonwalk flags in the two games (a man pulled
+along after the play, eyes on the ball, going away from it at a jog).
 
 ## Natural and smooth (before step 8)
 

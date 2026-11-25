@@ -61,17 +61,18 @@ const REACT_ROOM = 1500;
 // than any man gets going, faster than he goes - he falls behind it, this
 // far (feet) and no further: past that he is pulled along, up to this much
 // quicker (feet a second) than he would go - if no quicker than the play -
-// the pull building and letting go over a moment (feet a second, a second),
-// not jolting him.
+// the pull building and letting go over most of a second (feet a second, a
+// second), not jolting him.
 // (Until the ten decide for themselves, and ask only what a body has.)
 const SLACK = 2.5;
 const PULL = 5;
 const PULL_OVER = 0.3;
-const PULL_BUILD = 15;
+const PULL_BUILD = 7;
 // Something of his coming: over this long (ms) before it, less and less
-// behind the play; over the last of that, whatever gap is left closed.
-const COMMIT_MS = 1000;
-const ONTO_MS = 500;
+// behind the play; over the last of that, whatever gap is left closed -
+// time enough that he eases onto it, not snatched there in a few steps.
+const COMMIT_MS = 1300;
+const ONTO_MS = 800;
 // Over a line the play has him inside, drawn back in no faster than this
 // (feet a second).
 const LINE_PULL = 4;
@@ -374,9 +375,17 @@ export const followWith = (body: Body): Follow => {
 			}
 			// Something of his about to start: on the play for it by then,
 			// whatever is left of the gap closed over the last moment.
+			// (The gap left closed along an easing in and out over that moment
+			// - each step taking the share of what is left that keeps it on
+			// that curve - not most of it in the last few steps.)
 			if (due - t <= ONTO_MS) {
 				const u = clamp01(1 - (due - t - STEP_MS) / ONTO_MS);
-				const k = u * u * (3 - 2 * u);
+				const left = (x: number) => {
+					const c = clamp01(x);
+					return 1 - c * c * (3 - 2 * c);
+				};
+				const was = left(u - STEP_MS / ONTO_MS);
+				const k = was > 1e-9 ? 1 - left(u) / was : 1;
 				px += (W.x - m.x) * k;
 				py += (W.y - m.y) * k;
 				m = {

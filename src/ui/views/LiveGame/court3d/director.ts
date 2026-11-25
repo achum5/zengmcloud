@@ -51,6 +51,7 @@ import {
 	BURST,
 	HARDEST_PULL_UP,
 	alongShape,
+	evenShape,
 	keepThrough,
 	paceFor,
 	paceAfter,
@@ -244,6 +245,10 @@ export type Move = {
 	// mark) - rather than read off the runs either side of it.
 	v0?: number;
 	v1?: number;
+	// Run steadily (see motion.ts evenShape): cut from his own steps, the new
+	// possession sim's men - his pace going from the one end's to the
+	// other's the way his steps had it.
+	steady?: true;
 };
 export type Act = {
 	t0: number;
@@ -1946,7 +1951,12 @@ const shareAlong = (m: Move, u: number): number => {
 			v0: m.v0,
 			v1: m.v1,
 			L,
-			r: runShape(L, (m.t1 - m.t0) / 1000, m.v0 ?? 0, m.v1 ?? 0),
+			r: (m.steady ? evenShape : runShape)(
+				L,
+				(m.t1 - m.t0) / 1000,
+				m.v0 ?? 0,
+				m.v1 ?? 0,
+			),
 		};
 		runShapes.set(m, got);
 	}

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 645,
+		date: "2026-11-25",
+		text: "3D game, New sim: players speed up and slow down more smoothly. A step or two to a new spot eases in and out the way the player actually moved, instead of a burst and a hard stop, and off-ball defenders shift with the ball instead of darting from spot to spot. About a third fewer jerky moments in a game.",
+	},
+	{
 		n: 644,
 		date: "2026-11-25",
 		text: "NBA Calendar: from next season, Rivals Week has real rivalry games. The league's biggest rivalries (recent playoff matchups, division rivals, nearby cities, good teams), and in shared leagues your teams against each other when they fit, move into that week and get its national TV games. Only dates change: every team keeps the same games, opponents and home games, and no team gets an extra back-to-back.",

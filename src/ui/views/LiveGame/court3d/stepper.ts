@@ -709,7 +709,9 @@ export const toMoves = (
 		// Going somewhere and stopping there - a step, a jab, a dash -
 		// straight: one run, the way the court runs it (getting going, on,
 		// pulling up: see runShape), if that has him where the steps do.
-		const whole = wholeRun(s, i, pinned, stand);
+		// (Not the new possession sim's men: their runs go the way their
+		// steps had them - see evenShape.)
+		const whole = calm ? i : wholeRun(s, i, pinned, stand);
 		if (whole > i) {
 			// (Turned on the way to face somebody - a defender sliding in on
 			// his man - not run over: cut where the play turns him, so he gets
@@ -810,7 +812,14 @@ export const toMoves = (
 		}
 		i = j;
 	}
-	return pullUpsIn(moves, pinned);
+	const out = pullUpsIn(moves, pinned);
+	// (His own steps: run the way they had him - see evenShape.)
+	if (calm) {
+		for (const m of out) {
+			m.steady = true;
+		}
+	}
+	return out;
 };
 
 // A short run pulling up to all but stand, going on the way the run before
@@ -1136,7 +1145,7 @@ const ballAway = (tl: Stepped) => {
 	// Each stretch of nothing but one man's plain dribble in the one hand,
 	// and something of the ball's after it.
 	const stretches: { pid: number; a: number; b: number; free: boolean }[] = [];
-	for (let k = 0; k < ball.length;) {
+	for (let k = 0; k < ball.length; ) {
 		const s = ball[k]!;
 		if (s.kind !== "hold" || s.style !== "dribble" || s.still) {
 			k += 1;
@@ -1225,7 +1234,7 @@ const ballAway = (tl: Stepped) => {
 			wants.push({ t, to, d: near, sp });
 		}
 		const cuts: Cut[] = [];
-		for (let i = 0; i < wants.length;) {
+		for (let i = 0; i < wants.length; ) {
 			const w = wants[i]!;
 			let j = i + 1;
 			let tight = w.d;
