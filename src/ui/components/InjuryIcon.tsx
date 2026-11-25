@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { timeBetweenGames } from "../../common/timeBetweenGames.ts";
+import { gamesOutText } from "../../common/gamesOut.ts";
 import type { PlayerInjury } from "../../common/types.ts";
 import { PHASE } from "../../common/constants.ts";
 import { helpers } from "../util/helpers.ts";
@@ -38,16 +39,18 @@ export const InjuryIcon = ({
 		};
 	} else if (injury.gamesRemaining > 0 || injury.type !== "Healthy") {
 		// On the NBA calendar, the calendar days it has left; in the offseason,
-		// the days of next season it takes.
+		// the days of next season it takes. And the games on his team's schedule
+		// they take in.
 		const days = injury.daysRemaining;
+		const games = injury.gamesOut ? ` (${gamesOutText(injury.gamesOut)})` : "";
 		let title =
 			days === undefined
 				? `${injury.type}, out ${
 						injury.gamesRemaining
 					} more ${timeBetweenGames(injury.gamesRemaining)}`
 				: offseason
-					? `${injury.type}, out the first ${days} ${helpers.plural("day", days)} of the regular season`
-					: `${injury.type}, out ${days} more ${helpers.plural("day", days)}`;
+					? `${injury.type}, out the first ${days} ${helpers.plural("day", days)} of the regular season${games}`
+					: `${injury.type}, out ${days} more ${helpers.plural("day", days)}${games}`;
 		if (injury.playingThrough) {
 			title += ", played through injury";
 		}

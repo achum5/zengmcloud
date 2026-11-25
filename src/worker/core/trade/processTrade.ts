@@ -21,6 +21,10 @@ import {
 	type TradeTeams,
 } from "../../../common/types.ts";
 import { getTeammateJerseyNumbers } from "../player/genJerseyNumber.ts";
+import {
+	applyCalendarDays,
+	currentDayCount,
+} from "../game/refreshCalendarDays.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
 
 const processTrade = async (
@@ -89,6 +93,7 @@ const processTrade = async (
 		}
 
 		const duringSeason = g.get("phase") <= PHASE.PLAYOFFS;
+		const dayCount = players.length > 0 ? await currentDayCount() : undefined;
 
 		const playersToSave = [];
 		for (const p of players) {
@@ -102,6 +107,10 @@ const processTrade = async (
 
 			// p.gamesUntilTradable = 14; // Don't make traded players untradable
 			p.ptModifier = 1; // Reset
+
+			// On the NBA calendar, an injury's games on his new team's schedule
+			// (refreshCalendarDays.ts).
+			applyCalendarDays(p, dayCount);
 
 			if (duringSeason) {
 				// If two players being traded for each other have the same jersey number, that shouldn't be treated as conflict and they should be able to keep their jersey numbers - that's what the pids[k] part does.

@@ -15,8 +15,10 @@ import { coarsenRating } from "../../../common/coarsenRating.ts";
 import { collegeFinalSeason } from "../../../common/college.ts";
 import { revertBefore } from "./revertSnapshot.ts";
 import { addContract, createContract } from "../contract/index.ts";
-import { daysOut } from "../game/calendarTicks.ts";
-import { currentDayClock } from "../game/classicDays.ts";
+import {
+	applyCalendarDays,
+	currentDayCount,
+} from "../game/refreshCalendarDays.ts";
 import { coolOffForSigning } from "../game/tradableOn.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
@@ -115,18 +117,9 @@ const sign = async (
 			p.tradableOn = wait.on;
 		}
 	}
-	// On the NBA calendar, the days that comes to (see refreshCalendarDays.ts).
-	const dayClock =
-		p.gamesUntilTradable > 0 ? await currentDayClock() : undefined;
-	if (dayClock) {
-		p.daysUntilTradable = daysOut(
-			p.gamesUntilTradable,
-			dayClock.clock,
-			dayClock.tonight,
-		);
-	} else {
-		delete p.daysUntilTradable;
-	}
+	// On the NBA calendar, the days that comes to, and an injury's games on his
+	// new team's schedule (see refreshCalendarDays.ts).
+	applyCalendarDays(p, await currentDayCount());
 	delete p.numPlayersTradedAwayNormalized;
 
 	// Handle stats if the season is in progress. Otherwise, not needed until next season.

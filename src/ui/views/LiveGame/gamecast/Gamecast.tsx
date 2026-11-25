@@ -56,6 +56,7 @@ import {
 } from "./RecapDock.tsx";
 import { BoxScorePhone, useIsPhone } from "./BoxScorePhone.tsx";
 import { Lineups, OnOff, Rotations, WithStints } from "./LineupViews.tsx";
+import { daysAndGamesText } from "../../../../common/gamesOut.ts";
 
 type Tab = "gamecast" | "box" | "plays" | "stats" | "flow";
 
@@ -982,8 +983,8 @@ const injuryText = (injury: any) => {
 		return "Playing through it";
 	}
 	if (injury.daysRemaining > 0) {
-		// On the NBA calendar.
-		return `Out ${injury.daysRemaining} ${helpers.plural("day", injury.daysRemaining)}`;
+		// On the NBA calendar: "Out 9 days (5 games)".
+		return `Out ${daysAndGamesText(injury.daysRemaining, injury.gamesOut)}`;
 	}
 	return injury.gamesRemaining > 0
 		? `Out ${injury.gamesRemaining} ${helpers.plural("game", injury.gamesRemaining)}`

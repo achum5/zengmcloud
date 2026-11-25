@@ -3239,6 +3239,12 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	"Games Out": {
+		title: "Games",
+		desc: "Games Out, on his team's schedule",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
 	GOAT: {
 		desc: "GOAT Score",
 		sortSequence: ["desc", "asc"],

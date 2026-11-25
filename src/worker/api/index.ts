@@ -1,9 +1,7 @@
-import {
-	currentDayClock,
-	playThroughCalendar,
-} from "../core/game/classicDays.ts";
+import { playThroughCalendar } from "../core/game/classicDays.ts";
 import {
 	applyCalendarDays,
+	currentDayCount,
 	refreshCalendarDaysForNewSeason,
 } from "../core/game/refreshCalendarDays.ts";
 import { nbaCalendarLeague } from "../core/game/calendarTicks.ts";
@@ -38,6 +36,7 @@ import type { FaceConfig } from "facesjs";
 import type {
 	Contract,
 	FlatContractInfo,
+	GamesOut,
 	PlayerStatAttr,
 	ScoreBugStyle,
 } from "../../common/types.ts";
@@ -808,6 +807,26 @@ const checkParticipationAchievement = async (
 	}
 };
 
+// An injury's logged games (on the NBA calendar) when what's left of it is
+// edited: its games left before, `was`, swapped for `now`.
+const adjustGamesOut = (
+	entry: Player["injuries"][number],
+	now: GamesOut | undefined,
+	was: GamesOut | undefined,
+) => {
+	if (entry.gamesOut) {
+		entry.gamesOut.n = Math.max(
+			0,
+			entry.gamesOut.n + (now?.n ?? 0) - (was?.n ?? 0),
+		);
+		if (now?.more) {
+			entry.gamesOut.more = true;
+		} else if (was?.more) {
+			delete entry.gamesOut.more;
+		}
+	}
+};
+
 const clearInjuries = async (pids: number[] | "all") => {
 	const players = (
 		pids === "all"
@@ -826,6 +845,7 @@ const clearInjuries = async (pids: number[] | "all") => {
 					lastInjuriesEntry.days - (p.injury.daysRemaining ?? 0),
 				);
 			}
+			adjustGamesOut(lastInjuriesEntry, undefined, p.injury.gamesOut);
 			if (lastInjuriesEntry.games <= 0) {
 				// Injury was cleared before any days were simmed
 				p.injuries.pop();
@@ -7709,8 +7729,7 @@ const upsertCustomizedPlayer = async (
 	}
 
 	// On the NBA calendar, the days the injury and trade wait come to.
-	const dayClock = await currentDayClock();
-	applyCalendarDays(p, dayClock?.clock, dayClock?.tonight ?? "");
+	applyCalendarDays(p, await currentDayCount());
 
 	// Contracts can't be edited directly in the UI, so use the current ones, which might have changed since the UI got them (like payments from games played)
 	const prevPlayer =
@@ -7905,6 +7924,11 @@ const upsertCustomizedPlayer = async (
 							lastInjuriesEntry.days - (prevPlayer.injury.daysRemaining ?? 0),
 						);
 					}
+					adjustGamesOut(
+						lastInjuriesEntry,
+						undefined,
+						prevPlayer.injury.gamesOut,
+					);
 					if (lastInjuriesEntry.games <= 0) {
 						// Injury was edited before any days were simmed
 						p.injuries.pop();
@@ -7917,6 +7941,9 @@ const upsertCustomizedPlayer = async (
 						games: p.injury.gamesRemaining,
 						...(p.injury.daysRemaining !== undefined
 							? { days: p.injury.daysRemaining }
+							: {}),
+						...(p.injury.gamesOut !== undefined
+							? { gamesOut: { ...p.injury.gamesOut } }
 							: {}),
 						type: p.injury.type,
 					});
@@ -7935,6 +7962,11 @@ const upsertCustomizedPlayer = async (
 								(prevPlayer.injury.daysRemaining ?? 0),
 						);
 					}
+					adjustGamesOut(
+						lastInjuriesEntry,
+						p.injury.gamesOut,
+						prevPlayer.injury.gamesOut,
+					);
 					if (lastInjuriesEntry.games <= 0) {
 						// Injury was edited before any days were simmed
 						p.injuries.pop();

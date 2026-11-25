@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 637,
+		date: "2026-11-25",
+		text: 'NBA Calendar: injuries now show how many games a player will miss next to his days out, like "9 days (5 games)", counted from his own team\'s schedule. It\'s in the injury tooltip, the Injuries page, his injury history, the game page and the injury news. "12+ games" means more may come (the playoffs, or a series going long). Also fixed: when the game skipped a date with no games, like Christmas Eve, injury days only went down by one. Now every day that passed counts.',
+	},
+	{
 		n: 636,
 		date: "2026-11-25",
 		text: "3D game, New sim: legs move more like a real body. Toes point out instead of in, so knees stop caving inward, hips turn with the feet, and players step around as they turn instead of twisting on planted feet until their legs cross. A foot no longer gets left behind on its toes, and the stepping leg no longer kicks out to the side.",

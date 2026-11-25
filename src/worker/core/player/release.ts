@@ -66,6 +66,8 @@ const release = async (p: Player, justDrafted: boolean) => {
 		await getNumPlayersTradedAwayNormalizedAll(),
 		releasedByTid,
 	);
+	// An injury's games came from his team's schedule (injuryGamesOut.ts).
+	delete p.injury.gamesOut;
 	await idb.cache.players.put(p);
 
 	// Undo, right after: the same revert God Mode makes from the transaction

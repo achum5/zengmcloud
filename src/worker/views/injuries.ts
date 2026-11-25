@@ -86,8 +86,10 @@ export default defineView({
 							...p,
 							type: p.injury.type,
 							games: p.injury.gamesRemaining,
-							// On the NBA calendar, the days it has left.
+							// On the NBA calendar, the days it has left and the games
+							// they take in.
 							days: p.injury.daysRemaining,
+							gamesOut: p.injury.gamesOut,
 							...drops(p, p.injuries.length - 1),
 							playingThrough: false,
 						});
@@ -100,6 +102,7 @@ export default defineView({
 								type: injury.type,
 								games: injury.games,
 								days: injury.days,
+								gamesOut: injury.gamesOut,
 								...drops(p, i),
 								playingThrough: false,
 							});

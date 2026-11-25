@@ -19,6 +19,7 @@ import type { Conditions, Phase, PhaseReturn } from "../../../common/types.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { processScheduledEvents } from "./processScheduledEvents.ts";
 import { settleBets } from "../sportsbook/bets.ts";
+import { refreshCalendarDaysNow } from "../game/refreshCalendarDays.ts";
 import { autoPlayStopsAt, cleanupAutoPlay } from "../league/autoPlay.ts";
 import {
 	realisticTradesOn,
@@ -56,6 +57,12 @@ const finalize = async (
 	await league.setGameAttributes({
 		phase,
 	});
+
+	// On the NBA calendar: injuries' days and games as the playoffs start,
+	// from their first night (refreshCalendarDays.ts).
+	if (phase === PHASE.PLAYOFFS) {
+		await refreshCalendarDaysNow();
+	}
 
 	// Realistic front offices trade as some offseason phases open, before the
 	// save below.

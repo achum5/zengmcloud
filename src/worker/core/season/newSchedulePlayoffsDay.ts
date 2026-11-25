@@ -1,4 +1,5 @@
 import setSchedule from "./setSchedule.ts";
+import { PHASE } from "../../../common/constants.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, sim } from "../../util/index.ts";
 import type { PlayoffSeriesTeam } from "../../../common/types.ts";
@@ -27,6 +28,7 @@ import {
 } from "./playoffCalendar.ts";
 import { addDays } from "../../../common/calendarDates.ts";
 import { getNextRoundMatchups, getPlayInFinalGame } from "./playoffBracket.ts";
+import { refreshCalendarDaysNow } from "../game/refreshCalendarDays.ts";
 
 const seriesIsNotOver = (
 	home: PlayoffSeriesTeam,
@@ -82,6 +84,18 @@ const getTeamsForOrderTeams = () => {
  * @return {Promise.boolean} Resolves to true if the playoffs are over. Otherwise, false.
  */
 const newSchedulePlayoffsDay = async (): Promise<boolean> => {
+	const over = await scheduleNextNight();
+	// On the NBA calendar: the days injuries have left count from the day
+	// before the night just drawn up, and their games come from the round's
+	// plan (refreshCalendarDays.ts). (While the playoffs are starting, the
+	// phase change does it, newPhase/finalize.ts.)
+	if (g.get("phase") === PHASE.PLAYOFFS) {
+		await refreshCalendarDaysNow();
+	}
+	return over;
+};
+
+const scheduleNextNight = async (): Promise<boolean> => {
 	const playoffSeries = await idb.cache.playoffSeries.get(g.get("season"));
 	if (!playoffSeries) {
 		throw new Error("No playoff series");
@@ -471,7 +485,7 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 	await idb.cache.teamSeasons.putAll(teamSeasonsToSave);
 
 	// Next time, the schedule for the first day of the next round will be set
-	return newSchedulePlayoffsDay();
+	return scheduleNextNight();
 };
 
 export default newSchedulePlayoffsDay;

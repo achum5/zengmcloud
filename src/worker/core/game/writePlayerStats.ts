@@ -1,5 +1,7 @@
 import { PHASE } from "../../../common/constants.ts";
 import { daysOutForNewInjury } from "./classicDays.ts";
+import { gamesOutForNewInjury } from "./injuryGamesOut.ts";
+import { daysAndGamesText, gamesOutText } from "../../../common/gamesOut.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import { finances, player } from "../index.ts";
 import { idb } from "../../db/index.ts";
@@ -69,12 +71,21 @@ const doInjury = async (
 	if (daysOut !== undefined) {
 		p2.injury.daysRemaining = daysOut;
 	}
+	// And the games on his team's schedule they take in (injuryGamesOut.ts).
+	const gamesOut = await gamesOutForNewInjury(p2.tid, daysOut, date);
+	if (gamesOut !== undefined) {
+		p2.injury.gamesOut = gamesOut;
+	}
+	// "9 days (5 games)", on the calendar.
+	const daysText =
+		daysOut !== undefined ? daysAndGamesText(daysOut, gamesOut) : undefined;
 
 	p.injury = {
 		type: p2.injury.type,
 		gamesRemaining: p2.injury.gamesRemaining,
 		newThisGame: true,
 		...(daysOut !== undefined ? { daysRemaining: daysOut } : {}),
+		...(gamesOut !== undefined ? { gamesOut: { ...gamesOut } } : {}),
 	};
 
 	void recordInjuryForensics({
@@ -94,6 +105,7 @@ const doInjury = async (
 		season: g.get("season"),
 		games: p2.injury.gamesRemaining,
 		...(daysOut !== undefined ? { days: daysOut } : {}),
+		...(gamesOut !== undefined ? { gamesOut: { ...gamesOut } } : {}),
 		type: p2.injury.type,
 	});
 	let stopPlay = false;
@@ -101,8 +113,8 @@ const doInjury = async (
 		"player",
 		p2.pid,
 	])}">${p2.firstName} ${p2.lastName}</a> - ${p2.injury.type}, ${
-		daysOut !== undefined
-			? `${daysOut} ${daysOut === 1 ? "day" : "days"}`
+		daysText !== undefined
+			? daysText
 			: `${p2.injury.gamesRemaining - 1} ${
 					p2.injury.gamesRemaining - 1 === 1 ? gameOrWeek : `${gameOrWeek}s`
 				}`
@@ -186,7 +198,9 @@ const doInjury = async (
 					: `reaggravated ${helpers.pronoun(g.get("gender"), "his")} injury`
 			}! (${p2.injury.type}, out for ${
 				daysOut !== undefined
-					? `${daysOut} ${daysOut === 1 ? "day" : "days"}`
+					? `${daysOut} ${daysOut === 1 ? "day" : "days"}${
+							gamesOut !== undefined ? `, ${gamesOutText(gamesOut)}` : ""
+						}`
 					: `${p2.injury.gamesRemaining} ${
 							p2.injury.gamesRemaining === 1 ? gameOrWeek : `${gameOrWeek}s`
 						}`

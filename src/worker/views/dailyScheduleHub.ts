@@ -3,6 +3,7 @@ import type {
 	RecapGame,
 	RecapPlayer,
 } from "../util/getDayGamesForRecap.ts";
+import type { GamesOut } from "../../common/types.ts";
 
 // THE LEAGUE HUB ON THE DAILY SCHEDULE: a night's best stat lines, who got
 // hurt and where the standings stood - all read off the same recap data the
@@ -33,6 +34,9 @@ export type HubInjury = {
 	tid: number;
 	type: string;
 	gamesRemaining: number;
+	// On the NBA calendar: its days and the games they take in.
+	daysRemaining?: number;
+	gamesOut?: GamesOut;
 };
 
 export type DailyScheduleHub = {
@@ -102,6 +106,10 @@ export const buildHub = ({
 						tid: t.tid,
 						type: p.injury.type,
 						gamesRemaining: p.injury.gamesRemaining,
+						...(p.injury.daysRemaining !== undefined
+							? { daysRemaining: p.injury.daysRemaining }
+							: {}),
+						...(p.injury.gamesOut ? { gamesOut: p.injury.gamesOut } : {}),
 					});
 				}
 			}

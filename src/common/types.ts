@@ -2080,6 +2080,17 @@ export type PlayerFeat = PlayerFeatWithoutKey & {
 	fid: number;
 };
 
+// On the NBA calendar: the games on his team's schedule an injury's days take
+// in, shown beside the days (worker/core/game/injuryGamesOut.ts).
+export type GamesOut = {
+	n: number;
+	// More may come: the days run past what's on the schedule (into the
+	// playoffs, an "if necessary" game, the next round).
+	more?: true;
+	// An estimate, in the offseason, before next season's schedule is made.
+	about?: true;
+};
+
 export type PlayerInjury = {
 	gamesRemaining: number;
 	type: string;
@@ -2087,6 +2098,8 @@ export type PlayerInjury = {
 	// On the NBA calendar: the calendar days gamesRemaining comes to, which is
 	// what the game shows (worker/core/game/refreshCalendarDays.ts).
 	daysRemaining?: number;
+	// And the games on his team's schedule those days take in.
+	gamesOut?: GamesOut;
 };
 
 // Only for legacy league files and the migration from before contracts were tracked
@@ -2208,8 +2221,10 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	injuries: {
 		season: number;
 		games: number;
-		// On the NBA calendar, the days it was for.
+		// On the NBA calendar, the days it was for, and the games on his
+		// team's schedule they took in.
 		days?: number;
+		gamesOut?: GamesOut;
 		type: string;
 		ovrDrop?: number;
 		potDrop?: number;

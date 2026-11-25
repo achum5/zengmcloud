@@ -17,7 +17,7 @@ import {
 import getNumPlayoffTeams from "../core/season/getNumPlayoffTeams.ts";
 import { getPlayoffsByConf } from "../core/season/getPlayoffsByConf.ts";
 import type { GameFlow } from "../../common/gameFlow.ts";
-import type { Game } from "../../common/types.ts";
+import type { Game, GamesOut } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import {
 	addTotals,
@@ -147,8 +147,22 @@ export type RecapPlayer = {
 		gamesRemaining: number;
 		newThisGame?: boolean;
 		playingThrough?: boolean;
+		// On the NBA calendar: its days and the games they take in.
+		daysRemaining?: number;
+		gamesOut?: GamesOut;
 	};
 };
+
+// A box score injury's NBA calendar days and games, when it has them.
+const calendarInjury = (injury: {
+	daysRemaining?: unknown;
+	gamesOut?: GamesOut;
+}) => ({
+	...(typeof injury.daysRemaining === "number"
+		? { daysRemaining: injury.daysRemaining }
+		: {}),
+	...(injury.gamesOut ? { gamesOut: { ...injury.gamesOut } } : {}),
+});
 
 export type RecapMove = TeamMove & { region: string; name: string };
 
@@ -1257,6 +1271,7 @@ export const getDayGamesForRecap = async ({
 									gamesRemaining: p.injury.gamesRemaining ?? 0,
 									newThisGame: !!p.injury.newThisGame,
 									playingThrough: !!p.injury.playingThrough,
+									...calendarInjury(p.injury),
 								}
 							: undefined,
 				};
@@ -1988,6 +2003,7 @@ const createAutoRecapContext = async (season: number) => {
 									gamesRemaining: p.injury.gamesRemaining ?? 0,
 									newThisGame: !!p.injury.newThisGame,
 									playingThrough: !!p.injury.playingThrough,
+									...calendarInjury(p.injury),
 								}
 							: undefined,
 				};

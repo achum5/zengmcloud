@@ -1,14 +1,17 @@
 import { DataTable } from "../../components/DataTable/index.tsx";
 import { getCols } from "../../../common/getCols.ts";
 import { injuryDropCell } from "../../util/injuryDropCell.ts";
+import { gamesOutCellData } from "../../util/gamesOutCellData.ts";
+import type { GamesOut } from "../../../common/types.ts";
 
+// On the NBA calendar: days, then the games they took in on his team's
+// schedule.
 const colsFor = (days: boolean) =>
 	getCols(
 		[
 			"Year",
 			"Type",
-			"Games",
-			...(days ? ["Days"] : []),
+			...(days ? ["Days", "Games Out"] : ["Games"]),
 			"Ovr Drop",
 			"Pot Drop",
 		],
@@ -27,6 +30,7 @@ const Injuries = ({
 		games: number;
 		// On the NBA calendar.
 		days?: number;
+		gamesOut?: GamesOut;
 		season: number;
 		type: string;
 		// "-" in coarse ratings mode: a drop that didn't cost a full tens digit.
@@ -57,8 +61,12 @@ const Injuries = ({
 	const days = injuries.some((injury) => injury.days !== undefined);
 	const cols = colsFor(days);
 
+	// Before the calendar counted his team's games: its classic length.
+	const games = (injury: (typeof injuries)[number]) =>
+		injury.gamesOut?.n ?? injury.games;
+
 	const totals = {
-		games: injuries.reduce((sum, injury) => sum + injury.games, 0),
+		games: injuries.reduce((sum, injury) => sum + games(injury), 0),
 		days: injuries.reduce((sum, injury) => sum + (injury.days ?? 0), 0),
 		ovrDrop: total("ovrDrop"),
 		potDrop: total("potDrop"),
@@ -80,8 +88,14 @@ const Injuries = ({
 							value: injury.season,
 						},
 						injury.type,
-						injury.games,
-						...(days ? [injury.days ?? null] : []),
+						...(days
+							? [
+									injury.days ?? null,
+									injury.gamesOut
+										? gamesOutCellData(injury.gamesOut)
+										: injury.games,
+								]
+							: [injury.games]),
 						showRatings ? injuryDropCell(injury.ovrDrop) : null,
 						showRatings ? injuryDropCell(injury.potDrop) : null,
 					],
@@ -91,8 +105,8 @@ const Injuries = ({
 				data: [
 					"Total",
 					null,
-					totals.games,
 					...(days ? [totals.days] : []),
+					totals.games,
 					showRatings ? totals.ovrDrop : null,
 					showRatings ? totals.potDrop : null,
 				],

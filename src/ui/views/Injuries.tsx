@@ -9,6 +9,7 @@ import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { wrappedCheckmarkOrCross } from "../components/CheckmarkOrCross.tsx";
 import { useLocal } from "../util/local.ts";
 import { injuryDropCell } from "../util/injuryDropCell.ts";
+import { gamesOutCellData } from "../util/gamesOutCellData.ts";
 
 const Injuries = ({
 	inDays,
@@ -58,6 +59,8 @@ const Injuries = ({
 			...stats.map((stat) => `stat:${stat}`),
 			"TypeInjury",
 			"Games",
+			// On the NBA calendar: days, then the games they take in.
+			...(inDays ? ["Games Out"] : []),
 			"Playing Through?",
 			"Ovr Drop",
 			"Pot Drop",
@@ -106,6 +109,7 @@ const Injuries = ({
 				...stats.map((stat) => helpers.roundStat(p.stats[stat], stat)),
 				p.type,
 				inDays ? (p.days ?? p.games) : p.games,
+				...(inDays ? [gamesOutCellData(p.gamesOut)] : []),
 				wrappedCheckmarkOrCross({ hideCross: true, success: p.playingThrough }),
 				showRatings ? injuryDropCell(p.ovrDrop) : null,
 				showRatings ? injuryDropCell(p.potDrop) : null,

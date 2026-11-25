@@ -6,6 +6,7 @@ import type {
 } from "../../../worker/views/dailyScheduleHub.ts";
 import type { RecapDayStandings } from "../../../worker/util/getDayGamesForRecap.ts";
 import { helpers } from "../../util/helpers.ts";
+import { daysAndGamesText } from "../../../common/gamesOut.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../PlayerPicture.tsx";
@@ -336,8 +337,12 @@ const InjuryRow = ({ injury }: { injury: HubInjury }) => {
 				<a href={helpers.leagueUrl(["player", injury.pid])}>{injury.name}</a>{" "}
 				<span className="text-body-secondary">{t?.abbrev}</span>
 				<div className="lh-injury-what">
-					{injury.type}, out {injury.gamesRemaining}{" "}
-					{injury.gamesRemaining === 1 ? "game" : "games"}
+					{injury.type}, out{" "}
+					{injury.daysRemaining !== undefined
+						? daysAndGamesText(injury.daysRemaining, injury.gamesOut)
+						: `${injury.gamesRemaining} ${
+								injury.gamesRemaining === 1 ? "game" : "games"
+							}`}
 				</div>
 			</div>
 		</li>
