@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 592,
+		date: "2026-11-25",
+		text: "3D game: the baskets look like the NBA's now. The stanchion is padded in the home team's color, with a column up the front leaning back to the boom and a lit sign along the top of it, and the shot clock on the backboard is the league's new round one, with the game clock in amber over the shot clock in red.",
+	},
+	{
 		n: 591,
 		date: "2026-11-25",
 		text: "3D game: the photographers behind each baseline work from their own boxes, lined on the floor either side of the basket, like at a real NBA game.",

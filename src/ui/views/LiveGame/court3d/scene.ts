@@ -2401,6 +2401,7 @@ export const drawFrame = (f: Frame) => {
 					(screen.startsWith("ad")
 						? f.arena.stanchionAds?.[Number(screen.slice(2))]
 						: undefined) ?? f.arena.stanchion,
+					f.clock,
 				);
 			},
 		});

@@ -3,7 +3,7 @@ import { makeCourtRng } from "../courtRng.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
-import { drawTexturedPlane } from "./planes.ts";
+import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { anchorOf, drawModel, type ModelPlace } from "./arenaModel.ts";
 import { STANCHION } from "./stanchionModel.ts";
 import { BALL_R } from "./evaluate.ts";
@@ -890,6 +890,10 @@ export const paintStands = (
 // where he sits each frame, the size the camera has him there (see
 // drawCourtside) - seen from anywhere, a person in a chair.
 const CS_FRONT = 8;
+// The stanchion's base behind each basket (see stanchion.py): how far back
+// from the baseline it runs, and half its width - no seats in it.
+const STANCHION_BACK = 11.6;
+const STANCHION_HALF = 2.7;
 const CS_ROW = 2.6;
 const CS_STEP = 1.1;
 // Along the baseline, and the aisles through them (feet across the floor).
@@ -972,7 +976,11 @@ export const courtsideFor = (
 				y < CS_Y1;
 				y += CS_CHAIR
 			) {
-				if (CS_AISLES.some((aisle) => Math.abs(y - aisle) < 1.4)) {
+				if (
+					CS_AISLES.some((aisle) => Math.abs(y - aisle) < 1.4) ||
+					(Math.abs(x - line) < STANCHION_BACK &&
+						Math.abs(y - 25) < STANCHION_HALF + CS_CHAIR / 2)
+				) {
 					continue;
 				}
 				at.push({ x, y, z: r * CS_STEP });
@@ -2153,110 +2161,429 @@ const poly = (ctx: CanvasRenderingContext2D, cam: Camera, pts: Pt3[]) => {
 	ctx.closePath();
 };
 
-// THE SHOT CLOCK on top of the board: a dark box, the seconds lit in red on
-// each side of it - so from wherever the camera is, the side it sees has
-// them, the way a broadcast shows it from the sideline. (Drawn flat across
-// the top of the board, as it was, the side camera saw only its edge, and
-// the seconds floated over the board on nothing.)
-const CLOCK_HALF = 0.9;
-const CLOCK_IN = 3.55;
-const CLOCK_OUT = 4.55;
-const CLOCK_LOW = 13.08;
-const CLOCK_HIGH = 14.05;
+// THE SHOT CLOCK on top of the board: the NBA's round one (league-wide
+// since 2025-26; laid out off 2K's) - a drum on a short stem over the
+// board, the game clock in amber over the shot clock in red on both its
+// faces, the unlit segments showing faintly; a panel under it, a rod down
+// from each side of it to the top of the board, and the rim camera on
+// top. From the sideline with the play at that end it is seen nearly edge
+// on - a dark disc, its digits a sliver of light - as the real one is.
+const CLOCK_D = 3.8;
+const CLOCK_T = 0.42;
+const CLOCK_R = 1.45;
+const CLOCK_Z = 15.95;
+const CLOCK_N = 24;
+const CLOCK_PX = 120;
+const CLOCK_RIM = "#26282e";
+const CLOCK_AMBER = "#ffb02e";
+const CLOCK_RED = "#ff3326";
+
+// The face of a box on the board toward the camera (its middle `d` from
+// the baseline, `depth` through), as a picture `w` x `h` is laid on it -
+// read from in front, the right way round whichever face and whichever end.
+const facePlane = (
+	cam: Camera,
+	side: Side,
+	d: number,
+	depth: number,
+	y: number,
+	z: number,
+	halfW: number,
+	halfH: number,
+	w: number,
+	h: number,
+): TexturedPlane | undefined => {
+	const sgn = side === 0 ? 1 : -1;
+	const base = side === 0 ? 0 : COURT_W;
+	const out = (cam.pos.x - (base + sgn * d)) * sgn > 0 ? 1 : -1;
+	const x = base + sgn * (d + (out * depth) / 2);
+	const at = (r: number, u: number, v: number): Pt3 => ({
+		x,
+		y: y + r * u * halfW,
+		z: z - v * halfH,
+	});
+	if ([at(1, -1, -1), at(1, 1, 1)].some((p) => depthOf(cam, p) < 1)) {
+		return undefined;
+	}
+	const tl = project(cam, at(1, -1, -1));
+	const tr = project(cam, at(1, 1, -1));
+	const bl = project(cam, at(1, -1, 1));
+	const r =
+		(tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x) < 0 ? -1 : 1;
+	return {
+		origin: at(r, -1, -1),
+		alongX: { x: 0, y: (r * 2 * halfW) / w, z: 0 },
+		alongY: { x: 0, y: 0, z: (-2 * halfH) / h },
+		w,
+		h,
+	};
+};
+// The clock's.
+export const shotClockFace = (
+	cam: Camera,
+	side: Side,
+	rock = 0,
+	bz = 0,
+): TexturedPlane | undefined =>
+	facePlane(
+		cam,
+		side,
+		CLOCK_D,
+		CLOCK_T,
+		25 + rock,
+		CLOCK_Z + bz,
+		CLOCK_R,
+		CLOCK_R,
+		CLOCK_PX,
+		CLOCK_PX,
+	);
+// The panel under it: a strip of unlit digits.
+const PANEL = { d0: 3.62, d1: 3.98, half: 1.2, z0: 13.42, z1: 14.6 };
+let panelPicture: HTMLCanvasElement | undefined;
+const paintClockPanel = (): HTMLCanvasElement => {
+	if (!panelPicture) {
+		panelPicture = document.createElement("canvas");
+		panelPicture.width = 96;
+		panelPicture.height = 47;
+		const ctx = panelPicture.getContext("2d")!;
+		ctx.fillStyle = "#14151a";
+		ctx.fillRect(0, 0, 96, 47);
+		ctx.fillStyle = "#2a2c33";
+		ctx.fillRect(0, 0, 96, 2);
+		drawLed(ctx, "", "88:88", 48, 22, 15, CLOCK_AMBER);
+	}
+	return panelPicture;
+};
+
+// Seven-segment digits, lit (and every segment of an 8 faintly under them).
+const SEGMENTS: Record<string, string> = {
+	"0": "abcdef",
+	"1": "bc",
+	"2": "abged",
+	"3": "abgcd",
+	"4": "fgbc",
+	"5": "afgcd",
+	"6": "afgedc",
+	"7": "abc",
+	"8": "abcdefg",
+	"9": "abcdfg",
+};
+const drawLed = (
+	ctx: CanvasRenderingContext2D,
+	// What is lit, and the cells it is lit in (each an 8, or a : or .).
+	text: string,
+	cells: string,
+	cx: number,
+	top: number,
+	h: number,
+	color: string,
+) => {
+	const w = h * 0.52;
+	const t = Math.max(1.5, h * 0.14);
+	const gap = h * 0.2;
+	const sep = h * 0.24;
+	const widthOf = (c: string) => (c === ":" || c === "." ? sep : w + gap);
+	let x = cx - ([...cells].reduce((a, c) => a + widthOf(c), 0) - gap) / 2;
+	const segment = (s: string) => {
+		const half = h / 2;
+		const [sx, sy, sw, sh] =
+			s === "a"
+				? [x + t * 0.6, top, w - t * 1.2, t]
+				: s === "b"
+					? [x + w - t, top + t * 0.6, t, half - t * 0.9]
+					: s === "c"
+						? [x + w - t, top + half + t * 0.3, t, half - t * 0.9]
+						: s === "d"
+							? [x + t * 0.6, top + h - t, w - t * 1.2, t]
+							: s === "e"
+								? [x, top + half + t * 0.3, t, half - t * 0.9]
+								: s === "f"
+									? [x, top + t * 0.6, t, half - t * 0.9]
+									: [x + t * 0.6, top + half - t / 2, w - t * 1.2, t];
+		ctx.fillRect(sx, sy, sw, sh);
+	};
+	for (let i = 0; i < cells.length; i++) {
+		const cell = cells[i]!;
+		const ch = text[i] ?? " ";
+		if (cell === ":" || cell === ".") {
+			const dots = cell === ":" ? [0.3, 0.7] : [0.92];
+			for (const lit of [false, true]) {
+				if (lit && ch !== cell) {
+					continue;
+				}
+				ctx.fillStyle = lit ? color : shade(color, -0.86);
+				for (const d of dots) {
+					ctx.fillRect(x + (sep - t) / 2 - gap / 2, top + d * h - t / 2, t, t);
+				}
+			}
+			x += sep;
+			continue;
+		}
+		ctx.fillStyle = shade(color, -0.86);
+		for (const s of SEGMENTS["8"]!) {
+			segment(s);
+		}
+		ctx.fillStyle = color;
+		for (const s of SEGMENTS[ch] ?? "") {
+			segment(s);
+		}
+		x += w + gap;
+	}
+};
+
+// The game clock as the clock shows it - 5:57 in four cells round its
+// colon, 45.3 in three round a point - and nothing (just the unlit
+// segments) for anything else (FINAL, HALF).
+const gameCells = (clock: string): { text: string; cells: string } => {
+	const mm = /^(\d{1,2}):(\d\d)$/.exec(clock);
+	if (mm) {
+		return { text: `${mm[1]!.padStart(2, " ")}:${mm[2]}`, cells: "88:88" };
+	}
+	const ss = /^(\d{1,2})\.(\d)$/.exec(clock);
+	if (ss) {
+		return { text: `${ss[1]!.padStart(2, " ")}.${ss[2]}`, cells: "88.8" };
+	}
+	return { text: "", cells: "88:88" };
+};
+
+// The face, painted again whenever what it shows changes (both ends show
+// the same).
+let clockPicture: { key: string; canvas: HTMLCanvasElement } | undefined;
+const paintClockFace = (game: string, shot: string): HTMLCanvasElement => {
+	const key = `${game}|${shot}`;
+	if (clockPicture?.key === key) {
+		return clockPicture.canvas;
+	}
+	const canvas = clockPicture?.canvas ?? document.createElement("canvas");
+	canvas.width = CLOCK_PX;
+	canvas.height = CLOCK_PX;
+	const ctx = canvas.getContext("2d")!;
+	const m = CLOCK_PX / 2;
+	ctx.beginPath();
+	ctx.arc(m, m, m - 0.5, 0, Math.PI * 2);
+	ctx.fillStyle = "#3b3d44";
+	ctx.fill();
+	ctx.beginPath();
+	ctx.arc(m, m, m - 6, 0, Math.PI * 2);
+	const g = ctx.createRadialGradient(m, m * 0.8, 4, m, m, m);
+	g.addColorStop(0, "#15161b");
+	g.addColorStop(1, "#060608");
+	ctx.fillStyle = g;
+	ctx.fill();
+	const gc = gameCells(game);
+	drawLed(
+		ctx,
+		gc.text,
+		gc.cells,
+		m,
+		CLOCK_PX * 0.2,
+		CLOCK_PX * 0.15,
+		CLOCK_AMBER,
+	);
+	drawLed(
+		ctx,
+		shot.padStart(2, " "),
+		"88",
+		m,
+		CLOCK_PX * 0.42,
+		CLOCK_PX * 0.36,
+		CLOCK_RED,
+	);
+	clockPicture = { key, canvas };
+	return canvas;
+};
+
 const drawShotClock = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
+	side: Side,
 	X: (d: number) => number,
 	rock: number,
 	bz: number,
 	shotClock: string,
+	gameClock: string,
 	inkW: number,
 ) => {
-	const xa = Math.min(X(CLOCK_IN), X(CLOCK_OUT));
-	const xb = Math.max(X(CLOCK_IN), X(CLOCK_OUT));
-	const ya = 25 - CLOCK_HALF + rock;
-	const yb = 25 + CLOCK_HALF + rock;
-	const z0 = CLOCK_LOW + bz;
-	const z1 = CLOCK_HIGH + bz;
-	const P = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
-	// Each side: its top corners as seen from outside it, left then right
-	// (the floor's y runs toward the camera: see camera.ts), and which way
-	// it faces. (The top is seen from above.)
-	const sides: { tl: Pt3; tr: Pt3; nx: number; ny: number }[] = [
-		{ tl: P(xa, yb, z1), tr: P(xb, yb, z1), nx: 0, ny: 1 },
-		{ tl: P(xb, ya, z1), tr: P(xa, ya, z1), nx: 0, ny: -1 },
-		{ tl: P(xb, yb, z1), tr: P(xb, ya, z1), nx: 1, ny: 0 },
-		{ tl: P(xa, ya, z1), tr: P(xa, yb, z1), nx: -1, ny: 0 },
-	];
-	const seen = sides.filter(
-		(s) =>
-			(cam.pos.x - (s.tl.x + s.tr.x) / 2) * s.nx +
-				(cam.pos.y - (s.tl.y + s.tr.y) / 2) * s.ny >
-			0,
-	);
-	ctx.lineJoin = "round";
-	ctx.strokeStyle = INK;
-	ctx.lineWidth = 2 * inkW;
-	const faces: Pt3[][] = seen.map((s) => [
-		s.tl,
-		s.tr,
-		{ ...s.tr, z: z0 },
-		{ ...s.tl, z: z0 },
-	]);
-	if (cam.pos.z > z1) {
-		faces.push([P(xa, ya, z1), P(xb, ya, z1), P(xb, yb, z1), P(xa, yb, z1)]);
-	}
-	for (const f of faces) {
-		poly(ctx, cam, f);
-		ctx.stroke();
-	}
-	faces.forEach((f, i) => {
-		ctx.fillStyle = i < seen.length ? "#0d0d10" : "#2a2b31";
-		poly(ctx, cam, f);
-		ctx.fill();
+	const P = (d: number, y: number, z: number): Pt3 => ({
+		x: X(d),
+		y: y + rock,
+		z: z + bz,
 	});
-	if (!shotClock) {
-		return;
-	}
-	// The seconds on each side seen, laid on it: drawn in its own frame -
-	// across it and down it, a unit a pixel of the picture.
-	ctx.fillStyle = "#ff3b2f";
-	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	for (const s of seen) {
-		const tl = project(cam, s.tl);
-		const tr = project(cam, s.tr);
-		const bl = project(cam, { ...s.tl, z: z0 });
-		const w = Math.hypot(tr.x - tl.x, tr.y - tl.y);
-		const h = Math.hypot(bl.x - tl.x, bl.y - tl.y);
-		// (Not on a side seen too nearly edge on to read: its area on the
-		// picture against what it would have square on.)
-		const across = Math.hypot(s.tr.x - s.tl.x, s.tr.y - s.tl.y);
-		const k = (tl.k + tr.k) / 2;
-		const area = Math.abs(
-			(tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x),
+	ctx.lineJoin = "round";
+	// A box: the faces of it toward the camera, inked round, then filled.
+	const solid = (
+		d0: number,
+		d1: number,
+		y0: number,
+		y1: number,
+		z0: number,
+		z1: number,
+		color: string,
+	) => {
+		const sgn = X(1) - X(0);
+		const ym = (y0 + y1) / 2;
+		const zm = (z0 + z1) / 2;
+		const dm = (d0 + d1) / 2;
+		// Each face, the middle of it, which way it faces, and how lit.
+		const faces: { pts: Pt3[]; at: Pt3; n: Pt3; lift: number }[] = [
+			...(
+				[
+					[d0, -1],
+					[d1, 1],
+				] as const
+			).map(([d, nd]) => ({
+				pts: [P(d, y0, z1), P(d, y1, z1), P(d, y1, z0), P(d, y0, z0)],
+				at: P(d, ym, zm),
+				n: { x: sgn * nd, y: 0, z: 0 },
+				lift: 0,
+			})),
+			...(
+				[
+					[y0, -1],
+					[y1, 1],
+				] as const
+			).map(([y, ny]) => ({
+				pts: [P(d0, y, z1), P(d1, y, z1), P(d1, y, z0), P(d0, y, z0)],
+				at: P(dm, y, zm),
+				n: { x: 0, y: ny, z: 0 },
+				lift: -0.06,
+			})),
+			{
+				pts: [P(d0, y0, z1), P(d1, y0, z1), P(d1, y1, z1), P(d0, y1, z1)],
+				at: P(dm, ym, z1),
+				n: { x: 0, y: 0, z: 1 },
+				lift: 0.12,
+			},
+		];
+		const seen = faces.filter(
+			({ at, n }) =>
+				(cam.pos.x - at.x) * n.x +
+					(cam.pos.y - at.y) * n.y +
+					(cam.pos.z - at.z) * n.z >
+				0,
 		);
-		if (h < 2.5 || area < 0.45 * across * (z1 - z0) * k * k) {
+		ctx.strokeStyle = INK;
+		ctx.lineWidth = 2 * inkW;
+		for (const f of seen) {
+			poly(ctx, cam, f.pts);
+			ctx.stroke();
+		}
+		for (const f of seen) {
+			ctx.fillStyle = shade(color, f.lift);
+			poly(ctx, cam, f.pts);
+			ctx.fill();
+		}
+	};
+	// The stem up off the board, and the panel on it.
+	solid(3.7, 3.9, 24.82, 25.18, 12.95, 13.45, CLOCK_RIM);
+	solid(
+		PANEL.d0,
+		PANEL.d1,
+		25 - PANEL.half,
+		25 + PANEL.half,
+		PANEL.z0,
+		PANEL.z1,
+		"#14151a",
+	);
+	const panel = facePlane(
+		cam,
+		side,
+		(PANEL.d0 + PANEL.d1) / 2,
+		PANEL.d1 - PANEL.d0 + 0.02,
+		25 + rock,
+		(PANEL.z0 + PANEL.z1) / 2 + bz,
+		PANEL.half,
+		(PANEL.z1 - PANEL.z0) / 2,
+		96,
+		47,
+	);
+	if (panel && typeof document !== "undefined") {
+		drawTexturedPlane(ctx, cam, panel, paintClockPanel(), 1, 1);
+	}
+	// The rods from the sides of the drum down to the top of the board.
+	ctx.strokeStyle = "#80838b";
+	ctx.lineCap = "round";
+	for (const s of [-1, 1]) {
+		line(
+			ctx,
+			cam,
+			P(CLOCK_D, 25 + s * 1.11, CLOCK_Z - 0.93),
+			P(3.86, 25 + s * 2.15, 13.02),
+			0.07,
+		);
+	}
+	// The drum: its rim the camera's side of it, then the face it sees.
+	const ring = (d: number) =>
+		Array.from({ length: CLOCK_N }, (_, i) => {
+			const a = (i / CLOCK_N) * Math.PI * 2;
+			return P(d, 25 + Math.cos(a) * CLOCK_R, CLOCK_Z + Math.sin(a) * CLOCK_R);
+		});
+	const front = ring(CLOCK_D + CLOCK_T / 2);
+	const back = ring(CLOCK_D - CLOCK_T / 2);
+	const sgn = X(1) - X(0);
+	const courtSide = (cam.pos.x - X(CLOCK_D)) * sgn > 0;
+	const [near, far] = courtSide ? [front, back] : [back, front];
+	const band: { pts: Pt3[]; lift: number }[] = [];
+	for (let i = 0; i < CLOCK_N; i++) {
+		const a = ((i + 0.5) / CLOCK_N) * Math.PI * 2;
+		const ny = Math.cos(a);
+		const nz = Math.sin(a);
+		const mid = P(CLOCK_D, 25 + ny * CLOCK_R, CLOCK_Z + nz * CLOCK_R);
+		if ((cam.pos.y - mid.y) * ny + (cam.pos.z - mid.z) * nz <= 0) {
 			continue;
 		}
-		ctx.save();
-		ctx.transform(
-			(tr.x - tl.x) / w,
-			(tr.y - tl.y) / w,
-			(bl.x - tl.x) / h,
-			(bl.y - tl.y) / h,
-			tl.x,
-			tl.y,
-		);
-		ctx.font = `700 ${0.8 * h}px "Courier New", monospace`;
-		const fit = (0.86 * w) / Math.max(1, ctx.measureText(shotClock).width);
-		ctx.translate(w / 2, h * 0.53);
-		if (fit < 1) {
-			ctx.scale(fit, 1);
-		}
-		ctx.fillText(shotClock, 0, 0);
-		ctx.restore();
+		const j = (i + 1) % CLOCK_N;
+		band.push({
+			pts: [near[i]!, near[j]!, far[j]!, far[i]!],
+			lift: nz * 0.14 - 0.04,
+		});
 	}
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = 2 * inkW;
+	for (const b of band) {
+		poly(ctx, cam, b.pts);
+		ctx.stroke();
+	}
+	poly(ctx, cam, near);
+	ctx.stroke();
+	for (const b of band) {
+		ctx.fillStyle = shade(CLOCK_RIM, b.lift);
+		poly(ctx, cam, b.pts);
+		ctx.fill();
+	}
+	ctx.fillStyle = "#3b3d44";
+	poly(ctx, cam, near);
+	ctx.fill();
+	const face = shotClockFace(cam, side, rock, bz);
+	if (face && typeof document !== "undefined") {
+		drawTexturedPlane(
+			ctx,
+			cam,
+			face,
+			paintClockFace(gameClock, shotClock),
+			1,
+			1,
+		);
+	}
+	// The rim camera on top.
+	solid(
+		3.72,
+		3.88,
+		24.9,
+		25.1,
+		CLOCK_Z + CLOCK_R - 0.05,
+		CLOCK_Z + CLOCK_R + 0.12,
+		CLOCK_RIM,
+	);
+	solid(
+		3.52,
+		4.12,
+		24.74,
+		25.26,
+		CLOCK_Z + CLOCK_R + 0.12,
+		CLOCK_Z + CLOCK_R + 0.5,
+		"#1b1c21",
+	);
 };
 
 // The lit panel on the faces of a basket's base: the home team's name in
@@ -2342,8 +2669,11 @@ export const drawHoop = (
 	shotClock: string,
 	fx: HoopFx,
 	between?: () => void,
-	// The lit panel on the faces of its base (see paintStanchionPanel).
+	// The lit panels on its base, its column and the box on its boom (see
+	// paintStanchionPanel).
 	panel?: HTMLCanvasElement,
+	// The game clock, as the score bug has it, for the clock on the board.
+	gameClock = "",
 ) => {
 	const sgn = side === 0 ? 1 : -1;
 	const base = side === 0 ? 0 : COURT_W;
@@ -2366,11 +2696,12 @@ export const drawHoop = (
 	const behind = (cam.pos.x - bx) * sgn < 0;
 	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
 	const stanchion = () => {
-		// The stanchion (built in Blender - see stanchionModel.ts): a dark
-		// padded base behind the baseline with a lit board in the team's
-		// color on its faces, the post padded round its foot, the boom out to
-		// the board with a brace under it and a sign along it - the boom and
-		// the board's mount ringing with the board after a dunk.
+		// The stanchion (built in Blender - see stanchionModel.ts): a base
+		// padded in the team's color behind the baseline, a lit board on its
+		// faces; the padded column up the front of the post, leaning back,
+		// another up the front of that; the boom out to the board, padded
+		// where it meets it, with a lit box along the top - the boom and the
+		// board's mount ringing with the board after a dunk.
 		const place: ModelPlace = {
 			at: (p, flex) => ({
 				x: X(p[0]!),
@@ -2392,8 +2723,8 @@ export const drawHoop = (
 			});
 			return { at, quad: [at(0, v0), at(1, v0), at(1, v1), at(0, v1)] };
 		};
-		const lit = (name: string) => {
-			const f = onFace(name, 0.15, 0.85);
+		const lit = (name: string, v0 = 0.15, v1 = 0.85) => {
+			const f = onFace(name, v0, v1);
 			if (!f) {
 				return;
 			}
@@ -2407,9 +2738,9 @@ export const drawHoop = (
 				ctx.fill();
 				return;
 			}
-			const o = f.at(0, 0.15);
-			const a = f.at(1, 0.15);
-			const b = f.at(0, 0.85);
+			const o = f.at(0, v0);
+			const a = f.at(1, v0);
+			const b = f.at(0, v1);
 			drawTexturedPlane(
 				ctx,
 				cam,
@@ -2433,54 +2764,26 @@ export const drawHoop = (
 				1,
 			);
 		};
-		const sign = (name: string) => {
-			const f = onFace(name, 0, 1);
-			if (!f) {
-				return;
-			}
-			// (Inked round, so it reads as a sign against a floor its own color.)
-			ctx.lineJoin = "round";
-			ctx.strokeStyle = INK;
-			ctx.lineWidth = 2 * inkW;
-			ctx.fillStyle = padColor;
-			poly(ctx, cam, f.quad);
-			ctx.stroke();
-			ctx.fill();
-			ctx.fillStyle = "rgba(255,255,255,0.85)";
-			const bar = onFace(name, 0.38, 0.62)!;
-			const inset = (p: Pt3, q: Pt3, k: number): Pt3 => ({
-				x: p.x + (q.x - p.x) * k,
-				y: p.y + (q.y - p.y) * k,
-				z: p.z + (q.z - p.z) * k,
-			});
-			const [p0, p1, p2, p3] = bar.quad as [Pt3, Pt3, Pt3, Pt3];
-			poly(ctx, cam, [
-				inset(p0, p1, 0.09),
-				inset(p1, p0, 0.09),
-				inset(p2, p3, 0.09),
-				inset(p3, p2, 0.09),
-			]);
-			ctx.fill();
-		};
 		drawModel(
 			ctx,
 			cam,
 			STANCHION,
 			place,
-			(kind) =>
-				kind === "pad" ? padColor : kind === "base" ? "#24262c" : "#2a2c33",
+			(kind) => (kind === "pad" ? padColor : "#2a2c33"),
 			{ color: INK, width: inkW * 2 },
 			(part) => {
 				if (part === "base") {
 					for (const name of ["panelCourt", "panelNear", "panelFar"]) {
 						lit(name);
 					}
+				} else if (part === "column") {
+					lit("colCourt");
+				} else if (part === "adBox") {
+					lit("adNear", 0, 1);
+					lit("adFar", 0, 1);
 				}
 			},
 		);
-		// (The sign out on the face of the boom: over the bars under it.)
-		sign("signNear");
-		sign("signFar");
 	};
 	const board = () => {
 		// The backboard: glass in a white frame, the shooter's square, and the
@@ -2543,7 +2846,7 @@ export const drawHoop = (
 			{ x: bx, y: 24 + rock, z: 11.5 + bz },
 		]);
 		ctx.stroke();
-		drawShotClock(ctx, cam, X, rock, bz, shotClock, inkW);
+		drawShotClock(ctx, cam, side, X, rock, bz, shotClock, gameClock, inkW);
 	};
 	const rimAndNet = () => {
 		// The rim and its net.
