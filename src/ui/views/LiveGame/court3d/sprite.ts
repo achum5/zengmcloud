@@ -931,6 +931,8 @@ export type SpritePlan = {
 	patience?: number;
 };
 type Plan = SpritePlan & {
+	// Screen pixels to each of his picture's (see pxForScale).
+	px: number;
 	left: number;
 	right: number;
 	upper: number;
@@ -986,12 +988,29 @@ const posedOnScreen = (
 // behind it, a camera down courtside or on the baseline - and he is out of
 // the picture, not drawn up huge across it.
 const NEAR_FT = 3;
+// IN CLOSE, COARSER: a man's picture is never made at more than this many
+// of its pixels to a foot of him - past it, each of its pixels is two (or
+// more) of the screen's. In close on a man (the starting lineups, a replay
+// from down low) he would otherwise be made bigger than the whole picture,
+// and the graphics card's sheets for him (see sculptGl.ts, meshGl.ts) and
+// each hand's - grown to fit, never let go - took a phone past what it
+// will give a page: the page crashed. At this, his picture's box (room for
+// his arms up over his head) stays about the size the game's own men take
+// on a phone, and a little over twice it elsewhere.
+const MAX_K =
+	typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches
+		? 42
+		: 86;
+export const pxForScale = (scale: number): number => {
+	const k = 1.04 ** scale;
+	return k <= MAX_K ? 1 : Math.ceil(k / MAX_K);
+};
 const planOf = (
 	cam: Camera,
 	st: PlayerState,
 	body: Body,
 	look: Look,
-	px: number,
+	px0: number,
 	cache?: SpriteCache,
 ): Plan | undefined => {
 	// Behind a camera down on the floor, or right up against it: not in the
@@ -1028,7 +1047,9 @@ const planOf = (
 		return undefined;
 	}
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
+	const px = px0 * pxForScale(scale);
 	const plan: Plan = {
+		px,
 		base,
 		lift,
 		left,
@@ -1075,6 +1096,7 @@ const asWas = (cache: SpriteCache, plan: SpritePlan) => {
 			) &&
 		was.frame === cache.frame - 1 &&
 		Math.abs(was.scale - plan.scale) <= 1 &&
+		pxForScale(was.scale) === pxForScale(plan.scale) &&
 		(was.held ?? false) === plan.held
 		? was
 		: undefined;
@@ -1130,14 +1152,8 @@ export const drawnAs = (st: PlayerState, cache?: SpriteCache): PlayerState =>
 		),
 	);
 
-const jobOf = (
-	plan: Plan,
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	px: number,
-): Job => {
-	const { base, lift, left, right, upper, lower, pose } = plan;
+const jobOf = (plan: Plan, cam: Camera, st: PlayerState, body: Body): Job => {
+	const { base, lift, left, right, upper, lower, pose, px } = plan;
 	return {
 		cam,
 		// Drawn standing on the floor; a jump only moves the picture up.
@@ -1625,7 +1641,9 @@ export const glAgainstPage = (
 	if (!plan) {
 		return undefined;
 	}
-	const job = jobOf(plan, cam, st, body, 1);
+	// (At full detail however close he is: the two ways compared.)
+	plan.px = 1;
+	const job = jobOf(plan, cam, st, body);
 	const sh = shape(job, look);
 	const made = glSculpt(cam, job.st, body, look, 1, sh.ox, sh.oy, sh.w, sh.h);
 	if (!made) {
@@ -1808,11 +1826,10 @@ const make = (
 	st: PlayerState,
 	body: Body,
 	look: Look,
-	px: number,
 	cache?: SpriteCache,
 ): Kept | { w: number; h: number; ox: number; oy: number } => {
 	const began = cache ? performance.now() : 0;
-	const job = jobOf(plan, cam, st, body, px);
+	const job = jobOf(plan, cam, st, body);
 	// (Made on the graphics card, if he can be - see glShape.)
 	const onCard = cache && plan.key ? glShape(job, look) : undefined;
 	const sh = onCard ?? shape(job, look);
@@ -2044,7 +2061,7 @@ export const prepareSprites = (
 					farm.ask(
 						cache,
 						plan.key!,
-						jobOf(plan, cam, man.st, man.body, px),
+						jobOf(plan, cam, man.st, man.body),
 						man.look,
 						{
 							id: plan.who,
@@ -2054,7 +2071,7 @@ export const prepareSprites = (
 						},
 					))),
 		(man, plan) => {
-			make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+			make(plan, scratch, cam, man.st, man.body, man.look, cache);
 		},
 	);
 };
@@ -2067,14 +2084,13 @@ export const restamp = (
 	ctx: CanvasRenderingContext2D,
 	cache: SpriteCache,
 	st: PlayerState,
-	px: number,
 ) => {
 	const plan = cache.plans.get(st);
 	const was = plan && cache.last.get(plan.who);
 	if (!plan || !was || was.frame !== cache.frame) {
 		return;
 	}
-	stamp(ctx, was.kept, plan.base.x, plan.base.y - plan.lift, px);
+	stamp(ctx, was.kept, plan.base.x, plan.base.y - plan.lift, plan.px);
 };
 
 export const drawSprite = (
@@ -2095,6 +2111,8 @@ export const drawSprite = (
 		return;
 	}
 	const { base, lift } = plan;
+	// (Coarser in close: see pxForScale.)
+	const ppx = plan.px;
 	const shine = reflect > 0 ? { alpha: reflect, floorY: base.y } : undefined;
 	if (cache && plan.key !== undefined) {
 		const was = pickSprite(cache, plan);
@@ -2102,11 +2120,11 @@ export const drawSprite = (
 			return;
 		}
 		if (was !== "make") {
-			stamp(ctx, was, base.x, base.y - lift, px, shine);
+			stamp(ctx, was, base.x, base.y - lift, ppx, shine);
 			return;
 		}
 	}
-	const made = make(plan, scratch, cam, st, body, look, px, cache);
+	const made = make(plan, scratch, cam, st, body, look, cache);
 	if ("canvas" in made) {
 		cache?.last.set(plan.who, {
 			kept: made,
@@ -2115,7 +2133,7 @@ export const drawSprite = (
 			scale: plan.scale,
 			held: plan.held,
 		});
-		stamp(ctx, made, base.x, base.y - lift, px, shine);
+		stamp(ctx, made, base.x, base.y - lift, ppx, shine);
 		return;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
@@ -2128,8 +2146,8 @@ export const drawSprite = (
 		made.h,
 		Math.round(made.ox),
 		Math.round(made.oy - lift),
-		made.w * px,
-		made.h * px,
+		made.w * ppx,
+		made.h * ppx,
 	);
 	ctx.imageSmoothingEnabled = smoothing;
 };

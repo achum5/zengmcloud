@@ -104,7 +104,7 @@ export type GamecastInfo = {
 	standings: { name: string; teams: StandingsTeam[] }[];
 	// Each team's last few games, latest first.
 	recent: { tid: number; games: RecentGame[] }[];
-	// The over/under at the tip (see totalAsOf) - a live game's only.
+	// The over/under at the tip (see totalAsOf).
 	total?: number;
 	// Each team's leading scorer going in (see leadersOf) - a live game's
 	// only. Box score order: home first.
@@ -639,22 +639,20 @@ export const gamecastInfo = async (
 		}
 	}
 
-	// The over/under, for a live game's header. Its record as it went in:
-	// the game's own is written after it, this one counted - in the regular
-	// season.
-	let total: number | undefined;
-	if (!final) {
-		const gpAtTip = game.teams.map((t) =>
-			t.won === undefined || t.lost === undefined
-				? -1
-				: t.won +
-					t.lost +
-					(t.tied ?? 0) +
-					(t.otl ?? 0) -
-					(game.playoffs ? 0 : 1),
-		) as [number, number];
-		total = totalAsOf(game, played, gpAtTip, await getTotalsPrior(game.season));
-	}
+	// The over/under, for a live game's header and a finished game's banner.
+	// Its record as it went in: the game's own is written after it, this one
+	// counted - in the regular season.
+	const gpAtTip = game.teams.map((t) =>
+		t.won === undefined || t.lost === undefined
+			? -1
+			: t.won + t.lost + (t.tied ?? 0) + (t.otl ?? 0) - (game.playoffs ? 0 : 1),
+	) as [number, number];
+	const total = totalAsOf(
+		game,
+		played,
+		gpAtTip,
+		await getTotalsPrior(game.season),
+	);
 	const leaders = final ? undefined : leadersOf(game, played);
 
 	return {

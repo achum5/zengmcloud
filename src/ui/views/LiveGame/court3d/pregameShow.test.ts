@@ -31,8 +31,8 @@ const momentOf = (plan: ShowPlan, t: number) =>
 	({
 		t,
 		players: plan.intro.calls.map((c) => ({
-			pid: c.pid,
 			...evalPlayer(plan.tl, c.pid, t),
+			pid: c.pid,
 		})),
 	}) as any;
 

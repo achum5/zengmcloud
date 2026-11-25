@@ -449,7 +449,7 @@ const Court3D = ({
 				cursor === 0,
 		};
 	}
-	const showWanted = showFor.current.wanted;
+	const showWanted = showFor.current?.wanted ?? false;
 	const [showPlan, setShowPlan] = useState<ShowPlan | undefined>();
 	// (Over or skipped - or not to be had: no tip in the play-by-play, or it
 	// would not stage.)

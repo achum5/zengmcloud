@@ -353,7 +353,7 @@ export const showAim = (
 		};
 	}
 	if (t >= plan.h0) {
-		return holdAim(plan, t, narrow);
+		return holdAim(plan, t, narrow, leaders);
 	}
 	if (tlT < plan.first) {
 		return openAim(plan, tlT, narrow);

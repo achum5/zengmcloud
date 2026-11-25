@@ -12,6 +12,36 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 583,
+		date: "2026-11-25",
+		text: "3D game: the NBC and Peacock score bug is about a third bigger on phones, so the records, the clock and the network line are easier to read. It was the smallest score bug on a phone. Desktop is unchanged.",
+	},
+	{
+		n: 582,
+		date: "2026-11-25",
+		text: "A finished game's score banner now shows the line and the over/under under the score by quarter, with how each went: who covered, and over or under. On phones the game's recap opens with its headline and first paragraph, and Read more shows the rest.",
+	},
+	{
+		n: 581,
+		date: "2026-11-25",
+		text: "Draft History's Redraft column now shows how far second-round picks rose or fell too, counted from where they went overall.",
+	},
+	{
+		n: 580,
+		date: "2026-11-24",
+		text: "Fixed the 3D game crashing on iPhones during the starting lineups. Players shown up close are drawn a little coarser now, so they no longer use up the phone's memory.",
+	},
+	{
+		n: 579,
+		date: "2026-11-24",
+		text: "Draft History's Redraft column now goes by more than career win shares. A player's best five seasons count twice, so stars outrank long careers off the bench, and anyone still playing also gets credit for the seasons he's likely to have left, from his rating and age.",
+	},
+	{
+		n: 578,
+		date: "2026-11-24",
+		text: "Smart CPU: CPU teams now look for trades with each other twice a week, going into every Sunday and Thursday, and every night for the 10 days before the trade deadline. It used to be about every 10 days. Simming up to the deadline takes a little longer.",
+	},
+	{
 		n: 577,
 		date: "2026-11-24",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): defenders close out like real ones. The man contesting a jumper is still coming at the shooter as the shot goes up, carries on in the air and comes down going, past him or on to the boards, instead of getting there early and standing still. How open each shot is hasn't changed. Pull-up jumpers off the dribble are taken in stride too, instead of from a dead stop.",
