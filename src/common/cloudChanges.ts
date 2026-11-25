@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 625,
+		date: "2026-11-25",
+		text: "3D game score bugs: BONUS no longer covers a team's abbreviation. On the bug the Magic, Spurs, Wolves, Clippers, Grizzlies, Hornets, Pistons, Pacers and Heat share, a team in the bonus now has its end of the bar slide out to make room for the BONUS tag, like on TV. On the Mavericks' bug the scores sit higher, so BONUS under them no longer runs into the numbers.",
+	},
+	{
 		n: 624,
 		date: "2026-11-25",
 		text: "Finished games: no more green checks in the Line and O/U columns; the side that hit is just in bold.",

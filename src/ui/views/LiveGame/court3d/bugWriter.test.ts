@@ -184,4 +184,25 @@ describe("writeBug, for a league's own bug", () => {
 		writeBug(refs, shown, now({}));
 		assert.deepStrictEqual(seen(), ["noBonus"]);
 	});
+
+	test("a side's end of the bar slid out while its BONUS mark shows, and back", () => {
+		const awayLogo = el({ shift: "-2cqw", side: "away" });
+		const homeBox = el({ shift: "2cqw", side: "home" });
+		const clock = el();
+		// (Left moved by a bug that was in its place.)
+		clock.style.translate = "5cqw";
+		const bug = {
+			querySelectorAll: () => [],
+			firstElementChild: { children: [awayLogo, homeBox, clock] },
+		} as unknown as HTMLDivElement;
+		const refs = { ...refsOf({}), bug: { current: bug } };
+		const shown = bugShown();
+		writeBug(refs, shown, now({ bonus: [true, false] }));
+		assert.strictEqual(awayLogo.style.translate, "-2cqw");
+		assert.strictEqual(homeBox.style.translate, "");
+		assert.strictEqual(clock.style.translate, "");
+		writeBug(refs, shown, now({ bonus: [false, true] }));
+		assert.strictEqual(awayLogo.style.translate, "");
+		assert.strictEqual(homeBox.style.translate, "2cqw");
+	});
 });

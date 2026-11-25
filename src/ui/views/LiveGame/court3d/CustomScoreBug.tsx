@@ -544,11 +544,19 @@ export const CustomScoreBug = ({
 		// Keyed by what it shows too: a clock or fouls span written by the
 		// frame loop is never reused for another piece.
 		// (One shown only before or after the bonus as the game starts, the
-		// frame loop showing or hiding it after - see whenShows.)
+		// frame loop showing or hiding it after - see whenShows. And one that
+		// makes room for its side's BONUS mark, moved over by the frame loop
+		// while it shows - the fouls' own words moved, not their piece.)
+		const shiftSide =
+			p.bonusShift === undefined || p.show.endsWith("Fouls")
+				? undefined
+				: (p.side ?? side);
 		return (
 			<div
 				key={`${i}-${p.show}`}
 				data-when={p.when}
+				data-shift={shiftSide && u(p.bonusShift!)}
+				data-side={shiftSide}
 				style={
 					p.when === undefined || p.when === "noBonus"
 						? box

@@ -3888,9 +3888,13 @@ export type ScoreBugPiece = {
 	sub?: number;
 	limit?: string;
 	off?: string;
-	// For the fouls: how far they move over (in the bug's units, left if
-	// less than 0) while their side's BONUS mark shows, to make room for it.
+	// How far it moves over (in the bug's units, left if less than 0) while
+	// its side's BONUS mark shows, to make room for it: the fouls - or, as
+	// TV does, that side's end of the bar sliding out, its logo and
+	// abbreviation with it.
 	bonusShift?: number;
+	// Whose bonus moves it, for a piece not named for a side (a box).
+	side?: "away" | "home";
 	// Shown only till either side is in the bonus ("noBonus" - the records,
 	// say), or only once one is ("bonus" - the timeouts in their place), or
 	// once that side is ("awayBonus", "homeBonus" - its fouls).

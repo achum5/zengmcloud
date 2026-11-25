@@ -32,17 +32,15 @@ export type BugNow = {
 // clocks, each side's fouls and the ball's mark ([visitors, home]) - and,
 // `down`, the down and distance.
 export const useBugRefs = (down = false): BugRefs =>
-	useState(
-		(): BugRefs => ({
-			clock: createRef(),
-			shot: createRef(),
-			fouls: [createRef(), createRef()],
-			ball: [createRef(), createRef()],
-			bonus: [createRef(), createRef()],
-			bug: createRef(),
-			...(down ? { down: createRef() } : {}),
-		}),
-	)[0];
+	useState((): BugRefs => ({
+		clock: createRef(),
+		shot: createRef(),
+		fouls: [createRef(), createRef()],
+		ball: [createRef(), createRef()],
+		bonus: [createRef(), createRef()],
+		bug: createRef(),
+		...(down ? { down: createRef() } : {}),
+	}))[0];
 
 // What was last written, and into which of the bug's elements: a new bug in
 // its place (the league's own put up, say) is written afresh.
@@ -198,6 +196,16 @@ export const writeBug = (refs: BugRefs, shown: BugShown, now: BugNow) => {
 		shown.when = when;
 		for (const el of bugEl.querySelectorAll<HTMLElement>("[data-when]")) {
 			el.style.visibility = whenShows(el.dataset.when, bonus) ? "" : "hidden";
+		}
+		// Pieces moved over while their side's BONUS mark shows (data-shift,
+		// data-side) - every piece looked at, so none is left moved that a
+		// bug put in its place no longer moves.
+		for (const el of bugEl.firstElementChild?.children ?? []) {
+			const { shift, side } = (el as HTMLElement).dataset;
+			const on =
+				shift !== undefined &&
+				(side === "away" ? bonus[0] : side === "home" ? bonus[1] : false);
+			(el as HTMLElement).style.translate = on ? shift : "";
 		}
 	}
 	if (now.ball !== shown.ball) {

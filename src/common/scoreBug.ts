@@ -229,6 +229,10 @@ export const parseScoreBug = (raw: unknown): ScoreBugStyle | string => {
 				if (typeof v !== "string" || !WHENS.has(v)) {
 					return `${at}: "when" should be one of ${[...WHENS].join(", ")}.`;
 				}
+			} else if (k === "side") {
+				if (v !== "away" && v !== "home") {
+					return `${at}: "side" should be "away" or "home".`;
+				}
 			} else {
 				return `${at}: unknown field "${k}".`;
 			}
