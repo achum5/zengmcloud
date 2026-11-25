@@ -80,12 +80,14 @@ export const ART_LETTERS: readonly GlyphRow[] = [
 
 // Where his number and name go and how big, against the usual (see
 // LETTERING in sculpt.ts): sizes times the usual, heights in torso lengths
-// up from the usual, the name's arch from -1 (sagging) to 1 (an arch); and
-// whether the trim round his neck and armholes is the game's (the trim
-// swatch's color) or the picture's own.
+// up from the usual, the number on his chest across from his right edge of
+// the front panel (-1) to his left (1), the name's arch from -1 (sagging) to
+// 1 (an arch); and whether the trim round his neck and armholes is the
+// game's (the trim swatch's color) or the picture's own.
 export type KitFit = {
 	numberSize: number;
 	numberUp: number;
+	numberAcross: number;
 	backSize: number;
 	backUp: number;
 	nameSize: number;
@@ -96,6 +98,7 @@ export type KitFit = {
 export const DEFAULT_FIT: KitFit = {
 	numberSize: 1,
 	numberUp: 0,
+	numberAcross: 0,
 	backSize: 1,
 	backUp: 0,
 	nameSize: 1,
@@ -257,7 +260,9 @@ export const artScaleOf = (width: number, height: number) => {
 
 // THE SETTINGS STRIP: each setting a square of one color - its value in the
 // red, the rest of 255 in the green (a check), a mark in the blue - after a
-// first square that says the strip is there.
+// first square that says the strip is there. After the trim's square, two
+// that older pictures don't have: the chest number across him, and its size
+// again over a wider range (down to a number inside a logo).
 const FIT_MARK = 0x5a;
 const FIT_MAGIC = 0xa5;
 const FIT_KEYS = [
@@ -289,11 +294,20 @@ const fromByte = (key: (typeof FIT_KEYS)[number], b: number) =>
 			? clampTo((b - 128) / 127, -1, 1)
 			: (b - 128) / 512;
 
+// (How many squares the strip has: the first, the settings, the trim's, the
+// two newer ones.)
+export const FIT_SQUARES = FIT_KEYS.length + 4;
+const NUMBER_SIZE_MIN = 0.2;
+const acrossByte = (v: number) => clampTo(Math.round(128 + v * 127), 0, 255);
+const wideSizeByte = (v: number) => clampTo(Math.round((v / 2) * 255), 0, 255);
+
 // The squares' bytes, in order.
 const fitBytes = (fit: KitFit) => [
 	FIT_MAGIC,
 	...FIT_KEYS.map((key) => toByte(key, fit[key])),
 	fit.trim === "picture" ? 1 : 0,
+	acrossByte(fit.numberAcross),
+	wideSizeByte(fit.numberSize),
 ];
 
 // A KitFit written into a lettered picture's pixels (RGBA, ART_W * scale
@@ -369,6 +383,12 @@ export const readFit = (
 		return undefined;
 	}
 	fit.trim = flags & 1 ? "picture" : "game";
+	const across = byteAt(FIT_KEYS.length + 2);
+	const wideSize = byteAt(FIT_KEYS.length + 3);
+	if (across !== undefined && wideSize !== undefined) {
+		fit.numberAcross = clampTo((across - 128) / 127, -1, 1);
+		fit.numberSize = clampTo((wideSize * 2) / 255, NUMBER_SIZE_MIN, 2);
+	}
 	return fit;
 };
 

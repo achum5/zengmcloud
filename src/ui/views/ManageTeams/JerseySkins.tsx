@@ -101,8 +101,9 @@ const withFit = async (url: string, fit: KitFit): Promise<string> => {
 };
 
 const FIT_SLIDERS: [keyof KitFit, string, number, number, number][] = [
-	["numberSize", "Number size", 0.6, 1.6, 0.02],
-	["numberUp", "Number height", -0.15, 0.15, 0.005],
+	["numberSize", "Number size", 0.2, 1.6, 0.02],
+	["numberUp", "Number height", -0.15, 0.25, 0.005],
+	["numberAcross", "Number left/right", -0.8, 0.8, 0.02],
 	["backSize", "Back number size", 0.6, 1.6, 0.02],
 	["backUp", "Back number height", -0.15, 0.15, 0.005],
 	["nameSize", "Name size", 0.6, 1.8, 0.02],
@@ -119,7 +120,10 @@ const FitControls = ({
 	onChange: (fit: KitFit) => void;
 	side: Side;
 }) => (
-	<div className="text-start small mt-2" style={{ width: 190 }}>
+	<div
+		className="text-start small mt-2"
+		style={{ width: 190, maxWidth: "100%" }}
+	>
 		{FIT_SLIDERS.map(([key, label, min, max, step]) => (
 			<label key={key} className="d-block mb-1">
 				<span className="text-body-secondary">{label}</span>
@@ -341,11 +345,15 @@ const JerseySkins = ({
 				{t.region} {t.name} 3D jerseys
 			</Modal.Header>
 			<Modal.Body>
-				<div className="d-flex justify-content-center gap-4">
+				<div className="d-flex justify-content-center gap-3 gap-sm-4">
 					{(["home", "away"] as const).map((side) => {
 						const id = ids[side];
 						return (
-							<div key={side} className="text-center">
+							<div
+								key={side}
+								className="text-center"
+								style={{ flex: "0 1 190px", minWidth: 0 }}
+							>
 								<div className="fw-bold mb-1">
 									{side === "home" ? "Home" : "Away"}
 								</div>
@@ -404,7 +412,7 @@ const JerseySkins = ({
 									key={id}
 									type="url"
 									className="form-control form-control-sm mt-2 mx-auto"
-									style={{ width: 190 }}
+									style={{ width: 190, maxWidth: "100%" }}
 									placeholder="or a link: https://..."
 									defaultValue={
 										id !== undefined && /^https?:\/\//.test(id) ? id : ""

@@ -16,6 +16,7 @@ import {
 	ART_LETTERS,
 	ART_PANELS,
 	ART_SETTINGS,
+	FIT_SQUARES,
 	ART_SHORTS,
 	ART_SWATCHES,
 	ART_W,
@@ -257,7 +258,7 @@ export const templateOf = (
 	// The lettering.
 	g.fillText(
 		"SETTINGS",
-		ART_SETTINGS.x + 9 * ART_SETTINGS.size + 4,
+		ART_SETTINGS.x + FIT_SQUARES * ART_SETTINGS.size + 4,
 		ART_SETTINGS.y + ART_SETTINGS.size / 2,
 	);
 	g.textBaseline = "bottom";

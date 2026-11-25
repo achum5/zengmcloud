@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 642,
+		date: "2026-11-25",
+		text: "3D jerseys: the chest number can now sit off to one side, like the real Mavericks, Kings and Blazers jerseys, and go much smaller, like the Warriors number inside their logo. Manage Teams, 3D jerseys, Lettering has a new Number left/right slider, and that window now fits on a phone.",
+	},
+	{
 		n: 641,
 		date: "2026-11-25",
 		text: "Shared leagues with auto play on: the Daily Schedule's game cards now show when auto play sims that day, on your own clock, on a tab at the top of each card like a tip-off time (for example 1:15 – 1:30 PM). Tap any day still to come to see its time on a phone.",

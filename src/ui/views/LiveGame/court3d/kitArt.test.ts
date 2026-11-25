@@ -20,6 +20,7 @@ import {
 	dressKit,
 	type KitFit,
 	kitArtFromPixels,
+	FIT_SQUARES,
 	readFit,
 	writeFit,
 } from "./kitArt.ts";
@@ -157,6 +158,7 @@ describe("uniforms drawn from a picture", () => {
 		const fit: KitFit = {
 			numberSize: 1.3,
 			numberUp: -0.06,
+			numberAcross: 0.45,
 			backSize: 0.8,
 			backUp: 0.04,
 			nameSize: 1.5,
@@ -185,6 +187,32 @@ describe("uniforms drawn from a picture", () => {
 				Object.values(DEFAULT_FIT),
 			);
 		}
+	});
+
+	test("a small number off to one side; an older strip reads it centered", () => {
+		const scale = 4;
+		const W = ART_W * scale;
+		const data = new Uint8ClampedArray(W * ART_H_LETTERED * scale * 4);
+		writeFit(data, W, scale, {
+			...DEFAULT_FIT,
+			numberSize: 0.27,
+			numberAcross: -0.5,
+		});
+		const read = readFit(data, W, scale)!;
+		assert.closeTo(read.numberSize, 0.27, 0.01);
+		assert.closeTo(read.numberAcross, -0.5, 0.01);
+		// Without the two newer squares (a picture made before them): the
+		// number in the middle, no smaller than the older range.
+		for (const i of [FIT_SQUARES - 2, FIT_SQUARES - 1]) {
+			for (let y = 308 * scale; y < 316 * scale; y++) {
+				for (let x = (8 + i * 8) * scale; x < (16 + i * 8) * scale; x++) {
+					data[(y * W + x) * 4 + 3] = 0;
+				}
+			}
+		}
+		const old = readFit(data, W, scale)!;
+		assert.strictEqual(old.numberAcross, 0);
+		assert.closeTo(old.numberSize, 0.5, 0.01);
 	});
 
 	test("a lettered picture's characters: as wide as painted, standing on one line", () => {

@@ -669,9 +669,11 @@ const letterSheet = (
 	const L = LETTERING;
 	const crest = warmup ? look.crest : undefined;
 	if (!warmup) {
+		// (Across his front as the picture is: flat, so round him by asin.)
+		const across = (fit.numberAcross * wrapsFor(body).jersey.frontS) / aS;
 		text(
 			look.jerseyNumber,
-			w / 2,
+			w / 2 + Math.asin(Math.max(-1, Math.min(1, across))) * aS * ppf,
 			T * (L.number.u + fit.numberUp),
 			body.H * L.number.size * fit.numberSize,
 			true,
