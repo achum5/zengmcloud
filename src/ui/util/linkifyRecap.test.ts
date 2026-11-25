@@ -1,8 +1,10 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import {
+	buildRecapLinks,
 	buildRecapLinksForGame,
 	buildPlayerNoteLinks,
 	buildTeamSeasonRecapLinks,
+	leagueTeamLinks,
 	linkifyRecap,
 	linkifySeasonNote,
 	type RecapLink,
@@ -112,6 +114,59 @@ describe("buildRecapLinksForGame", () => {
 		const star = links.find((l) => l.name === "Star Guy");
 		assert.ok(lakers!.href.includes("roster/LAL_0/2076"), lakers!.href);
 		assert.ok(star!.href.includes("player/10"), star!.href);
+	});
+});
+
+describe("every club a recap names links, not just the game's two", () => {
+	beforeAll(() => {
+		local.setState({ lid: 1 });
+	});
+
+	// tid 0 and 1 share a city, as the two Los Angeles clubs do.
+	const league = [
+		{ abbrev: "LAL", region: "Los Angeles", name: "Lakers" },
+		{ abbrev: "LAC", region: "Los Angeles", name: "Clippers" },
+		{ abbrev: "PHO", region: "Phoenix", name: "Suns" },
+		{ abbrev: "CLE", region: "Cleveland", name: "Cavaliers" },
+	];
+	const game = {
+		season: 2025,
+		teams: [
+			{ tid: 3, players: [{ pid: 7, name: "Danté Exum" }] },
+			{ tid: 0, players: [] },
+		],
+	};
+
+	test("a club that sat the night out links to its roster that season", () => {
+		const links = buildRecapLinksForGame(game, (tid) => league[tid], league);
+		const out = linkifyRecap(
+			"**Winning:** Suns 5, Cavaliers 4. Phoenix is hot.",
+			links,
+		);
+		assert.include(out, "[Suns](/l/1/roster/PHO_2/2025)");
+		assert.include(out, "[Cavaliers](/l/1/roster/CLE_3/2025)");
+		assert.include(out, "[Phoenix](/l/1/roster/PHO_2/2025)");
+	});
+
+	test("a city two clubs share links to neither", () => {
+		const links = leagueTeamLinks(league, 2025);
+		const out = linkifyRecap("Los Angeles won; the Clippers lost.", links);
+		assert.include(out, "Los Angeles won");
+		assert.include(out, "[Clippers](/l/1/roster/LAC_1/2025)");
+	});
+
+	test("an exhibition box score links only its own two", () => {
+		const links = buildRecapLinks(
+			{
+				exhibition: true,
+				season: 2025,
+				teams: [
+					{ tid: 0, abbrev: "X", region: "Old", name: "Timers", players: [] },
+				],
+			},
+			league,
+		);
+		assert.notOk(links.some((l) => l.name === "Suns"));
 	});
 });
 

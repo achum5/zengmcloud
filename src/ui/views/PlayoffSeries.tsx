@@ -638,6 +638,7 @@ const PlayoffSeries = ({
 															links={buildRecapLinksForGame(
 																game,
 																(tid) => teamInfoCache[tid],
+																teamInfoCache,
 															)}
 														/>
 													) : null}

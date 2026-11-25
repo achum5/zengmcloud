@@ -10,7 +10,12 @@ export type RecapLink = { name: string; href: string };
 // Build the name→link map for a game recap, scoped STRICTLY to the two teams in
 // this game and their rosters (the box-score players), so a name only ever links
 // to the right player/team in this game - never a same-named player elsewhere.
-export const buildRecapLinks = (boxScore: any): RecapLink[] => {
+// Pass `league` (teamInfoCache) and every other club the recap names - its next
+// opponent, say - links too; team names are unique, so they can be league-wide.
+export const buildRecapLinks = (
+	boxScore: any,
+	league?: TeamInfoCache,
+): RecapLink[] => {
 	const entries: RecapLink[] = [];
 	const teams = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
 	for (const t of teams) {
@@ -37,6 +42,10 @@ export const buildRecapLinks = (boxScore: any): RecapLink[] => {
 			}
 		}
 	}
+	// (An exhibition's clubs are from other leagues.)
+	if (league && !boxScore?.exhibition) {
+		entries.push(...leagueTeamLinks(league, boxScore?.season));
+	}
 	return entries;
 };
 
@@ -50,6 +59,7 @@ export const buildRecapLinksForGame = (
 	teamInfo: (
 		tid: number,
 	) => { abbrev?: string; region?: string; name?: string } | undefined,
+	league?: TeamInfoCache,
 ): RecapLink[] => {
 	const entries: RecapLink[] = [];
 	for (const t of Array.isArray(game?.teams) ? game.teams : []) {
@@ -79,6 +89,10 @@ export const buildRecapLinksForGame = (
 				});
 			}
 		}
+	}
+	// After the game's own two, which keep their branding for the season.
+	if (league) {
+		entries.push(...leagueTeamLinks(league, game.season));
 	}
 	return entries;
 };
@@ -148,11 +162,22 @@ export type TeamInfoCache = {
 
 // Every league team's name pointing at its roster for one season. The tid is in
 // the URL, so a franchise that has since been renamed still resolves - only the
-// name being matched in the text has to be current.
-const teamLinks = (
+// name being matched in the text has to be current. A city or nickname two
+// clubs share ("Los Angeles") links to neither: there is no telling which is
+// meant, and the recaps call such a club by its nickname anyway.
+export const leagueTeamLinks = (
 	teamInfoCache: TeamInfoCache,
 	season: number | undefined,
 ): RecapLink[] => {
+	const clubs = new Map<string, number>();
+	for (const info of teamInfoCache) {
+		if (info?.abbrev) {
+			for (const label of new Set([info.region, info.name])) {
+				const key = label?.trim() ?? "";
+				clubs.set(key, (clubs.get(key) ?? 0) + 1);
+			}
+		}
+	}
 	const entries: RecapLink[] = [];
 	// teamInfoCache is indexed by tid.
 	for (let tid = 0; tid < teamInfoCache.length; tid++) {
@@ -165,12 +190,16 @@ const teamLinks = (
 				? ["roster", `${info.abbrev}_${tid}`]
 				: ["roster", `${info.abbrev}_${tid}`, season],
 		);
-		const region = info.region ?? "";
-		const name = info.name ?? "";
+		const region = info.region?.trim() ?? "";
+		const name = info.name?.trim() ?? "";
 		// Full "Region Name" first (longest), then the nickname and region alone.
-		for (const label of [`${region} ${name}`, name, region]) {
-			if (label.trim() !== "") {
-				entries.push({ name: label.trim(), href });
+		const full = `${region} ${name}`.trim();
+		if (full !== "") {
+			entries.push({ name: full, href });
+		}
+		for (const label of [name, region]) {
+			if (label !== "" && label !== full && clubs.get(label) === 1) {
+				entries.push({ name: label, href });
 			}
 		}
 	}
@@ -190,7 +219,7 @@ export const buildTeamSeasonRecapLinks = ({
 	players: { pid?: number; firstName?: string; lastName?: string }[];
 	teamInfoCache: TeamInfoCache;
 }): RecapLink[] => {
-	const entries: RecapLink[] = teamLinks(teamInfoCache, season);
+	const entries: RecapLink[] = leagueTeamLinks(teamInfoCache, season);
 
 	for (const p of players ?? []) {
 		if (typeof p?.pid === "number" && p.pid >= 0) {
@@ -557,7 +586,7 @@ export const buildPlayerNoteLinks = (
 		if (existing) {
 			return existing;
 		}
-		const entries = teamLinks(teamInfoCache, season);
+		const entries = leagueTeamLinks(teamInfoCache, season);
 		if (season !== undefined) {
 			for (const { pid, name } of bySeason.get(season) ?? []) {
 				if (name.trim() !== "") {

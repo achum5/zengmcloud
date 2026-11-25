@@ -953,11 +953,12 @@ const RecapHeader = ({
 // shows the headline and the first paragraph, the rest a tap away.
 const RecapStory = ({ boxScore }: { boxScore: any }) => {
 	const [open, setOpen] = useState(false);
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const note: string | undefined = boxScore.note?.trim();
 	if (!note) {
 		return null;
 	}
-	const links = buildRecapLinks(boxScore);
+	const links = buildRecapLinks(boxScore, teamInfoCache);
 	const linked = links.length > 0 ? linkifyRecap(note, links) : note;
 	const lines = linked.split("\n");
 	const at = lines.findIndex((line) => line.trim() !== "");
@@ -1126,7 +1127,11 @@ export const GameRecap = ({
 	const [tab, setTab] = useState<Tab>("recap");
 	const info: GamecastInfo | undefined = boxScore.gamecast;
 	const colors = sideColors(boxScore.teams);
-	const { gender, refreshedLook } = useLocal(["gender", "refreshedLook"]);
+	const { gender, refreshedLook, teamInfoCache } = useLocal([
+		"gender",
+		"refreshedLook",
+		"teamInfoCache",
+	]);
 	// (A phone gets the box score a team at a time - see BoxScorePhone.)
 	const isPhone = useIsPhone();
 
@@ -1441,7 +1446,7 @@ export const GameRecap = ({
 								info={{ type: "game", gid: boxScore.gid }}
 								infoLink
 								editOnly
-								autoLink={buildRecapLinks(boxScore)}
+								autoLink={buildRecapLinks(boxScore, teamInfoCache)}
 							/>
 						</div>
 					)}
@@ -1643,7 +1648,7 @@ export const GameRecap = ({
 										info={{ type: "game", gid: boxScore.gid }}
 										infoLink
 										editOnly
-										autoLink={buildRecapLinks(boxScore)}
+										autoLink={buildRecapLinks(boxScore, teamInfoCache)}
 									/>
 								</div>
 							)}

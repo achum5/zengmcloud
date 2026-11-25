@@ -1264,6 +1264,7 @@ export const BoxScoreWrapper = ({
 	tid?: number;
 	Row: unknown;
 }) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const prevPlayIndex = useRef(playIndex);
 	useEffect(() => {
 		prevPlayIndex.current = playIndex;
@@ -1427,7 +1428,7 @@ export const BoxScoreWrapper = ({
 						}}
 						infoLink
 						banner
-						autoLink={buildRecapLinks(boxScore)}
+						autoLink={buildRecapLinks(boxScore, teamInfoCache)}
 					/>
 				</div>
 			)}
@@ -1460,7 +1461,7 @@ export const BoxScoreWrapper = ({
 						}}
 						infoLink
 						editOnly
-						autoLink={buildRecapLinks(boxScore)}
+						autoLink={buildRecapLinks(boxScore, teamInfoCache)}
 					/>
 				</div>
 			)}

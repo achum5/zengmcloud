@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 634,
+		date: "2026-11-25",
+		text: "Recaps: every team named in a recap is now a link to its page, not just the teams that played. That covers the night's Streaks, The race and Worth watching on the Daily Schedule, and the Up next part of a game's recap.",
+	},
+	{
 		n: 633,
 		date: "2026-11-25",
 		text: "Milestone Watch has a new look. Players close to a round number and seasons on a record pace are now clean tables with the numbers in columns. The all-time lists show each active player between the legends he's chasing, with how many he needs to pass the next one. On a phone, tap PTS, REB, AST and the rest to switch lists.",

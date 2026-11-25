@@ -17,6 +17,8 @@ import NightlyRecap from "../components/NightlyRecap/index.tsx";
 import {
 	buildRecapLinksForGame,
 	buildSentenceGamesForDay,
+	leagueTeamLinks,
+	type TeamInfoCache,
 } from "../util/linkifyRecap.ts";
 import {
 	getDailyScheduleScroll,
@@ -281,9 +283,26 @@ const DailySchedule = ({
 			<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
 		) : null;
 
-	const recapLinks = completed.flatMap((game) =>
-		buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
-	);
+	// The night's recap names clubs that sat the night out too (Streaks, The
+	// race, Worth watching), by the names they had that season: the standings
+	// it was written from.
+	const nightTeams: TeamInfoCache = [];
+	for (const c of hub.standings?.confs ?? []) {
+		for (const t of c.teams) {
+			if (t.tid !== undefined) {
+				nightTeams[t.tid] = t;
+			}
+		}
+	}
+	const recapLinks = [
+		...completed.flatMap((game) =>
+			buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
+		),
+		...leagueTeamLinks(
+			nightTeams.length > 0 ? nightTeams : teamInfoCache,
+			season,
+		),
+	];
 	const sentenceGames = buildSentenceGamesForDay(
 		completed,
 		(tid) => teamInfoCache[tid],
@@ -545,6 +564,7 @@ const DailySchedule = ({
 											links={buildRecapLinksForGame(
 												game,
 												(tid) => teamInfoCache[tid],
+												teamInfoCache,
 											)}
 										/>
 									) : null;
