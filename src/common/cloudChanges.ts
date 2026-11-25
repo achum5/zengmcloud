@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 595,
+		date: "2026-11-25",
+		text: "A finished game's score banner is laid out more evenly: FINAL sits just over the scores, and the score by quarter with the line and over/under sits just under them. In a window narrower than a full desktop, each team's leaders show under the banner, and the home side is no longer cut off on tablets.",
+	},
+	{
 		n: 594,
 		date: "2026-11-25",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): threes are left wide open about as often as real ones are as the shot goes up, about one in three, down from about four in ten. More of them now have a defender a step late, closing out.",

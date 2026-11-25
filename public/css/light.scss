@@ -5677,9 +5677,23 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		font-size: 3rem;
 	}
 }
-// A phone: the names to their abbreviations, the logos smaller, the
-// numbers still big; one team's banner its words under its logo.
-@include media-breakpoint-down(sm) {
+// (A tablet: the logos smaller, the names sized to the banner - see the
+// game's banner below.)
+@include media-breakpoint-between(md, lg) {
+	.mb-banner:has(.mb-extra) {
+		.mb-logo .d-flex {
+			width: 56px !important;
+			height: 56px !important;
+		}
+		.mb-name {
+			font-size: clamp(1.2rem, calc(5.4cqw - 1.25rem), 1.9rem);
+		}
+	}
+}
+// A phone (or a small tablet, too narrow for the full names): the names to
+// their abbreviations, the logos smaller, the numbers still big; one team's
+// banner its words under its logo.
+@include media-breakpoint-down(md) {
 	.mb-banner {
 		min-height: 0;
 	}
@@ -6200,9 +6214,9 @@ body:has(.league-ticker) .recap-dock-wrap {
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
-// (A tablet: under it, as on a phone, the banner taller for it - clear of
-// the big numbers. A wide screen: beside it, no taller than it.)
-@include media-breakpoint-up(lg) {
+// (A tablet or wider: beside it, no taller than it - the team leaders,
+// short of a wide screen, under the banner to leave it the room.)
+@include media-breakpoint-up(md) {
 	.mb-extra .recap-board {
 		display: inline-flex;
 		align-items: center;
@@ -6218,36 +6232,63 @@ body:has(.league-ticker) .recap-dock-wrap {
 		font-size: 0.8rem;
 	}
 }
-@include media-breakpoint-down(sm) {
+@include media-breakpoint-down(md) {
 	.recap-board-lines {
 		font-size: 0.66rem;
 		padding: 0.05rem 0.25rem 0.1rem;
 	}
 }
-// (Wider than a phone, the numbers are by the split, in the middle: the
-// series and the status over them, the score by quarter at the foot.)
-@include media-breakpoint-up(sm) {
+// (A tablet or wider, the numbers are by the split, in the middle, and
+// the rest hugs them: the status and the series just over them, the score
+// by quarter just under them - all on the line the numbers are on, the
+// middle of each half's room over its arrows. --mb-score-h: the numbers'
+// height, at their line height of 1. The halves even, however long a name,
+// so the split - and the status and the score by quarter on it - is between
+// the numbers: the names and numbers sized to the banner, a name still too
+// long for its half cut short.)
+@include media-breakpoint-up(md) {
 	.mb-banner:has(.mb-extra) {
+		container-type: inline-size;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		--mb-score-h: clamp(2.4rem, 4.6cqw, 3rem);
+		--mb-score-mid: 50%;
 		min-height: 13rem;
+		.mb-big {
+			font-size: var(--mb-score-h);
+		}
+		// (Room in its box for the tails of g, p and y.)
+		.mb-name {
+			overflow: hidden;
+			text-overflow: ellipsis;
+			padding-bottom: 0.15em;
+			margin-bottom: calc(0.3rem - 0.15em);
+		}
 		.mb-middle {
-			top: 0.6rem;
-			bottom: 0.7rem;
+			top: auto;
+			bottom: calc(
+				100% - var(--mb-score-mid) + var(--mb-score-h) / 2 + 0.35rem
+			);
 			transform: translateX(-50%);
-			display: flex;
-			flex-direction: column;
-			align-items: center;
 		}
 		.mb-extra {
-			margin-top: auto;
+			position: absolute;
+			left: 50%;
+			top: calc(100% + var(--mb-score-h) + 0.8rem);
+			transform: translateX(-50%);
+			margin: 0;
 		}
 	}
 }
-@include media-breakpoint-between(sm, lg) {
-	.mb-banner:has(.recap-board-lines) {
-		min-height: 15.5rem;
+@include media-breakpoint-up(lg) {
+	.mb-banner:has(.mb-extra) {
+		--mb-score-h: clamp(3rem, 4.4cqw, 4rem);
+		min-height: 14rem;
+		.mb-name {
+			font-size: clamp(1.9rem, 2.3cqw, 2.6rem);
+		}
 	}
 }
-@include media-breakpoint-down(sm) {
+@include media-breakpoint-down(md) {
 	.mb-extra .recap-mini {
 		font-size: 0.68rem;
 		th,
@@ -6823,6 +6864,17 @@ a.rsb-half {
 .mb-banner:has(.mb-nav) .mb-half {
 	padding-bottom: 2.1rem;
 }
+// (A tablet or wider, with the score by quarter under the numbers: a little
+// more, the line the numbers are on raised to match - the score by quarter
+// is taller than the status over them.)
+@include media-breakpoint-up(md) {
+	.mb-banner:has(.mb-nav):has(.mb-extra) {
+		--mb-score-mid: calc(50% - 0.55rem);
+		.mb-half {
+			padding-bottom: 2.6rem;
+		}
+	}
+}
 
 // THE ROSTER'S TOP (the refreshed look): the logo, the team's info by it, and
 // the roster's buttons - under the logo on a phone (beside the info's lower
@@ -6975,9 +7027,9 @@ a.rsb-half {
 .mb-leaders-row {
 	display: none;
 }
-// (A phone: not in the banner's halves - no room by the score by quarter -
-// but in a row under it, each team's under its side.)
-@include media-breakpoint-down(sm) {
+// (A phone or a tablet: not in the banner's halves - no room by the score by
+// quarter and the line - but in a row under it, each team's under its side.)
+@include media-breakpoint-down(lg) {
 	.mb-half .mb-leaders {
 		display: none;
 	}
