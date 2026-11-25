@@ -1,5 +1,12 @@
 import { assert, describe, test } from "vitest";
-import { buildClocks, gameClockAt, shotClockAt } from "./clock.ts";
+import {
+	buildClocks,
+	finalStretchAt,
+	FINAL_STRETCH,
+	gameClockAt,
+	shotClockAt,
+	type Clocks,
+} from "./clock.ts";
 import {
 	breakText,
 	buildFouls,
@@ -144,6 +151,64 @@ describe("between periods on the score bug", () => {
 		assert.strictEqual(breakText("H1", 2), "HALF");
 		assert.strictEqual(breakText("OT", 4), "END OT");
 	}, 60_000);
+});
+
+describe("timeouts in the last two minutes on the score bug", () => {
+	// From two minutes left in the last period, and all through overtime,
+	// the bug shows the game's own timeouts (two at most), not TV's seven.
+	test("from 2:00 left in the 4th, through the final - not in the 3rd", () => {
+		const { tl, events } = compile("a", 150);
+		const clocks = buildClocks(tl, events);
+		let sawQ3Late = false;
+		let sawQ4Early = false;
+		let sawQ4Late = false;
+		let period = 1;
+		for (const b of tl.beats) {
+			const e = events[b.i]!;
+			if (e.type === "period" || e.type === "overtime") {
+				period = typeof e.period === "number" ? e.period : period + 1;
+			}
+			const clock = gameClockAt(clocks, b.actionStart);
+			if (clock === undefined || typeof e.clock !== "number") {
+				continue;
+			}
+			const late = finalStretchAt(clocks, b.actionStart, 4);
+			if (period === 3 && clock < FINAL_STRETCH) {
+				sawQ3Late = true;
+				assert.isFalse(late, `Q3 ${clock}`);
+			} else if (period === 4 && clock > FINAL_STRETCH) {
+				sawQ4Early = true;
+				assert.isFalse(late, `Q4 ${clock}`);
+			} else if (period >= 4 && clock <= FINAL_STRETCH) {
+				sawQ4Late = true;
+				assert.isTrue(late, `Q${period} ${clock}`);
+			}
+		}
+		assert.isTrue(sawQ3Late && sawQ4Early && sawQ4Late);
+		assert.isTrue(finalStretchAt(clocks, tl.end, 4));
+		assert.isFalse(finalStretchAt(clocks, -1, 4));
+	}, 60_000);
+
+	test("all through overtime, its own two from the start", () => {
+		const clocks: Clocks = {
+			marks: [
+				{ t: 0, clock: 130, period: 4 },
+				{ t: 10_000, clock: 120, period: 4 },
+				{ t: 20_000, clock: 0, period: 4 },
+				{ t: 30_000, clock: 300, period: 5 },
+				{ t: 40_000, clock: 290, period: 5 },
+			],
+			resets: [],
+		};
+		assert.isFalse(finalStretchAt(clocks, 5000, 4));
+		assert.isTrue(finalStretchAt(clocks, 10_000, 4));
+		// (The break before overtime.)
+		assert.isTrue(finalStretchAt(clocks, 25_000, 4));
+		assert.isTrue(finalStretchAt(clocks, 30_000, 4));
+		assert.isTrue(finalStretchAt(clocks, 35_000, 4));
+		// (Not the last period, in a game of five.)
+		assert.isFalse(finalStretchAt(clocks, 10_000, 5));
+	});
 });
 
 describe("the shot clock on the score bug", () => {
