@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 581,
+		date: "2026-11-25",
+		text: "Draft History's Redraft column now shows how far second-round picks rose or fell too, counted from where they went overall.",
+	},
+	{
 		n: 580,
 		date: "2026-11-24",
 		text: "Fixed the 3D game crashing on iPhones during the starting lineups. Players shown up close are drawn a little coarser now, so they no longer use up the phone's memory.",
