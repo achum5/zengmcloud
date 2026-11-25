@@ -13,6 +13,7 @@ import {
 	NEAR_WALL,
 	RAFTERS,
 	RIBBON,
+	RIBBON_SCORE,
 	STANDS,
 	standsPoint,
 	END_STANDS,
@@ -26,7 +27,7 @@ import {
 	type Courtside,
 	type HoopFx,
 } from "./arena.ts";
-import { drawJumbotron, type Jumbotron } from "./jumbotron.ts";
+import { drawJumbotron, ribbonScore, type Jumbotron } from "./jumbotron.ts";
 import {
 	BASELINE_RIG,
 	depthOf,
@@ -2063,6 +2064,21 @@ export const drawFrame = (f: Frame) => {
 	const ribbon = venueBoards?.ribbon ?? arena.boards.ribbon[screen];
 	const wall = venueBoards?.wall ?? arena.boards.wall[screen];
 	drawTexturedPlane(ctx, cam, RIBBON, ribbon, 24, 1);
+	// (The score along the middle of it, in the game's own building.)
+	if (!venueBoards && arena.jumbotron && f.score) {
+		drawTexturedPlane(
+			ctx,
+			cam,
+			RIBBON_SCORE,
+			ribbonScore(arena.jumbotron, RIBBON_SCORE.w, RIBBON_SCORE.h, {
+				score: f.score,
+				clock: f.clock ?? "",
+				period: f.period ?? "",
+			}),
+			6,
+			1,
+		);
+	}
 	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
 	drawTexturedPlane(ctx, cam, LED_WALL, wall, 24, 1);
 	// (And round the near side, if the cameras look back at it.)

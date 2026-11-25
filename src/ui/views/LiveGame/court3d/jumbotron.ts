@@ -1252,6 +1252,26 @@ const seenFromAbove = (cam: Camera, z: number) => {
 
 // Hung from the roof, in the picture when it is: each level from the one
 // furthest from the camera's height in, so what is nearer is drawn over.
+// THE SCORE ON THE RIBBON round the bowl (the Garden's, in 2K): the same
+// bar as the ring's, along the middle of the far side's ribbon board.
+export const ribbonScore = (
+	j: Jumbotron,
+	w: number,
+	h: number,
+	live: JumboLive,
+): HTMLCanvasElement =>
+	made(
+		j,
+		`s|ribbon|${live.score?.join("-") ?? ""}|${live.clock}|${live.period}`,
+		() => {
+			const canvas = document.createElement("canvas");
+			canvas.width = w;
+			canvas.height = h;
+			paintScoreBar(canvas.getContext("2d")!, w, h, j.teams, live);
+			return canvas;
+		},
+	);
+
 export const drawJumbotron = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,

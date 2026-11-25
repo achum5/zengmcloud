@@ -270,6 +270,84 @@ const SIGN_ROWS = 9;
 // up, from the front.
 const TUNNEL_W = 7;
 const TUNNEL_ROWS: [number, number] = [2, 4];
+// THE SUITES: two rings of them, a level under the ribbon and a level over
+// it, as at the Garden (2K) - each three rows of the stands given over to a
+// row of glass-fronted boxes lit warm inside, a ledge along their front.
+const SUITE_LEVELS: [number, number][] = [
+	[10, 12],
+	[14, 16],
+];
+const SUITE_W = 15.5;
+const SUITE_WALLS = ["#8a6f55", "#7a5f48", "#94816b", "#6e5440", "#857a6c"];
+const inSuites = (r: number) => SUITE_LEVELS.some(([a, b]) => r >= a && r <= b);
+type Glow = { x: number; y: number; r: number };
+type Room = { x: number; y: number; w: number; h: number };
+const paintSuites = (
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	top: number,
+	bottom: number,
+	px: number,
+	rng: () => number,
+	people: (x: number, yb: number) => void,
+	glows: Glow[],
+	rooms: Room[],
+) => {
+	const H = bottom - top;
+	const ceil = top + 0.17 * H;
+	const ledge = top + 0.8 * H;
+	const pillar = 1.0 * px;
+	ctx.fillStyle = "#08090b";
+	ctx.fillRect(0, top, w, H);
+	for (let x0 = 0; x0 < w; x0 += SUITE_W * px) {
+		const ix = x0 + pillar / 2;
+		const iw = SUITE_W * px - pillar;
+		const ih = ledge - ceil;
+		const wall = SUITE_WALLS[Math.floor(rng() * SUITE_WALLS.length)]!;
+		const g = ctx.createLinearGradient(0, ceil, 0, ledge);
+		g.addColorStop(0, shade(wall, 0.14));
+		g.addColorStop(1, shade(wall, -0.38));
+		ctx.fillStyle = g;
+		ctx.fillRect(ix, ceil, iw, ih);
+		// A door in the club's red, now and then.
+		if (rng() < 0.55) {
+			const dw = 1.5 * px;
+			const dx = rng() < 0.5 ? ix + 0.7 * px : ix + iw - 0.7 * px - dw;
+			ctx.fillStyle = "#7d2428";
+			ctx.fillRect(dx, ceil + 0.12 * ih, dw, ih * 0.88);
+		}
+		// The lamps on the back wall, and the ones hung from the ceiling.
+		for (const k of [0.27, 0.73]) {
+			const lx = ix + iw * k;
+			ctx.fillStyle = "#ffe3ad";
+			ctx.fillRect(lx - 0.13 * px, ceil + 0.3 * ih, 0.26 * px, 0.16 * ih);
+			glows.push({ x: lx, y: ceil + 0.38 * ih, r: 1.4 * px });
+		}
+		for (let i = 0; i < 4; i++) {
+			const lx = ix + (iw * (i + 0.5)) / 4;
+			ctx.fillStyle = "#2a2a2e";
+			ctx.fillRect(lx - 0.03 * px, ceil, 0.06 * px, 0.1 * ih);
+			ctx.fillStyle = "#fff4dc";
+			ctx.fillRect(lx - 0.1 * px, ceil + 0.1 * ih, 0.2 * px, 0.08 * ih);
+			glows.push({ x: lx, y: ceil + 0.14 * ih, r: 0.8 * px });
+		}
+		// Who is in it, sat along the front.
+		const n = Math.floor(rng() * 4);
+		for (let i = 0; i < n; i++) {
+			people(ix + iw * (0.12 + 0.76 * rng()), ledge + 0.06 * H);
+		}
+		// The glass across the front of it.
+		ctx.fillStyle = "rgba(170, 195, 230, 0.07)";
+		ctx.fillRect(ix, ceil, iw, ih);
+		rooms.push({ x: ix, y: ceil, w: iw, h: ih });
+	}
+	ctx.fillStyle = "#0d0e11";
+	ctx.fillRect(0, top, w, ceil - top);
+	ctx.fillStyle = "#121318";
+	ctx.fillRect(0, ledge, w, bottom - ledge);
+	ctx.fillStyle = "#3d4048";
+	ctx.fillRect(0, ledge, w, Math.max(1, 0.05 * H));
+};
 
 // The ribbon board, along the front of the upper deck.
 export const RIBBON = plane(
@@ -280,6 +358,18 @@ export const RIBBON = plane(
 	X1 - X0,
 	ROW_FT,
 	8,
+);
+
+// The score along the middle of it (see jumbotron's ribbonScore).
+const RIBBON_SCORE_FT = 44;
+export const RIBBON_SCORE = plane(
+	"ribbonScore",
+	standsPoint(COURT_W / 2 - RIBBON_SCORE_FT / 2, (RIBBON_ROW + 1) * ROW_FT),
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: Math.cos(RAKE), z: -Math.sin(RAKE) },
+	RIBBON_SCORE_FT,
+	ROW_FT,
+	16,
 );
 
 // The rafters over the far stands: a truss across the building, its lights,
@@ -661,7 +751,7 @@ export const paintStands = (
 	const seatRng = makeCourtRng(`seats|${seed}${end ?? ""}`);
 	const seats: { r: number; xf: number; want: number }[] = [];
 	for (let r = 0; r < rows; r++) {
-		if (r === RIBBON_ROW && end === undefined) {
+		if (r === RIBBON_ROW || inSuites(r)) {
 			continue;
 		}
 		for (let xf = A0 + 0.6; xf < A1 - 0.6; xf += 1.85) {
@@ -688,6 +778,8 @@ export const paintStands = (
 		byRow[st.r]!.push(st);
 	}
 	const signs: { x: number; top: number }[] = [];
+	const glows: Glow[] = [];
+	const rooms: Room[] = [];
 	// Rows from the back (top of the picture) down to the front, each the
 	// row behind's lower half hidden behind its heads - the stands as seen
 	// from the floor: a bank of heads and shoulders.
@@ -695,10 +787,47 @@ export const paintStands = (
 		const yb = h - r * ROW_FT * px;
 		// (No two rows sat quite the same way across.)
 		const shift = (((((r * 0.618) % 1) + 1) % 1) - 0.5) * 0.8 * px;
-		if (r === RIBBON_ROW && end === undefined) {
-			// The ribbon board goes here (see RIBBON).
+		if (r === RIBBON_ROW) {
+			// The ribbon board goes here (see RIBBON) - behind the baskets,
+			// lit once the stands are (see below).
 			ctx.fillStyle = "#050507";
 			ctx.fillRect(0, yb - ROW_FT * px, w, ROW_FT * px);
+			continue;
+		}
+		const level = SUITE_LEVELS.find(([a, b]) => r >= a && r <= b);
+		if (level) {
+			if (r === level[1]) {
+				paintSuites(
+					ctx,
+					w,
+					yb - ROW_FT * px,
+					yb + (level[1] - level[0]) * ROW_FT * px,
+					px,
+					rng,
+					(x, at) => {
+						const face =
+							faces && faces.length > 0
+								? faces[Math.floor(faceRng() * faces.length)]!
+								: undefined;
+						const color = rng() < 0.3 ? homeC[0]! : clothes(rng());
+						drawFan(
+							ctx,
+							{
+								x,
+								yb: at,
+								bodyW: (1.3 + rng() * 0.3) * px,
+								color,
+								skin: face?.skin ?? skins[Math.floor(rng() * skins.length)]!,
+								...(face ? { face } : {}),
+								pants: PANTS[Math.floor(rng() * PANTS.length)]!,
+							},
+							px,
+						);
+					},
+					glows,
+					rooms,
+				);
+			}
 			continue;
 		}
 		// Seat backs.
@@ -846,8 +975,9 @@ export const paintStands = (
 		ctx.stroke();
 	}
 	// The tunnels in under the lower deck, at every other aisle (see
-	// ArenaSpec.stands): a dark mouth a few rows up from the front, a rail
-	// along its top.
+	// ArenaSpec.stands): a mouth a few rows up from the front, its walls in
+	// shadow going in and the concourse lit at the far end of it, a glass
+	// rail round its top and its section's number over it.
 	const every = spec.stands.tunnelEvery;
 	for (let k = 1, xf = A0 + aisle; xf < A1 - 4; k++, xf += aisle) {
 		if (every <= 0 || k % every) {
@@ -856,8 +986,37 @@ export const paintStands = (
 		const x = (xf - A0 + 1.2 - TUNNEL_W / 2) * px;
 		const top = h - (TUNNEL_ROWS[1] + 1) * ROW_FT * px;
 		const tall = (TUNNEL_ROWS[1] - TUNNEL_ROWS[0] + 1) * ROW_FT * px;
-		ctx.fillStyle = "#0a0b0e";
-		ctx.fillRect(x, top, TUNNEL_W * px, tall);
+		const tw = TUNNEL_W * px;
+		const inside = ctx.createLinearGradient(0, top, 0, top + tall);
+		inside.addColorStop(0, "#13110e");
+		inside.addColorStop(1, "#2a231a");
+		ctx.fillStyle = inside;
+		ctx.fillRect(x, top, tw, tall);
+		const ex = x + tw * 0.24;
+		const ew = tw * 0.52;
+		const et = top + tall * 0.32;
+		const lit = ctx.createLinearGradient(0, et, 0, top + tall);
+		lit.addColorStop(0, "#9a8566");
+		lit.addColorStop(1, "#5c4d39");
+		ctx.fillStyle = lit;
+		ctx.fillRect(ex, et, ew, top + tall - et);
+		ctx.fillStyle = "#fff0d2";
+		ctx.fillRect(ex + ew * 0.3, et + 0.12 * px, ew * 0.4, 0.16 * px);
+		ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+		for (const [a, b] of [
+			[x, ex],
+			[x + tw, ex + ew],
+		] as const) {
+			ctx.beginPath();
+			ctx.moveTo(a, top);
+			ctx.lineTo(b, et);
+			ctx.lineTo(b, top + tall);
+			ctx.lineTo(a, top + tall);
+			ctx.closePath();
+			ctx.fill();
+		}
+		ctx.fillStyle = "rgba(190, 210, 235, 0.16)";
+		ctx.fillRect(x - 0.4 * px, top - 1.0 * px, tw + 0.8 * px, 0.65 * px);
 		ctx.fillStyle = "#3a3e47";
 		ctx.fillRect(
 			x - 0.4 * px,
@@ -865,6 +1024,21 @@ export const paintStands = (
 			(TUNNEL_W + 0.8) * px,
 			0.35 * px,
 		);
+		ctx.fillStyle = "#6b707a";
+		ctx.fillRect(x - 0.4 * px, top - 1.05 * px, tw + 0.8 * px, 0.1 * px);
+		const pw = 2.2 * px;
+		ctx.fillStyle = "#0e0f12";
+		ctx.fillRect(x + tw / 2 - pw / 2, top - 1.9 * px, pw, 0.75 * px);
+		ctx.fillStyle = "#e8e8e4";
+		ctx.font = `700 ${Math.max(5, Math.round(0.6 * px))}px sans-serif`;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText(
+			String((end === undefined ? 10 : end === 0 ? 1 : 20) + k),
+			x + tw / 2,
+			top - 1.5 * px,
+		);
+		ctx.textAlign = "start";
 	}
 	// The light falls on the court: the upper deck fades into the dark.
 	const dark = ctx.createLinearGradient(0, 0, 0, h);
@@ -874,6 +1048,49 @@ export const paintStands = (
 	dark.addColorStop(1, `rgba(3,3,6,${Math.min(1, 0.12 * bowl)})`);
 	ctx.fillStyle = dark;
 	ctx.fillRect(0, 0, w, h);
+	// The suites lit from inside, whatever the dark round them.
+	ctx.globalCompositeOperation = "lighter";
+	for (const rm of rooms) {
+		const g = ctx.createLinearGradient(0, rm.y, 0, rm.y + rm.h);
+		g.addColorStop(0, "rgba(118, 84, 46, 0.34)");
+		g.addColorStop(1, "rgba(60, 40, 22, 0.1)");
+		ctx.fillStyle = g;
+		ctx.fillRect(rm.x, rm.y, rm.w, rm.h);
+	}
+	for (const gl of glows) {
+		const g = ctx.createRadialGradient(gl.x, gl.y, 0, gl.x, gl.y, gl.r);
+		g.addColorStop(0, "rgba(255, 222, 165, 0.6)");
+		g.addColorStop(1, "rgba(255, 222, 165, 0)");
+		ctx.fillStyle = g;
+		ctx.fillRect(gl.x - gl.r, gl.y - gl.r, gl.r * 2, gl.r * 2);
+	}
+	ctx.globalCompositeOperation = "source-over";
+	// Behind the baskets, the ribbon round the building between the two
+	// levels of suites (along the side it is its own board: see RIBBON) -
+	// the home team's name along it on its color.
+	if (end !== undefined) {
+		const top = h - (RIBBON_ROW + 1) * ROW_FT * px;
+		const rh = ROW_FT * px;
+		const band = ctx.createLinearGradient(0, top, 0, top + rh);
+		band.addColorStop(0, shade(homeC[0]!, 0.12));
+		band.addColorStop(1, shade(homeC[0]!, -0.25));
+		ctx.fillStyle = band;
+		ctx.fillRect(0, top + 0.12 * rh, w, 0.76 * rh);
+		ctx.fillStyle = homeC[1]!;
+		ctx.fillRect(0, top + 0.12 * rh, w, Math.max(1, 0.06 * rh));
+		ctx.fillRect(0, top + 0.82 * rh, w, Math.max(1, 0.06 * rh));
+		const name = (home?.name ?? home?.abbrev ?? "").toUpperCase();
+		if (name) {
+			ctx.fillStyle = inkOn(homeC[0]!);
+			ctx.font = `900 ${Math.round(0.46 * rh)}px sans-serif`;
+			ctx.textAlign = "center";
+			ctx.textBaseline = "middle";
+			for (let xf = 10; xf < A1 - A0; xf += 26) {
+				ctx.fillText(name, xf * px, top + 0.52 * rh);
+			}
+			ctx.textAlign = "start";
+		}
+	}
 	return canvas;
 };
 
