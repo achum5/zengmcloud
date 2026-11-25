@@ -36,7 +36,6 @@ import {
 	type HubTabId,
 } from "../components/LeagueHub/HubTabs.tsx";
 import {
-	ComingUp,
 	Headlines,
 	HubStandings,
 	InjuryReport,
@@ -50,16 +49,7 @@ import {
 
 // Each hub pane's place on a phone. (Whole class names: the build keeps only
 // styles whose names it finds written out in the code.)
-const PANE_ORDER = [
-	"",
-	"lh-o1",
-	"lh-o2",
-	"lh-o3",
-	"lh-o4",
-	"lh-o5",
-	"lh-o6",
-	"lh-o7",
-];
+const PANE_ORDER = ["", "lh-o1", "lh-o2", "lh-o3", "lh-o4", "lh-o5", "lh-o6"];
 
 const DailySchedule = ({
 	calendar,
@@ -317,8 +307,8 @@ const DailySchedule = ({
 
 	// THE LEAGUE HUB (basketball, where the night's recaps are written): the
 	// nights across the top, the night's top story leading, its scores under
-	// it, and down the side its top performers, headlines, the standings, who
-	// got hurt and what's next. One column on a phone, in that order of need.
+	// it, and down the side its top performers, headlines, the standings and
+	// who got hurt. One column on a phone, in that order of need.
 	const hubOn = __SPORT === "basketball" && days.length > 0;
 
 	const scores = (
@@ -730,15 +720,6 @@ const DailySchedule = ({
 							{hub.injuries.length > 0 ? (
 								<div className={pane("recap", 6)}>
 									<InjuryReport injuries={hub.injuries} season={season} />
-								</div>
-							) : null}
-							{hub.next ? (
-								<div className={pane("scores", 7)}>
-									<ComingUp
-										next={hub.next}
-										season={season}
-										todayDay={todayDay}
-									/>
 								</div>
 							) : null}
 						</div>

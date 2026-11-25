@@ -35,31 +35,6 @@ export type HubInjury = {
 	gamesRemaining: number;
 };
 
-// A team's record going into a game on "Coming up".
-export type HubRecord = {
-	won: number;
-	lost: number;
-	tied: number;
-	otl: number;
-};
-
-export const toHubRecord = (t: HubRecord): HubRecord => ({
-	won: t.won,
-	lost: t.lost,
-	tied: t.tied,
-	otl: t.otl,
-});
-
-// A game on "Coming up": the line (home's perspective, positive = home
-// favored) and each team's record (home, away), while it's still to play.
-export type HubComingGame = {
-	gid: number;
-	homeTid: number;
-	awayTid: number;
-	spread?: number;
-	records?: [HubRecord, HubRecord];
-};
-
 export type DailyScheduleHub = {
 	performers: HubPerformer[];
 	injuries: HubInjury[];

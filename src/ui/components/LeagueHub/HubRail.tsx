@@ -1,22 +1,18 @@
 import clsx from "clsx";
 import { useState, type ReactNode } from "react";
-import { formatGameDate } from "../../../common/calendarDates.ts";
 import type {
-	HubComingGame,
 	HubInjury,
 	HubPerformer,
-	HubRecord,
 } from "../../../worker/views/dailyScheduleHub.ts";
 import type { RecapDayStandings } from "../../../worker/util/getDayGamesForRecap.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../PlayerPicture.tsx";
-import { spreadLine } from "./spreadLine.ts";
 
 // THE HUB'S SIDE PANELS, ESPN's right rail: the night's top performers, the
-// night's headlines, the standings, who got hurt and what's next. Each is a
-// small card of the game's own numbers, linked through to the full pages.
+// night's headlines, the standings and who got hurt. Each is a small card
+// of the game's own numbers, linked through to the full pages.
 
 const Logo = ({ tid, size = 20 }: { tid: number; size?: number }) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
@@ -370,99 +366,3 @@ export const InjuryReport = ({
 			</ul>
 		</RailCard>
 	) : null;
-
-const MAX_COMING = 5;
-
-const ComingTeam = ({
-	tid,
-	abbrev,
-	record,
-}: {
-	tid: number;
-	abbrev: string;
-	record: HubRecord | undefined;
-}) => (
-	<span className="lh-coming-team">
-		<Logo tid={tid} size={18} />
-		{abbrev}
-		{record ? (
-			<span className="lh-coming-record">{helpers.formatRecord(record)}</span>
-		) : null}
-	</span>
-);
-
-export const ComingUp = ({
-	next,
-	season,
-	todayDay,
-}: {
-	next:
-		| {
-				day: number;
-				date: string | undefined;
-				games: HubComingGame[];
-		  }
-		| undefined;
-	season: number;
-	todayDay: number | undefined;
-}) => {
-	const { userTids, teamInfoCache } = useLocal(["userTids", "teamInfoCache"]);
-	if (!next || next.games.length === 0) {
-		return null;
-	}
-	const when =
-		next.day === todayDay
-			? "Tonight"
-			: next.date !== undefined
-				? formatGameDate(next.date)
-				: `Day ${next.day}`;
-	// The user's game(s) first.
-	const games = [...next.games].sort(
-		(a, b) =>
-			Number(userTids.includes(b.homeTid) || userTids.includes(b.awayTid)) -
-			Number(userTids.includes(a.homeTid) || userTids.includes(a.awayTid)),
-	);
-	const more = games.length - MAX_COMING;
-	return (
-		<RailCard
-			title={`Coming up: ${when}`}
-			more={{
-				href: helpers.leagueUrl(["daily_schedule", season, next.day]),
-				text: `${next.games.length} ${next.games.length === 1 ? "game" : "games"}`,
-			}}
-		>
-			<ul className="lh-list">
-				{games.slice(0, MAX_COMING).map((game) => {
-					const homeAbbrev = teamInfoCache[game.homeTid]?.abbrev ?? "";
-					const awayAbbrev = teamInfoCache[game.awayTid]?.abbrev ?? "";
-					const line = spreadLine(game.spread, homeAbbrev, awayAbbrev);
-					return (
-						<li key={game.gid} className="lh-coming">
-							<ComingTeam
-								tid={game.awayTid}
-								abbrev={awayAbbrev}
-								record={game.records?.[1]}
-							/>
-							<span className="text-body-secondary">@</span>
-							<ComingTeam
-								tid={game.homeTid}
-								abbrev={homeAbbrev}
-								record={game.records?.[0]}
-							/>
-							{line ? (
-								<span className="lh-coming-line" title="Point spread">
-									{line}
-								</span>
-							) : null}
-						</li>
-					);
-				})}
-			</ul>
-			{more > 0 ? (
-				<div className="lh-coming-more text-body-secondary">
-					and {more} more
-				</div>
-			) : null}
-		</RailCard>
-	);
-};

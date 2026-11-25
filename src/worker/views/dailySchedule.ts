@@ -11,11 +11,7 @@ import {
 	type RecapDayStandings,
 	type RecapGame,
 } from "../util/getDayGamesForRecap.ts";
-import {
-	buildHub,
-	toHubRecord,
-	type HubComingGame,
-} from "./dailyScheduleHub.ts";
+import { buildHub } from "./dailyScheduleHub.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
@@ -264,7 +260,7 @@ export default defineView({
 							gid: game.gid,
 							dayNote: game.dayNote,
 							playoffs: game.playoffs,
-							// For the hub's "Coming up": who plays the next night.
+							// For the week strip: the user's team's game each night.
 							tids: [game.teams[0].tid, game.teams[1].tid] as const,
 							completedGame:
 								game.day === day && (!cidFilter || cidFilter(game.teams))
@@ -275,15 +271,15 @@ export default defineView({
 				);
 
 				const daysAndPlayoffs = new Map<number, boolean>();
-				// How many games each night has, for the week strip, and who
-				// plays in them, for the hub's "Coming up".
+				// How many games each night has, and who plays in them, for the
+				// week strip.
 				const gamesByDay = new Map<
 					number,
-					{ gid: number; homeTid: number; awayTid: number }[]
+					{ homeTid: number; awayTid: number }[]
 				>();
 				const addToDay = (
 					day: number,
-					game: { gid: number; homeTid: number; awayTid: number },
+					game: { homeTid: number; awayTid: number },
 				) => {
 					const list = gamesByDay.get(day);
 					if (list) {
@@ -299,7 +295,6 @@ export default defineView({
 				for (const game of games) {
 					if (game.day !== undefined) {
 						addToDay(game.day, {
-							gid: game.gid,
 							homeTid: game.tids[0],
 							awayTid: game.tids[1],
 						});
@@ -317,7 +312,6 @@ export default defineView({
 						if (game.day !== undefined) {
 							if (!isNoGameDay(game.homeTid, game.awayTid)) {
 								addToDay(game.day, {
-									gid: game.gid,
 									homeTid: game.homeTid,
 									awayTid: game.awayTid,
 								});
@@ -545,57 +539,11 @@ export default defineView({
 					})
 					.sort((a, b) => a.day - b.day);
 
-				// The next night with games, for "Coming up", with each team's
-				// record and the line when it's still to be played.
-				const nextNight = nights.find(
-					(night) => night.day > day && night.numGames > 0,
-				);
-				let nextGames: HubComingGame[] = nextNight
-					? (gamesByDay.get(nextNight.day) ?? [])
-					: [];
-				if (
-					__SPORT === "basketball" &&
-					nextNight &&
-					nextGames.length > 0 &&
-					inputs.season === currentSeason
-				) {
-					const lines = new Map(
-						(await getUpcoming({ day: nextNight.day })).map((game) => [
-							game.gid,
-							game,
-						]),
-					);
-					nextGames = nextGames.map((game) => {
-						const line = lines.get(game.gid);
-						if (!line) {
-							return game;
-						}
-						const [home, away] = line.teams;
-						return {
-							...game,
-							spread: line.spread,
-							records:
-								"won" in home && "won" in away
-									? [toHubRecord(home), toHubRecord(away)]
-									: undefined,
-						};
-					});
-				}
-
 				return {
 					cid,
 					cids,
 					completed,
-					hub: {
-						...buildHub({ games: recapGames, standings }),
-						next: nextNight
-							? {
-									day: nextNight.day,
-									date: nextNight.date,
-									games: nextGames,
-								}
-							: undefined,
-					},
+					hub: buildHub({ games: recapGames, standings }),
 					nights,
 					// A day with no games (season/offDays.ts), still to come.
 					offDay:

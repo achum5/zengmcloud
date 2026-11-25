@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 631,
+		date: "2026-11-25",
+		text: 'Daily Schedule: the "Coming up" list of the next night\'s games is gone. To see them, tap that night in the strip of days at the top.',
+	},
+	{
 		n: 630,
 		date: "2026-11-25",
 		text: "Daily Schedule: finished games that were on national TV now show the network's logo above Final, like the games still to be played and the game's own page.",
