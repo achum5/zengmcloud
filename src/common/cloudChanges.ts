@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 608,
+		date: "2026-11-25",
+		text: "Daily Schedule: the month calendar under the date now looks like the strip of days: each day's date with how many games, and your team's little logo in the corner on the days it plays.",
+	},
+	{
 		n: 607,
 		date: "2026-11-25",
 		text: "Daily Schedule: the upcoming game cards no longer show team overalls in a league with No Visible Team Ratings on.",
