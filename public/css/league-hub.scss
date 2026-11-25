@@ -1056,6 +1056,23 @@
 	padding-top: 0;
 	border-top: 0;
 }
+// (No network: just the line and the total, a touch bigger, a hairline
+// between them.)
+.lh-gc-mid-lines {
+	.lh-gc-line {
+		font-size: 0.76rem;
+	}
+	.lh-gc-line:first-child {
+		margin-top: 0;
+		padding-top: 0;
+		border-top: 0;
+	}
+	.lh-gc-line-2 {
+		margin-top: 0.2rem;
+		padding-top: 0.2rem;
+		border-top: 1px solid rgb(255 255 255 / 0.22);
+	}
+}
 // (Room under the line for the tab.)
 .lh-gc-has-acts .lh-gc-mid {
 	margin-bottom: 1.3rem;
@@ -1197,6 +1214,15 @@
 		margin-top: 0.1rem;
 		padding-top: 0.1rem;
 		font-size: 0.58rem;
+	}
+	.lh-gc-mid-lines {
+		.lh-gc-line {
+			font-size: 0.64rem;
+		}
+		.lh-gc-line-2 {
+			margin-top: 0.12rem;
+			padding-top: 0.12rem;
+		}
 	}
 }
 // (The narrowest phones: the record under the score.)

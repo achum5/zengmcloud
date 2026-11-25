@@ -212,8 +212,16 @@ const HeaderTeam = ({
 };
 
 // The score by quarter, small, without the totals (the big scores are
-// either side of it): for the middle of a phone's score line.
-const MiniLinescore = ({ boxScore }: { boxScore: any }) => {
+// either side of it): for the middle of a phone's score line. In the game's
+// banner, each team's line and side of the total after it, as a sportsbook
+// lists them, the bets that hit marked (on a phone, BoardLines instead).
+const MiniLinescore = ({
+	boxScore,
+	bets,
+}: {
+	boxScore: any;
+	bets?: BoardBets;
+}) => {
 	const regulation = boxScore.numPeriods ?? 4;
 	const n = Math.max(
 		boxScore.teams[0].ptsQtrs?.length ?? 0,
@@ -235,25 +243,115 @@ const MiniLinescore = ({ boxScore }: { boxScore: any }) => {
 					{labels.map((l) => (
 						<th key={l}>{l}</th>
 					))}
+					{bets?.line ? (
+						<th className="recap-mini-bet recap-mini-bet-first">Line</th>
+					) : null}
+					{bets?.total ? (
+						<th
+							className={clsx(
+								"recap-mini-bet",
+								!bets.line && "recap-mini-bet-first",
+							)}
+						>
+							O/U
+						</th>
+					) : null}
 				</tr>
 			</thead>
 			<tbody>
-				{teamsInDisplayOrder(boxScore.teams as [any, any]).map((t) => (
-					<tr key={t.tid}>
-						<th>{t.abbrev}</th>
-						{labels.map((l, i) => (
-							<td key={l}>{t.ptsQtrs?.[i] ?? "-"}</td>
-						))}
-					</tr>
-				))}
+				{teamsInDisplayOrder(boxScore.teams as [any, any]).map((t, index) => {
+					// (Away's row, then home's.)
+					const row = index === 0 ? 0 : 1;
+					return (
+						<tr key={t.tid}>
+							<th>{t.abbrev}</th>
+							{labels.map((l, i) => (
+								<td key={l}>{t.ptsQtrs?.[i] ?? "-"}</td>
+							))}
+							{bets?.line ? <BetCell bet={bets.line[row]} first /> : null}
+							{bets?.total ? (
+								<BetCell bet={bets.total[row]} first={!bets.line} />
+							) : null}
+						</tr>
+					);
+				})}
 			</tbody>
 		</table>
 	);
 };
 
-// THE LINE AND THE TOTAL, under the score by quarter: each as it stood at
-// the tip, and how the game went against it ("ATL -2.5 / ATL covered",
-// "O/U 224.5 / Over").
+// One team's side of a bet: the side that hit bright, with a check, the
+// other dim; a push, neither.
+type Bet = { text: string; result: "hit" | "miss" | "push" };
+type BoardBets = { line?: [Bet, Bet]; total?: [Bet, Bet] };
+
+const BetCell = ({ bet, first }: { bet: Bet; first: boolean }) => (
+	<td
+		className={clsx(
+			"recap-mini-bet",
+			first && "recap-mini-bet-first",
+			bet.result === "hit" && "recap-mini-hit",
+			bet.result === "miss" && "recap-mini-miss",
+		)}
+		title={bet.result === "push" ? "Push" : undefined}
+	>
+		{bet.text}
+		{bet.result === "hit" ? (
+			<svg viewBox="0 0 12 10" aria-label="Hit">
+				<path
+					d="M1 5.2 4.3 8.5 11 1.5"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2.2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		) : null}
+	</td>
+);
+
+const betResult = (margin: number): Bet["result"] =>
+	margin > 0 ? "hit" : margin < 0 ? "miss" : "push";
+
+// Each side's line (+2.5 / -2.5, or PK) and side of the total (O 224.5 /
+// U 224.5), away's first, each as it stood at the tip.
+const boardBets = (boxScore: any): BoardBets | undefined => {
+	if (boxScore.exhibition) {
+		return undefined;
+	}
+	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
+	const bets: BoardBets = {};
+	const raw = boxScore.spread;
+	if (typeof raw === "number" && Number.isFinite(raw)) {
+		// (Home's side, positive when home is favored.)
+		const spread = roundHalf(raw);
+		const diff = home.pts - away.pts - spread;
+		const side = (points: number) =>
+			points === 0
+				? "PK"
+				: `${points > 0 ? "+" : "-"}${Math.abs(points).toLocaleString("en-US", {
+						maximumFractionDigits: 1,
+					})}`;
+		bets.line = [
+			{ text: side(spread), result: betResult(-diff) },
+			{ text: side(-spread), result: betResult(diff) },
+		];
+	}
+	const total: number | undefined = boxScore.gamecast?.total;
+	if (typeof total === "number") {
+		const over = home.pts + away.pts - total;
+		bets.total = [
+			{ text: `O ${total}`, result: betResult(over) },
+			{ text: `U ${total}`, result: betResult(-over) },
+		];
+	}
+	return bets.line || bets.total ? bets : undefined;
+};
+
+// THE LINE AND THE TOTAL, on a phone, under the score by quarter (too
+// narrow for them in it): each as it stood at the tip, and how the game went
+// against it ("ATL -2.5 · ATL covered", "O/U 224.5 · Over").
 const BoardLines = ({ boxScore }: { boxScore: any }) => {
 	if (boxScore.exhibition) {
 		return null;
@@ -753,10 +851,10 @@ const RecapHeader = ({
 								) : null}
 							</>
 						}
-						// (The score by quarter, and the line and the total by it.)
+						// (The score by quarter, with the line and the total in it.)
 						extra={
 							<div className="recap-board">
-								<MiniLinescore boxScore={boxScore} />
+								<MiniLinescore boxScore={boxScore} bets={boardBets(boxScore)} />
 								<BoardLines boxScore={boxScore} />
 							</div>
 						}

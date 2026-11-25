@@ -12,6 +12,16 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 612,
+		date: "2026-11-25",
+		text: "Daily Schedule: upcoming game cards no longer say Today in the middle, just the line and the over/under. Games on national TV still show the network's logo above them.",
+	},
+	{
+		n: 611,
+		date: "2026-11-25",
+		text: "Finished games: the line and the over/under are now two columns of the score-by-quarter box, each team's side on its row (+2.5 / -2.5, O 212.5 / U 212.5) with a check on the side that hit. On phones they are two short lines under the box, and the box no longer runs into the team names on narrow phones.",
+	},
+	{
 		n: 610,
 		date: "2026-11-25",
 		text: "Player pages: All-Time Ranks is now a list like a TV graphic. Pick any stat (every career total, per game numbers and the playoffs, each with his rank on it) to see him with the two players just ahead and the one just behind. Old-time players who only have total rebounds, like Wilt Chamberlain, now count on the rebounding lists here and on Milestone Watch.",
