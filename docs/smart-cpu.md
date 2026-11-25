@@ -2920,3 +2920,68 @@ charge of simming" message never showed, because every refusal in the
 worker's guard logged an event with no pids or tids and `logEvent` threw
 before showing it (now `saveToDb: false`). The section offers Sim here when
 another device is in charge.
+
+## The draft: prospects read by luck (2026-11-25)
+
+The owner asked why, in test drafts on vanilla's rules with the smart CPU on,
+the board's top prospect slid 13 to 40 picks every draft, and whether
+rebuilding teams take the best young players.
+
+**Why he slides.** The game's potential is the 75th percentile of a
+player's best overall to age 29 over 20 careers played out
+(`monteCarloPot`), and 0.7 of a 19-year-old's value. Twenty is few: a few
+lucky careers put a prospect at the top of the board. Every prospect in four
+arena drafts (seeds 9177-9180) was played out 400 times with the game's own
+development code (`draftClassTruth`, `draftReachProbe`): each slider was the
+class's most overrated, 22nd, 27th, 24th and 62nd best by his average best
+overall, and in the second drafts of two more leagues 25th to 61st. Teams
+were right to pass on him; lottery picks were 13 or 14 of the 14 best.
+
+**What was off.** The same luck, twice over:
+
+- The board. A team weighs the 20 best prospects by value and, of those
+  within its margin of error of the best, takes the highest on the board -
+  value again, so near-ties went to the luckiest 20 careers.
+- A young player's worth turns on his best quarter of careers (boom), and
+  of the outlook's 24 that is six: a prospect's six could sit 2-3 points of
+  overall off where 400 put them.
+
+**What a team does now.** Its board is value with the potential scouted
+again over 200 careers (`boardValue`, `smartDraftSettings.scoutedBoard`),
+seeded by player and season so every device reads a prospect the same; and
+a player 22 or younger is projected over 200 careers, not 24
+(`outlookSettings.youngCareers`) - for trades and signings too, with
+Realistic Front Offices as well.
+
+The four drafts replayed from the same leagues at the draft
+(`draftSlideProbe`), each pick by its average best overall over 400
+careers:
+
+|                   | first round | lottery picks, behind the best left | second round |
+| ----------------- | ----------- | ----------------------------------- | ------------ |
+| before            | 56.41       | 0.85                                | 45.80        |
+| scouted board     | 56.46       | 0.60                                | 45.78        |
+| 200 careers       | 56.67       | 0.98                                | 45.56        |
+| both (now)        | 56.67       | 0.54                                | 45.58        |
+| the best 30 first | 56.80       | 0                                   | 45.55        |
+
+Both were better in all four drafts. The second round loses what the first
+gains: the same 60 players go, the better ones sooner. The game's top
+prospect still slides, now further - the four drafts' longest slides were
+41 to 44 picks, by prospects 55th to 62nd best: the board no longer counts
+his luck, and the draft screen still does. It costs about 6 s a season
+projecting young players and 3 s a draft.
+
+Two seasons from new arena leagues on vanilla's rules (seeds 9181 and 9182,
+`draftReachProbe`), against the same without the change: both ran clean, in
+38 and 39 minutes against 43 and 41 (the machine's load moves that much),
+the drafts 248 s and 242 s against 280 s and 275 s. All four drafts' first
+rounds were as good or better by 400 careers - 56.86 against 56.87, 55.89
+against 55.77, 55.32 against 55.14, 57.38 against 57.32 - and so were their
+lottery picks: 60.97 against 60.97, 60.34 against 60.26, 58.32 against
+58.14, 60.35 against 60.19.
+
+One test changed with it (`proposals.test.ts`, Realistic Front Offices): on
+the trading block a team that wouldn't take the player for any one of its
+picks - it wants him only to send players out - now bids, with five
+players, as vanilla's rule allows ("picks first, if it would give any").

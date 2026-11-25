@@ -97,8 +97,14 @@ const PLAYOFF_TIEBREAK = 0.01;
 const playoffWeightOf = (outlook: Pick<LeagueOutlook, "ambition">) =>
 	outlook.ambition ?? PLAYOFF_TIEBREAK;
 
-// Projections: enough simulated careers to average out a player's luck.
+// Projections: enough simulated careers to average out a player's luck - more
+// for a player this young or younger (outlookSettings.youngCareers).
 const PROJECTION_SAMPLES = 24;
+const YOUNG_AGE = 22;
+const samplesFor = (age: number) =>
+	age <= YOUNG_AGE
+		? Math.max(PROJECTION_SAMPLES, outlookSettings.youngCareers)
+		: PROJECTION_SAMPLES;
 
 // Seasons played out per year of the outlook. The far future is a blur
 // anyway, so it gets fewer.
@@ -362,7 +368,7 @@ export const projectPlayer = (p: Player, season: number) => {
 			ratings: r,
 			age: season - p.born.year,
 			years: OUTLOOK_YEARS + 1,
-			samples: PROJECTION_SAMPLES,
+			samples: samplesFor(season - p.born.year),
 			seed: seedFor(p.pid, season),
 			measure: lineMeasure,
 		});
@@ -1046,6 +1052,14 @@ export const outlookSettings = {
 	// start had the same - two firsts for a 52 from a team at 1.1% - and as
 	// many middle teams paying firsts. Off.
 	runDepth: 1,
+	// Careers a player 22 or younger is played out over (samplesFor). What he
+	// is worth turns on his best quarter (boom) - six careers of 24 - and a
+	// prospect's six could sit 2-3 points of overall off where 400 put them,
+	// enough to order a draft by luck. At 200, four drafts' first rounds took
+	// players who played out 0.26 better (their average best overall over 400
+	// careers; the best 30 left would have been 0.39 better) - arena,
+	// 2026-11-25, docs/smart-cpu.md. About 6 seconds a season.
+	youngCareers: 200,
 };
 
 // Measured in arena leagues: players on a team all season missed 6.5% of its
@@ -1855,7 +1869,7 @@ const projectProspect = (p: Player) => {
 			ratings: r,
 			age: draft - p.born.year,
 			years: OUTLOOK_YEARS + 1,
-			samples: PROJECTION_SAMPLES,
+			samples: samplesFor(draft - p.born.year),
 			seed: seedFor(p.pid, draft),
 			measure: lineMeasure,
 		});

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 586,
+		date: "2026-11-25",
+		text: "Smart CPU GMs judge young players more carefully, in the draft and in trades and signings. Lottery picks go more often to the prospects most likely to pan out. The player the draft board ranks first can still fall a long way when his potential is mostly luck.",
+	},
+	{
 		n: 568,
 		date: "2026-11-24",
 		text: "The night's recap on the Daily Schedule is built out. Under the headline is a line of the night's other stories, and each game in Around the league says what the result meant: a streak, first place, a clinch, the end of a road trip, who got hurt. New sections follow, each only on a night that has one: By the numbers (like a 20-1 closing run or 12-of-13 shooting), Streaks, The race (clinches, the top of each conference, who moved into or out of the playoff and play-in spots, how close the cut lines are, magic numbers late in the season), Milestones and firsts, Moves (a traded or signed player's first game for his new team, or against his old one) and Worth watching (the next day's best game and why). Game recaps no longer give career totals for players whose earlier seasons came before the league began.",
