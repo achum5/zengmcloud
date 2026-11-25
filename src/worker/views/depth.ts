@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { player, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
@@ -253,6 +254,7 @@ export default defineView({
 			);
 			const players = addFirstNameShort(
 				await player.formatAll(playersAll, {
+					liveShown: await getLiveShown(),
 					attrs: ["pid", "firstName", "lastName", "age", "injury", "watch"],
 					ratings: ["skills", "pos", "ovr", "pot", "ovrs", "pots", ...ratings],
 					seasonType: playoffs,

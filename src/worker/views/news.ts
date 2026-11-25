@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { g } from "../util/index.ts";
 import type { EventBBGM, LogEventType } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
@@ -196,9 +197,15 @@ export default defineView({
 			// (Nothing that gives away a game still being played live - see
 			// liveGameGate.ts.)
 			const gate = season === g.get("season") ? await getLiveGate() : undefined;
-			const eventsAll = (await idb.merged.events.getAll({ season })).filter(
+			const liveShown =
+				season === g.get("season") ? await getLiveShown() : undefined;
+			const eventsStored = (await idb.merged.events.getAll({ season })).filter(
 				(event) => !gate || !eventGivesAwayLiveGame(event, gate),
 			);
+			// (And an injury picked up in one.)
+			const eventsAll = liveShown
+				? liveShown.events(eventsStored)
+				: eventsStored;
 
 			if (order === "newest") {
 				eventsAll.reverse();

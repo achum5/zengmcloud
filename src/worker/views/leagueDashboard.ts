@@ -19,6 +19,7 @@ import {
 	ORDER_TEAMS_STATS,
 	orderTeams,
 } from "../util/orderTeams.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { getNumericStat } from "../../common/statValue.ts";
 
 const updateInbox = async ({ updateEvents }: ViewArgs) => {
@@ -44,10 +45,17 @@ const updateTeam = async ({ updateEvents }: ViewArgs) => {
 		updateEvents.has("newPhase")
 	) {
 		const t = await idb.cache.teams.get(g.get("userTid"));
-		const latestSeason = await idb.cache.teamSeasons.indexGet(
+		const latestSeasonStored = await idb.cache.teamSeasons.indexGet(
 			"teamSeasonsBySeasonTid",
 			[g.get("season"), g.get("userTid")],
 		);
+		// (A game still being played live on somebody's screen isn't in the
+		// record yet - see liveGameShown.ts.)
+		const liveShown = await getLiveShown();
+		const latestSeason =
+			latestSeasonStored && liveShown
+				? liveShown.teamSeason(latestSeasonStored)
+				: latestSeasonStored;
 
 		const playoffRoundsWon = latestSeason?.playoffRoundsWon ?? -1;
 		const playoffsByConf = await season.getPlayoffsByConf(g.get("season"));
@@ -133,12 +141,14 @@ const updateTeams = async ({ updateEvents }: ViewArgs) => {
 			football: ["Points", "Allowed", "PssYds", "RusYds"],
 			hockey: ["Goals", "Allowed"],
 		});
+		const liveShown = await getLiveShown();
 		const teams = await team.getFormattedAll({
 			attrs: ["tid"],
 			seasonAttrs: [...ORDER_TEAMS_SEASON_ATTRS, "att", "revenue", "profit"],
 			stats: ["pts", "oppPts", "gp", ...stats] as const,
 			season: g.get("season"),
 			showNoStats: true,
+			liveShown,
 		});
 		const t = teams.find((t2) => t2.tid === g.get("userTid"));
 		const cid = t !== undefined ? t.seasonAttrs.cid : undefined;
@@ -159,6 +169,7 @@ const updateTeams = async ({ updateEvents }: ViewArgs) => {
 				(t) => playoffsByConf === false || t.seasonAttrs.cid === cid,
 			),
 			teams,
+			{ liveShown },
 		);
 
 		for (const t2 of teamsRank) {
@@ -238,6 +249,7 @@ const updatePlayers = async ({ updateEvents }: ViewArgs) => {
 			PLAYER.FREE_AGENT,
 			Infinity,
 		]);
+		const liveShown = await getLiveShown();
 
 		// League leaders
 		const leaderPlayers = await player.formatAll(playersAll, {
@@ -247,6 +259,7 @@ const updatePlayers = async ({ updateEvents }: ViewArgs) => {
 			showNoStats: true,
 			showRookies: true,
 			mergeStats: "totOnly",
+			liveShown,
 		});
 
 		const leagueLeaders: {
@@ -313,6 +326,7 @@ const updatePlayers = async ({ updateEvents }: ViewArgs) => {
 					showRookies: true,
 					fuzz: true,
 					tid: g.get("userTid"),
+					liveShown,
 				},
 			),
 		);
@@ -407,7 +421,18 @@ const updatePlayoffs = async ({ updateEvents }: ViewArgs) => {
 		(updateEvents.has("newPhase") &&
 			(g.get("phase") === PHASE.PLAYOFFS || g.get("phase") === PHASE.PRESEASON))
 	) {
-		const playoffSeries = await idb.merged.playoffSeries.get(g.get("season"));
+		const playoffSeriesStored = await idb.merged.playoffSeries.get(
+			g.get("season"),
+		);
+		// (As it stood before a game still being played live.)
+		const liveShown = await getLiveShown();
+		const playoffSeries =
+			playoffSeriesStored && liveShown
+				? {
+						...playoffSeriesStored,
+						series: liveShown.series(playoffSeriesStored.series),
+					}
+				: playoffSeriesStored;
 		let foundSeries;
 		let seriesTitle = "";
 		let showPlayoffSeries = false;
@@ -491,6 +516,7 @@ const updatePlayoffs = async ({ updateEvents }: ViewArgs) => {
 
 const updateStandings = async ({ updateEvents }: ViewArgs) => {
 	if (updateEvents.has("firstRun") || updateEvents.has("gameSim")) {
+		const liveShown = await getLiveShown();
 		const teams = await team.getFormattedAll({
 			attrs: ["tid"],
 			seasonAttrs: [
@@ -504,6 +530,7 @@ const updateStandings = async ({ updateEvents }: ViewArgs) => {
 			stats: ORDER_TEAMS_STATS,
 			season: g.get("season"),
 			showNoStats: true,
+			liveShown,
 		});
 
 		// Find user's conference
@@ -516,6 +543,7 @@ const updateStandings = async ({ updateEvents }: ViewArgs) => {
 			await orderTeams(
 				teams.filter((t) => !playoffsByConf || t.seasonAttrs.cid === cid),
 				teams,
+				{ liveShown },
 			)
 		).map((t) => ({
 			...t,
@@ -583,9 +611,12 @@ const updateNewsFeed = async ({ updateEvents }: ViewArgs) => {
 		const NUM_EVENTS = 8;
 
 		// Load all events from this season, and last season too if more are needed
-		const eventsAll = await idb.merged.events.getAll({
+		// (none giving away a game still being played live).
+		const liveShown = await getLiveShown();
+		const eventsStored = await idb.merged.events.getAll({
 			season: g.get("season"),
 		});
+		const eventsAll = liveShown ? liveShown.events(eventsStored) : eventsStored;
 		eventsAll.reverse();
 
 		const events = await processEvents(eventsAll, {

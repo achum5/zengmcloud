@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import {
 	PHASE,
 	RATINGS,
@@ -180,6 +181,7 @@ export const getPlayers = async (
 	const showNoStats = season === g.get("season") || tid === undefined;
 
 	const playersMaybeWithoutStats = await player.formatAll(playersAll, {
+		liveShown: await getLiveShown(),
 		attrs: [
 			"pid",
 			"firstName",

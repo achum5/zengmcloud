@@ -139,11 +139,14 @@ export const getPlayerImpact = async (
 	pid: number,
 	tid: number,
 	season: number,
+	// A game still being played live on somebody's screen (liveGameShown.ts).
+	hides?: (gid: number) => boolean,
 ): Promise<PlayerImpact | undefined> => {
 	const games = (await idb.cache.games.getAll()).filter(
 		(game) =>
 			game.season === season &&
 			!game.playoffs &&
+			!hides?.(game.gid) &&
 			(game.teams[0].tid === tid || game.teams[1].tid === tid),
 	);
 

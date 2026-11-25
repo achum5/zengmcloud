@@ -29,6 +29,7 @@ import { formatGameDate } from "../../common/calendarDates.ts";
 import { WeekStrip } from "../components/LeagueHub/WeekStrip.tsx";
 import { LeadStory } from "../components/LeagueHub/LeadStory.tsx";
 import { GameCard } from "../components/LeagueHub/GameCard.tsx";
+import { UpcomingCard } from "../components/LeagueHub/UpcomingCard.tsx";
 import {
 	HubTabs,
 	useHubTab,
@@ -345,7 +346,7 @@ const DailySchedule = ({
 						<>
 							{upcomingAndCompleted ? <h2>Upcoming Games</h2> : null}
 							<div
-								className={hubOn ? "lh-games" : "d-flex flex-wrap"}
+								className={hubOn ? "lh-games lh-finals" : "d-flex flex-wrap"}
 								style={hubOn ? undefined : { gap: "1rem 2rem" }}
 							>
 								{upcoming.map((game) => {
@@ -416,6 +417,36 @@ const DailySchedule = ({
 												})()
 											: undefined;
 
+									// On the card: watch it or sim it - only where this
+									// device can sim it. (Someone else in charge of simming:
+									// your own team's game only.)
+									const isOwnGame =
+										game.teams[0].tid === userTid ||
+										game.teams[1].tid === userTid;
+									const cardDecision = ownGameSim(isOwnGame);
+									const cardActions =
+										!live &&
+										isToday &&
+										!tradeDeadline &&
+										!(simAuthorityLocked && !isOwnGame)
+											? {
+													own: isOwnGame,
+													disabled:
+														gameSimInProgress ||
+														(simAuthorityLocked && !cardDecision.allow),
+													title:
+														simAuthorityLocked && !cardDecision.allow
+															? cardDecision.reason
+															: undefined,
+													onWatch: () => {
+														toWorker("actions", "liveGame", game.gid);
+													},
+													onSim: () => {
+														toWorker("actions", "simGame", game.gid);
+													},
+												}
+											: undefined;
+
 									const allowTie = allowForceTie({
 										homeTid: game.teams[0].tid,
 										awayTid: game.teams[1].tid,
@@ -451,22 +482,40 @@ const DailySchedule = ({
 														}
 											}
 										>
-											<ScoreBox
-												className={hubOn ? "lh-box" : undefined}
-												game={{
-													// Leave out forceTie, since ScoreBox wants the value for finished games
-													finals: game.finals,
-													gid: game.gid,
-													national: game.national,
-													season: game.season,
-													spread: game.spread,
-													teams: game.teams,
-												}}
-												livePts={live ? liveGame?.score?.pts : undefined}
-												playersUpcoming={playersUpcoming}
-												actions={actions}
-												nationalRoom={nationalRoom}
-											/>
+											{hubOn &&
+											!live &&
+											game.teams[0].tid >= 0 &&
+											game.teams[1].tid >= 0 ? (
+												<UpcomingCard
+													game={game}
+													players={playersUpcoming}
+													when={
+														isToday
+															? "Today"
+															: date
+																? formatGameDate(date, "monthDay")
+																: `Day ${game.day}`
+													}
+													actions={cardActions}
+												/>
+											) : (
+												<ScoreBox
+													className={hubOn ? "lh-box" : undefined}
+													game={{
+														// Leave out forceTie, since ScoreBox wants the value for finished games
+														finals: game.finals,
+														gid: game.gid,
+														national: game.national,
+														season: game.season,
+														spread: game.spread,
+														teams: game.teams,
+													}}
+													livePts={live ? liveGame?.score?.pts : undefined}
+													playersUpcoming={playersUpcoming}
+													actions={actions}
+													nationalRoom={nationalRoom}
+												/>
+											)}
 											{live ? (
 												<LiveGameStatus className="mt-1" gid={game.gid} />
 											) : (

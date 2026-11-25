@@ -1,4 +1,4 @@
-import type { HeadToHead } from "../../../common/types.ts";
+import type { HeadToHead, LiveShown } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 
@@ -23,6 +23,9 @@ const iterate2 = async (
 		tid: number | "all";
 		type: "regularSeason" | "playoffs" | "combined";
 		season: number | "all";
+		// Pages only: games still being played live left out
+		// (liveGameShown.ts).
+		liveShown?: LiveShown;
 	},
 	cb: (info: ReturnType<typeof blankInfo>) => void,
 ) => {
@@ -152,7 +155,11 @@ const iterate2 = async (
 	if (options.season === "all" || options.season === currentSeason) {
 		const headToHead = await idb.cache.headToHeads.get(currentSeason);
 		if (headToHead) {
-			processHeadToHead(headToHead);
+			processHeadToHead(
+				options.liveShown
+					? options.liveShown.headToHead(headToHead)
+					: headToHead,
+			);
 		}
 	}
 };

@@ -5,6 +5,7 @@ import divideChancesOverTiedTeams from "./divideChancesOverTiedTeams.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import type {
+	LiveShown,
 	Conditions,
 	DraftLotteryResult,
 	DraftType,
@@ -396,7 +397,11 @@ const genOrder = async (
 	mock: boolean,
 	conditions?: Conditions,
 	draftTypeOverride?: DraftType,
+	// A projection on a page only: games still being played live left out of
+	// the records (liveGameShown.ts). Ignored for a real lottery.
+	liveShownProjection?: LiveShown,
 ): Promise<GenOrderResult<true>> => {
+	const liveShown = mock ? liveShownProjection : undefined;
 	const syncedLeague = getSyncEngine() !== undefined;
 	const capturing = changeTracker.isCapturing();
 
@@ -443,6 +448,7 @@ const genOrder = async (
 	const { nba2027NumLotteryTeams, teamsByRound, ties } = await getTeamsByRound(
 		draftType,
 		draftPicksIndexed,
+		liveShown,
 	);
 	const firstRoundTeams = teamsByRound[0] ?? [];
 

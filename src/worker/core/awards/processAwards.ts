@@ -13,6 +13,7 @@ import {
 } from "../../../common/utils.ts";
 import { pruneEmptyWinners, showStatsByType } from "../../../common/awards.ts";
 import type {
+	LiveShown,
 	Award,
 	AwardInfoIndividual,
 	AwardInfoTeam,
@@ -399,6 +400,7 @@ export const processAwards = async ({
 	season,
 	statOverridesByMatchup,
 	transformPlayers,
+	liveShown,
 }: {
 	awards: GameAttributesLeague["awards"];
 	extraStatRanges: (
@@ -416,6 +418,8 @@ export const processAwards = async ({
 		players: Awaited<ReturnType<typeof getPlayers>>["players"],
 		teamInfos: Awaited<ReturnType<typeof getPlayers>>["teamInfos"],
 	) => void;
+	// Pages only: games still being played live left out (liveGameShown.ts).
+	liveShown?: LiveShown;
 }) => {
 	const formulaEvaluators = new FormulaEvaluators(awards, extraStats);
 
@@ -429,6 +433,7 @@ export const processAwards = async ({
 		statRanges,
 		statOverridesByMatchup,
 		formulaEvaluators.variables,
+		liveShown,
 	);
 	if (transformPlayers) {
 		transformPlayers(players, teamInfos);

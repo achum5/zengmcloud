@@ -347,6 +347,7 @@ export default defineView({
 							: await getUpcoming({
 									cid,
 									day,
+									withTotals: true,
 								});
 					upcoming = [
 						...liveRows

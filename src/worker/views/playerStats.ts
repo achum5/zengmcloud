@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import {
 	PLAYER_STATS_TABLES,
 	getPlayerStatsTableStats,
@@ -215,6 +216,9 @@ export default defineView({
 					: list.filter((s) => s <= season).length;
 			};
 
+			// (A game still being played live on somebody's screen isn't in
+			// these yet.)
+			const liveShown = await getLiveShown();
 			const formatOptions = {
 				attrs: [
 					"pid",
@@ -237,6 +241,7 @@ export default defineView({
 				statType: playerStatType,
 				seasonType: seriesRows ? "playoffs" : inputs.playoffs,
 				mergeStats: "totOnly",
+				liveShown,
 			} as const;
 
 			// Reads players and turns each one into rows, using getRows to format the player. This runs while reading players, so the full player objects are not all held in memory at once.

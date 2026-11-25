@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import {
 	NOT_REAL_POSITIONS,
 	POSITIONS,
@@ -232,6 +233,8 @@ const getTeamStats = async (
 	const teamsPlayoffs =
 		playoffs === "playoffs" && statTypePlus !== "powerRankings";
 
+	// (A game still being played live on somebody's screen isn't in these yet.)
+	const liveShown = await getLiveShown();
 	let teams = await team.getFormattedAll({
 		attrs: ["tid", "playThroughInjuries", "abbrev"],
 		seasonAttrs,
@@ -239,6 +242,7 @@ const getTeamStats = async (
 		season,
 		playoffs: teamsPlayoffs,
 		regularSeason: !teamsPlayoffs,
+		liveShown,
 	});
 
 	if (statTypePlus === "powerRankings") {
@@ -246,6 +250,7 @@ const getTeamStats = async (
 			teams as any[],
 			season,
 			playoffs,
+			liveShown,
 		);
 	}
 

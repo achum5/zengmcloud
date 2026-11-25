@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
@@ -52,6 +53,7 @@ const updateRotation = async ({
 		const playersRaw = await idb.cache.players.indexGetAll("playersByTid", tid);
 		const players = addFirstNameShort(
 			await player.formatAll(playersRaw, {
+				liveShown: await getLiveShown(),
 				attrs: [
 					"pid",
 					"firstName",

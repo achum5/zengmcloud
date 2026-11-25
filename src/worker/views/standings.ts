@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { ByConf } from "../../common/types.ts";
@@ -160,12 +161,7 @@ export default defineView({
 				if ("ptsPct" in out) {
 					out.ptsPct = team.ptsPct({ ...(out as any), season: inputs.season });
 				}
-				const results = teamResultsNewestFirst(
-					games,
-					tid,
-					hidden,
-					otlSetting,
-				);
+				const results = teamResultsNewestFirst(games, tid, hidden, otlSetting);
 				const { streak, lastTen } = streakAndLastTen(results);
 				out.streak = streak;
 				out.lastTen = lastTen;
@@ -240,6 +236,9 @@ export default defineView({
 			const orderTeamsOptions = {
 				addTiebreakersField: true,
 				season: inputs.season,
+				// (Head-to-head tiebreakers too.)
+				liveShown:
+					inputs.season === g.get("season") ? await getLiveShown() : undefined,
 			};
 
 			const rankingGroups = {

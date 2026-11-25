@@ -16,10 +16,10 @@ import type { LocalStateUI, MpLiveGame } from "../../../common/types.ts";
 // ONE DAY OF THE SCORES BAR on the NBA calendar: the strip is the team's
 // calendar laid out in a single row, every day, bye days too. Each game is a
 // scoreboard cell like the networks': the day and where the game stands on
-// top ("SAT 11/15", the W or L coin once it's over, the quarter and clock while
-// it's live, the network on a national game), then both teams on their own
-// rows, away over home, logo, abbreviation, score. Every game cell plain,
-// today outlined red.
+// top ("SAT 11/15", the quarter and clock while it's live, the network on a
+// national game), then both teams on their own rows, away over home, logo,
+// abbreviation, score. A game played is green if the team won it, red if it
+// lost; one still to come plain; today outlined red.
 
 type BarGame = LocalStateUI["games"][number];
 
@@ -94,43 +94,33 @@ export const TopBarDay = memo(
 				])
 			: helpers.leagueUrl(["schedule"]);
 
-		// Where the game stands, on the right of the day's head.
-		let status: ReactNode = null;
-		if (final) {
-			const wl = allStar
+		// The result, for the user's team: the whole day green on a win, red
+		// on a loss.
+		const wl =
+			!final || allStar
 				? undefined
 				: winner === -1
 					? "T"
 					: winner === userIndex
 						? "W"
 						: "L";
-			const overtimes = helpers.overtimeText(game.overtimes, game.numPeriods);
-			status = (
-				<>
-					{overtimes ? <span className="tbd-ot">{overtimes}</span> : null}
-					{wl ? (
-						<span
-							className={clsx(
-								"tbd-wl",
-								wl === "W" ? "tbd-w" : wl === "L" ? "tbd-l" : "tbd-t",
-							)}
-						>
-							{wl}
-						</span>
-					) : null}
-				</>
-			);
-		} else if (live) {
-			// (Live, the clock takes the date's place - it's tonight - as on
-			// the networks' scoreboards, the network still on the right.)
-			status = game.national ? (
-				<NationalTag className="tbd-national" tag={game.national} />
-			) : null;
-		} else if (game.ifNecessary) {
-			status = <span className="tbd-note">If nec.</span>;
-		} else if (game.national) {
-			status = <NationalTag className="tbd-national" tag={game.national} />;
-		}
+
+		// On the right of the day's head: the network on a national game (live,
+		// the clock takes the date's place - it's tonight - as on the networks'
+		// scoreboards), and OT on a game that went to overtime.
+		const overtimes = final
+			? helpers.overtimeText(game.overtimes, game.numPeriods)
+			: "";
+		const status = (
+			<>
+				{overtimes ? <span className="tbd-ot">{overtimes}</span> : null}
+				{!final && game.ifNecessary ? (
+					<span className="tbd-note">If nec.</span>
+				) : game.national ? (
+					<NationalTag className="tbd-national" tag={game.national} />
+				) : null}
+			</>
+		);
 
 		let body: ReactNode;
 		if (allStar || deadline) {
@@ -168,11 +158,7 @@ export const TopBarDay = memo(
 				return (
 					<div
 						key={i}
-						className={clsx(
-							"tbd-row",
-							trailing && "tbd-row-trailing",
-							final && winner === i && "tbd-row-won",
-						)}
+						className={clsx("tbd-row", trailing && "tbd-row-trailing")}
 					>
 						<a
 							className="tbd-team"
@@ -210,13 +196,19 @@ export const TopBarDay = memo(
 				: `, ${home ? "vs" : "@"} ${teamInfoCache[opp.tid]?.region ?? ""} ${
 						teamInfoCache[opp.tid]?.name ?? ""
 					}`
-		}${game.ifNecessary ? " (if necessary)" : ""}`;
+		}${game.ifNecessary ? " (if necessary)" : ""}${
+			wl
+				? `, ${wl === "W" ? "won" : wl === "L" ? "lost" : "tied"} ${game.teams[userIndex].pts}-${game.teams[userIndex === 0 ? 1 : 0].pts}`
+				: ""
+		}${game.national ? `, on ${game.national.network}` : ""}`;
 
 		// The whole day is the game's link, laid over it, under the teams'.
 		return (
 			<div
 				className={clsx(
 					"tbd tbd-link",
+					wl === "W" && "tbd-won",
+					wl === "L" && "tbd-lost",
 					isToday && "tbd-today",
 					past && "tbd-past",
 					livePts !== undefined && "tbd-is-live",

@@ -41,7 +41,10 @@ export type GameCardGame = {
 	teams: [GameCardTeam, GameCardTeam];
 };
 
-const useBrand = (t: GameCardTeam) => {
+export const useBrand = (t: {
+	tid: number;
+	branding?: GameCardTeam["branding"];
+}) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const info = teamInfoCache[t.tid];
 	return {
@@ -61,7 +64,13 @@ const useBrand = (t: GameCardTeam) => {
 	};
 };
 
-const Logo = ({ url, size }: { url: string | undefined; size: number }) =>
+export const Logo = ({
+	url,
+	size,
+}: {
+	url: string | undefined;
+	size: number;
+}) =>
 	url ? (
 		<img
 			src={url}
@@ -122,7 +131,7 @@ const statColumns = (p: any): [string, string][] => {
 	return cols.slice(0, 5);
 };
 
-const Face = ({ pid, season }: { pid: number; season: number }) => {
+export const Face = ({ pid, season }: { pid: number; season: number }) => {
 	const { lid } = useLocal(["lid"]);
 	const face = usePlayerFace(pid, season, lid);
 	return (
@@ -204,13 +213,13 @@ const TeamLeaders = ({ t, season }: { t: GameCardTeam; season: number }) => {
 	);
 };
 
-const Side = ({
+export const Side = ({
 	t,
 	side,
 	colors,
 	logo,
 }: {
-	t: GameCardTeam;
+	t: { tid: number };
 	side: "away" | "home";
 	colors: string[] | undefined;
 	logo: string | undefined;

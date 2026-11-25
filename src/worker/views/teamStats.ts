@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { TeamStatAttr, TeamSeasonAttr } from "../../common/types.ts";
@@ -51,6 +52,8 @@ export const getStats = async ({
 	noDynamicAvgAge?: boolean;
 }) => {
 	const stats = statsTable.stats;
+	// (A game still being played live on somebody's screen isn't in these yet.)
+	const liveShown = await getLiveShown();
 	const seasonAttrs: TeamSeasonAttr[] = [
 		"abbrev",
 		"region",
@@ -77,6 +80,7 @@ export const getStats = async ({
 			tid,
 			playoffs,
 			regularSeason: !playoffs,
+			liveShown,
 		})
 	).filter((t) => {
 		// For playoffs, only show teams who actually made playoffs (gp > 0)
@@ -96,7 +100,9 @@ export const getStats = async ({
 				t.seasonAttrs.otl = 0;
 			}
 
-			for (const round of playoffSeries.series) {
+			for (const round of liveShown && season === g.get("season")
+				? liveShown.series(playoffSeries.series)
+				: playoffSeries.series) {
 				for (const series of round) {
 					for (const ah of ["away", "home"] as const) {
 						const ha = ah === "away" ? "home" : "away";
@@ -145,6 +151,7 @@ export const getStats = async ({
 				showNoStats: g.get("season") === season,
 				showRookies: g.get("season") === season,
 				tid: t.tid,
+				liveShown,
 			});
 
 			t.seasonAttrs.avgAge = team.avgAge(players);

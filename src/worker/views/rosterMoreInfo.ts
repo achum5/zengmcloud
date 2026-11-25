@@ -2,6 +2,7 @@ import { PHASE } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { headToHead, team } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
+import type { LiveShown } from "../../common/types.ts";
 
 // THE TEAM PAGE'S "MORE TEAM INFO", after Basketball Reference's: a season's
 // scoring, ratings and attendance, each with where it ranks in the league,
@@ -63,10 +64,14 @@ const rankAmong = (
 // iterating until it settles, then centred on zero. Each pass moves only half
 // way to the new estimate: a straight update can swing back and forth for
 // ever on a thin early-season schedule instead of settling.
-const getSrs = async (season: number, mov: Map<number, number>) => {
+const getSrs = async (
+	season: number,
+	mov: Map<number, number>,
+	liveShown: LiveShown | undefined,
+) => {
 	const opponents = new Map<number, Map<number, number>>();
 	await headToHead.iterate(
-		{ tid: "all", type: "regularSeason", season },
+		{ tid: "all", type: "regularSeason", season, liveShown },
 		(info) => {
 			const games = info.won + info.lost + info.tied + info.otl;
 			if (games > 0 && mov.has(info.tid) && mov.has(info.tid2)) {
@@ -115,16 +120,21 @@ const getPlayoffs = async (
 	season: number,
 	tid: number,
 	teamNames: Map<number, PlayoffResult["opp"]>,
+	liveShown: LiveShown | undefined,
 ) => {
 	const playoffSeries = await idb.merged.playoffSeries.get(season);
 	if (!playoffSeries) {
 		return [];
 	}
+	const series =
+		liveShown && season === g.get("season")
+			? liveShown.series(playoffSeries.series)
+			: playoffSeries.series;
 	const numRounds = g.get("numGamesPlayoffSeries", season).length;
 	const byConf = playoffSeries.byConf ?? false;
 
 	const results: PlayoffResult[] = [];
-	for (const [round, matchups] of playoffSeries.series.entries()) {
+	for (const [round, matchups] of series.entries()) {
 		for (const { home, away } of matchups) {
 			if (!away) {
 				continue;
@@ -165,6 +175,8 @@ const getPlayoffs = async (
 export const getMoreTeamInfo = async (
 	season: number,
 	tid: number,
+	// Games still being played live left out (liveGameShown.ts).
+	liveShown?: LiveShown,
 ): Promise<MoreTeamInfo | undefined> => {
 	if (__SPORT !== "basketball") {
 		return;
@@ -187,6 +199,7 @@ export const getMoreTeamInfo = async (
 		],
 		season,
 		regularSeason: true,
+		liveShown,
 	});
 	const teamNames = new Map(
 		teams.map((t) => [
@@ -202,10 +215,16 @@ export const getMoreTeamInfo = async (
 	// Read directly rather than through the stats above, which have no row for
 	// a team until it has played - and the preseason odds are wanted most on
 	// the day the season starts.
-	const teamSeason = await idb.merged.teamSeasons.getByTidSeason(tid, season);
-	if (!teamSeason) {
+	const teamSeasonStored = await idb.merged.teamSeasons.getByTidSeason(
+		tid,
+		season,
+	);
+	if (!teamSeasonStored) {
 		return;
 	}
+	const teamSeason = liveShown
+		? liveShown.teamSeason(teamSeasonStored)
+		: teamSeasonStored;
 
 	const played = teams.filter((t) => t.stats.gp > 0);
 	const us = played.find((t) => t.tid === tid);
@@ -233,7 +252,7 @@ export const getMoreTeamInfo = async (
 		ortg: ranked((t) => t.stats.ortg, true),
 		drtg: ranked((t) => t.stats.drtg, false),
 		nrtg: ranked((t) => t.stats.nrtg, true),
-		playoffs: await getPlayoffs(season, tid, teamNames),
+		playoffs: await getPlayoffs(season, tid, teamNames, liveShown),
 	};
 
 	if (us) {
@@ -247,6 +266,7 @@ export const getMoreTeamInfo = async (
 		const srs = await getSrs(
 			season,
 			new Map(played.map((t) => [t.tid, t.stats.mov])),
+			liveShown,
 		);
 		const ours = srs?.get(tid);
 		if (srs && ours !== undefined) {

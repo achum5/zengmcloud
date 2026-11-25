@@ -1,3 +1,4 @@
+import { getLiveShown } from "../util/liveGameShown.ts";
 import { g, helpers } from "../util/index.ts";
 import { defineView } from "../util/defineView.ts";
 import { bySport } from "../../common/sportFunctions.ts";
@@ -204,6 +205,7 @@ export default defineView({
 				seasonAttrs: ["won", "lost"],
 				stats,
 				season: inputs.season,
+				liveShown: await getLiveShown(),
 			});
 
 			type Keys =

@@ -2524,6 +2524,43 @@ export type PlayerFormatOptions = {
 
 	// With no season, also return career stats scaled to a full season, in careerStatsScaled under the same keys
 	careerStatsScaled?: Readonly<Record<string, CareerStatsScaledOptions>>;
+
+	// Pages only: games still being played live on somebody's screen taken
+	// back out of the stats shown (worker/util/liveGameShown.ts).
+	liveShown?: LiveShown;
+};
+
+// What a page shows of a row while a game it counts is still being played
+// live: a copy with that game taken back out, or the row itself when it
+// counts none. Display only - never pass it to anything that decides
+// something (worker/util/liveGameShown.ts).
+export type LiveShown = {
+	player: <P extends Pick<Player<any>, "pid" | "stats" | "injury">>(p: P) => P;
+	teamSeason: <T extends Pick<TeamSeason, "tid" | "season">>(ts: T) => T;
+	teamStats: <T extends Pick<TeamStats, "tid" | "season" | "playoffs">>(
+		ts: T,
+	) => T;
+	headToHead: (row: HeadToHead) => HeadToHead;
+	// A playoff bracket's series as they stood going in.
+	series: <S extends PlayoffSeries["series"][number][number]>(
+		series: S[][],
+	) => S[][];
+	// News stories that don't give one of these games away: the game's own
+	// stories, a series it ended, an injury picked up in it.
+	events: <
+		E extends {
+			eid?: number;
+			type: string;
+			text?: string;
+			pids?: number[];
+			tids?: number[];
+			season?: number;
+		},
+	>(
+		events: E[],
+	) => E[];
+	// A game counted in the rows above, still being played live.
+	hides: (gid: number | undefined) => boolean;
 };
 
 export type CareerStatsScaledOptions = {

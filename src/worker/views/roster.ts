@@ -26,6 +26,8 @@ import { validateSeasonType } from "../util/processInputs.ts";
 import { posValue } from "../core/player/pos.basketball.ts";
 import { getMoreTeamInfo } from "./rosterMoreInfo.ts";
 import { canExtend } from "../core/realisticFrontOffice/extensions.ts";
+import { getLiveShown } from "../util/liveGameShown.ts";
+import type { LiveShown } from "../../common/types.ts";
 
 const processInputs = (params: RouteParams<"roster">) => {
 	// Fix broken links
@@ -83,13 +85,17 @@ const addPosValues = (players: any[], playersAll: Player[], season: number) => {
 	}
 };
 
-const getStandingsInfo = async (info: { season: number; tid: number }) => {
+const getStandingsInfo = async (
+	info: { season: number; tid: number },
+	liveShown: LiveShown | undefined,
+) => {
 	const teams = await team.getFormattedAll({
 		attrs: ["tid"],
 		seasonAttrs: ORDER_TEAMS_SEASON_ATTRS,
 		stats: ORDER_TEAMS_STATS,
 		season: info.season,
 		showNoStats: true,
+		liveShown,
 	});
 
 	const cid = teams.find((t) => t.tid === info.tid)?.seasonAttrs.cid;
@@ -99,6 +105,7 @@ const getStandingsInfo = async (info: { season: number; tid: number }) => {
 	const confOrAllTeams = await orderTeams(
 		teams.filter((t) => !playoffsByConf || t.seasonAttrs.cid === cid),
 		teams,
+		{ liveShown },
 	);
 
 	const pointsFormula = g.get("pointsFormula", info.season);
@@ -165,6 +172,10 @@ export default defineView({
 			inputs.playoffs !== prevInputs?.playoffs ||
 			inputs.season !== prevInputs?.season
 		) {
+			// A game still being played live on somebody's screen isn't in the
+			// record, stats or injuries shown yet.
+			const liveShown = await getLiveShown();
+
 			const stats = bySport({
 				baseball: ["gp", "keyStats", "war"],
 				basketball: ["gp", "min", "pts", "trb", "ast", "per"],
@@ -211,6 +222,7 @@ export default defineView({
 				seasonAttrs,
 				stats: ["pts", "oppPts", "gp"],
 				addDummySeason: true,
+				liveShown,
 			});
 
 			if (!t) {
@@ -297,6 +309,7 @@ export default defineView({
 					// The team overall below is built from these, so they have to be the
 					// real numbers. Coarsened for display on the way out.
 					coarsenRatings: false,
+					liveShown,
 				});
 				players = await addMood(players, playersAll);
 
@@ -342,6 +355,7 @@ export default defineView({
 					tid: inputs.tid,
 					fuzz: true,
 					coarsenRatings: false,
+					liveShown,
 				});
 
 				if (__SPORT === "basketball") {
@@ -375,8 +389,10 @@ export default defineView({
 					g.get("season") === inputs.season) ||
 				inputs.playoffs === "playoffs";
 
-			const { gb, playoffsByConf, rank, usePts } =
-				await getStandingsInfo(inputs);
+			const { gb, playoffsByConf, rank, usePts } = await getStandingsInfo(
+				inputs,
+				liveShown,
+			);
 
 			// The conference this team played the season in, looked up by cid in
 			// that season's conference list - which is the one place its name and
@@ -450,7 +466,11 @@ export default defineView({
 				};
 			}
 
-			const moreInfo = await getMoreTeamInfo(inputs.season, inputs.tid);
+			const moreInfo = await getMoreTeamInfo(
+				inputs.season,
+				inputs.tid,
+				liveShown,
+			);
 
 			// Realistic front offices' contract rules: where the payroll stands.
 			const capStatus =

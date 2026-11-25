@@ -47,6 +47,7 @@ type PlayerFormatOptionsRequired = Required<
 		| "seasonType"
 		| "tid"
 		| "careerStatsScaled"
+		| "liveShown"
 	>
 > & {
 	season?: number;
@@ -54,6 +55,7 @@ type PlayerFormatOptionsRequired = Required<
 	seasons?: number[];
 	tid?: number;
 	careerStatsScaled?: PlayerFormatOptions["careerStatsScaled"];
+	liveShown?: PlayerFormatOptions["liveShown"];
 
 	// Derived from seasonType
 	playoffs: boolean;
@@ -1600,10 +1602,13 @@ const processStats = (
 };
 
 const processPlayer = (
-	p: Player,
+	pStored: Player,
 	options: PlayerFormatOptionsRequired,
 	abbrevsCache: AbbrevsCache | undefined,
 ) => {
+	// (A copy, with any game still being played live taken back out - see
+	// liveGameShown.ts.)
+	const p = options.liveShown ? options.liveShown.player(pStored) : pStored;
 	const {
 		attrs,
 		ratings,
@@ -1718,6 +1723,7 @@ const normalizeOptions = (
 		mergeStats = "none",
 		careerStatsByTeam = false,
 		careerStatsScaled,
+		liveShown,
 	} = optionsInput;
 
 	if (mergeStats === "totAndTeams" && season !== undefined) {
@@ -1753,6 +1759,7 @@ const normalizeOptions = (
 		mergeStats,
 		careerStatsByTeam,
 		careerStatsScaled,
+		liveShown,
 	};
 };
 
