@@ -51,9 +51,9 @@ everyone: ratings say how far above it he is, so stars look like stars and a
   most 5 ft/s on top of his own going) rather than left feet behind. On the
   play itself whenever he catches, shoots, passes or screens. Swapped in for
   `stepper.ts`'s `follow`, one man at a time (`Director.ownMovers`).
-- `through.ts`: step 8a's first piece. The play's runs into a catch or a
-  throw laid on through it, rather than ended stood on its spot before the
-  ball gets there (see Step 8a).
+- `through.ts`: step 8a. The play's runs into a catch, a throw, a pull-up,
+  a contest or a rebound laid on through it, rather than ended stood on its
+  spot before the ball gets there (see Step 8a, Closeouts, Rebounds).
 - `packages.ts`: the library of moves. Each kind of move (walking, running,
   down in his stance, backpedaling for now) comes in versions, packages,
   each with its timing (read by the staging), its look (read only by the
@@ -111,7 +111,7 @@ looks better.
    are dragged through.
    - 8a, checkpoints as windows: catches, passes, contests, rebounds,
      reaches and shots met at a pace a body allows (catches, passes,
-     pull-ups and closeouts built: see below).
+     pull-ups, closeouts and rebounds built: see below).
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor.
@@ -516,6 +516,50 @@ Still short:
   for the contest (it is done where he is) close out as they guard: often
   stood. And off a quick catch the nearest defender is 8.6 ft off (real
   5.1): how open a quick catch is, is the play's room for it.
+
+## Rebounds (8a)
+
+A real man who comes down with a rebound is on the move through it: at
+his own end 5.8 ft/s as it comes into his hands, at the other 4.5
+(median, the 17 games), and stood half a second or more in the second
+and a half before it only one time in twelve. The play laid his run to
+the spot he takes it at as one that ended there, and his jump straight up
+from it: stood for it more than half the time.
+
+`through.ts` (`throughBoards`), on the play's runs before they are
+stepped, lays it on through, the same way as a closeout (`upThrough`):
+
+- On the play's spot as the ball comes to his hands (the top of his jump),
+  so the ball still meets him there; still going, into the air at that
+  pace and on at it, braking once he is down, or on into what he does
+  next.
+- His way in is the play's run there, the shuffle onto the spot at the end
+  of it, and any stop on the way, back as far as 2.5 s before he goes up;
+  not across a box-out, a contest or his own shot (straight up off those,
+  as before).
+- How fast he goes up is each man's own draw from the real spread (its
+  tenth to nine tenths 1.5 to 8.9 ft/s at the other end, 1.9 to 12.8 at
+  his own), as fast as his way in and the floor allow. From stood he sets
+  off as late as gets him there that fast, not at a walk all the way.
+
+A man stepped by the new sim's loop lost the first beat of a stretch of
+his when it started on a rounding (at a change of possession, mostly): he
+stood a beat and jumped. That beat is his again (`ticksOf`, `stepInto`).
+
+| Measure (real_11, whole possessions) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Pace as it comes into his hands, at his own end (median, ft/s) | 0.0 | 3.0 | 5.8 |
+| ... at the other end | 0.0 | 0.0 | 4.5 |
+| Stood half a second or more in the 1.5 s before | 57% | 36% | 8% |
+| Sudden starts and stops (lurch flags) | 162 | 147 | |
+| Jumps from one spot to another (teleport flags) | 10 | 8 | |
+
+Still short: a miss comes down right on the man the line says gets it
+(the play aims it at him), so a defensive rebounder, often stood right
+there, has no way in to lay. Real misses come down in nearer the rim than
+he was as the shot went up, and off to a side of him; aiming them that
+way changes the whole game after (the rebound comes later), so it waits
+on a tape that shows what that does to everything else.
 
 ## Natural and smooth (before step 8)
 

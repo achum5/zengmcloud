@@ -3,6 +3,7 @@ import type { Act, BallSeg, Move, Track } from "../director.ts";
 import {
 	carryThrough,
 	spotAt,
+	throughBoards,
 	throughContests,
 	throughPasses,
 	throughPullUps,
@@ -392,5 +393,102 @@ describe("closing out through the shot", () => {
 		]);
 		assert.strictEqual(throughContests(tracks, shot), 0);
 		assert.strictEqual(d.moves.length, 2);
+	});
+});
+
+describe("going up for a rebound on the move", () => {
+	const shooter: Track = {
+		...track([
+			{
+				t0: 0,
+				t1: 4000,
+				from: { x: 70, y: 30 },
+				to: { x: 70, y: 30 },
+				anim: "stand" as Move["anim"],
+			},
+		]),
+		pid: 1,
+		team: 0,
+	};
+	const ball: BallSeg[] = [
+		{ kind: "hold", t0: 0, pid: 1, style: "hold" },
+		{
+			kind: "fly",
+			t0: 1000,
+			t1: 2000,
+			from: { pid: 1 },
+			to: { x: 88.75, y: 25, z: 10 },
+		},
+	];
+	// (Up at 2000, the ball in his hands at the top of it, 2400.)
+	const board = act(2000, 3100, "board", {
+		jump: [250 / 1100, 550 / 1100, 2.4],
+	});
+	const off = 2000 + 250;
+	const top = 2400;
+	const rebounder = (moves: Move[], acts: Act[] = [board]): Track => ({
+		...track(moves, acts),
+		pid: 2,
+		team: 1,
+	});
+	const pace = (tr: Track, t: number) => {
+		const A = spotAt(tr, t - 10);
+		const B = spotAt(tr, t + 10);
+		return Math.hypot(B.x - A.x, B.y - A.y) / 0.02;
+	};
+
+	test("a run in stood for it goes on through it: on the play's spot at the top of his jump, still going", () => {
+		const r = rebounder([run(1000, 1600, 74, 80), stand(1600, 4000, 80)]);
+		const tracks = new Map([
+			[1, shooter],
+			[2, r],
+		]);
+		assert.strictEqual(throughBoards(tracks, ball), 1);
+		const P = spotAt(r, top);
+		assert.isBelow(Math.hypot(P.x - 80, P.y - 20), 1e-6);
+		const into = r.moves.find((m) => m.t1 === off)!;
+		assert.isAtLeast(into.v1!, 1.5);
+		assert.isAbove(pace(r, top), 1.5);
+		// (Never sooner off than the play had him.)
+		assert.isAtLeast(r.moves[0]!.t0, 1000);
+	});
+
+	test("the shuffle onto the spot at the end of his run is taken in with it", () => {
+		const r = rebounder([
+			run(1000, 1500, 74, 79.6),
+			run(1500, 1660, 79.6, 80),
+			stand(1660, 4000, 80),
+		]);
+		const tracks = new Map([
+			[1, shooter],
+			[2, r],
+		]);
+		assert.strictEqual(throughBoards(tracks, ball), 1);
+		const P = spotAt(r, top);
+		assert.isBelow(Math.hypot(P.x - 80, P.y - 20), 1e-6);
+		assert.isAbove(pace(r, top), 1.5);
+	});
+
+	test("up for it straight off a contest of his: as it was", () => {
+		const r = rebounder(
+			[run(1000, 1400, 74, 80), stand(1400, 4000, 80)],
+			[act(1400, 2000, "contest", { jump: [0.1, 0.9, 1.5] }), board],
+		);
+		const tracks = new Map([
+			[1, shooter],
+			[2, r],
+		]);
+		assert.strictEqual(throughBoards(tracks, ball), 0);
+		assert.strictEqual(r.moves.length, 2);
+	});
+
+	test("stood right on the spot all along: as it was", () => {
+		const r = rebounder([stand(0, 4000, 80)]);
+		const tracks = new Map([
+			[1, shooter],
+			[2, r],
+		]);
+		assert.strictEqual(throughBoards(tracks, ball), 0);
+		assert.strictEqual(r.moves.length, 1);
 	});
 });
