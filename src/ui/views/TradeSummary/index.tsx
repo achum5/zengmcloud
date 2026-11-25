@@ -7,6 +7,7 @@ import { PHASE, PHASE_TEXT } from "../../../common/constants.ts";
 import Charts from "./Charts.tsx";
 import FrontOfficeBreakdown from "./FrontOfficeBreakdown.tsx";
 import PickText from "./PickText.tsx";
+import TradeTree from "./TradeTree.tsx";
 import type { PlayerOutcome } from "../../../worker/views/tradeSummary.ts";
 import { useLocal } from "../../util/local.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -305,6 +306,7 @@ const TradeSummary = ({
 					/>
 				</div>
 			</div>
+			<TradeTree eid={eid} stat={stat} />
 			{frontOffice ? (
 				<FrontOfficeBreakdown
 					breakdown={frontOffice}
