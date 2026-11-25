@@ -6178,7 +6178,7 @@ body:has(.league-ticker) .recap-dock-wrap {
 }
 // The line and the total in the score by quarter's dark box: from a tablet
 // up, two more columns of it, each team's side of each bet on its row, the
-// side that hit bright with a check; on a phone (too narrow for them), two
+// side that hit bright and bold; on a phone (too narrow for them), two
 // short lines under it.
 .mb-extra .recap-board {
 	display: inline-block;
@@ -6203,13 +6203,6 @@ body:has(.league-ticker) .recap-dock-wrap {
 	.recap-mini-hit {
 		color: #fff;
 		font-weight: 800;
-		svg {
-			width: 0.6em;
-			height: 0.6em;
-			margin-left: 0.2em;
-			vertical-align: 0.02em;
-			color: rgb(74 222 128);
-		}
 	}
 }
 .recap-board-lines {

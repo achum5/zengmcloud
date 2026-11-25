@@ -214,7 +214,7 @@ const HeaderTeam = ({
 // The score by quarter, small, without the totals (the big scores are
 // either side of it): for the middle of a phone's score line. In the game's
 // banner, each team's line and side of the total after it, as a sportsbook
-// lists them, the bets that hit marked (on a phone, BoardLines instead).
+// lists them, the bets that hit in bold (on a phone, BoardLines instead).
 const MiniLinescore = ({
 	boxScore,
 	bets,
@@ -280,8 +280,8 @@ const MiniLinescore = ({
 	);
 };
 
-// One team's side of a bet: the side that hit bright, with a check, the
-// other dim; a push, neither.
+// One team's side of a bet: the side that hit bright and bold, the other
+// dim; a push, neither.
 type Bet = { text: string; result: "hit" | "miss" | "push" };
 type BoardBets = { line?: [Bet, Bet]; total?: [Bet, Bet] };
 
@@ -293,21 +293,11 @@ const BetCell = ({ bet, first }: { bet: Bet; first: boolean }) => (
 			bet.result === "hit" && "recap-mini-hit",
 			bet.result === "miss" && "recap-mini-miss",
 		)}
-		title={bet.result === "push" ? "Push" : undefined}
+		title={
+			bet.result === "push" ? "Push" : bet.result === "hit" ? "Hit" : undefined
+		}
 	>
 		{bet.text}
-		{bet.result === "hit" ? (
-			<svg viewBox="0 0 12 10" aria-label="Hit">
-				<path
-					d="M1 5.2 4.3 8.5 11 1.5"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2.2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		) : null}
 	</td>
 );
 

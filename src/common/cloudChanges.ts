@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 624,
+		date: "2026-11-25",
+		text: "Finished games: no more green checks in the Line and O/U columns; the side that hit is just in bold.",
+	},
+	{
 		n: 623,
 		date: "2026-11-25",
 		text: "3D game, New sim (Global Settings, 3D Game Sim): players no longer flicker between standing, a step and a backpedal for a split second. A man creeping an inch at a time now just stands there (still calling for the ball, pointing or with his hands on his hips), and he only backpedals when he is really turned around.",
