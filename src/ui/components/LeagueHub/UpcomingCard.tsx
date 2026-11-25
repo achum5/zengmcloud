@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import type { CSSProperties } from "react";
 import type { NationalTag as NationalTagType } from "../../../common/types.ts";
+import { showTeamOvr } from "../../../common/teamRatings.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { NationalTag } from "../NationalTag.tsx";
@@ -55,9 +56,12 @@ const recordOf = (t: UpcomingCardTeam) =>
 const UpcomingWords = ({
 	t,
 	side,
+	showOvr,
 }: {
 	t: UpcomingCardTeam;
 	side: "away" | "home";
+	// (Not where the league hides team ratings.)
+	showOvr: boolean;
 }) => {
 	const brand = useBrand(t);
 	const record = recordOf(t);
@@ -79,7 +83,7 @@ const UpcomingWords = ({
 			</div>
 			<div className="lh-gc-scoreline">
 				{record ? <div className="lh-gc-up-record">{record}</div> : null}
-				{t.ovr !== undefined ? (
+				{showOvr && t.ovr !== undefined ? (
 					<div className="lh-gc-record">{t.ovr} ovr</div>
 				) : null}
 			</div>
@@ -97,6 +101,7 @@ const ToWatch = ({
 	p: any;
 	season: number;
 }) => {
+	const { challengeNoRatings } = useLocal(["challengeNoRatings"]);
 	const brand = useBrand(t);
 	if (!p) {
 		return null;
@@ -106,7 +111,10 @@ const ToWatch = ({
 	const first = space > 0 ? name.slice(0, space) : "";
 	const last = space > 0 ? name.slice(space + 1) : name;
 	const cols: [string, string][] = [
-		[String(p.ratings?.ovr ?? ""), "OVR"],
+		// (No player ratings in a no-ratings league.)
+		...(challengeNoRatings
+			? []
+			: [[String(p.ratings?.ovr ?? ""), "OVR"] as [string, string]]),
 		[(p.stats?.pts ?? 0).toFixed(1), "PTS"],
 		[(p.stats?.trb ?? 0).toFixed(1), "REB"],
 		[(p.stats?.ast ?? 0).toFixed(1), "AST"],
@@ -167,8 +175,13 @@ export const UpcomingCard = ({
 	// "Today", or the day it's on.
 	when: string;
 }) => {
-	const { season: currentSeason } = useLocal(["season"]);
+	const {
+		challengeNoRatings,
+		hideTeamRatings,
+		season: currentSeason,
+	} = useLocal(["challengeNoRatings", "hideTeamRatings", "season"]);
 	const season = game.season ?? currentSeason;
+	const showOvr = showTeamOvr({ challengeNoRatings, hideTeamRatings });
 	const colors = useAllTeamColors();
 	const [home, away] = game.teams;
 	const homeBrand = useBrand(home);
@@ -198,7 +211,7 @@ export const UpcomingCard = ({
 							colors={colors?.[away.tid]}
 							logo={awayBrand.logo}
 						/>
-						<UpcomingWords t={away} side="away" />
+						<UpcomingWords t={away} side="away" showOvr={showOvr} />
 						<div className="lh-gc-mid">
 							<div className="lh-gc-final lh-gc-when">
 								{game.national ? <NationalTag tag={game.national} /> : when}
@@ -217,7 +230,7 @@ export const UpcomingCard = ({
 								</div>
 							) : null}
 						</div>
-						<UpcomingWords t={home} side="home" />
+						<UpcomingWords t={home} side="home" showOvr={showOvr} />
 						<Side
 							t={home}
 							side="home"
