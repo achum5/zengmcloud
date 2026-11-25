@@ -161,9 +161,9 @@ export const END_WALL: [Plane, Plane] = [0, 1].map((side) =>
 
 export const TABLE_X0 = 37;
 export const TABLE_X1 = 57;
-const TABLE_Y = -5;
-const TABLE_D = 2.2;
-const TABLE_H = 2.7;
+export const TABLE_Y = -5;
+export const TABLE_D = 2.2;
+export const TABLE_H = 2.7;
 export const TABLE_TOP = plane(
 	"tableTop",
 	{ x: TABLE_X0, y: TABLE_Y - TABLE_D, z: TABLE_H },
@@ -341,6 +341,9 @@ export type Fan = {
 	// An open jacket over his shirt (its color), a cap on his head.
 	jacket?: string;
 	cap?: string;
+	// A tie down his shirt; a headset on, its microphone at his mouth.
+	tie?: string;
+	headset?: boolean;
 };
 const fanHeadY = (f: Fan, px: number) =>
 	f.yb - (f.arms ? 2 : 1.45) * px - 0.75 * px - (f.arms ? 0.55 * px : 0);
@@ -382,6 +385,17 @@ export const drawFan = (ctx: CanvasRenderingContext2D, f: Fan, px: number) => {
 	}
 	ctx.fillStyle = shade(coat, 0.16);
 	ctx.fillRect(x - sw + 0.3 * px, top, bodyW - 0.6 * px, 0.14 * px);
+	if (f.tie) {
+		ctx.fillStyle = f.tie;
+		ctx.beginPath();
+		ctx.moveTo(x - 0.06 * px, top + 0.06 * px);
+		ctx.lineTo(x + 0.06 * px, top + 0.06 * px);
+		ctx.lineTo(x + 0.08 * px, top + 0.72 * px);
+		ctx.lineTo(x, top + 0.8 * px);
+		ctx.lineTo(x - 0.08 * px, top + 0.72 * px);
+		ctx.closePath();
+		ctx.fill();
+	}
 	if (jersey) {
 		// (The arm holes, and a number across his chest.)
 		ctx.fillStyle = skin;
@@ -493,6 +507,40 @@ export const drawFan = (ctx: CanvasRenderingContext2D, f: Fan, px: number) => {
 		ctx.beginPath();
 		ctx.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
 		ctx.fill();
+	}
+	if (f.headset) {
+		// Its band over the top of his head, a cup over each ear, the
+		// microphone round to the corner of his mouth.
+		const r = 0.4 * px;
+		ctx.strokeStyle = "#111215";
+		ctx.lineWidth = 0.07 * px;
+		ctx.beginPath();
+		ctx.arc(x, headY + 0.02 * px, r, Math.PI * 1.05, Math.PI * 1.95);
+		ctx.stroke();
+		ctx.fillStyle = "#16171b";
+		for (const side of [-1, 1]) {
+			ctx.beginPath();
+			ctx.ellipse(
+				x + side * r * 0.97,
+				headY + 0.06 * px,
+				0.09 * px,
+				0.15 * px,
+				0,
+				0,
+				Math.PI * 2,
+			);
+			ctx.fill();
+		}
+		ctx.lineWidth = 0.04 * px;
+		ctx.beginPath();
+		ctx.moveTo(x - r * 0.97, headY + 0.12 * px);
+		ctx.quadraticCurveTo(
+			x - r * 0.8,
+			headY + 0.36 * px,
+			x - 0.12 * px,
+			headY + 0.3 * px,
+		);
+		ctx.stroke();
 	}
 	if (f.cap) {
 		// A cap pulled down over his hair, its bill out front.
@@ -1575,7 +1623,6 @@ export const paintBoards = (
 		BoardSet,
 		Record<BoardScreen, HTMLCanvasElement>
 	>;
-	const trim = teamColor(home, 1, "#f2c14e");
 	for (const screen of BOARD_SCREENS) {
 		out.end[screen] = paintScreen(
 			END_WALL[0].w,
@@ -1585,8 +1632,7 @@ export const paintBoards = (
 			home,
 			ads,
 		);
-		// The scorer's table is one long LED board too, with a strip of the
-		// team's color along its top edge.
+		// The scorer's table is one long LED board too.
 		// (An ad the length of the table, as one is on a real one.)
 		const table = paintScreen(
 			TABLE_FRONT.w,
@@ -1597,12 +1643,15 @@ export const paintBoards = (
 			ads,
 			TABLE_X1 - TABLE_X0,
 		);
+		// The screen fills its face, a black lip along the top of it (the
+		// table top's edge, catching the light) and a black base at its foot.
 		const tctx = table.getContext("2d")!;
-		const edge = Math.max(2, Math.round(TABLE_FRONT.h * 0.09));
+		const edge = Math.max(2, Math.round(TABLE_FRONT.h * 0.07));
 		tctx.fillStyle = "#0b0c10";
-		tctx.fillRect(0, 0, table.width, edge * 2);
-		tctx.fillStyle = trim;
-		tctx.fillRect(0, edge * 0.6, table.width, edge);
+		tctx.fillRect(0, 0, table.width, edge);
+		tctx.fillRect(0, table.height - edge, table.width, edge);
+		tctx.fillStyle = "#3a3c43";
+		tctx.fillRect(0, 0, table.width, Math.max(1, Math.round(edge * 0.25)));
 		out.table[screen] = table;
 		out.wall[screen] = paintScreen(
 			LED_WALL.w,
@@ -1879,10 +1928,40 @@ export const paintTable = (
 	top.width = TABLE_TOP.w;
 	top.height = TABLE_TOP.h;
 	const tctx = top.getContext("2d")!;
-	tctx.fillStyle = "#2a2c33";
+	// Its top: dark, and on it the night's papers - stat sheets, the
+	// book - headsets, the odd cable.
+	const ppx = top.width / (TABLE_X1 - TABLE_X0);
+	tctx.fillStyle = "#1b1c21";
 	tctx.fillRect(0, 0, top.width, top.height);
-	tctx.fillStyle = "#3a3d46";
-	tctx.fillRect(0, top.height * 0.7, top.width, top.height * 0.3);
+	tctx.fillStyle = "#101114";
+	tctx.fillRect(0, top.height - 0.18 * ppx, top.width, 0.18 * ppx);
+	const rng = makeCourtRng(`tableTop|${home?.abbrev ?? home?.name ?? ""}`);
+	for (let x = 0.6; x < TABLE_X1 - TABLE_X0 - 0.6; x += 0.9 + rng() * 1.4) {
+		const r = rng();
+		const px = x * ppx;
+		const py = (0.5 + rng() * 0.9) * ppx;
+		if (r < 0.6) {
+			tctx.save();
+			tctx.translate(px, py);
+			tctx.rotate((rng() - 0.5) * 0.5);
+			tctx.fillStyle = rng() < 0.85 ? "#ecebe6" : "#f3e7a8";
+			tctx.fillRect(-0.36 * ppx, -0.46 * ppx, 0.72 * ppx, 0.92 * ppx);
+			tctx.restore();
+		} else if (r < 0.8) {
+			tctx.strokeStyle = "#08090b";
+			tctx.lineWidth = 0.08 * ppx;
+			tctx.beginPath();
+			tctx.ellipse(px, py, 0.32 * ppx, 0.22 * ppx, 0, 0, Math.PI * 2);
+			tctx.stroke();
+		} else {
+			tctx.strokeStyle = "#0c0d10";
+			tctx.lineWidth = 0.05 * ppx;
+			tctx.beginPath();
+			tctx.moveTo(px, 0);
+			tctx.quadraticCurveTo(px + 0.6 * ppx, py, px + 0.2 * ppx, top.height);
+			tctx.stroke();
+		}
+	}
 	return { front, top };
 };
 

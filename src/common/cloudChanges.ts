@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 584,
+		date: "2026-11-25",
+		text: "3D game: the scorer's table looks like it does on TV now. Officials and media sit in two rows behind it, the back row up at its own counter in the home team's color, with monitors, laptops, papers and water bottles on the table and a black curtain behind them.",
+	},
+	{
 		n: 583,
 		date: "2026-11-25",
 		text: "3D game: the NBC and Peacock score bug is about a third bigger on phones, so the records, the clock and the network line are easier to read. It was the smallest score bug on a phone. Desktop is unchanged.",
