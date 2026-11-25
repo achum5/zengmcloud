@@ -170,7 +170,8 @@ const PHOTO_TOPS = ["#18181c", "#262a33", "#3a3a3d", "#1f2a24", "#2d2230"];
 const PHOTO_PANTS = ["#18181a", "#4b4334", "#2b2e35", "#3c3f46"];
 
 const TABLE_TOPS = ["#16181d", "#22252c", "#1b2233", "#2a2a2e"];
-export const TABLE_SEATS = [40.5, 45, 49.5, 54];
+// (Either side of the middle of the table - see scorersTable's front row.)
+export const TABLE_SEATS = [42.6, 44.8, 49.2, 51.4];
 export const TABLE_SEAT_Y = -8.1;
 // The people behind the scorer's table are drawn before it, which hides
 // them from the waist down.
@@ -1900,7 +1901,15 @@ const officialBallAt = (
 		return undefined;
 	}
 	if (!("pid" in seg.to) && near(seg.to)) {
-		return { at: seg.to, w: 1, has: smooth01((t - seg.t1) / 150) };
+		// (Coming to him: his hands to it as it comes, there by the time it
+		// gets there - not a step across all at once as it is thrown, if he
+		// is still getting there.)
+		const ease = Math.min(HOLD_EASE, seg.t1 - seg.t0);
+		return {
+			at: seg.to,
+			w: ease > 0 ? smooth01((t - seg.t0) / ease) : 1,
+			has: smooth01((t - seg.t1) / 150),
+		};
 	}
 	// (Let go of: the throw out of his hands, or the second half of a
 	// bounce pass.)

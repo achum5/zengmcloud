@@ -42,8 +42,8 @@ export type ArenaSpec = {
 	// The officials' shirts: NBA gray with black sleeves and sides, or the
 	// old black and white stripes.
 	officials: "gray" | "stripes";
-	// At the far end of each bench: the drinks cooler (its color), a stack
-	// of cups on it, and a pile of towels.
+	// Behind each bench: its drinks coolers (their color), a stack of
+	// cups on each; and the pile of towels by the scorer's table.
 	bench: {
 		cooler: string;
 		towels: string;

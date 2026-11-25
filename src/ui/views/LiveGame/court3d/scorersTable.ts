@@ -26,14 +26,20 @@ import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 // frame, the size the camera has him there (as the people courtside are -
 // see drawCourtside).
 
-// The front row: the rest of the seats along the table, between the four.
-const FRONT_X = [38.45, 42.75, 47.25, 51.75, 55.9];
+// The front row: a seat every so far along the table, from its middle -
+// the rest of those the four don't have.
+const FRONT_N = 13;
+const FRONT_GAP = 2.2;
+const FRONT_X = Array.from(
+	{ length: FRONT_N },
+	(_, i) => (TABLE_X0 + TABLE_X1) / 2 + (i - (FRONT_N - 1) / 2) * FRONT_GAP,
+).filter((x) => TABLE_SEATS.every((s) => Math.abs(s - x) > 0.5));
 // The counter behind them (feet): its front, its back, how high its top.
 const COUNTER_Y0 = -9.25;
 const COUNTER_Y1 = -10.05;
 const COUNTER_Z = 4;
 // The second row, up on a step behind it: so many of them, along it.
-const BACK_N = 8;
+const BACK_N = 12;
 const BACK_Y = -10.75;
 const RISER_Y1 = -11.5;
 const RISER_Z = 1.6;

@@ -13,19 +13,21 @@ import {
 	NEAR_WALL,
 	RAFTERS,
 	RIBBON,
+	RIBBON_SCORE,
 	STANDS,
 	standsPoint,
 	END_STANDS,
 	FLOOR_EDGE,
 	END_WALL,
 	drawCourtside,
+	drawPhotoBoxes,
 	TABLE_FRONT,
 	TABLE_TOP,
 	type BoardScreen,
 	type Courtside,
 	type HoopFx,
 } from "./arena.ts";
-import { drawJumbotron, type Jumbotron } from "./jumbotron.ts";
+import { drawJumbotron, ribbonScore, type Jumbotron } from "./jumbotron.ts";
 import {
 	BASELINE_RIG,
 	depthOf,
@@ -2062,6 +2064,21 @@ export const drawFrame = (f: Frame) => {
 	const ribbon = venueBoards?.ribbon ?? arena.boards.ribbon[screen];
 	const wall = venueBoards?.wall ?? arena.boards.wall[screen];
 	drawTexturedPlane(ctx, cam, RIBBON, ribbon, 24, 1);
+	// (The score along the middle of it, in the game's own building.)
+	if (!venueBoards && arena.jumbotron && f.score) {
+		drawTexturedPlane(
+			ctx,
+			cam,
+			RIBBON_SCORE,
+			ribbonScore(arena.jumbotron, RIBBON_SCORE.w, RIBBON_SCORE.h, {
+				score: f.score,
+				clock: f.clock ?? "",
+				period: f.period ?? "",
+			}),
+			6,
+			1,
+		);
+	}
 	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
 	drawTexturedPlane(ctx, cam, LED_WALL, wall, 24, 1);
 	// (And round the near side, if the cameras look back at it.)
@@ -2148,6 +2165,7 @@ export const drawFrame = (f: Frame) => {
 		} else {
 			floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 		}
+		drawPhotoBoxes(ctx, cam, f.apron ?? f.padColor);
 		// The lit boards along the far side - the front of the scorer's table,
 		// the wall behind the benches - shine back off the floor in front of
 		// them (under the table, the benches and everybody stood there): their
@@ -2399,6 +2417,7 @@ export const drawFrame = (f: Frame) => {
 					(screen.startsWith("ad")
 						? f.arena.stanchionAds?.[Number(screen.slice(2))]
 						: undefined) ?? f.arena.stanchion,
+					f.clock,
 				);
 			},
 		});

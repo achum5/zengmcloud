@@ -17,6 +17,51 @@ export const CLOUD_CHANGES: CloudChange[] = [
 		text: "In leagues on the NBA calendar, trades, signings and releases now say the day they happened: on Trade Summary, Transactions, the News Feed, player pages, Free Agents and the best and worst trades. Moves made before this update, and anything in the offseason, still show the season.",
 	},
 	{
+		n: 597,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): a defender going for a foul, a steal or a block sets off in time, turning back sooner if he was headed the other way, instead of being yanked onto the spot at the last moment. A loose ball is grabbed on the move instead of with a dead stop.",
+	},
+	{
+		n: 596,
+		date: "2026-11-25",
+		text: "A finished game's recap opens with its headline and first paragraph on desktop too, like on phones. Read more shows the rest.",
+	},
+	{
+		n: 595,
+		date: "2026-11-25",
+		text: "A finished game's score banner is laid out more evenly: FINAL sits just over the scores, and the score by quarter with the line and over/under sits just under them. In a window narrower than a full desktop, each team's leaders show under the banner, and the home side is no longer cut off on tablets.",
+	},
+	{
+		n: 594,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): threes are left wide open about as often as real ones are as the shot goes up, about one in three, down from about four in ten. More of them now have a defender a step late, closing out.",
+	},
+	{
+		n: 593,
+		date: "2026-11-25",
+		text: "3D game: the bowl looks like a real NBA arena's. Two rings of suites, lit warm inside, wrap the building above the lower bowl with the ribbon board between them, the score now runs along the middle of the ribbon, and the tunnels into the lower bowl show the lit concourse behind them instead of black holes.",
+	},
+	{
+		n: 592,
+		date: "2026-11-25",
+		text: "3D game: the baskets look like the NBA's now. The stanchion is padded in the home team's color, with a column up the front leaning back to the boom and a lit sign along the top of it, and the shot clock on the backboard is the league's new round one, with the game clock in amber over the shot clock in red.",
+	},
+	{
+		n: 591,
+		date: "2026-11-25",
+		text: "3D game: the photographers behind each baseline work from their own boxes, lined on the floor either side of the basket, like at a real NBA game.",
+	},
+	{
+		n: 590,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): closeouts look like real ones. The defender is still coming at the shooter as the shot goes up, at a pace drawn from how real defenders close out, and carries on by him after it instead of stopping on his spot and hopping straight up. A defender already on his way flies on through it, and one who was set on his spot starts from a step further off.",
+	},
+	{
+		n: 589,
+		date: "2026-11-25",
+		text: "3D game: the far sideline is laid out like a real NBA arena. The scorer's table is longer, with courtside seats between it and each bench, and the benches sit further toward the baselines, with black padded chairs and the drinks coolers in the row behind. Coaches pace and huddle in front of their own bench, inside the coaching box.",
+	},
+	{
 		n: 588,
 		date: "2026-11-25",
 		text: "Season Summary has a Season in review button for every finished season. Tap through the year like a story: the champions, the Finals MVP and MVP, the other awards, the league leaders, your own season and the biggest careers that ended.",

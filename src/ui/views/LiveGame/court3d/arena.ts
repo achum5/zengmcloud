@@ -3,7 +3,7 @@ import { makeCourtRng } from "../courtRng.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
-import { drawTexturedPlane } from "./planes.ts";
+import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { anchorOf, drawModel, type ModelPlace } from "./arenaModel.ts";
 import { STANCHION } from "./stanchionModel.ts";
 import { BALL_R } from "./evaluate.ts";
@@ -18,6 +18,8 @@ import {
 	viewFrame,
 } from "./gameBall.ts";
 import {
+	BENCH_END,
+	BENCH_LEN,
 	BENCH_SEATS,
 	BENCH_Y,
 	benchStart,
@@ -26,9 +28,12 @@ import {
 	RIM_R,
 	RIM_Z,
 	SEAT_GAP,
+	TABLE_X0,
+	TABLE_X1,
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+export { TABLE_X0, TABLE_X1 };
 
 // THE BUILDING: the stands, the LED boards along their front, the scorer's
 // table and the benches - flat pictures painted once per game and stood up in
@@ -159,8 +164,6 @@ export const END_WALL: [Plane, Plane] = [0, 1].map((side) =>
 	),
 ) as [Plane, Plane];
 
-export const TABLE_X0 = 37;
-export const TABLE_X1 = 57;
 export const TABLE_Y = -5;
 export const TABLE_D = 2.2;
 export const TABLE_H = 2.7;
@@ -184,11 +187,10 @@ export const TABLE_FRONT = plane(
 	TABLE_H,
 	24,
 );
-// Each team's bench: a row of high-backed padded chairs beside the table,
-// the backs up to a sitting man's shoulders - just behind where each sits
-// (see seatSpot).
-const BENCH_LEN = BENCH_SEATS * SEAT_GAP + 0.6;
-const BENCH_H = 4;
+// Each team's bench: a row of black padded chairs, the backs up to a
+// sitting man's shoulder blades - just behind where each sits (see
+// seatSpot).
+const BENCH_H = 3.4;
 const BENCH_SEAT_Z = 1.45;
 export const benchPlane = (t: Side) =>
 	plane(
@@ -268,6 +270,84 @@ const SIGN_ROWS = 9;
 // up, from the front.
 const TUNNEL_W = 7;
 const TUNNEL_ROWS: [number, number] = [2, 4];
+// THE SUITES: two rings of them, a level under the ribbon and a level over
+// it, as at the Garden (2K) - each three rows of the stands given over to a
+// row of glass-fronted boxes lit warm inside, a ledge along their front.
+const SUITE_LEVELS: [number, number][] = [
+	[10, 12],
+	[14, 16],
+];
+const SUITE_W = 15.5;
+const SUITE_WALLS = ["#8a6f55", "#7a5f48", "#94816b", "#6e5440", "#857a6c"];
+const inSuites = (r: number) => SUITE_LEVELS.some(([a, b]) => r >= a && r <= b);
+type Glow = { x: number; y: number; r: number };
+type Room = { x: number; y: number; w: number; h: number };
+const paintSuites = (
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	top: number,
+	bottom: number,
+	px: number,
+	rng: () => number,
+	people: (x: number, yb: number) => void,
+	glows: Glow[],
+	rooms: Room[],
+) => {
+	const H = bottom - top;
+	const ceil = top + 0.17 * H;
+	const ledge = top + 0.8 * H;
+	const pillar = 1.0 * px;
+	ctx.fillStyle = "#08090b";
+	ctx.fillRect(0, top, w, H);
+	for (let x0 = 0; x0 < w; x0 += SUITE_W * px) {
+		const ix = x0 + pillar / 2;
+		const iw = SUITE_W * px - pillar;
+		const ih = ledge - ceil;
+		const wall = SUITE_WALLS[Math.floor(rng() * SUITE_WALLS.length)]!;
+		const g = ctx.createLinearGradient(0, ceil, 0, ledge);
+		g.addColorStop(0, shade(wall, 0.14));
+		g.addColorStop(1, shade(wall, -0.38));
+		ctx.fillStyle = g;
+		ctx.fillRect(ix, ceil, iw, ih);
+		// A door in the club's red, now and then.
+		if (rng() < 0.55) {
+			const dw = 1.5 * px;
+			const dx = rng() < 0.5 ? ix + 0.7 * px : ix + iw - 0.7 * px - dw;
+			ctx.fillStyle = "#7d2428";
+			ctx.fillRect(dx, ceil + 0.12 * ih, dw, ih * 0.88);
+		}
+		// The lamps on the back wall, and the ones hung from the ceiling.
+		for (const k of [0.27, 0.73]) {
+			const lx = ix + iw * k;
+			ctx.fillStyle = "#ffe3ad";
+			ctx.fillRect(lx - 0.13 * px, ceil + 0.3 * ih, 0.26 * px, 0.16 * ih);
+			glows.push({ x: lx, y: ceil + 0.38 * ih, r: 1.4 * px });
+		}
+		for (let i = 0; i < 4; i++) {
+			const lx = ix + (iw * (i + 0.5)) / 4;
+			ctx.fillStyle = "#2a2a2e";
+			ctx.fillRect(lx - 0.03 * px, ceil, 0.06 * px, 0.1 * ih);
+			ctx.fillStyle = "#fff4dc";
+			ctx.fillRect(lx - 0.1 * px, ceil + 0.1 * ih, 0.2 * px, 0.08 * ih);
+			glows.push({ x: lx, y: ceil + 0.14 * ih, r: 0.8 * px });
+		}
+		// Who is in it, sat along the front.
+		const n = Math.floor(rng() * 4);
+		for (let i = 0; i < n; i++) {
+			people(ix + iw * (0.12 + 0.76 * rng()), ledge + 0.06 * H);
+		}
+		// The glass across the front of it.
+		ctx.fillStyle = "rgba(170, 195, 230, 0.07)";
+		ctx.fillRect(ix, ceil, iw, ih);
+		rooms.push({ x: ix, y: ceil, w: iw, h: ih });
+	}
+	ctx.fillStyle = "#0d0e11";
+	ctx.fillRect(0, top, w, ceil - top);
+	ctx.fillStyle = "#121318";
+	ctx.fillRect(0, ledge, w, bottom - ledge);
+	ctx.fillStyle = "#3d4048";
+	ctx.fillRect(0, ledge, w, Math.max(1, 0.05 * H));
+};
 
 // The ribbon board, along the front of the upper deck.
 export const RIBBON = plane(
@@ -278,6 +358,18 @@ export const RIBBON = plane(
 	X1 - X0,
 	ROW_FT,
 	8,
+);
+
+// The score along the middle of it (see jumbotron's ribbonScore).
+const RIBBON_SCORE_FT = 44;
+export const RIBBON_SCORE = plane(
+	"ribbonScore",
+	standsPoint(COURT_W / 2 - RIBBON_SCORE_FT / 2, (RIBBON_ROW + 1) * ROW_FT),
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: Math.cos(RAKE), z: -Math.sin(RAKE) },
+	RIBBON_SCORE_FT,
+	ROW_FT,
+	16,
 );
 
 // The rafters over the far stands: a truss across the building, its lights,
@@ -659,7 +751,7 @@ export const paintStands = (
 	const seatRng = makeCourtRng(`seats|${seed}${end ?? ""}`);
 	const seats: { r: number; xf: number; want: number }[] = [];
 	for (let r = 0; r < rows; r++) {
-		if (r === RIBBON_ROW && end === undefined) {
+		if (r === RIBBON_ROW || inSuites(r)) {
 			continue;
 		}
 		for (let xf = A0 + 0.6; xf < A1 - 0.6; xf += 1.85) {
@@ -686,6 +778,8 @@ export const paintStands = (
 		byRow[st.r]!.push(st);
 	}
 	const signs: { x: number; top: number }[] = [];
+	const glows: Glow[] = [];
+	const rooms: Room[] = [];
 	// Rows from the back (top of the picture) down to the front, each the
 	// row behind's lower half hidden behind its heads - the stands as seen
 	// from the floor: a bank of heads and shoulders.
@@ -693,10 +787,47 @@ export const paintStands = (
 		const yb = h - r * ROW_FT * px;
 		// (No two rows sat quite the same way across.)
 		const shift = (((((r * 0.618) % 1) + 1) % 1) - 0.5) * 0.8 * px;
-		if (r === RIBBON_ROW && end === undefined) {
-			// The ribbon board goes here (see RIBBON).
+		if (r === RIBBON_ROW) {
+			// The ribbon board goes here (see RIBBON) - behind the baskets,
+			// lit once the stands are (see below).
 			ctx.fillStyle = "#050507";
 			ctx.fillRect(0, yb - ROW_FT * px, w, ROW_FT * px);
+			continue;
+		}
+		const level = SUITE_LEVELS.find(([a, b]) => r >= a && r <= b);
+		if (level) {
+			if (r === level[1]) {
+				paintSuites(
+					ctx,
+					w,
+					yb - ROW_FT * px,
+					yb + (level[1] - level[0]) * ROW_FT * px,
+					px,
+					rng,
+					(x, at) => {
+						const face =
+							faces && faces.length > 0
+								? faces[Math.floor(faceRng() * faces.length)]!
+								: undefined;
+						const color = rng() < 0.3 ? homeC[0]! : clothes(rng());
+						drawFan(
+							ctx,
+							{
+								x,
+								yb: at,
+								bodyW: (1.3 + rng() * 0.3) * px,
+								color,
+								skin: face?.skin ?? skins[Math.floor(rng() * skins.length)]!,
+								...(face ? { face } : {}),
+								pants: PANTS[Math.floor(rng() * PANTS.length)]!,
+							},
+							px,
+						);
+					},
+					glows,
+					rooms,
+				);
+			}
 			continue;
 		}
 		// Seat backs.
@@ -844,8 +975,9 @@ export const paintStands = (
 		ctx.stroke();
 	}
 	// The tunnels in under the lower deck, at every other aisle (see
-	// ArenaSpec.stands): a dark mouth a few rows up from the front, a rail
-	// along its top.
+	// ArenaSpec.stands): a mouth a few rows up from the front, its walls in
+	// shadow going in and the concourse lit at the far end of it, a glass
+	// rail round its top and its section's number over it.
 	const every = spec.stands.tunnelEvery;
 	for (let k = 1, xf = A0 + aisle; xf < A1 - 4; k++, xf += aisle) {
 		if (every <= 0 || k % every) {
@@ -854,8 +986,37 @@ export const paintStands = (
 		const x = (xf - A0 + 1.2 - TUNNEL_W / 2) * px;
 		const top = h - (TUNNEL_ROWS[1] + 1) * ROW_FT * px;
 		const tall = (TUNNEL_ROWS[1] - TUNNEL_ROWS[0] + 1) * ROW_FT * px;
-		ctx.fillStyle = "#0a0b0e";
-		ctx.fillRect(x, top, TUNNEL_W * px, tall);
+		const tw = TUNNEL_W * px;
+		const inside = ctx.createLinearGradient(0, top, 0, top + tall);
+		inside.addColorStop(0, "#13110e");
+		inside.addColorStop(1, "#2a231a");
+		ctx.fillStyle = inside;
+		ctx.fillRect(x, top, tw, tall);
+		const ex = x + tw * 0.24;
+		const ew = tw * 0.52;
+		const et = top + tall * 0.32;
+		const lit = ctx.createLinearGradient(0, et, 0, top + tall);
+		lit.addColorStop(0, "#9a8566");
+		lit.addColorStop(1, "#5c4d39");
+		ctx.fillStyle = lit;
+		ctx.fillRect(ex, et, ew, top + tall - et);
+		ctx.fillStyle = "#fff0d2";
+		ctx.fillRect(ex + ew * 0.3, et + 0.12 * px, ew * 0.4, 0.16 * px);
+		ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+		for (const [a, b] of [
+			[x, ex],
+			[x + tw, ex + ew],
+		] as const) {
+			ctx.beginPath();
+			ctx.moveTo(a, top);
+			ctx.lineTo(b, et);
+			ctx.lineTo(b, top + tall);
+			ctx.lineTo(a, top + tall);
+			ctx.closePath();
+			ctx.fill();
+		}
+		ctx.fillStyle = "rgba(190, 210, 235, 0.16)";
+		ctx.fillRect(x - 0.4 * px, top - 1.0 * px, tw + 0.8 * px, 0.65 * px);
 		ctx.fillStyle = "#3a3e47";
 		ctx.fillRect(
 			x - 0.4 * px,
@@ -863,6 +1024,21 @@ export const paintStands = (
 			(TUNNEL_W + 0.8) * px,
 			0.35 * px,
 		);
+		ctx.fillStyle = "#6b707a";
+		ctx.fillRect(x - 0.4 * px, top - 1.05 * px, tw + 0.8 * px, 0.1 * px);
+		const pw = 2.2 * px;
+		ctx.fillStyle = "#0e0f12";
+		ctx.fillRect(x + tw / 2 - pw / 2, top - 1.9 * px, pw, 0.75 * px);
+		ctx.fillStyle = "#e8e8e4";
+		ctx.font = `700 ${Math.max(5, Math.round(0.6 * px))}px sans-serif`;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.fillText(
+			String((end === undefined ? 10 : end === 0 ? 1 : 20) + k),
+			x + tw / 2,
+			top - 1.5 * px,
+		);
+		ctx.textAlign = "start";
 	}
 	// The light falls on the court: the upper deck fades into the dark.
 	const dark = ctx.createLinearGradient(0, 0, 0, h);
@@ -872,6 +1048,49 @@ export const paintStands = (
 	dark.addColorStop(1, `rgba(3,3,6,${Math.min(1, 0.12 * bowl)})`);
 	ctx.fillStyle = dark;
 	ctx.fillRect(0, 0, w, h);
+	// The suites lit from inside, whatever the dark round them.
+	ctx.globalCompositeOperation = "lighter";
+	for (const rm of rooms) {
+		const g = ctx.createLinearGradient(0, rm.y, 0, rm.y + rm.h);
+		g.addColorStop(0, "rgba(118, 84, 46, 0.34)");
+		g.addColorStop(1, "rgba(60, 40, 22, 0.1)");
+		ctx.fillStyle = g;
+		ctx.fillRect(rm.x, rm.y, rm.w, rm.h);
+	}
+	for (const gl of glows) {
+		const g = ctx.createRadialGradient(gl.x, gl.y, 0, gl.x, gl.y, gl.r);
+		g.addColorStop(0, "rgba(255, 222, 165, 0.6)");
+		g.addColorStop(1, "rgba(255, 222, 165, 0)");
+		ctx.fillStyle = g;
+		ctx.fillRect(gl.x - gl.r, gl.y - gl.r, gl.r * 2, gl.r * 2);
+	}
+	ctx.globalCompositeOperation = "source-over";
+	// Behind the baskets, the ribbon round the building between the two
+	// levels of suites (along the side it is its own board: see RIBBON) -
+	// the home team's name along it on its color.
+	if (end !== undefined) {
+		const top = h - (RIBBON_ROW + 1) * ROW_FT * px;
+		const rh = ROW_FT * px;
+		const band = ctx.createLinearGradient(0, top, 0, top + rh);
+		band.addColorStop(0, shade(homeC[0]!, 0.12));
+		band.addColorStop(1, shade(homeC[0]!, -0.25));
+		ctx.fillStyle = band;
+		ctx.fillRect(0, top + 0.12 * rh, w, 0.76 * rh);
+		ctx.fillStyle = homeC[1]!;
+		ctx.fillRect(0, top + 0.12 * rh, w, Math.max(1, 0.06 * rh));
+		ctx.fillRect(0, top + 0.82 * rh, w, Math.max(1, 0.06 * rh));
+		const name = (home?.name ?? home?.abbrev ?? "").toUpperCase();
+		if (name) {
+			ctx.fillStyle = inkOn(homeC[0]!);
+			ctx.font = `900 ${Math.round(0.46 * rh)}px sans-serif`;
+			ctx.textAlign = "center";
+			ctx.textBaseline = "middle";
+			for (let xf = 10; xf < A1 - A0; xf += 26) {
+				ctx.fillText(name, xf * px, top + 0.52 * rh);
+			}
+			ctx.textAlign = "start";
+		}
+	}
 	return canvas;
 };
 
@@ -881,27 +1100,34 @@ export const paintStands = (
 // the road team has it (blinking: two pictures), and a shout after a big
 // play by the home side.
 // THE SEATS ON THE FLOOR: rows of padded chairs behind each baseline, past
-// the photographers - the back row up a step - and in the far corners past
-// the ends of the benches; the best seats in the building, every one taken
+// the photographers - the back row up a step - and either side of the
+// scorer's table, between it and each bench; the best seats in the building, every one taken
 // (see ArenaSpec.courtside). Each of the people in them drawn once, sat in
 // his chair, into one picture (see courtsideFor), and stood up in the world
 // where he sits each frame, the size the camera has him there (see
 // drawCourtside) - seen from anywhere, a person in a chair.
 const CS_FRONT = 8;
+// The stanchion's base behind each basket (see stanchion.py): how far back
+// from the baseline it runs, and half its width - no seats in it.
+const STANCHION_BACK = 11.6;
+const STANCHION_HALF = 2.7;
 const CS_ROW = 2.6;
 const CS_STEP = 1.1;
 // Along the baseline, and the aisles through them (feet across the floor).
 const CS_Y0 = -3;
 const CS_Y1 = COURT_H + 3;
 const CS_AISLES = [8.5, COURT_H - 8.5];
-// In the far corners: from past the corner of the floor to the bench.
-const CS_CORNER_Y = BENCH_Y - 0.4;
-// Behind each bench, up a step: its staff - so many of them, this far back
-// of the bench (feet), the step this high.
-const STAFF_N = 7;
+// Beside the table: from the bench's end to the table's.
+const CS_BESIDE_Y = BENCH_Y - 0.4;
+const CS_BESIDE_W = TABLE_X0 - BENCH_END - 1.6;
+// Behind each bench, up a step: its second row - the assistants, the
+// trainers, the video staff - so many places along it, this far back of the
+// bench (feet), the step this high; and the two of those places a third of
+// the way out from the table that its drinks coolers stand in.
+const STAFF_N = 12;
 const STAFF_Y = BENCH_Y - 2;
 const STAFF_Z = 0.6;
-const CS_CORNER_W = 9.5;
+const COOLER_AT = [7, 8];
 // Waving his arms, each way this long (ms); clapping, hands together and
 // apart.
 const WAVE_MS = 260;
@@ -931,7 +1157,7 @@ export type Courtside = {
 	fans: { at: Pt3; cell: number; home: boolean; end?: Side; rise: number }[];
 	// The steps the back rows are up on: each a box along the floor.
 	steps: { x0: number; x1: number; y0: number; y1: number; z: number }[];
-	// At the far end of each bench, its cooler and its towels.
+	// Each bench's drinks coolers, and the towels by the table.
 	props: { at: Pt3; kind: "cooler" | "towels" }[];
 	cooler: string;
 	towels: string;
@@ -967,29 +1193,33 @@ export const courtsideFor = (
 				y < CS_Y1;
 				y += CS_CHAIR
 			) {
-				if (CS_AISLES.some((aisle) => Math.abs(y - aisle) < 1.4)) {
+				if (
+					CS_AISLES.some((aisle) => Math.abs(y - aisle) < 1.4) ||
+					(Math.abs(x - line) < STANCHION_BACK &&
+						Math.abs(y - 25) < STANCHION_HALF + CS_CHAIR / 2)
+				) {
 					continue;
 				}
 				at.push({ x, y, z: r * CS_STEP });
 				endOf.push(side);
 			}
 		}
-		const x0 =
-			side === 0
-				? benchStart(0) - 0.8 - CS_CORNER_W
-				: benchStart(1) + BENCH_LEN + 0.8;
+		const x0 = side === 0 ? BENCH_END + 0.8 : TABLE_X1 + 0.8;
 		for (let r = 0; r < cs.cornerRows; r++) {
-			const y = CS_CORNER_Y - r * CS_ROW;
+			const y = CS_BESIDE_Y - r * CS_ROW;
 			if (r > 0) {
 				steps.push({
 					x0,
-					x1: x0 + CS_CORNER_W,
+					x1: x0 + CS_BESIDE_W,
 					y0: y - CS_ROW / 2,
 					y1: y + CS_ROW / 2,
 					z: r * CS_STEP,
 				});
 			}
-			for (let x = x0 + CS_CHAIR / 2; x < x0 + CS_CORNER_W; x += CS_CHAIR) {
+			// (Centred in the space, however many fit.)
+			const n = Math.floor(CS_BESIDE_W / CS_CHAIR);
+			const first = x0 + (CS_BESIDE_W - n * CS_CHAIR) / 2 + CS_CHAIR / 2;
+			for (let x = first; x < x0 + CS_BESIDE_W; x += CS_CHAIR) {
 				at.push({ x, y, z: r * CS_STEP });
 				endOf.push(undefined);
 			}
@@ -1009,6 +1239,9 @@ export const courtsideFor = (
 			z: STAFF_Z,
 		});
 		for (let k = 0; k < STAFF_N; k++) {
+			if (COOLER_AT.includes(t === 0 ? k : STAFF_N - 1 - k)) {
+				continue;
+			}
 			at.push({
 				x: x0 + ((x1 - x0) * k) / (STAFF_N - 1),
 				y: STAFF_Y,
@@ -1189,17 +1422,25 @@ export const courtsideFor = (
 			);
 		}
 	});
+	// Each bench's two coolers, side by side in its second row; the towels,
+	// a stack on the floor at each end of the table.
 	const props: Courtside["props"] = [];
 	for (const t of [0, 1] as const) {
-		// (Its end away from the table.)
-		const x = t === 0 ? benchStart(0) - 0.9 : benchStart(1) + BENCH_LEN + 0.9;
-		props.push(
-			{ at: { x, y: BENCH_Y + 0.4, z: 0 }, kind: "cooler" },
-			{
-				at: { x: x + (t === 0 ? 1.6 : -1.6), y: BENCH_Y + 0.9, z: 0 },
-				kind: "towels",
-			},
-		);
+		const x0 = benchStart(t) + 1.5;
+		const x1 = benchStart(t) + BENCH_LEN - 1.5;
+		const slot = (k: number) =>
+			x0 + ((x1 - x0) * (t === 0 ? k : STAFF_N - 1 - k)) / (STAFF_N - 1);
+		const mid = (slot(COOLER_AT[0]!) + slot(COOLER_AT[1]!)) / 2;
+		for (const side of [-1, 1]) {
+			props.push({
+				at: { x: mid + side * (COOLER_W / 2 + 0.06), y: STAFF_Y, z: STAFF_Z },
+				kind: "cooler",
+			});
+		}
+		props.push({
+			at: { x: t === 0 ? TABLE_X0 - 0.75 : TABLE_X1 + 0.75, y: -5.9, z: 0 },
+			kind: "towels",
+		});
 	}
 	return {
 		atlas,
@@ -1483,6 +1724,59 @@ const luminance = (c: string): number => {
 		(0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) /
 		255
 	);
+};
+// THE PHOTOGRAPHERS' BOXES on the floor behind each baseline, either side
+// of the basket: a line along the front of each, a line down each side
+// back to the courtside seats - black, or on a dark floor white - each of
+// them sat or knelt in there (see crew's PHOTO_ROW).
+const PHOTO_BOXES: [number, number][] = [
+	[2.6, 14.4],
+	[COURT_H - 14.4, COURT_H - 2.6],
+];
+const BOX_FRONT = 1.2;
+const BOX_BACK = 6.8;
+const BOX_LINE = 2 / 12;
+export const drawPhotoBoxes = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	floor: string,
+) => {
+	ctx.fillStyle =
+		luminance(floor) > 0.22
+			? "rgba(12, 12, 14, 0.85)"
+			: "rgba(236, 236, 232, 0.6)";
+	const quad = (x0: number, y0: number, x1: number, y1: number) => {
+		ctx.beginPath();
+		for (const [x, y] of [
+			[x0, y0],
+			[x1, y0],
+			[x1, y1],
+			[x0, y1],
+		] as const) {
+			const q = project(cam, { x, y, z: 0 });
+			ctx.lineTo(q.x, q.y);
+		}
+		ctx.closePath();
+		ctx.fill();
+	};
+	for (const end of [0, 1]) {
+		const at = (d: number) => (end === 0 ? -d : COURT_W + d);
+		for (const [y0, y1] of PHOTO_BOXES) {
+			if (
+				[y0, y1].some(
+					(y) =>
+						depthOf(cam, { x: at(BOX_FRONT), y, z: 0 }) < 1 ||
+						depthOf(cam, { x: at(BOX_BACK), y, z: 0 }) < 1,
+				)
+			) {
+				continue;
+			}
+			quad(at(BOX_FRONT), y0, at(BOX_FRONT + BOX_LINE), y1);
+			for (const y of [y0, y1 - BOX_LINE]) {
+				quad(at(BOX_FRONT), y, at(BOX_BACK), y + BOX_LINE);
+			}
+		}
+	}
 };
 // Lettering that reads on a background: white, or near-black on a light one.
 const inkOn = (bg: string) => (luminance(bg) > 0.62 ? "#111216" : "#ffffff");
@@ -1973,36 +2267,46 @@ export const paintBench = (team: ArenaTeam | undefined): HTMLCanvasElement => {
 	const ctx = canvas.getContext("2d")!;
 	const px = p.w / BENCH_LEN;
 	const c = teamColor(team, 0, "#333a44");
-	const trim = teamColor(team, 1, "#d9d9d9");
 	const seat = BENCH_SEAT_Z * px;
+	const black = "#16171b";
 	for (let i = 0; i < BENCH_SEATS; i++) {
 		const x = (0.15 + i * SEAT_GAP) * px;
-		const w = 1.8 * px;
-		// Legs, the seat's padded front, the high back - a stripe of the
-		// team's other color across its top.
-		ctx.fillStyle = "#111";
+		const w = (SEAT_GAP - 0.25) * px;
+		// Legs, the seat's padded front, the back - black, piped in a dark
+		// shade of the team's color, a patch of it across the top.
+		ctx.fillStyle = "#0b0b0d";
 		ctx.fillRect(x + 0.15 * px, p.h - seat, 0.12 * px, seat);
 		ctx.fillRect(x + w - 0.27 * px, p.h - seat, 0.12 * px, seat);
-		ctx.fillStyle = shade(c, -0.25);
+		ctx.fillStyle = shade(black, -0.2);
 		ctx.beginPath();
 		ctx.roundRect(x, p.h - seat - 0.3 * px, w, 0.38 * px, 0.12 * px);
 		ctx.fill();
 		const g = ctx.createLinearGradient(x, 0, x + w, 0);
-		g.addColorStop(0, shade(c, -0.18));
-		g.addColorStop(0.5, shade(c, 0.08));
-		g.addColorStop(1, shade(c, -0.18));
+		g.addColorStop(0, shade(black, -0.1));
+		g.addColorStop(0.5, shade(black, 0.22));
+		g.addColorStop(1, shade(black, -0.1));
+		ctx.fillStyle = shade(c, -0.45);
+		ctx.beginPath();
+		ctx.roundRect(x, 0, w, p.h - seat - 0.2 * px, 0.3 * px);
+		ctx.fill();
 		ctx.fillStyle = g;
 		ctx.beginPath();
-		ctx.roundRect(x, 0, w, p.h - seat - 0.2 * px, 0.35 * px);
+		ctx.roundRect(
+			x + 0.07 * px,
+			0.07 * px,
+			w - 0.14 * px,
+			p.h - seat - 0.34 * px,
+			0.25 * px,
+		);
 		ctx.fill();
-		ctx.fillStyle = trim;
-		ctx.fillRect(x + 0.25 * px, 0.35 * px, w - 0.5 * px, 0.16 * px);
-		// A towel over the back of most of them, white, a stripe of the
-		// team's color near its hem - and a fold where it goes over.
-		if ((i * 7 + 3) % 10 < 7) {
+		ctx.fillStyle = shade(c, -0.15);
+		ctx.fillRect(x + w / 2 - 0.22 * px, 0.45 * px, 0.44 * px, 0.24 * px);
+		// A towel over the back of some of them, white, a stripe of the
+		// team's color near its hem.
+		if ((i * 7 + 3) % 10 < 3) {
 			const tw = w - 0.36 * px;
 			const tx = x + 0.18 * px;
-			const th = (0.85 + ((i * 5) % 3) * 0.12) * px;
+			const th = (0.75 + ((i * 5) % 3) * 0.12) * px;
 			ctx.fillStyle = "#f2f2ef";
 			ctx.beginPath();
 			ctx.roundRect(tx, 0.05 * px, tw, th, 0.1 * px);
@@ -2074,110 +2378,429 @@ const poly = (ctx: CanvasRenderingContext2D, cam: Camera, pts: Pt3[]) => {
 	ctx.closePath();
 };
 
-// THE SHOT CLOCK on top of the board: a dark box, the seconds lit in red on
-// each side of it - so from wherever the camera is, the side it sees has
-// them, the way a broadcast shows it from the sideline. (Drawn flat across
-// the top of the board, as it was, the side camera saw only its edge, and
-// the seconds floated over the board on nothing.)
-const CLOCK_HALF = 0.9;
-const CLOCK_IN = 3.55;
-const CLOCK_OUT = 4.55;
-const CLOCK_LOW = 13.08;
-const CLOCK_HIGH = 14.05;
+// THE SHOT CLOCK on top of the board: the NBA's round one (league-wide
+// since 2025-26; laid out off 2K's) - a drum on a short stem over the
+// board, the game clock in amber over the shot clock in red on both its
+// faces, the unlit segments showing faintly; a panel under it, a rod down
+// from each side of it to the top of the board, and the rim camera on
+// top. From the sideline with the play at that end it is seen nearly edge
+// on - a dark disc, its digits a sliver of light - as the real one is.
+const CLOCK_D = 3.8;
+const CLOCK_T = 0.42;
+const CLOCK_R = 1.45;
+const CLOCK_Z = 15.95;
+const CLOCK_N = 24;
+const CLOCK_PX = 120;
+const CLOCK_RIM = "#26282e";
+const CLOCK_AMBER = "#ffb02e";
+const CLOCK_RED = "#ff3326";
+
+// The face of a box on the board toward the camera (its middle `d` from
+// the baseline, `depth` through), as a picture `w` x `h` is laid on it -
+// read from in front, the right way round whichever face and whichever end.
+const facePlane = (
+	cam: Camera,
+	side: Side,
+	d: number,
+	depth: number,
+	y: number,
+	z: number,
+	halfW: number,
+	halfH: number,
+	w: number,
+	h: number,
+): TexturedPlane | undefined => {
+	const sgn = side === 0 ? 1 : -1;
+	const base = side === 0 ? 0 : COURT_W;
+	const out = (cam.pos.x - (base + sgn * d)) * sgn > 0 ? 1 : -1;
+	const x = base + sgn * (d + (out * depth) / 2);
+	const at = (r: number, u: number, v: number): Pt3 => ({
+		x,
+		y: y + r * u * halfW,
+		z: z - v * halfH,
+	});
+	if ([at(1, -1, -1), at(1, 1, 1)].some((p) => depthOf(cam, p) < 1)) {
+		return undefined;
+	}
+	const tl = project(cam, at(1, -1, -1));
+	const tr = project(cam, at(1, 1, -1));
+	const bl = project(cam, at(1, -1, 1));
+	const r =
+		(tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x) < 0 ? -1 : 1;
+	return {
+		origin: at(r, -1, -1),
+		alongX: { x: 0, y: (r * 2 * halfW) / w, z: 0 },
+		alongY: { x: 0, y: 0, z: (-2 * halfH) / h },
+		w,
+		h,
+	};
+};
+// The clock's.
+export const shotClockFace = (
+	cam: Camera,
+	side: Side,
+	rock = 0,
+	bz = 0,
+): TexturedPlane | undefined =>
+	facePlane(
+		cam,
+		side,
+		CLOCK_D,
+		CLOCK_T,
+		25 + rock,
+		CLOCK_Z + bz,
+		CLOCK_R,
+		CLOCK_R,
+		CLOCK_PX,
+		CLOCK_PX,
+	);
+// The panel under it: a strip of unlit digits.
+const PANEL = { d0: 3.62, d1: 3.98, half: 1.2, z0: 13.42, z1: 14.6 };
+let panelPicture: HTMLCanvasElement | undefined;
+const paintClockPanel = (): HTMLCanvasElement => {
+	if (!panelPicture) {
+		panelPicture = document.createElement("canvas");
+		panelPicture.width = 96;
+		panelPicture.height = 47;
+		const ctx = panelPicture.getContext("2d")!;
+		ctx.fillStyle = "#14151a";
+		ctx.fillRect(0, 0, 96, 47);
+		ctx.fillStyle = "#2a2c33";
+		ctx.fillRect(0, 0, 96, 2);
+		drawLed(ctx, "", "88:88", 48, 22, 15, CLOCK_AMBER);
+	}
+	return panelPicture;
+};
+
+// Seven-segment digits, lit (and every segment of an 8 faintly under them).
+const SEGMENTS: Record<string, string> = {
+	"0": "abcdef",
+	"1": "bc",
+	"2": "abged",
+	"3": "abgcd",
+	"4": "fgbc",
+	"5": "afgcd",
+	"6": "afgedc",
+	"7": "abc",
+	"8": "abcdefg",
+	"9": "abcdfg",
+};
+const drawLed = (
+	ctx: CanvasRenderingContext2D,
+	// What is lit, and the cells it is lit in (each an 8, or a : or .).
+	text: string,
+	cells: string,
+	cx: number,
+	top: number,
+	h: number,
+	color: string,
+) => {
+	const w = h * 0.52;
+	const t = Math.max(1.5, h * 0.14);
+	const gap = h * 0.2;
+	const sep = h * 0.24;
+	const widthOf = (c: string) => (c === ":" || c === "." ? sep : w + gap);
+	let x = cx - ([...cells].reduce((a, c) => a + widthOf(c), 0) - gap) / 2;
+	const segment = (s: string) => {
+		const half = h / 2;
+		const [sx, sy, sw, sh] =
+			s === "a"
+				? [x + t * 0.6, top, w - t * 1.2, t]
+				: s === "b"
+					? [x + w - t, top + t * 0.6, t, half - t * 0.9]
+					: s === "c"
+						? [x + w - t, top + half + t * 0.3, t, half - t * 0.9]
+						: s === "d"
+							? [x + t * 0.6, top + h - t, w - t * 1.2, t]
+							: s === "e"
+								? [x, top + half + t * 0.3, t, half - t * 0.9]
+								: s === "f"
+									? [x, top + t * 0.6, t, half - t * 0.9]
+									: [x + t * 0.6, top + half - t / 2, w - t * 1.2, t];
+		ctx.fillRect(sx, sy, sw, sh);
+	};
+	for (let i = 0; i < cells.length; i++) {
+		const cell = cells[i]!;
+		const ch = text[i] ?? " ";
+		if (cell === ":" || cell === ".") {
+			const dots = cell === ":" ? [0.3, 0.7] : [0.92];
+			for (const lit of [false, true]) {
+				if (lit && ch !== cell) {
+					continue;
+				}
+				ctx.fillStyle = lit ? color : shade(color, -0.86);
+				for (const d of dots) {
+					ctx.fillRect(x + (sep - t) / 2 - gap / 2, top + d * h - t / 2, t, t);
+				}
+			}
+			x += sep;
+			continue;
+		}
+		ctx.fillStyle = shade(color, -0.86);
+		for (const s of SEGMENTS["8"]!) {
+			segment(s);
+		}
+		ctx.fillStyle = color;
+		for (const s of SEGMENTS[ch] ?? "") {
+			segment(s);
+		}
+		x += w + gap;
+	}
+};
+
+// The game clock as the clock shows it - 5:57 in four cells round its
+// colon, 45.3 in three round a point - and nothing (just the unlit
+// segments) for anything else (FINAL, HALF).
+const gameCells = (clock: string): { text: string; cells: string } => {
+	const mm = /^(\d{1,2}):(\d\d)$/.exec(clock);
+	if (mm) {
+		return { text: `${mm[1]!.padStart(2, " ")}:${mm[2]}`, cells: "88:88" };
+	}
+	const ss = /^(\d{1,2})\.(\d)$/.exec(clock);
+	if (ss) {
+		return { text: `${ss[1]!.padStart(2, " ")}.${ss[2]}`, cells: "88.8" };
+	}
+	return { text: "", cells: "88:88" };
+};
+
+// The face, painted again whenever what it shows changes (both ends show
+// the same).
+let clockPicture: { key: string; canvas: HTMLCanvasElement } | undefined;
+const paintClockFace = (game: string, shot: string): HTMLCanvasElement => {
+	const key = `${game}|${shot}`;
+	if (clockPicture?.key === key) {
+		return clockPicture.canvas;
+	}
+	const canvas = clockPicture?.canvas ?? document.createElement("canvas");
+	canvas.width = CLOCK_PX;
+	canvas.height = CLOCK_PX;
+	const ctx = canvas.getContext("2d")!;
+	const m = CLOCK_PX / 2;
+	ctx.beginPath();
+	ctx.arc(m, m, m - 0.5, 0, Math.PI * 2);
+	ctx.fillStyle = "#3b3d44";
+	ctx.fill();
+	ctx.beginPath();
+	ctx.arc(m, m, m - 6, 0, Math.PI * 2);
+	const g = ctx.createRadialGradient(m, m * 0.8, 4, m, m, m);
+	g.addColorStop(0, "#15161b");
+	g.addColorStop(1, "#060608");
+	ctx.fillStyle = g;
+	ctx.fill();
+	const gc = gameCells(game);
+	drawLed(
+		ctx,
+		gc.text,
+		gc.cells,
+		m,
+		CLOCK_PX * 0.2,
+		CLOCK_PX * 0.15,
+		CLOCK_AMBER,
+	);
+	drawLed(
+		ctx,
+		shot.padStart(2, " "),
+		"88",
+		m,
+		CLOCK_PX * 0.42,
+		CLOCK_PX * 0.36,
+		CLOCK_RED,
+	);
+	clockPicture = { key, canvas };
+	return canvas;
+};
+
 const drawShotClock = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
+	side: Side,
 	X: (d: number) => number,
 	rock: number,
 	bz: number,
 	shotClock: string,
+	gameClock: string,
 	inkW: number,
 ) => {
-	const xa = Math.min(X(CLOCK_IN), X(CLOCK_OUT));
-	const xb = Math.max(X(CLOCK_IN), X(CLOCK_OUT));
-	const ya = 25 - CLOCK_HALF + rock;
-	const yb = 25 + CLOCK_HALF + rock;
-	const z0 = CLOCK_LOW + bz;
-	const z1 = CLOCK_HIGH + bz;
-	const P = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
-	// Each side: its top corners as seen from outside it, left then right
-	// (the floor's y runs toward the camera: see camera.ts), and which way
-	// it faces. (The top is seen from above.)
-	const sides: { tl: Pt3; tr: Pt3; nx: number; ny: number }[] = [
-		{ tl: P(xa, yb, z1), tr: P(xb, yb, z1), nx: 0, ny: 1 },
-		{ tl: P(xb, ya, z1), tr: P(xa, ya, z1), nx: 0, ny: -1 },
-		{ tl: P(xb, yb, z1), tr: P(xb, ya, z1), nx: 1, ny: 0 },
-		{ tl: P(xa, ya, z1), tr: P(xa, yb, z1), nx: -1, ny: 0 },
-	];
-	const seen = sides.filter(
-		(s) =>
-			(cam.pos.x - (s.tl.x + s.tr.x) / 2) * s.nx +
-				(cam.pos.y - (s.tl.y + s.tr.y) / 2) * s.ny >
-			0,
-	);
-	ctx.lineJoin = "round";
-	ctx.strokeStyle = INK;
-	ctx.lineWidth = 2 * inkW;
-	const faces: Pt3[][] = seen.map((s) => [
-		s.tl,
-		s.tr,
-		{ ...s.tr, z: z0 },
-		{ ...s.tl, z: z0 },
-	]);
-	if (cam.pos.z > z1) {
-		faces.push([P(xa, ya, z1), P(xb, ya, z1), P(xb, yb, z1), P(xa, yb, z1)]);
-	}
-	for (const f of faces) {
-		poly(ctx, cam, f);
-		ctx.stroke();
-	}
-	faces.forEach((f, i) => {
-		ctx.fillStyle = i < seen.length ? "#0d0d10" : "#2a2b31";
-		poly(ctx, cam, f);
-		ctx.fill();
+	const P = (d: number, y: number, z: number): Pt3 => ({
+		x: X(d),
+		y: y + rock,
+		z: z + bz,
 	});
-	if (!shotClock) {
-		return;
-	}
-	// The seconds on each side seen, laid on it: drawn in its own frame -
-	// across it and down it, a unit a pixel of the picture.
-	ctx.fillStyle = "#ff3b2f";
-	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	for (const s of seen) {
-		const tl = project(cam, s.tl);
-		const tr = project(cam, s.tr);
-		const bl = project(cam, { ...s.tl, z: z0 });
-		const w = Math.hypot(tr.x - tl.x, tr.y - tl.y);
-		const h = Math.hypot(bl.x - tl.x, bl.y - tl.y);
-		// (Not on a side seen too nearly edge on to read: its area on the
-		// picture against what it would have square on.)
-		const across = Math.hypot(s.tr.x - s.tl.x, s.tr.y - s.tl.y);
-		const k = (tl.k + tr.k) / 2;
-		const area = Math.abs(
-			(tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x),
+	ctx.lineJoin = "round";
+	// A box: the faces of it toward the camera, inked round, then filled.
+	const solid = (
+		d0: number,
+		d1: number,
+		y0: number,
+		y1: number,
+		z0: number,
+		z1: number,
+		color: string,
+	) => {
+		const sgn = X(1) - X(0);
+		const ym = (y0 + y1) / 2;
+		const zm = (z0 + z1) / 2;
+		const dm = (d0 + d1) / 2;
+		// Each face, the middle of it, which way it faces, and how lit.
+		const faces: { pts: Pt3[]; at: Pt3; n: Pt3; lift: number }[] = [
+			...(
+				[
+					[d0, -1],
+					[d1, 1],
+				] as const
+			).map(([d, nd]) => ({
+				pts: [P(d, y0, z1), P(d, y1, z1), P(d, y1, z0), P(d, y0, z0)],
+				at: P(d, ym, zm),
+				n: { x: sgn * nd, y: 0, z: 0 },
+				lift: 0,
+			})),
+			...(
+				[
+					[y0, -1],
+					[y1, 1],
+				] as const
+			).map(([y, ny]) => ({
+				pts: [P(d0, y, z1), P(d1, y, z1), P(d1, y, z0), P(d0, y, z0)],
+				at: P(dm, y, zm),
+				n: { x: 0, y: ny, z: 0 },
+				lift: -0.06,
+			})),
+			{
+				pts: [P(d0, y0, z1), P(d1, y0, z1), P(d1, y1, z1), P(d0, y1, z1)],
+				at: P(dm, ym, z1),
+				n: { x: 0, y: 0, z: 1 },
+				lift: 0.12,
+			},
+		];
+		const seen = faces.filter(
+			({ at, n }) =>
+				(cam.pos.x - at.x) * n.x +
+					(cam.pos.y - at.y) * n.y +
+					(cam.pos.z - at.z) * n.z >
+				0,
 		);
-		if (h < 2.5 || area < 0.45 * across * (z1 - z0) * k * k) {
+		ctx.strokeStyle = INK;
+		ctx.lineWidth = 2 * inkW;
+		for (const f of seen) {
+			poly(ctx, cam, f.pts);
+			ctx.stroke();
+		}
+		for (const f of seen) {
+			ctx.fillStyle = shade(color, f.lift);
+			poly(ctx, cam, f.pts);
+			ctx.fill();
+		}
+	};
+	// The stem up off the board, and the panel on it.
+	solid(3.7, 3.9, 24.82, 25.18, 12.95, 13.45, CLOCK_RIM);
+	solid(
+		PANEL.d0,
+		PANEL.d1,
+		25 - PANEL.half,
+		25 + PANEL.half,
+		PANEL.z0,
+		PANEL.z1,
+		"#14151a",
+	);
+	const panel = facePlane(
+		cam,
+		side,
+		(PANEL.d0 + PANEL.d1) / 2,
+		PANEL.d1 - PANEL.d0 + 0.02,
+		25 + rock,
+		(PANEL.z0 + PANEL.z1) / 2 + bz,
+		PANEL.half,
+		(PANEL.z1 - PANEL.z0) / 2,
+		96,
+		47,
+	);
+	if (panel && typeof document !== "undefined") {
+		drawTexturedPlane(ctx, cam, panel, paintClockPanel(), 1, 1);
+	}
+	// The rods from the sides of the drum down to the top of the board.
+	ctx.strokeStyle = "#80838b";
+	ctx.lineCap = "round";
+	for (const s of [-1, 1]) {
+		line(
+			ctx,
+			cam,
+			P(CLOCK_D, 25 + s * 1.11, CLOCK_Z - 0.93),
+			P(3.86, 25 + s * 2.15, 13.02),
+			0.07,
+		);
+	}
+	// The drum: its rim the camera's side of it, then the face it sees.
+	const ring = (d: number) =>
+		Array.from({ length: CLOCK_N }, (_, i) => {
+			const a = (i / CLOCK_N) * Math.PI * 2;
+			return P(d, 25 + Math.cos(a) * CLOCK_R, CLOCK_Z + Math.sin(a) * CLOCK_R);
+		});
+	const front = ring(CLOCK_D + CLOCK_T / 2);
+	const back = ring(CLOCK_D - CLOCK_T / 2);
+	const sgn = X(1) - X(0);
+	const courtSide = (cam.pos.x - X(CLOCK_D)) * sgn > 0;
+	const [near, far] = courtSide ? [front, back] : [back, front];
+	const band: { pts: Pt3[]; lift: number }[] = [];
+	for (let i = 0; i < CLOCK_N; i++) {
+		const a = ((i + 0.5) / CLOCK_N) * Math.PI * 2;
+		const ny = Math.cos(a);
+		const nz = Math.sin(a);
+		const mid = P(CLOCK_D, 25 + ny * CLOCK_R, CLOCK_Z + nz * CLOCK_R);
+		if ((cam.pos.y - mid.y) * ny + (cam.pos.z - mid.z) * nz <= 0) {
 			continue;
 		}
-		ctx.save();
-		ctx.transform(
-			(tr.x - tl.x) / w,
-			(tr.y - tl.y) / w,
-			(bl.x - tl.x) / h,
-			(bl.y - tl.y) / h,
-			tl.x,
-			tl.y,
-		);
-		ctx.font = `700 ${0.8 * h}px "Courier New", monospace`;
-		const fit = (0.86 * w) / Math.max(1, ctx.measureText(shotClock).width);
-		ctx.translate(w / 2, h * 0.53);
-		if (fit < 1) {
-			ctx.scale(fit, 1);
-		}
-		ctx.fillText(shotClock, 0, 0);
-		ctx.restore();
+		const j = (i + 1) % CLOCK_N;
+		band.push({
+			pts: [near[i]!, near[j]!, far[j]!, far[i]!],
+			lift: nz * 0.14 - 0.04,
+		});
 	}
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = 2 * inkW;
+	for (const b of band) {
+		poly(ctx, cam, b.pts);
+		ctx.stroke();
+	}
+	poly(ctx, cam, near);
+	ctx.stroke();
+	for (const b of band) {
+		ctx.fillStyle = shade(CLOCK_RIM, b.lift);
+		poly(ctx, cam, b.pts);
+		ctx.fill();
+	}
+	ctx.fillStyle = "#3b3d44";
+	poly(ctx, cam, near);
+	ctx.fill();
+	const face = shotClockFace(cam, side, rock, bz);
+	if (face && typeof document !== "undefined") {
+		drawTexturedPlane(
+			ctx,
+			cam,
+			face,
+			paintClockFace(gameClock, shotClock),
+			1,
+			1,
+		);
+	}
+	// The rim camera on top.
+	solid(
+		3.72,
+		3.88,
+		24.9,
+		25.1,
+		CLOCK_Z + CLOCK_R - 0.05,
+		CLOCK_Z + CLOCK_R + 0.12,
+		CLOCK_RIM,
+	);
+	solid(
+		3.52,
+		4.12,
+		24.74,
+		25.26,
+		CLOCK_Z + CLOCK_R + 0.12,
+		CLOCK_Z + CLOCK_R + 0.5,
+		"#1b1c21",
+	);
 };
 
 // The lit panel on the faces of a basket's base: the home team's name in
@@ -2263,8 +2886,11 @@ export const drawHoop = (
 	shotClock: string,
 	fx: HoopFx,
 	between?: () => void,
-	// The lit panel on the faces of its base (see paintStanchionPanel).
+	// The lit panels on its base, its column and the box on its boom (see
+	// paintStanchionPanel).
 	panel?: HTMLCanvasElement,
+	// The game clock, as the score bug has it, for the clock on the board.
+	gameClock = "",
 ) => {
 	const sgn = side === 0 ? 1 : -1;
 	const base = side === 0 ? 0 : COURT_W;
@@ -2287,11 +2913,12 @@ export const drawHoop = (
 	const behind = (cam.pos.x - bx) * sgn < 0;
 	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
 	const stanchion = () => {
-		// The stanchion (built in Blender - see stanchionModel.ts): a dark
-		// padded base behind the baseline with a lit board in the team's
-		// color on its faces, the post padded round its foot, the boom out to
-		// the board with a brace under it and a sign along it - the boom and
-		// the board's mount ringing with the board after a dunk.
+		// The stanchion (built in Blender - see stanchionModel.ts): a base
+		// padded in the team's color behind the baseline, a lit board on its
+		// faces; the padded column up the front of the post, leaning back,
+		// another up the front of that; the boom out to the board, padded
+		// where it meets it, with a lit box along the top - the boom and the
+		// board's mount ringing with the board after a dunk.
 		const place: ModelPlace = {
 			at: (p, flex) => ({
 				x: X(p[0]!),
@@ -2313,8 +2940,8 @@ export const drawHoop = (
 			});
 			return { at, quad: [at(0, v0), at(1, v0), at(1, v1), at(0, v1)] };
 		};
-		const lit = (name: string) => {
-			const f = onFace(name, 0.15, 0.85);
+		const lit = (name: string, v0 = 0.15, v1 = 0.85) => {
+			const f = onFace(name, v0, v1);
 			if (!f) {
 				return;
 			}
@@ -2328,9 +2955,9 @@ export const drawHoop = (
 				ctx.fill();
 				return;
 			}
-			const o = f.at(0, 0.15);
-			const a = f.at(1, 0.15);
-			const b = f.at(0, 0.85);
+			const o = f.at(0, v0);
+			const a = f.at(1, v0);
+			const b = f.at(0, v1);
 			drawTexturedPlane(
 				ctx,
 				cam,
@@ -2354,54 +2981,26 @@ export const drawHoop = (
 				1,
 			);
 		};
-		const sign = (name: string) => {
-			const f = onFace(name, 0, 1);
-			if (!f) {
-				return;
-			}
-			// (Inked round, so it reads as a sign against a floor its own color.)
-			ctx.lineJoin = "round";
-			ctx.strokeStyle = INK;
-			ctx.lineWidth = 2 * inkW;
-			ctx.fillStyle = padColor;
-			poly(ctx, cam, f.quad);
-			ctx.stroke();
-			ctx.fill();
-			ctx.fillStyle = "rgba(255,255,255,0.85)";
-			const bar = onFace(name, 0.38, 0.62)!;
-			const inset = (p: Pt3, q: Pt3, k: number): Pt3 => ({
-				x: p.x + (q.x - p.x) * k,
-				y: p.y + (q.y - p.y) * k,
-				z: p.z + (q.z - p.z) * k,
-			});
-			const [p0, p1, p2, p3] = bar.quad as [Pt3, Pt3, Pt3, Pt3];
-			poly(ctx, cam, [
-				inset(p0, p1, 0.09),
-				inset(p1, p0, 0.09),
-				inset(p2, p3, 0.09),
-				inset(p3, p2, 0.09),
-			]);
-			ctx.fill();
-		};
 		drawModel(
 			ctx,
 			cam,
 			STANCHION,
 			place,
-			(kind) =>
-				kind === "pad" ? padColor : kind === "base" ? "#24262c" : "#2a2c33",
+			(kind) => (kind === "pad" ? padColor : "#2a2c33"),
 			{ color: INK, width: inkW * 2 },
 			(part) => {
 				if (part === "base") {
 					for (const name of ["panelCourt", "panelNear", "panelFar"]) {
 						lit(name);
 					}
+				} else if (part === "column") {
+					lit("colCourt");
+				} else if (part === "adBox") {
+					lit("adNear", 0, 1);
+					lit("adFar", 0, 1);
 				}
 			},
 		);
-		// (The sign out on the face of the boom: over the bars under it.)
-		sign("signNear");
-		sign("signFar");
 	};
 	const board = () => {
 		// The backboard: glass in a white frame, the shooter's square, and the
@@ -2464,7 +3063,7 @@ export const drawHoop = (
 			{ x: bx, y: 24 + rock, z: 11.5 + bz },
 		]);
 		ctx.stroke();
-		drawShotClock(ctx, cam, X, rock, bz, shotClock, inkW);
+		drawShotClock(ctx, cam, side, X, rock, bz, shotClock, gameClock, inkW);
 	};
 	const rimAndNet = () => {
 		// The rim and its net.

@@ -861,8 +861,8 @@ const RecapHeader = ({
 };
 
 // The story of the game (the game's note - an auto recap, or one written
-// in): its first line the headline, the rest under it, names linked. A
-// phone shows the headline and the first paragraph, the rest a tap away.
+// in): its first line the headline, the rest under it, names linked. It
+// shows the headline and the first paragraph, the rest a tap away.
 const RecapStory = ({ boxScore }: { boxScore: any }) => {
 	const [open, setOpen] = useState(false);
 	const note: string | undefined = boxScore.note?.trim();

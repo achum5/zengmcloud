@@ -58,18 +58,30 @@ export const guardSpot = (offense: Side, man: Pt, gap = 0.3): Pt => ({
 // substitution or a huddle walks toward the camera's back wall.
 export const TABLE: Pt = { x: COURT_W / 2, y: -2.2 };
 
-// Each team's bench runs from beside the scorer's table toward its end of the
-// floor, and every player keeps his own chair for the whole game - in roster
-// order - sitting in it while he is not on the floor.
+// The scorer's table, along the middle of the far side (feet along the
+// floor): 29 feet of it, as at a real one.
+export const TABLE_X0 = 32.5;
+export const TABLE_X1 = COURT_W - TABLE_X0;
+// Each team's bench runs from a few courtside seats short of the table out
+// toward its end of the floor - its far end a little past the baseline, as
+// on TV - and every player keeps his own chair for the whole game, in
+// roster order, sitting in it while he is not on the floor.
 export const BENCH_SEATS = 15;
-export const SEAT_GAP = 2.05;
+export const SEAT_GAP = 2;
+export const BENCH_LEN = BENCH_SEATS * SEAT_GAP + 0.6;
+// (Its end nearest the table, this far along the floor from its baseline:
+// its far chair no further out than a man can be stepped to - see stepper's
+// finish.)
+export const BENCH_END = 26.4;
 export const BENCH_Y = -8.6;
-export const benchStart = (t: Side): number => (t === 0 ? 5.5 : 58);
+export const benchStart = (t: Side): number =>
+	t === 0 ? BENCH_END - BENCH_LEN : COURT_W - BENCH_END;
 export const seatSpot = (t: Side, i: number): Pt => ({
 	x: benchStart(t) + 0.78 + Math.min(i, BENCH_SEATS - 1) * SEAT_GAP,
 	y: BENCH_Y + 0.9,
 });
-export const benchX = (t: Side): number => (t === 0 ? 31 : 63);
+// The middle of its coaching box: where the coach paces, and his huddle.
+export const benchX = (t: Side): number => (t === 0 ? 18 : COURT_W - 18);
 
 // Checking in: down on a knee in front of the scorer's table, on his own
 // team's half of it, the next man along beside him - got to from his chair
@@ -81,7 +93,7 @@ export const checkInSpot = (t: Side, k: number): Pt => ({
 });
 export const checkInPath = (seat: Pt, t: Side, k: number): Pt[] => [
 	seat,
-	{ x: t === 0 ? 36.2 : COURT_W - 36.2, y: -4.4 },
+	{ x: t === 0 ? TABLE_X0 - 0.8 : TABLE_X1 + 0.8, y: -4.4 },
 	checkInSpot(t, k),
 ];
 export const HUDDLE_Y = 1.6;

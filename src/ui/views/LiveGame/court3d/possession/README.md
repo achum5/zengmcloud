@@ -111,7 +111,8 @@ looks better.
    are dragged through.
    - 8a, checkpoints as windows: catches, passes, contests, rebounds,
      reaches and shots met at a pace a body allows (catches, passes,
-     pull-ups, closeouts and rebounds built: see below).
+     pull-ups, closeouts, rebounds, fouls, steals, blocks and loose balls
+     built: see below).
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor.
@@ -468,54 +469,95 @@ Still short:
 ## Closeouts (8a)
 
 Real defenders are still coming as a jumper leaves the shooter's hands:
-the nearest one going about 6 to 6.5 ft/s whether he is 2 ft off him or 6
-(how near he is hardly changes it), still about 5.5 four tenths later,
-and coming no nearer him than about 2 ft (the 17 games). The play laid
-every closeout as a run that ended on the spot giving the shooter the
-room it means him to have, stood there - often half a second and more
-before the shot - and the contest's jump straight up from it.
+the nearest one going 6.5 ft/s, median (7.9 off a catch he shot within a
+second, 5.6 off one he held), on 92 shots in 100 faster than 2 ft/s,
+about 25 to 35 degrees off straight at him, whether he is 2 ft off him or
+6 (how near he is hardly changes it) - still about 5.8 four tenths later,
+and coming no nearer him than about 2 ft (the 17 games, 1,504 jumpers
+from 10 to 30 ft). The play laid every closeout as a run that ended on
+the spot giving the shooter the room it means him to have, stood there -
+often half a second and more before the shot - and the contest's jump
+straight up from it; or had him on that spot all along; or still on his
+way to it as he went up, stopping in the air.
 
 `through.ts` (`throughContests`), on the play's runs before they are
 stepped: the run in to a contest (his choppy steps and all, back as far as
-it goes the one way) is laid on through it.
+it goes the one way, 1.6 s at the most) is laid on through it.
 
 - On the play's spot as it leaves the shooter's hands, as before: the room
   the play gives him (`ROOM_FT`, leaning made or missed as the league's
   tracking has it) is the same.
-- Still coming: as fast as his way in allows, 8 ft/s at the most, up into
-  the air at that pace and on at it in the air, braking once he is down
-  (15 ft/s a second) - or, off to the boards straight after, on into that.
-- Never nearer the shooter than 2 ft: coming straight at him, he bends by
-  him as he goes up (no more of a change than 4 ft/s), on the side he is
-  off to. He comes down inside the lines, stopped by anything of his that
-  wants him stood (a box-out), and the play's next run of his from there
-  is no harder than it was.
+- Still coming, at a pace drawn for each man from the real spread (off a
+  quick catch or one held; never leaning made or missed), as fast as his
+  way in allows: from stood, he sets off as late as gets him there that
+  fast; drifting in too near the spot for it, he pulls up first and goes
+  from there. Up into the air at that pace and on at it in the air,
+  braking once he is down (15 ft/s a second) - or on into his next run.
+- Stood on the spot long before it (a man who holds it a while): stood a
+  step or two further off it (as far as he needs to get going that fast,
+  1.5 to 4.5 ft), at an angle off straight at the shooter drawn from the
+  real spread - or back along the way he came, if he came onto it on the
+  move - and in through it.
+- Still on his way to it as he goes up: in from the run he is on, on it
+  where the play had him as it leaves the shooter's hands.
+- Never nearer the shooter than 1.5 ft: coming straight at him, he bends
+  by him as he goes up (no more of a change than 4 ft/s), on the side he
+  is off to. He comes down inside the lines, stopped by anything of his
+  that wants him stood (a box-out). The play's next run of his waits till
+  he is down and slowed for it (all of it later, if he is only stood after
+  it), and is up to 3 ft/s harder than it was (a real man flies on by
+  and has further to come back); stood once he is down, he may set off on
+  it from there.
 - Only a closeout the play has him make: not a hand up after it is long
-  gone (going up more than 0.15 s after it leaves the shooter's hands -
-  he is still on his way then already).
+  gone (going up more than 0.4 s after it leaves the shooter's hands).
 
 The new sim's defender, guarding his man, commits to the play's spot for
 the contest ahead of it (see `loop.ts`) and, the box-out or the boards
 coming straight after, is the play's through it.
 
-| Measure (real_11, whole possessions, jumpers 10-30 ft) | Before | Now | Real |
+| Measure (real_11, whole possessions, jumpers 10-30 ft) | Before | First pass | Now | Real |
+| --- | --- | --- | --- | --- |
+| Nearest defender's pace as it leaves his hands (median, ft/s) | 2.6 | 3.4 | 4.6 | 6.5 |
+| ... the slowest quarter of them, at most | 0.1 | 1.7 | 2.9 | 4.0 |
+| ... off a catch he shot within a second | | 4.2 | 6.4 | 7.9 |
+| ... on a man who had it 2 s and more | 1.6 | 2.7 | 3.9 | 5.6 |
+| ... four tenths of a second later | | 2.3 | 4.7 | 5.8 |
+| How far off him then (median, ft) | 4.2 | 4.3 | 4.4 | 4.7 |
+| Sudden starts and stops (lurch flags) | 163 | 162 | 144 | |
+| Jumps from one spot to another (teleport flags) | 10 | 10 | 8 | |
+
+(First pass: the run in laid on through it at as fast as it allowed, 8
+ft/s at the most. The lurch and teleport flags since include the
+rebounds, below: 147 and 8 before this.)
+
+How open a three is, in the new sim: the play's odds for its room (the
+league's tracking, `ROOM_MADE_3` / `ROOM_MISSED_3`: nobody within 6 ft
+of about half of them) are measured from before it is away, his man
+still on his way out. As it leaves his hands, the 17 games have 6 ft and
+more off 32 threes in 100, and 8.6 ft and more off 10. The new sim draws
+a three's room from `ROOM_MADE_3_LIVE` / `ROOM_MISSED_3_LIVE` instead
+(`director.ts`): a step late far more often than left all alone, still
+leaning made or missed. Two whole games (real_11 and real_22):
+
+| Threes, nearest defender as it leaves his hands | Before | Now | Real |
 | --- | --- | --- | --- |
-| Nearest defender's pace as it leaves his hands (median, ft/s) | 2.6 | 3.4 | 6.5 |
-| ... the slowest quarter of them, at most | 0.1 | 1.7 | 4.0 |
-| ... on a man who had it 2 s and more | 1.6 | 2.7 | 5.6 |
-| How far off him then (median, ft) | 4.2 | 4.3 | 4.7 |
-| Sudden starts and stops (lurch flags) | 163 | 162 | |
-| Jumps from one spot to another (teleport flags) | 10 | 10 | |
+| 6 ft and more off him (both games) | 38% | 32% | 32% |
+| How far off him (median, ft: real_11, real_22) | 5.5, 3.8 | 4.9, 4.7 | 5.1 |
+| Lurch flags (real_11, real_22) | 144, 192 | 186, 154 | |
+| Teleport flags (real_11, real_22) | 8, 24 | 13, 14 | |
+
+(The lurch flags move with the whole game's timeline: a change to how a
+shot is staged shifts everything after it, and real_11's count is the
+one each fix so far was checked on. Taken over both games, even.)
 
 Still short:
 
-- A defender the play has on his spot long before the shot (a man who
-  holds it a while) comes in slowly through it, as fast as his way in
-  allows; real defenders guard a man holding it live, on the move - 8c.
-- The defenders the new sim's guarding has nowhere near the play's spot
-  for the contest (it is done where he is) close out as they guard: often
-  stood. And off a quick catch the nearest defender is 8.6 ft off (real
-  5.1): how open a quick catch is, is the play's room for it.
+- A man who holds it a while: the play has his defender on his spot long
+  before the shot, and he comes in from a step or two off it; real
+  defenders guard a man holding it live, on the move with him - 8c.
+- Too many threes have a man right on the shooter: under 3 ft off a
+  quarter of ours, a tenth of the real ones under 3.4. A man already
+  tighter than the room the play gives the shot stays there.
 
 ## Rebounds (8a)
 
@@ -560,6 +602,35 @@ there, has no way in to lay. Real misses come down in nearer the rim than
 he was as the shot went up, and off to a side of him; aiming them that
 way changes the whole game after (the rebound comes later), so it waits
 on a tape that shows what that does to everything else.
+
+## Fouls, steals, blocks and loose balls (8a)
+
+The play sends a man at the ball, or at the man with it (a foul, a reach
+in for a steal, a block, a loose ball he grabs), as late as the old sim's
+legs get him there: from stood at more of a run than a body has, or
+turned straight back the way he was going. Moved by his own body he falls
+a few feet behind and is yanked onto the spot in the last half second.
+And a loose ball he ran in for and stopped dead to grab.
+
+`through.ts` (`throughReaches`), on the play's runs before they are
+stepped:
+
+- His run in is set off as soon as getting there takes a man going at a
+  good run (pushing up to about 16 ft/s, not flat out), from where the
+  play had him then, up to 1.5 s sooner; pulling up first if he was going
+  the other way. Not across anything else of his that has him stood.
+- A loose ball is taken on the move, as a catch is (`carryThrough`).
+
+| Measure (real_11 + real_22, whole possessions) | Before | Now |
+| --- | --- | --- |
+| Jolts going for a foul, steal, block or loose ball (moments) | 27 | 14 |
+| Sudden starts and stops (lurch flags) | 340 | 314 |
+| Jumps from one spot to another (teleport flags) | 27 | 18 |
+
+Still short: a man the play has guarding somebody else, a long way off,
+when the shot he blocks goes up (a three, say), or getting back flat out
+and asked to stop dead and come straight back out: no body gets there in
+the time. Where the ten are as it comes is for the plays run live (8c).
 
 ## Natural and smooth (before step 8)
 
