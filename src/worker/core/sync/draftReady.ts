@@ -19,7 +19,9 @@
 //     Each stop is its own gate and its step is the schedule day it sits on,
 //     so readying up for one is not readying up for the next (see stopStep).
 //     See tradeDeadlineGate.ts for why the ordinary sim path refuses to cross
-//     while this is live.
+//     while this is live. A day with games, with the room's auto play timer
+//     running, is not run here at all once everyone is ready: it goes back to
+//     the timer (see timerCrossesStop).
 //   - RESIGN_PLAYERS: one step - start free agency.
 //   - FREE_AGENCY: each day is a step, so you can ready through "N days left"
 //     or the end of free agency (which rolls into the preseason on its own).
@@ -61,9 +63,11 @@ import {
 	clearCrossingNextSimStop,
 	getPendingSimStop,
 	getTradeDeadlineGame,
+	setRoomAgreedToStopCheck,
 	setTradeDeadlineGateActive,
 	type SimStopPoint,
 } from "./tradeDeadlineGate.ts";
+import { getRoomAutoPlayNextRunAt } from "./roomAutoPlayClock.ts";
 import type { DraftReadyEntry, SyncTransport } from "./types.ts";
 import { inStages, STAGES } from "../realisticFrontOffice/stages.ts";
 import type { MpPhaseReady, Phase } from "../../../common/types.ts";
@@ -119,6 +123,37 @@ export const stopStep = (stop: SimStopPoint): number => {
 	// actually matters here.
 	return stop.day ?? DEADLINE_STEP_FALLBACK;
 };
+
+// WHEN EVERYONE IS READY FOR A REGULAR-SEASON STOP, WHO PLAYS THE DAY?
+//
+// It used to be this evaluator, the moment the last team readied up. Alex
+// (2026-11-25) would rather the ready-up just went away and the auto play
+// countdown came back, with the day played when it hits zero, the way every
+// other day of the season is. So a stop is left to the room's ordinary sim
+// when:
+//
+//   - it is a day stop with games on it. The trade deadline and an empty day
+//     on the calendar play no games, so there is nothing to wait for: those
+//     are crossed here, at once, as before.
+//   - the room's timer is running: a next sim time is published and not long
+//     overdue (the same grace the header countdown gets before it hides - see
+//     ui/util/autoPlayCountdownVisible.ts). With no timer there is no
+//     countdown to go back to, and nothing would play the day until someone
+//     in charge of simming pressed Play, so the day is played here as before.
+//
+// Asked again on every evaluation and every sim, so a timer switched off after
+// the room readied up hands the day straight back to this evaluator.
+const TIMER_OVERDUE_GRACE_MS = 60_000;
+
+export const timerCrossesStop = (
+	stop: SimStopPoint,
+	nextRunAt: number | undefined = getRoomAutoPlayNextRunAt(),
+	now: number = Date.now(),
+): boolean =>
+	stop.kind === "day" &&
+	!stop.noGames &&
+	nextRunAt !== undefined &&
+	now < nextRunAt + TIMER_OVERDUE_GRACE_MS;
 
 // The overall pick number (1-based across the whole draft) used as the
 // "ready through" comparator during the draft.
@@ -191,6 +226,9 @@ export const readyMapKey = (
 type StageInfo = {
 	nextStep: number;
 	nextLabel: string;
+	// Once every team is ready, this step is left to the room's ordinary sim
+	// (the auto play timer) instead of being run here - see timerCrossesStop.
+	timerCrosses?: boolean;
 	onClockUser: boolean;
 	// Draft only: the tid of the team currently on the clock (may be an AI team).
 	onClockTid?: number;
@@ -266,6 +304,7 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 				onClockUser: false,
 				waypoints: [],
 				options: [],
+				timerCrosses: timerCrossesStop(stop),
 				// A day stop is crossed by PLAYING that day through the ordinary sim
 				// path, which is also what makes it stop being pending - the next day
 				// on the schedule is a different number. The one-shot permission is
@@ -516,6 +555,10 @@ let readyProbedAt = 0;
 let readyProbing = false;
 let readyPublishedAt = 0;
 let resubscribeTimer: ReturnType<typeof setTimeout> | undefined;
+
+// The (stage, step) last handed back to the timer, logged once like the
+// refused claim below.
+let lastHandedToTimerKey: string | undefined;
 
 // The (stage, step) whose refused claim was last logged, so a steady stuck
 // state - everyone ready, claim refused every 2s tick - leaves ONE line in
@@ -987,6 +1030,27 @@ const evaluate = async () => {
 		}
 	}
 
+	// Everyone is ready for a day the timer will play: the ready-up goes away,
+	// which brings the countdown back (AutoPlayCountdown hides exactly while
+	// this is up), and the room's next scheduled sim crosses the stop - see
+	// roomReadyForTimerStop, which lets it.
+	if (
+		stage.timerCrosses &&
+		userTids.length > 0 &&
+		readyTids.length === userTids.length
+	) {
+		pushToUI(undefined);
+		const key = `${stageKey}:${stage.nextStep}`;
+		if (key !== lastHandedToTimerKey) {
+			lastHandedToTimerKey = key;
+			syncDebugLog("phaseReady:handed-to-timer", {
+				stageKey,
+				step: stage.nextStep,
+			});
+		}
+		return;
+	}
+
 	// Per-team ready status for the roster popover next to the button.
 	const readySet = new Set(readyTids);
 	let teamsStatus: MpPhaseReady["teams"] = userTids.map((tid) => ({
@@ -1292,6 +1356,21 @@ export const capDraftReadyForOnePick = async (dpid: number | undefined) => {
 	await setDraftReady(capStep);
 };
 
+// May the ordinary sim cross this stop? Only once every team has readied up for
+// it, and only a stop the timer plays (timerCrossesStop) - the rest are crossed
+// by the evaluator. Registered with the gate while the evaluator runs.
+const roomReadyForTimerStop = (stop: SimStopPoint): boolean => {
+	if (!currentTransport || !readyKnown || !timerCrossesStop(stop)) {
+		return false;
+	}
+	const userTids = g.get("userTids");
+	return (
+		userTids.length > 0 &&
+		readyTeamTids(latestReady, userTids, stageKeyNow(), stopStep(stop))
+			.length === userTids.length
+	);
+};
+
 // The claim document, watched so every device knows when another is running
 // a step (stepClaim.ts). Rebuilt after a pause if it errors, like the ready
 // listener.
@@ -1329,10 +1408,12 @@ export const setupDraftReady = (transport: SyncTransport) => {
 	setTradeDeadlineGateActive(
 		Boolean(transport.claimDraftAdvance && transport.publishDraftReady),
 	);
+	setRoomAgreedToStopCheck(roomReadyForTimerStop);
 	latestReady = undefined;
 	lastHoldoutNotifKey = undefined;
 	lastOnClockNotifKey = undefined;
 	lastClaimRefusedKey = undefined;
+	lastHandedToTimerKey = undefined;
 	// (A transport with no listener has nothing to wait for.)
 	readyKnown = !transport.subscribeDraftReady;
 	readyDeliveries = 0;
@@ -1346,6 +1427,7 @@ export const setupDraftReady = (transport: SyncTransport) => {
 
 export const teardownDraftReady = () => {
 	setTradeDeadlineGateActive(false);
+	setRoomAgreedToStopCheck(undefined);
 	unsubscribe?.();
 	unsubscribe = undefined;
 	unsubscribeClaim?.();

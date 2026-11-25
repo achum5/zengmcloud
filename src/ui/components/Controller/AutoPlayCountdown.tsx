@@ -73,9 +73,11 @@ const AutoPlayCountdown = () => {
 	// A configured sim stop (a day stop, the trade deadline) becomes a ready-up
 	// gate in a shared league, and the ordinary sim path REFUSES to cross it -
 	// see getPendingSimStop in worker/core/sync/tradeDeadlineGate.ts. So the
-	// timer can run down to zero, fire, and advance nothing: what actually
-	// crosses the stop is the ready-up evaluator, the moment the last team says
-	// it is done.
+	// timer can run down to zero, fire, and advance nothing until the last team
+	// says it is done. Then, on a day with games, the ready-up goes away and
+	// this clock comes back to play the day when it hits zero; the deadline and
+	// an empty day are crossed by the ready-up evaluator at once (see
+	// timerCrossesStop in worker/core/sync/draftReady.ts).
 	//
 	// Counting down to a sim that cannot happen is worse than showing nothing,
 	// because it reads as "the league moves on in 18 minutes whether you are

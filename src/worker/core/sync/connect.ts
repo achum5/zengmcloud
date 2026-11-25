@@ -40,6 +40,7 @@ import {
 } from "./liveChat.ts";
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
+import { setRoomAutoPlayNextRunAt } from "./roomAutoPlayClock.ts";
 import {
 	setLiveResultNotice,
 	setLiveWatchGate,
@@ -466,11 +467,8 @@ export const syncNudge = () => {
 let currentTransport: FirebaseTransport | undefined;
 let autoPlayUnsub: (() => void) | undefined;
 
-// When the room's auto-play is next due to fire, as published by whichever
-// device is running it. Undefined when nobody is auto-playing.
-let roomAutoPlayNextRunAt: number | undefined;
-
-export const getRoomAutoPlayNextRunAt = () => roomAutoPlayNextRunAt;
+// When the room's auto-play is next due to fire is kept in
+// roomAutoPlayClock.ts.
 
 // ---------------------------------------------------------------------------
 // Live-sim broadcast (Mode B: lockstep). When the sim authority live-sims a game,
@@ -3427,9 +3425,11 @@ const doConnectSharedLeague = async ({
 	});
 	autoPlayUnsub = transport.subscribeAutoPlay?.((autoPlay) => {
 		// Kept here as well as pushed to the UI: the own-game sim gate runs in the
-		// worker and needs to know how close the room's scheduled sim is.
-		roomAutoPlayNextRunAt =
-			typeof autoPlay?.nextRunAt === "number" ? autoPlay.nextRunAt : undefined;
+		// worker and needs to know how close the room's scheduled sim is, and the
+		// ready-up evaluator whether there is a timer to hand a day stop back to.
+		setRoomAutoPlayNextRunAt(
+			typeof autoPlay?.nextRunAt === "number" ? autoPlay.nextRunAt : undefined,
+		);
 		void toUI("updateLocal", [{ mpAutoPlay: autoPlay }]);
 	});
 
@@ -3589,7 +3589,7 @@ export const teardownSharedLeague = async ({
 	lastEditsPausedPushed = undefined;
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
-	roomAutoPlayNextRunAt = undefined;
+	setRoomAutoPlayNextRunAt(undefined);
 	liveBroadcastUnsub?.();
 	liveBroadcastUnsub = undefined;
 	lotteryRevealUnsub?.();

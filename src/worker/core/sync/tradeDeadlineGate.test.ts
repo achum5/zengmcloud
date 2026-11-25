@@ -16,7 +16,11 @@ import {
 	getPendingSimStop,
 	allowCrossingNextSimStop,
 	clearCrossingNextSimStop,
+	announcePendingSimStop,
+	setRoomAgreedToStopCheck,
+	simStopLabel,
 } from "./tradeDeadlineGate.ts";
+import { PHASE } from "../../../common/constants.ts";
 
 const makeEngine = () => {
 	const notifications: any[] = [];
@@ -145,6 +149,24 @@ describe("which stop the sim is standing in front of", () => {
 		assert.deepStrictEqual(await getPendingSimStop(), { kind: "day", day: 41 });
 	});
 
+	// An empty date on the NBA calendar plays nothing, so the room has nothing
+	// to wait for once it is ready (see timerCrossesStop in draftReady.ts).
+	test("a day with no games on it says so", async () => {
+		g.setWithoutSavingToDB("simStopDays", "41");
+		await idb.cache.schedule.add({
+			gid: 600,
+			day: 41,
+			homeTid: -4,
+			awayTid: -4,
+		} as any);
+		await idb.cache.schedule.add({ ...realGame(601), day: 42 } as any);
+		assert.deepStrictEqual(await getPendingSimStop(), {
+			kind: "day",
+			day: 41,
+			noGames: true,
+		});
+	});
+
 	test("a day nobody asked about does not stop", async () => {
 		g.setWithoutSavingToDB("simStopDays", "15, deadline");
 		await idb.cache.schedule.add(realGame(600) as any);
@@ -224,6 +246,25 @@ describe("shouldStopAtSimStop", () => {
 		assert.strictEqual(singleGameWaitsAtSimStop(), false);
 	});
 
+	// Everyone readied up and the day went back to the timer: the timer's sim,
+	// or Play in charge of simming, plays it like any other day.
+	test("a stop the room left to the timer is crossed like any day", () => {
+		const stop = { kind: "day", day: 41 } as const;
+		setTradeDeadlineGateActive(true);
+		setRoomAgreedToStopCheck((s) => s.kind === "day" && s.day === 41);
+		try {
+			assert.strictEqual(shouldStopAtSimStop(true, stop), false);
+			assert.strictEqual(shouldStopAtSimStop(false, stop), false);
+			assert.strictEqual(singleGameWaitsAtSimStop(stop), false);
+			// Another stop is still the room's to agree to.
+			const later = { kind: "day", day: 60 } as const;
+			assert.strictEqual(shouldStopAtSimStop(true, later), true);
+			assert.strictEqual(singleGameWaitsAtSimStop(later), true);
+		} finally {
+			setRoomAgreedToStopCheck(undefined);
+		}
+	});
+
 	// Gating means the normal sim path REFUSES to cross, so an armed gate with
 	// nothing able to open it would wedge the league. It is armed and disarmed
 	// by the evaluator's own lifecycle, and starts off.
@@ -255,23 +296,17 @@ describe("notifyTradeDeadlineArrived", () => {
 		assert.strictEqual(notifications.length, 1);
 		assert.strictEqual(notifications[0].targetTids, null);
 		assert.strictEqual(notifications[0].path, "trade");
-		assert.strictEqual(notifications[0].title, "Advanced to Trade deadline");
-		assert.strictEqual(
-			notifications[0].body,
-			"You'll need to ready up to advance.",
-		);
+		assert.strictEqual(notifications[0].title, "Trade deadline");
+		assert.strictEqual(notifications[0].body, "Ready up to advance.");
 	});
 
 	test("a day stop reads the same way", async () => {
 		const { engine, notifications } = makeEngine();
 		setSyncEngine(engine as any);
 
-		await notifySimStopArrived("Day 15");
-		assert.strictEqual(notifications[0].title, "Advanced to Day 15");
-		assert.strictEqual(
-			notifications[0].body,
-			"You'll need to ready up to advance.",
-		);
+		await notifySimStopArrived("Dec 15");
+		assert.strictEqual(notifications[0].title, "Dec 15");
+		assert.strictEqual(notifications[0].body, "Ready up to advance.");
 	});
 
 	// The sim can be retried any number of times while the room is stuck at the
@@ -335,6 +370,74 @@ describe("notifyTradeDeadlineArrived", () => {
 		setTradeDeadlineGateActive(false);
 		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(notifications.length, 2);
+	});
+});
+
+describe("announcing a stop when the sim lands in front of it", () => {
+	beforeEach(async () => {
+		resetG();
+		await resetCache({ schedule: [] });
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		g.setWithoutSavingToDB("simStopDays", "41, deadline");
+	});
+
+	afterEach(() => {
+		setSyncEngine(undefined as any);
+		setTradeDeadlineGateActive(false);
+		setRoomAgreedToStopCheck(undefined);
+	});
+
+	test("the room hears it once, named by its night", async () => {
+		const { engine, notifications } = makeEngine();
+		setSyncEngine(engine as any);
+		setTradeDeadlineGateActive(true);
+		await idb.cache.schedule.add({
+			...realGame(600),
+			date: `${g.get("season")}-12-15`,
+		} as any);
+
+		await announcePendingSimStop();
+		await announcePendingSimStop();
+		assert.strictEqual(notifications.length, 1);
+		assert.strictEqual(notifications[0].title, "Dec 15");
+		assert.strictEqual(notifications[0].body, "Ready up to advance.");
+		assert.strictEqual(notifications[0].targetTids, null);
+	});
+
+	test("nothing when there is no stop ahead, or no room to ready up", async () => {
+		const { engine, notifications } = makeEngine();
+		setSyncEngine(engine as any);
+		await idb.cache.schedule.add({ ...realGame(600), day: 42 } as any);
+		setTradeDeadlineGateActive(true);
+		await announcePendingSimStop();
+		assert.strictEqual(notifications.length, 0);
+
+		await idb.cache.schedule.add({ ...realGame(599), day: 41 } as any);
+		setTradeDeadlineGateActive(false);
+		await announcePendingSimStop();
+		assert.strictEqual(notifications.length, 0);
+	});
+
+	test("nothing for a stop the room has already left to the timer", async () => {
+		const { engine, notifications } = makeEngine();
+		setSyncEngine(engine as any);
+		setTradeDeadlineGateActive(true);
+		setRoomAgreedToStopCheck(() => true);
+		await idb.cache.schedule.add(realGame(600) as any);
+		await announcePendingSimStop();
+		assert.strictEqual(notifications.length, 0);
+	});
+
+	test("names", () => {
+		assert.strictEqual(
+			simStopLabel({ kind: "deadline", gid: 1, day: 40 }),
+			"Trade deadline",
+		);
+		assert.strictEqual(simStopLabel({ kind: "day", day: 41 }), "Day 41");
+		assert.strictEqual(
+			simStopLabel({ kind: "day", day: 41, date: "2024-12-15" }),
+			"Dec 15",
+		);
 	});
 });
 

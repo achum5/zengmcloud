@@ -7,6 +7,9 @@ import {
 	stopsOnDay,
 	stopsOnNight,
 } from "../../../common/simStopDays.ts";
+import { formatGameDate } from "../../../common/calendarDates.ts";
+import { PHASE } from "../../../common/constants.ts";
+import { isOffDay } from "../../../common/specialGames.ts";
 import type { ScheduleGame } from "../../../common/types.ts";
 
 // The places the sim stops on purpose.
@@ -68,10 +71,21 @@ export const getTradeDeadlineGame = async (): Promise<
 // that increases through the season - see stopStep in draftReady.ts. Without
 // it every stop in a season shared one step, and readying up for the first one
 // counted as readying up for all of them.
+//
+// noGames: the day has no games on it (an empty date on the NBA calendar), so
+// crossing it plays nothing - like the deadline, which never has any.
 export type SimStopPoint =
 	| { kind: "deadline"; gid: number; day: number | undefined }
 	// date: its night, on the NBA calendar.
-	| { kind: "day"; day: number; date?: string };
+	| { kind: "day"; day: number; date?: string; noGames?: boolean };
+
+// How a stop is named to people: "Trade deadline", "Dec 15", "Day 15".
+export const simStopLabel = (stop: SimStopPoint) =>
+	stop.kind === "deadline"
+		? "Trade deadline"
+		: stop.date !== undefined
+			? formatGameDate(stop.date, "monthDay")
+			: `Day ${stop.day}`;
 
 // The last night played this season, on the NBA calendar (where a date stop
 // stands: common/simStopDays.ts) - or a later day with no games already
@@ -110,16 +124,36 @@ export const getPendingSimStop = async (): Promise<
 			? { kind: "deadline", gid: first.gid, day: first.day }
 			: undefined;
 	}
-	return stopsOnDay(stops, first.day) ||
-		(stops.dates.length > 0 &&
+	if (
+		!stopsOnDay(stops, first.day) &&
+		!(
+			stops.dates.length > 0 &&
 			first.day !== undefined &&
-			stopsOnNight(stops, first.date, await lastNightPlayed(), g.get("season")))
-		? {
-				kind: "day",
-				day: first.day!,
-				...(first.date !== undefined ? { date: first.date } : {}),
-			}
-		: undefined;
+			stopsOnNight(stops, first.date, await lastNightPlayed(), g.get("season"))
+		)
+	) {
+		return undefined;
+	}
+
+	// A day's rows sit together at the head of the schedule (it is read back in
+	// the order it is played), so the first row of another day ends the look.
+	let noGames = true;
+	for (const game of schedule) {
+		if (game.day !== first.day) {
+			break;
+		}
+		if (!isOffDay(game.homeTid, game.awayTid)) {
+			noGames = false;
+			break;
+		}
+	}
+
+	return {
+		kind: "day",
+		day: first.day!,
+		...(first.date !== undefined ? { date: first.date } : {}),
+		...(noGames ? { noGames: true } : {}),
+	};
 };
 
 // A one-shot permission to cross the next stop, held on THIS DEVICE only and
@@ -161,6 +195,34 @@ export const setTradeDeadlineGateActive = (active: boolean) => {
 
 export const isTradeDeadlineGateActive = () => gateActive;
 
+// THE ROOM HAS READIED UP, AND THE DAY IS LEFT TO THE TIMER.
+//
+// In the regular season, a stop on a day with games is not played the moment
+// the last team readies up. The ready-up goes away, the auto play countdown
+// comes back, and the day is played by the room's ordinary sim when it hits
+// zero - Alex, 2026-11-25. So once the room has agreed, the ordinary sim path
+// must be let across that one stop, by whoever is in charge of simming.
+//
+// Whether the room has agreed is the ready-up evaluator's to say (it holds
+// everyone's ready entries and knows whether a timer is running - see
+// timerCrossesStop in draftReady.ts), so it registers the question here rather
+// than this module importing it. Asked when the sim is, never cached: nothing
+// to go stale or to clear when the day is played, after which the stop is
+// simply no longer pending.
+let roomAgreedCheck: ((stop: SimStopPoint) => boolean) | undefined;
+
+export const setRoomAgreedToStopCheck = (
+	check: ((stop: SimStopPoint) => boolean) | undefined,
+) => {
+	roomAgreedCheck = check;
+};
+
+export const roomLeftStopToSim = (stop: SimStopPoint | undefined) =>
+	gateActive &&
+	stop !== undefined &&
+	roomAgreedCheck !== undefined &&
+	roomAgreedCheck(stop);
+
 // Should the sim stop rather than cross?
 //
 // `start` is true only when a play-menu action began this sim, false for the
@@ -169,9 +231,13 @@ export const isTradeDeadlineGateActive = () => gateActive;
 // this device has been given the one-shot permission above - so the room
 // crosses by readying up, and a person crosses by being told who they are
 // stepping over and saying yes anyway. Simming harder, on its own, is still not
-// a way around anybody.
-export const shouldStopAtSimStop = (start: boolean) => {
+// a way around anybody. `stop` is the stop in front of the sim: one the room
+// has readied up for and left to the timer is crossed like any other day.
+export const shouldStopAtSimStop = (start: boolean, stop?: SimStopPoint) => {
 	if (consumeCrossingNextSimStop()) {
+		return false;
+	}
+	if (roomLeftStopToSim(stop)) {
 		return false;
 	}
 	return gateActive || !start;
@@ -188,13 +254,17 @@ export const shouldStopAtSimStop = (start: boolean) => {
 // gate it was sent to cross - and then falsely complete its claim, sealing the
 // step while the whole room showed ready. So: gated, a single game simply
 // waits with everyone else; ungated (solo league), it plays - same as before,
-// when a fresh press never stopped.
-export const singleGameWaitsAtSimStop = () => gateActive;
+// when a fresh press never stopped. Once the room has readied up and left the
+// day to the timer, it is a day like any other, own games included.
+export const singleGameWaitsAtSimStop = (stop?: SimStopPoint) =>
+	gateActive && !roomLeftStopToSim(stop);
 
 // Fires once per stop, from the device that reached it - which is the one
 // simming, so there is exactly one of it and no need for the
 // smallest-client-id election the holdout nudge uses. Cleared when the gate is
 // disarmed so a reconnect in a later season announces again.
+//
+// Short on purpose (Alex, 2026-11-25): the stop as the title, and the ask.
 let lastNotifiedKey: string | undefined;
 
 export const notifySimStopArrived = async (what: string) => {
@@ -211,8 +281,8 @@ export const notifySimStopArrived = async (what: string) => {
 
 	try {
 		await engine.publishNotification({
-			title: `Advanced to ${what}`,
-			body: "You'll need to ready up to advance.",
+			title: what,
+			body: "Ready up to advance.",
 			targetTids: null,
 			path: "trade",
 		});
@@ -221,4 +291,26 @@ export const notifySimStopArrived = async (what: string) => {
 		// same thing. Clear the key so a later attempt can retry.
 		lastNotifiedKey = undefined;
 	}
+};
+
+// A sim has just finished on this device: if it left the league standing in
+// front of a regular-season stop the room must ready up for, tell everyone.
+//
+// This is the moment the ready-up appears, and the device that simmed is the
+// one sender. Waiting for a sim to be REFUSED at the stop, as it used to,
+// meant no push at all under auto play, which pauses in front of a stop
+// without asking the sim to run.
+export const announcePendingSimStop = async () => {
+	if (!gateActive) {
+		return;
+	}
+	const phase = g.get("phase");
+	if (phase !== PHASE.REGULAR_SEASON && phase !== PHASE.AFTER_TRADE_DEADLINE) {
+		return;
+	}
+	const stop = await getPendingSimStop();
+	if (!stop || roomLeftStopToSim(stop)) {
+		return;
+	}
+	await notifySimStopArrived(simStopLabel(stop));
 };

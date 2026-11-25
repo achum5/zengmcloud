@@ -22,7 +22,7 @@ import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { getSyncEngine } from "./engineHolder.ts";
-import { getRoomAutoPlayNextRunAt } from "./connect.ts";
+import { getRoomAutoPlayNextRunAt } from "./roomAutoPlayClock.ts";
 
 const OWN_GAME_ACTIONS = new Set(["simGame", "liveGame"]);
 

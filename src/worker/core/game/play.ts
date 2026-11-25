@@ -51,10 +51,10 @@ import {
 	notifyRosterBlockedSim,
 } from "../sync/simBlockedNotify.ts";
 import {
+	announcePendingSimStop,
 	getPendingSimStop,
 	isTradeDeadlineGame,
 	isTradeDeadlineGateActive,
-	notifySimStopArrived,
 	shouldStopAtSimStop,
 	singleGameWaitsAtSimStop,
 } from "../sync/tradeDeadlineGate.ts";
@@ -285,6 +285,15 @@ const playDays = async (
 		// The single-game-sim window is over (its changeset is drained). Close it
 		// so the next full day/week sim notifies normally.
 		closeSingleGameSim?.();
+
+		// Standing in front of a stop the room must ready up for: push it to
+		// everyone, now that the day that led here has reached the room. One
+		// game of a day is never what arrives at a stop.
+		if (gidOneGame === undefined) {
+			void announcePendingSimStop().catch((error) => {
+				console.error("Sim stop announcement failed", error);
+			});
+		}
 
 		// Last word on the ticker, after any phase change above has landed. The
 		// per-day refreshes inside the sim read a memoized slate and award race;
@@ -1286,8 +1295,8 @@ const playDays = async (
 			// one-shot crossing permission - see singleGameWaitsAtSimStop.
 			const stopHere =
 				gidOneGame === undefined
-					? shouldStopAtSimStop(start)
-					: singleGameWaitsAtSimStop();
+					? shouldStopAtSimStop(start, stop)
+					: singleGameWaitsAtSimStop(stop);
 			if (stopHere) {
 				// Say why, or a press of Sim Day looks like it did nothing.
 				const what =
@@ -1296,8 +1305,8 @@ const playDays = async (
 						: stop.date !== undefined
 							? formatGameDate(stop.date, "long")
 							: `Day ${stop.day}`;
+				// The push to the room goes from cbNoGames, below.
 				if (isTradeDeadlineGateActive()) {
-					void notifySimStopArrived(what);
 					logEvent(
 						{
 							type: "info",

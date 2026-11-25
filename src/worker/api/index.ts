@@ -436,7 +436,9 @@ import { initUILocalGames } from "../util/initUILocalGames.ts";
 import type { GenOrderResult } from "../core/draft/genOrder.ts";
 import {
 	allowCrossingNextSimStop,
+	getPendingSimStop,
 	lastNightPlayed,
+	roomLeftStopToSim,
 } from "../core/sync/tradeDeadlineGate.ts";
 import {
 	parseSimStopDays,
@@ -8303,6 +8305,15 @@ const getAutoPlayPreview = async () => {
 				entry.simStop = true;
 			}
 			lastNight = entry.date;
+		}
+	}
+	// The stop in front of the league that every team has readied up for and
+	// left to the timer: the next scheduled sim plays it (tradeDeadlineGate.ts).
+	const first = upcomingDays[0];
+	if (first?.simStop) {
+		const pending = await getPendingSimStop();
+		if (pending?.day === first.day && roomLeftStopToSim(pending)) {
+			first.simStop = false;
 		}
 	}
 
