@@ -1160,3 +1160,34 @@ $lc-line: var(--bs-border-color);
 		letter-spacing: -0.02em;
 	}
 }
+
+// The month under the weekdays, which a finger can swipe to the next month
+// or back (MonthSwipe): the months either side of it wait off to the side.
+.lc-weekdays {
+	margin-bottom: 0;
+}
+
+.lc-swipe {
+	position: relative;
+	overflow: hidden;
+	touch-action: pan-y;
+}
+
+.lc-swipe-track {
+	position: relative;
+}
+
+.lc-swipe-prev,
+.lc-swipe-next {
+	position: absolute;
+	top: 0;
+	width: 100%;
+}
+
+.lc-swipe-prev {
+	right: calc(100% + 12px);
+}
+
+.lc-swipe-next {
+	left: calc(100% + 12px);
+}

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 621,
+		date: "2026-11-25",
+		text: "Month calendars: on a phone you can swipe left or right to go to the next or previous month, with the month sliding along under your finger. The arrows still work too.",
+	},
+	{
 		n: 620,
 		date: "2026-11-25",
 		text: "NBA Calendar: your team's month calendar (dashboard, Schedule, team page) now looks like the scores bar. Each game shows vs or @ and the opponent's logo with the score under it, green for a win and red for a loss, with the national TV network at the top. Home games are no longer filled in your team's color, so they can't be mistaken for wins.",

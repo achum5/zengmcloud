@@ -4,8 +4,11 @@ import {
 	useRef,
 	useState,
 	type CSSProperties,
+	type MouseEvent,
 	type ReactNode,
+	type TouchEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import {
 	addDays,
 	formatGameDate,
@@ -427,6 +430,169 @@ const PlainNight = ({
 	);
 };
 
+// (Between a month and the one beside it while swiping, px.)
+const SWIPE_GAP = 12;
+const SWIPE_MS = 220;
+
+// SWIPE TO THE NEXT MONTH OR BACK on a touch screen: the month follows the
+// finger with its neighbor coming in beside it, and a swipe far or quick
+// enough slides the neighbor in. Past the season's first or last month it
+// only gives a little. (The arrows still work everywhere.)
+const MonthSwipe = ({
+	month,
+	months,
+	onMonth,
+	renderMonth,
+}: {
+	month: string;
+	months: string[];
+	onMonth: (month: string) => void;
+	renderMonth: (month: string) => ReactNode;
+}) => {
+	const viewport = useRef<HTMLDivElement>(null);
+	const track = useRef<HTMLDivElement>(null);
+	const drag = useRef<
+		| {
+				x: number;
+				y: number;
+				t: number;
+				dx: number;
+				axis: "x" | "y" | undefined;
+		  }
+		| undefined
+	>(undefined);
+	// A month sliding in, and when a swipe last ended (so the tap it ends
+	// on doesn't open a day).
+	const settling = useRef<number | undefined>(undefined);
+	const swipedAt = useRef(0);
+
+	useEffect(
+		() => () => {
+			window.clearTimeout(settling.current);
+		},
+		[],
+	);
+
+	const index = months.indexOf(month);
+	const prev = index > 0 ? months[index - 1] : undefined;
+	const next = index >= 0 ? months[index + 1] : undefined;
+
+	const slide = (x: number, animate: boolean) => {
+		const el = track.current;
+		if (el) {
+			el.style.transition = animate
+				? `transform ${SWIPE_MS}ms ease-out`
+				: "none";
+			el.style.transform = x === 0 ? "" : `translateX(${x}px)`;
+		}
+	};
+
+	const onTouchStart = (event: TouchEvent) => {
+		const touch = event.touches[0];
+		drag.current =
+			event.touches.length === 1 && touch && settling.current === undefined
+				? {
+						x: touch.clientX,
+						y: touch.clientY,
+						t: performance.now(),
+						dx: 0,
+						axis: undefined,
+					}
+				: undefined;
+	};
+
+	const onTouchMove = (event: TouchEvent) => {
+		const d = drag.current;
+		const touch = event.touches[0];
+		if (!d || !touch || event.touches.length !== 1) {
+			return;
+		}
+		const dx = touch.clientX - d.x;
+		const dy = touch.clientY - d.y;
+		if (d.axis === undefined) {
+			if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+				return;
+			}
+			d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+		}
+		if (d.axis === "x") {
+			d.dx = dx;
+			slide((dx > 0 ? prev : next) === undefined ? dx / 4 : dx, false);
+		}
+	};
+
+	const onTouchEnd = () => {
+		const d = drag.current;
+		drag.current = undefined;
+		if (!d || d.axis !== "x") {
+			return;
+		}
+		swipedAt.current = performance.now();
+		const target = d.dx < 0 ? next : prev;
+		const width = viewport.current?.offsetWidth ?? 0;
+		const quick =
+			Math.abs(d.dx) > 30 && Math.abs(d.dx) / (performance.now() - d.t) > 0.35;
+		if (target === undefined || (Math.abs(d.dx) < width / 4 && !quick)) {
+			slide(0, true);
+			return;
+		}
+		if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+			slide(0, false);
+			onMonth(target);
+			return;
+		}
+		slide((d.dx < 0 ? -1 : 1) * (width + SWIPE_GAP), true);
+		settling.current = window.setTimeout(() => {
+			settling.current = undefined;
+			// (The new month in place before the track comes back under it.)
+			flushSync(() => {
+				onMonth(target);
+			});
+			slide(0, false);
+		}, SWIPE_MS);
+	};
+
+	const onTouchCancel = () => {
+		if (drag.current?.axis === "x") {
+			slide(0, true);
+		}
+		drag.current = undefined;
+	};
+
+	const onClickCapture = (event: MouseEvent) => {
+		if (performance.now() - swipedAt.current < 400) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	};
+
+	return (
+		<div
+			className="lc-swipe"
+			ref={viewport}
+			onTouchStart={onTouchStart}
+			onTouchMove={onTouchMove}
+			onTouchEnd={onTouchEnd}
+			onTouchCancel={onTouchCancel}
+			onClickCapture={onClickCapture}
+		>
+			<div className="lc-swipe-track" ref={track}>
+				{prev !== undefined ? (
+					<div className="lc-swipe-prev" aria-hidden inert>
+						{renderMonth(prev)}
+					</div>
+				) : null}
+				{renderMonth(month)}
+				{next !== undefined ? (
+					<div className="lc-swipe-next" aria-hidden inert>
+						{renderMonth(next)}
+					</div>
+				) : null}
+			</div>
+		</div>
+	);
+};
+
 export const MonthCalendar = ({
 	className,
 	compact = false,
@@ -595,6 +761,103 @@ export const MonthCalendar = ({
 	const todayMonth = today !== undefined ? monthOf(today) : undefined;
 	const isTeam = typeof tid === "number";
 
+	// A night of the month m: blank if it's another month's.
+	const renderDay = (date: string, m: string) => {
+		if (monthOf(date) !== m) {
+			return <td key={date} className="lc-out" />;
+		}
+		const game = isTeam ? teamByDate.get(date) : undefined;
+		const night = nights.get(date);
+		const keyDate = keyByDate.get(date);
+		if (plain && !isTeam) {
+			return (
+				<td
+					key={date}
+					className={clsx(
+						night ? "lc-night" : "lc-off",
+						date === today && "lc-today",
+						date === selected && "lc-selected",
+					)}
+					title={formatGameDate(date, "full")}
+				>
+					<PlainNight
+						date={date}
+						night={night}
+						season={season}
+						userLogo={userLogo}
+					/>
+				</td>
+			);
+		}
+		if (isTeam) {
+			const won =
+				game?.homePts !== undefined && game.awayPts !== undefined
+					? game.homeTid === tid
+						? game.homePts > game.awayPts
+						: game.awayPts > game.homePts
+					: undefined;
+			return (
+				<td
+					key={date}
+					className={clsx(
+						game ? "lc-d lc-d-game" : "lc-d lc-d-off",
+						won === true && "lc-d-won",
+						won === false && "lc-d-lost",
+						game?.ifNecessary && "lc-maybe",
+						date === today && "lc-today",
+						date === selected && "lc-selected",
+					)}
+					title={formatGameDate(date, "full")}
+				>
+					<TeamDay
+						compact={compact}
+						date={date}
+						game={game}
+						keyDate={keyDate}
+						nightDay={nightDays?.[date]}
+						playoffGame={game ? playoffGameNumbers.get(game.gid) : undefined}
+						season={season}
+						spread={game ? spreads.get(game.gid) : undefined}
+						teams={teamInfoCache}
+						tid={tid}
+					/>
+				</td>
+			);
+		}
+		return (
+			<td
+				key={date}
+				className={clsx(
+					night && "lc-night",
+					night?.mine?.awayTid === userTid && "lc-road",
+					date === today && "lc-today",
+					date === selected && "lc-selected",
+				)}
+				title={formatGameDate(date, "full")}
+			>
+				<div className="lc-day-head">
+					<span className="lc-num">{Number(date.slice(8))}</span>
+				</div>
+				{night ? (
+					<LeagueNight
+						compact={compact}
+						count={night.count}
+						day={night.day}
+						maybe={night.maybe}
+						mine={night.mine}
+						planned={night.planned}
+						season={season}
+						teams={teamInfoCache}
+						userTid={userTid}
+					/>
+				) : null}
+				{keyDate ? (
+					<KeyDateLabel compact={compact} keyDate={keyDate} season={season} />
+				) : null}
+			</td>
+		);
+	};
+
 	return (
 		<div
 			className={clsx(
@@ -701,7 +964,7 @@ export const MonthCalendar = ({
 				</div>
 			) : null}
 
-			<table className="lc-grid">
+			<table className="lc-grid lc-weekdays">
 				<thead>
 					<tr>
 						{WEEKDAYS.map((name) => (
@@ -718,114 +981,21 @@ export const MonthCalendar = ({
 						))}
 					</tr>
 				</thead>
-				<tbody>
-					{weeksOf(month).map((week) => (
-						<tr key={week[0]}>
-							{week.map((date) => {
-								if (monthOf(date) !== month) {
-									return <td key={date} className="lc-out" />;
-								}
-								const game = isTeam ? teamByDate.get(date) : undefined;
-								const night = nights.get(date);
-								const keyDate = keyByDate.get(date);
-								if (plain && !isTeam) {
-									return (
-										<td
-											key={date}
-											className={clsx(
-												night ? "lc-night" : "lc-off",
-												date === today && "lc-today",
-												date === selected && "lc-selected",
-											)}
-											title={formatGameDate(date, "full")}
-										>
-											<PlainNight
-												date={date}
-												night={night}
-												season={season}
-												userLogo={userLogo}
-											/>
-										</td>
-									);
-								}
-								if (isTeam) {
-									const won =
-										game?.homePts !== undefined && game.awayPts !== undefined
-											? game.homeTid === tid
-												? game.homePts > game.awayPts
-												: game.awayPts > game.homePts
-											: undefined;
-									return (
-										<td
-											key={date}
-											className={clsx(
-												game ? "lc-d lc-d-game" : "lc-d lc-d-off",
-												won === true && "lc-d-won",
-												won === false && "lc-d-lost",
-												game?.ifNecessary && "lc-maybe",
-												date === today && "lc-today",
-												date === selected && "lc-selected",
-											)}
-											title={formatGameDate(date, "full")}
-										>
-											<TeamDay
-												compact={compact}
-												date={date}
-												game={game}
-												keyDate={keyDate}
-												nightDay={nightDays?.[date]}
-												playoffGame={
-													game ? playoffGameNumbers.get(game.gid) : undefined
-												}
-												season={season}
-												spread={game ? spreads.get(game.gid) : undefined}
-												teams={teamInfoCache}
-												tid={tid}
-											/>
-										</td>
-									);
-								}
-								return (
-									<td
-										key={date}
-										className={clsx(
-											night && "lc-night",
-											night?.mine?.awayTid === userTid && "lc-road",
-											date === today && "lc-today",
-											date === selected && "lc-selected",
-										)}
-										title={formatGameDate(date, "full")}
-									>
-										<div className="lc-day-head">
-											<span className="lc-num">{Number(date.slice(8))}</span>
-										</div>
-										{night ? (
-											<LeagueNight
-												compact={compact}
-												count={night.count}
-												day={night.day}
-												maybe={night.maybe}
-												mine={night.mine}
-												planned={night.planned}
-												season={season}
-												teams={teamInfoCache}
-												userTid={userTid}
-											/>
-										) : null}
-										{keyDate ? (
-											<KeyDateLabel
-												compact={compact}
-												keyDate={keyDate}
-												season={season}
-											/>
-										) : null}
-									</td>
-								);
-							})}
-						</tr>
-					))}
-				</tbody>
 			</table>
+			<MonthSwipe
+				month={month}
+				months={months}
+				onMonth={setChosenMonth}
+				renderMonth={(m) => (
+					<table className="lc-grid">
+						<tbody>
+							{weeksOf(m).map((week) => (
+								<tr key={week[0]}>{week.map((date) => renderDay(date, m))}</tr>
+							))}
+						</tbody>
+					</table>
+				)}
+			/>
 		</div>
 	);
 };
