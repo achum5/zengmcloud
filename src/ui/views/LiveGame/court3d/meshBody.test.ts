@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import {
+	boneIndex,
 	drawMesh,
 	loadMesh,
 	MESH_KINDS,
+	meshData,
 	meshReady,
 	poseBones,
 	skinned,
@@ -185,5 +187,69 @@ describe("mesh bodies", () => {
 		// The eighties' well up his thigh; the two-thousands' down to his knee.
 		expect(hemRow(0.42, 0.82)).toBeLessThan(today - thigh * 0.3);
 		expect(hemRow(0.96, 1.12)).toBeGreaterThan(today + thigh * 0.06);
+	});
+
+	test("his ribs where they are under his arms thrown up", () => {
+		// (How far out from his spine the sides of his chest are, below his
+		// armpits - what of him is painted as his trunk: his jersey - square
+		// to the way his chest faces.)
+		const m = meshData()!;
+		const torso = MESH_KINDS.indexOf("torso");
+		const onTorso = new Uint8Array(m.n);
+		for (let t = 0; t < m.kind.length; t++) {
+			if (m.kind[t] === torso) {
+				for (let c = 0; c < 3; c++) {
+					onTorso[m.tris[t * 3 + c]!] = 1;
+				}
+			}
+		}
+		const chest = boneIndex("chest");
+		const pelvis = boneIndex("pelvis");
+		for (const [hgt, wt] of [
+			[78, 210],
+			[72, 180],
+			[84, 275],
+		] as const) {
+			const body = bodyOf(hgt, wt, MESH_BUILD);
+			const typical = bodyOf(undefined, undefined, MESH_BUILD);
+			const wide = (anim: "easy" | "dunk" | "rebound", phase: number) => {
+				const bones = poseBones(
+					skeleton(body, poseAt(anim, phase)),
+					body,
+					typical,
+				);
+				const out = new Float32Array(m.n * 3);
+				const trunk = new Float32Array(m.n * 3);
+				skinned(bones, body.H, out, trunk);
+				const c = bones[chest]!.fr;
+				const p = bones[pelvis]!.fr.h;
+				let most = 0;
+				for (let i = 0; i < m.n; i++) {
+					// (From the top of his hips to under his arms.)
+					const up =
+						((trunk[i * 3]! - p.f) * c.a.f +
+							(trunk[i * 3 + 1]! - p.s) * c.a.s +
+							(trunk[i * 3 + 2]! - p.u) * c.a.u) /
+						body.H;
+					if (!onTorso[i] || m.arm[i]! >= 128 || up < 0.08 || up > 0.18) {
+						continue;
+					}
+					const side =
+						(out[i * 3]! - c.h.f) * c.s.f +
+						(out[i * 3 + 1]! - c.h.s) * c.s.s +
+						(out[i * 3 + 2]! - c.h.u) * c.s.u;
+					most = Math.max(most, Math.abs(side));
+				}
+				return most;
+			};
+			const down = wide("easy", 0);
+			expect(down).toBeGreaterThan(0);
+			for (const [anim, phase] of [
+				["dunk", 0.66],
+				["rebound", 0.5],
+			] as const) {
+				expect(wide(anim, phase), `${hgt} ${anim}`).toBeLessThan(down * 1.08);
+			}
+		}
 	});
 });

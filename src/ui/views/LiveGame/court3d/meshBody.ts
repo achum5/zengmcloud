@@ -37,6 +37,10 @@ export type Mesh = {
 	tris: Uint16Array;
 	kind: Uint8Array;
 	arm: Uint8Array;
+	// How much each point stays with his trunk as his arm goes up (0 - 1),
+	// and which arm's (0 his right, 1 his left) - see underArm.
+	pit: Float32Array;
+	pitSide: Uint8Array;
 	face: Int16Array;
 };
 // (The mesh itself is fetched only when a man is to be drawn as one - see
@@ -69,6 +73,8 @@ export const loadMesh = (): Promise<void> =>
 			local[i] = lq[i]! * BODY_META.localStep;
 		}
 		const bone = unpack(D.bone, (b) => new Uint8Array(b));
+		const arm = armOf(start, bone, weight);
+		const pit = underArm(start, bone, weight, local, arm);
 		mesh = {
 			n: BODY_META.points,
 			start,
@@ -78,7 +84,9 @@ export const loadMesh = (): Promise<void> =>
 			local,
 			tris: unpack(D.tris, (b) => new Uint16Array(b)),
 			kind: unpack(D.kind, (b) => new Uint8Array(b)),
-			arm: armOf(start, bone, weight),
+			arm,
+			pit: pit.pit,
+			pitSide: pit.side,
 			face: unpack(D.face, (b) => new Int16Array(b)),
 		};
 	}));
@@ -452,6 +460,80 @@ const REST_OF: F3[] = BODY_META.bones.map((n) =>
 				? REST[`upper${n.slice(-1)}`]!
 				: REST[n]!,
 );
+// HIS RIBS STAY PUT UNDER A RAISED ARM. Blender's weights give the side of
+// his chest under his arm, and the top of it front and back, partly to his
+// shoulder and upper arm - and his shoulder turns about the top of his arm
+// (see poseBones). An arm thrown up over his head swung all of that out
+// from his side with it: his ribs spread into a wing up to his elbow, his
+// jersey stretched across it, as no man's are. A man's ribcage stays where
+// it is whatever his arm does - his armpit opens, his lats drawn up into
+// his arm. So each point of him painted as his trunk (see armOf), from the
+// tops of his shoulders down, stays where his trunk alone carries it (see
+// skinned), more the higher his arm is raised past how it hangs as made:
+// his jersey and its armholes as they are on him standing. His arm's own
+// skin goes with his arm, as before, and what stretches is his armpit.
+// (How far below his shoulder joint a point is all his trunk's - up over
+// his shoulder it is less and less, none of it at the first, for a man 1
+// foot tall; how much of it goes with his arm before it is all his arm's -
+// his jersey's edge at the first; and how far past the way his arm hangs
+// as made it is raised before his ribs are all his own: radians.)
+const PIT_BELOW = [-0.07, -0.01] as const;
+const PIT_ARM = [0.5, 0.85] as const;
+const PIT_RAISE = (80 * Math.PI) / 180;
+const smoothStep = (r: readonly [number, number], x: number) => {
+	const t = Math.min(1, Math.max(0, (x - r[0]) / (r[1] - r[0])));
+	return t * t * (3 - 2 * t);
+};
+const ARM_HELD = BODY_META.bones.map((b) => /^(shoulder|upper)/.test(b));
+const underArm = (
+	start: Uint32Array,
+	bone: Uint8Array,
+	weight: Float32Array,
+	local: Float32Array,
+	arm: Uint8Array,
+) => {
+	const n = start.length - 1;
+	const pit = new Float32Array(n);
+	const side = new Uint8Array(n);
+	for (let i = 0; i < n; i++) {
+		let s = 0;
+		let u = 0;
+		let held = 0;
+		for (let j = start[i]!; j < start[i + 1]!; j++) {
+			const R = REST_OF[bone[j]!]!;
+			const w = weight[j]!;
+			const l0 = local[j * 3]!;
+			const l1 = local[j * 3 + 1]!;
+			const l2 = local[j * 3 + 2]!;
+			s += w * (R.h.s + R.a.s * l0 + R.f.s * l1 + R.s.s * l2);
+			u += w * (R.h.u + R.a.u * l0 + R.f.u * l1 + R.s.u * l2);
+			if (ARM_HELD[bone[j]!]) {
+				held += w;
+			}
+		}
+		if (held <= 0) {
+			continue;
+		}
+		side[i] = s > 0 ? 1 : 0;
+		const sh = jt(s > 0 ? "shoulderL" : "shoulderR");
+		pit[i] =
+			smoothStep(PIT_BELOW, sh.u - u) *
+			(1 - smoothStep(PIT_ARM, arm[i]! / 255));
+	}
+	return { pit, side };
+};
+// How far each arm is raised past the way it hangs as made (0 - 1, see
+// PIT_RAISE): the angle down from it to his trunk's down.
+const UPPER_OF = [
+	BODY_META.bones.indexOf("upperR"),
+	BODY_META.bones.indexOf("upperL"),
+] as const;
+const HUNG = Math.acos(-dot(REST.upperR!.a, REST.chest!.a));
+const raisedOf = (bones: readonly Posed[], side: 0 | 1, chest: F3) => {
+	const a = bones[UPPER_OF[side]]!.fr.a;
+	const down = Math.acos(Math.min(1, Math.max(-1, -dot(a, chest.a))));
+	return smoothStep([0, PIT_RAISE], down - HUNG);
+};
 // A point of him as posed, back where it is on him at rest (feet, stood
 // as the mesh was made) - carried by piece `i` alone: where on his shoe a
 // point of it is, however his foot is pointed.
@@ -886,7 +968,11 @@ export const skinned = (
 	}
 	const RF = REST_FLAT;
 	const LOCAL = localFor(m, hem, flare);
-	const CR = trunk ? chestRestFor(m, LOCAL) : undefined;
+	const CR = chestRestFor(m, LOCAL);
+	const chestFr = bones[CHEST]!.fr;
+	const raised = [raisedOf(bones, 0, chestFr), raisedOf(bones, 1, chestFr)];
+	const PIT = m.pit;
+	const PIT_SIDE = m.pitSide;
 	const DQ = dq;
 	const START = m.start;
 	const BONE = m.bone;
@@ -910,6 +996,10 @@ export const skinned = (
 		let ts = 0;
 		let tu = 0;
 		let tw = 0;
+		// (Kept to his trunk this much - see underArm - and so where his
+		// trunk alone carries it wanted too.)
+		const kept = PIT[i]! * raised[PIT_SIDE[i]!]!;
+		const withT = trunk !== undefined || kept > 0;
 		const j0 = START[i]!;
 		const ref = BONE[j0]! * 8;
 		const j1 = START[i + 1]!;
@@ -956,7 +1046,7 @@ export const skinned = (
 			dx += sg * DQ[o + 5]!;
 			dy += sg * DQ[o + 6]!;
 			dz += sg * DQ[o + 7]!;
-			if (CR) {
+			if (withT) {
 				if (TRUNK[bi]) {
 					const la = al * H;
 					const lf = fw * H;
@@ -1018,9 +1108,18 @@ export const skinned = (
 		const s = yy + 2 * (rz * cx - rx * cz);
 		const u = yz + 2 * (rx * cy - ry * cx);
 		// ... and moved.
-		out[i * 3] = f + 2 * (rw * dx - dw * rx + (ry * dz - rz * dy));
-		out[i * 3 + 1] = s + 2 * (rw * dy - dw * ry + (rz * dx - rx * dz));
-		out[i * 3 + 2] = u + 2 * (rw * dz - dw * rz + (rx * dy - ry * dx));
+		let pf = f + 2 * (rw * dx - dw * rx + (ry * dz - rz * dy));
+		let ps = s + 2 * (rw * dy - dw * ry + (rz * dx - rx * dz));
+		let pu = u + 2 * (rw * dz - dw * rz + (rx * dy - ry * dx));
+		// (Under a raised arm, his ribs where his trunk has them.)
+		if (kept > 0) {
+			pf += (tf / tw - pf) * kept;
+			ps += (ts / tw - ps) * kept;
+			pu += (tu / tw - pu) * kept;
+		}
+		out[i * 3] = pf;
+		out[i * 3 + 1] = ps;
+		out[i * 3 + 2] = pu;
 		if (trunk) {
 			trunk[i * 3] = tf / tw;
 			trunk[i * 3 + 1] = ts / tw;

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 618,
+		date: "2026-11-25",
+		text: "3D game: a player with his arms up (dunks, layups, rebounds, blocks, contests, high fives) no longer grows huge wings of jersey from his armpits down his sides. His chest stays its own width with the jersey on it, and his armpit opens up under the raised arm, the way a real body looks reaching up.",
+	},
+	{
 		n: 617,
 		date: "2026-11-25",
 		text: "Scores bar: a team's name now underlines when you hover or tap it. Tapping the team that lost a played game (or either team in an if-necessary playoff game) now opens that team's roster like it should, instead of the game.",
