@@ -56,6 +56,7 @@ import {
 } from "./sprite.ts";
 import {
 	buildClocks,
+	finalStretchAt,
 	formatGameClock,
 	gameClockAt,
 	shotClockAt,
@@ -1302,11 +1303,16 @@ const Court3D = ({
 		// No period on: the final horn gone, or between two (see isFinal,
 		// isBreak).
 		ended: false,
+		// The last two minutes or overtime (see finalStretchAt).
+		late: false,
 	});
 	const [intro, setIntro] = useState({ call: -1, on: false, title: false });
 	// No period on, in the picture - the final horn gone, or between two: the
 	// bug says so (see the frame loop).
 	const [ended, setEnded] = useState(false);
+	// From two minutes left in the last period: the bug's timeouts are the
+	// game's own (see finalStretchAt).
+	const [late, setLate] = useState(false);
 	// Onto the game from the warm-ups (see pregame): a cut, up out of black
 	// (see tick).
 	useEffect(() => {
@@ -1394,6 +1400,7 @@ const Court3D = ({
 		teamColors,
 		setIntro,
 		setEnded,
+		setLate,
 		numPeriods,
 		// The period, as the page's box score has it ("Q4", "OT").
 		period: boxScore?.quarterShort ?? "",
@@ -1434,6 +1441,7 @@ const Court3D = ({
 		teamColors,
 		setIntro,
 		setEnded,
+		setLate,
 		numPeriods,
 		// The period, as the page's box score has it ("Q4", "OT").
 		period: boxScore?.quarterShort ?? "",
@@ -1802,6 +1810,12 @@ const Court3D = ({
 			if (ended !== s.ended) {
 				s.ended = ended;
 				p.setEnded(ended);
+			}
+			const late =
+				!staging && !!p.clocks && finalStretchAt(p.clocks, s.t, p.numPeriods);
+			if (late !== s.late) {
+				s.late = late;
+				p.setLate(late);
 			}
 			if (final) {
 				clockText = finalText(p.period);
@@ -2215,6 +2229,7 @@ const Court3D = ({
 					standingOf(boxScore?.gamecast, boxScore?.teams?.[0]?.tid),
 				)}
 				quarter={quarter}
+				late={late}
 				series={
 					boxScore?.teams?.[0] && boxScore?.teams?.[1]
 						? seriesLine(boxScore.gamecast, !!boxScore.playoffs, [
