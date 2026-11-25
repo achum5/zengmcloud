@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 604,
+		date: "2026-11-25",
+		text: "On the NBA calendar, a game in the scores bar turns green when your team won it and red when it lost. Games that were on national TV show the network's logo in the top right corner, and the scores line up now that the arrow by the winner's score is gone.",
+	},
+	{
 		n: 603,
 		date: "2026-11-25",
 		text: "While a league mate's game is still being played live, no other page gives it away: team records, rank and games back on the roster page, the dashboard and power rankings, team and player stats, league leaders, season highs, injuries picked up in it, head-to-head records and the playoff picture all show how things stood going in, until it's over.",

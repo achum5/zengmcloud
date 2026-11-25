@@ -63,6 +63,7 @@ import { idb } from "../../db/index.ts";
 import { updateTickerItems } from "../../util/updateTickerItems.ts";
 import { hideLiveResults } from "../../util/liveSpoilers.ts";
 import { getLiveGate } from "../../util/liveGameGate.ts";
+import { nationalTagsPlayed } from "../../views/nationalBroadcast.ts";
 import {
 	g,
 	helpers,
@@ -693,6 +694,15 @@ const playDays = async (
 		// More stuff for LeagueTopBar - update ovrs based on injuries, and (if user just played a game) update the score of the user's last game and add their next game
 		// This is safe to do down here because injuries have been processed (if necessary) and games have been deleted from the schedule
 		if (gameToUi) {
+			// (On the NBA calendar, the network it was on, for its day on the bar.)
+			if (gameToUi.date !== undefined) {
+				const tag = (await nationalTagsPlayed([gameToUi.gid])).get(
+					gameToUi.gid,
+				);
+				if (tag) {
+					gameToUi = { ...gameToUi, national: tag };
+				}
+			}
 			const gamesToUi = [gameToUi];
 
 			// Also show the next game (and on the NBA calendar, the coming nights')

@@ -1,14 +1,17 @@
 // THE SCORES BAR on the NBA calendar (Controller/LeagueTopBar.tsx and
 // TopBarDay.tsx): the team's calendar in one row, every day with bye days too.
-// Each game a scoreboard cell, as on the networks' score strips: the day and
-// the W/L coin (or the live clock) on top, the two teams under it. Every
-// game cell plain, home or away; today in red.
+// Each game a scoreboard cell, as on the networks' score strips: the day (or
+// the live clock) and the network on top, the two teams under it. Played
+// games green for a win, red for a loss; today in red.
 
 // Like the classic bar (light.scss .league-top-bar), just taller for the
 // days: their full height, with room under them for the scrollbar that
 // shows on hover (and never a scrollbar up and down).
 // A game being played live: its clock in the networks' orange.
 $tbd-live: #f28b20;
+// A game won and a game lost, the whole day.
+$tbd-won: #1e7d3e;
+$tbd-lost: #b4252f;
 
 .league-top-bar.league-top-bar-calendar {
 	height: auto;
@@ -116,8 +119,8 @@ $tbd-live: #f28b20;
 	color: var(--bs-body-color);
 }
 
-// Where the game stands, at the head's right end: the W or L coin, the
-// quarter and clock while it's live, the network on a national game.
+// At the head's right end: OT on a game that went to overtime, the network
+// on a national game.
 .tbd-status {
 	display: inline-flex;
 	align-items: center;
@@ -187,17 +190,6 @@ $tbd-live: #f28b20;
 	font-weight: 600;
 }
 
-// The winner's score marked, as on a scoreboard.
-.tbd-row-won .tbd-pts::after {
-	display: inline-block;
-	margin-left: 2px;
-	vertical-align: 1px;
-	content: "";
-	border-top: 3px solid transparent;
-	border-bottom: 3px solid transparent;
-	border-right: 4px solid currentColor;
-}
-
 .tbd-line {
 	margin-left: auto;
 	font-size: 0.6rem;
@@ -229,33 +221,6 @@ $tbd-live: #f28b20;
 	font-variant-numeric: tabular-nums;
 }
 
-// The result as a coin, the team calendar's.
-.tbd-wl {
-	display: inline-flex;
-	flex-shrink: 0;
-	align-items: center;
-	justify-content: center;
-	width: 13px;
-	height: 13px;
-	font-size: 0.5rem;
-	font-weight: 800;
-	letter-spacing: 0;
-	color: #fff;
-	border-radius: 50%;
-}
-
-.tbd-w {
-	background: #2fa84f;
-}
-
-.tbd-l {
-	background: #dc3545;
-}
-
-.tbd-t {
-	background: var(--bs-gray-600);
-}
-
 .tbd-national {
 	height: 13px;
 	padding: 0 3px;
@@ -265,6 +230,69 @@ $tbd-live: #f28b20;
 		height: 10px;
 		max-width: 34px;
 	}
+}
+
+// A game played: the whole day green if the team won it, red if it lost,
+// the head a shade darker, the team behind dimmed.
+.tbd-won,
+.tbd-lost {
+	color: #fff;
+	background: var(--tbd-result-bg);
+
+	.tbd-head {
+		color: rgba(255, 255, 255, 0.8);
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.tbd-num {
+		color: #fff;
+	}
+
+	.tbd-row-trailing,
+	.tbd-ot {
+		color: inherit;
+		opacity: 0.7;
+	}
+}
+
+// (On a dark head - a result's, today's - the network's logo for a dark
+// page, where it has one.)
+.tbd-won,
+.tbd-lost,
+.tbd-today .tbd-head {
+	.national-tag {
+		color: inherit;
+
+		.national-logo-light {
+			display: none;
+		}
+
+		.national-logo-dark {
+			display: block;
+		}
+	}
+}
+
+.tbd-won {
+	--tbd-result-bg: #{$tbd-won};
+}
+
+.tbd-lost {
+	--tbd-result-bg: #{$tbd-lost};
+}
+
+@media (hover: hover) {
+	.tbd-link.tbd-won:hover .tbd-body,
+	.tbd-link.tbd-lost:hover .tbd-body {
+		background: rgba(255, 255, 255, 0.08);
+	}
+}
+
+.tbd-link.tbd-won:has(:focus-visible) .tbd-body,
+.tbd-link.tbd-won:active .tbd-body,
+.tbd-link.tbd-lost:has(:focus-visible) .tbd-body,
+.tbd-link.tbd-lost:active .tbd-body {
+	background: rgba(255, 255, 255, 0.08);
 }
 
 .tbd-today {
