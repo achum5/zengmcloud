@@ -114,6 +114,18 @@ const RUN_MOST = 1500;
 const PACE_NOISE = 0.25;
 // Under this pace (feet a second) he is stood.
 const STILL = 0.2;
+// (The new possession sim's men, stepped a twentieth of a second at a
+// time: going no quicker than this (feet a second) the whole while, and
+// getting no further than this pace over all of it, no more than this far
+// (feet) - an inch here, an inch there - he is stood, his feet let be, not
+// a step taken for every inch: laid as one run from still to still, the
+// way the court reads a man stood (see rawSpotAt in evaluate.ts).)
+// (And for this long at least, ms: a moment's slowing between two runs is
+// still him on his way.)
+const CREEP = 1;
+const CREEP_ALONG = 0.4;
+const CREEP_FAR = 1;
+const CREEP_MS = 400;
 // Seeing nothing ahead, he still sees where he will be stood this long
 // (ms) from now - and pulls up for it at this share of all he has.
 const STOP_SEE = 500;
@@ -601,6 +613,8 @@ export const toMoves = (
 	animAt: (t: number) => Pick<Move, "anim" | "face"> | undefined,
 	// (Where the play has him doing something: laid down to the step.)
 	pinned: Spans = spansAt([]),
+	// (The new possession sim's men: creeping laid as stood - see CREEP.)
+	calm = false,
 ): Move[] => {
 	const moves: Move[] = [];
 	const pace = (q: Sample) => Math.hypot(q.vx, q.vy);
@@ -630,6 +644,43 @@ export const toMoves = (
 	};
 	let i = 0;
 	while (i < s.length - 1) {
+		// (Creeping, an inch at a time: stood - see CREEP.)
+		if (calm && pace(s[i]!) < CREEP && !pinned.hit(s[i]!.t, s[i]!.t + 1)) {
+			let j = i;
+			while (
+				j + 1 < s.length &&
+				pace(s[j + 1]!) < CREEP &&
+				s[j + 1]!.t - s[j]!.t <= STEP_MS + 1 &&
+				!pinned.hit(s[j + 1]!.t, s[j + 1]!.t + 1)
+			) {
+				j += 1;
+			}
+			const a = s[i]!;
+			const b = s[j]!;
+			const L = Math.hypot(b.x - a.x, b.y - a.y);
+			if (
+				s[j]!.t - s[i]!.t >= CREEP_MS &&
+				L > 0.01 &&
+				L <= CREEP_FAR &&
+				L <= (CREEP_ALONG * (b.t - a.t)) / 1000
+			) {
+				const last = moves.at(-1);
+				if (!last || Math.hypot(last.to.x - a.x, last.to.y - a.y) > 0.05) {
+					place(a);
+				}
+				moves.push({
+					t0: a.t,
+					t1: b.t,
+					from: { x: a.x, y: a.y },
+					to: { x: b.x, y: b.y },
+					anim: animAt((a.t + b.t) / 2)?.anim ?? "walk",
+					v0: 0,
+					v1: 0,
+				});
+				i = j;
+				continue;
+			}
+		}
 		// (Stood: no run.)
 		if (
 			pace(s[i]!) < STILL &&
@@ -2597,9 +2648,10 @@ export const stepTimeline = <T extends Stepped>(
 		};
 		// (Off the floor, where it had him: the runs it laid there stay.)
 		const off = old.filter((m) => !floorSpotOf(tr, (m.t0 + m.t1) / 2));
-		tr.moves = [...toMoves(samples, animAt, helds.get(tr.pid)!), ...off].sort(
-			(a, b) => a.t0 - b.t0,
-		);
+		tr.moves = [
+			...toMoves(samples, animAt, helds.get(tr.pid)!, own !== undefined),
+			...off,
+		].sort((a, b) => a.t0 - b.t0);
 	};
 	// (With the new sim's defense: what each man wants, all stepped together
 	// after.)

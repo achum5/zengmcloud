@@ -1054,12 +1054,52 @@ const runAnim = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 
 // Whether a run goes the way his back faces, slowly enough to backpedal:
 // asked halfway along it, once a run.
+// (The new possession sim's men, stepped a tenth of a second at a time, go
+// a run of a few inches, then one of a foot, then a few inches - asked of
+// the way he goes over this long either side of it, ms, not the run alone,
+// so his steps don't flick from forward to backward and back between them.)
+// (And a run of his shorter than this, ms - a moment's turn between two
+// others - goes the way the longer of the runs either side of it does.)
+const BACK_LOOK = 300;
+const BACK_SHORT = 200;
+const BACK_GAP = 60;
 const backwards = new WeakMap<Run["mv"], boolean>();
 const backward = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
 	let b = backwards.get(run.mv);
+	if (b === undefined && tl.gaits?.has(tr.pid)) {
+		const { mv } = run;
+		if (mv.t1 - mv.t0 < BACK_SHORT) {
+			let k = lastT0(tr.moves, mv.t0);
+			while (k > 0 && tr.moves[k] !== mv) {
+				k -= 1;
+			}
+			let best: number | undefined;
+			for (const j of [k - 1, k + 1]) {
+				const n = tr.moves[j];
+				if (
+					n &&
+					n.t1 - n.t0 >= BACK_SHORT &&
+					(j < k ? mv.t0 - n.t1 : n.t0 - mv.t1) <= BACK_GAP &&
+					(best === undefined ||
+						n.t1 - n.t0 > tr.moves[best]!.t1 - tr.moves[best]!.t0)
+				) {
+					best = j;
+				}
+			}
+			b = best === undefined ? false : backward(tl, tr, runOf(tr, best));
+			backwards.set(mv, b);
+		}
+	}
 	if (b === undefined) {
-		const dx = run.mv.to.x - run.mv.from.x;
-		const dy = run.mv.to.y - run.mv.from.y;
+		let dx = run.mv.to.x - run.mv.from.x;
+		let dy = run.mv.to.y - run.mv.from.y;
+		if (tl.gaits?.has(tr.pid)) {
+			const mid = (run.s0 + run.s1) / 2;
+			const A = spotAt(tr, mid - BACK_LOOK, false);
+			const B = spotAt(tr, mid + BACK_LOOK, false);
+			dx = B.x - A.x;
+			dy = B.y - A.y;
+		}
 		const d = Math.hypot(dx, dy);
 		const v = Math.max(shapeOf(run).vc, run.v0, run.v1);
 		if (d < 0.5 || v > BACK_FTPS + 1) {
@@ -1262,6 +1302,34 @@ const sepBase = (list: Sep[]): number[] => {
 	}
 	return base;
 };
+// An inch or two over a second or more - creeping slower than any walk,
+// not part of a run on through: he is standing there, not walking.
+const creeping = (run: Run): boolean =>
+	!run.v0 &&
+	!run.v1 &&
+	lenOf(run.mv) < 1.5 &&
+	lenOf(run.mv) < (0.7 * (run.s1 - run.s0)) / 1000;
+// Since when he has stood where he is (his last move done), and till when
+// (his next one under way). A new-sim man's creeping is laid as one run
+// from still to still (toMoves): that is him stood there all through it,
+// for whatever he does stood - not a move that he stops at the end of.
+const stoodSpan = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): [number, number] => {
+	let mi = lastT0(tr.moves, t);
+	let ni = mi + 1;
+	if (tl.gaits?.has(tr.pid)) {
+		while (mi >= 0 && creeping(runOf(tr, mi))) {
+			mi--;
+		}
+		while (ni < tr.moves.length && creeping(runOf(tr, ni))) {
+			ni++;
+		}
+	}
+	return [mi >= 0 ? tr.moves[mi]!.t1 : 0, tr.moves[ni]?.t0 ?? Infinity];
+};
 const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
 	let k = lastT0(tr.moves, t);
 	if (k < 0) {
@@ -1288,14 +1356,7 @@ const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
 		return { ...mv.to, moveIndex: k, moving: false, hx: 0, hy: 0 };
 	}
 	let p = onRun(run, t);
-	// An inch or two over a second or more - creeping slower than any walk,
-	// not part of a run on through: he is standing there, not walking.
-	if (
-		!run.v0 &&
-		!run.v1 &&
-		lenOf(mv) < 1.5 &&
-		lenOf(mv) < (0.7 * (run.s1 - run.s0)) / 1000
-	) {
+	if (creeping(run)) {
 		return { ...p, moveIndex: k, moving: false, hx: 0, hy: 0 };
 	}
 	let hx = mv.to.x - mv.from.x;
@@ -2340,9 +2401,7 @@ const offBall = (
 		return undefined;
 	}
 	// Since when he has stood here, and until he next moves or acts.
-	const mi = lastT0(tr.moves, t);
-	let since = mi >= 0 ? tr.moves[mi]!.t1 : 0;
-	let until = tr.moves[mi + 1]?.t0 ?? Infinity;
+	let [since, until] = stoodSpan(tl, tr, t);
 	const ai = lastT0(tr.acts, t);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		since = Math.max(since, tr.acts[k]!.t1);
@@ -2585,9 +2644,9 @@ const stoppedLife = (
 	t: number,
 	stop: Stoppage,
 ): AnimName | undefined => {
-	const mi = lastT0(tr.moves, t);
-	let since = Math.max(stop[0] + DEAD_LAG, mi >= 0 ? tr.moves[mi]!.t1 : 0);
-	let until = Math.min(stop[1] - stop[2], tr.moves[mi + 1]?.t0 ?? Infinity);
+	const [stood, moves] = stoodSpan(tl, tr, t);
+	let since = Math.max(stop[0] + DEAD_LAG, stood);
+	let until = Math.min(stop[1] - stop[2], moves);
 	const ai = lastT0(tr.acts, t);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		since = Math.max(since, tr.acts[k]!.t1);
@@ -2738,8 +2797,10 @@ const swipeAt = (
 	if (t < start || t >= start + SWIPE_MS) {
 		return undefined;
 	}
-	const mi = lastT0(tr.moves, start);
-	if (mi >= 0 && tr.moves[mi]!.t1 > start - 400) {
+	if (
+		lastT0(tr.moves, start) >= 0 &&
+		stoodSpan(tl, tr, start)[0] > start - 400
+	) {
 		return undefined;
 	}
 	return {
@@ -2870,8 +2931,12 @@ const OPEN_UP = (110 * Math.PI) / 180;
 const TURN_ROUND = (70 * Math.PI) / 180;
 // (Setting off, he turns as he goes if he is round within this long, ms.)
 const SET_OFF_TURN_MS = 150;
-// (How long either side it has to hold, ms.)
+// (How long either side it has to hold, ms - the new possession sim's men,
+// who turn this way and that a little all the time, longer: a backpedal
+// only when he is turned for a good moment, not a dip down into one for a
+// frame or two and back up - see possession/README.md, calm decisions.)
 const GAIT_HOLD = 45;
+const GAIT_HOLD_OWN = 200;
 const FORWARD = new Set<AnimName>([
 	"walk",
 	"jog",
@@ -2907,15 +2972,38 @@ const shownSteps = (
 		Math.abs(wrapAngle(carried - yawAt(tl, tr, t))) < CARRIED_FACING
 			? carried
 			: Math.atan2(here.hy, here.hx);
+	const own = tl.gaits?.has(tr.pid) === true;
+	// (The new possession sim's men: against the way he goes then, not now -
+	// a corner rounded from one run into the next turns it for a moment.)
+	const headingAt = (when: number) => {
+		if (!own || when === t) {
+			return heading;
+		}
+		const there = spotAt(tr, when);
+		return there.moving && there.hx * there.hx + there.hy * there.hy > 1e-6
+			? Math.atan2(there.hy, there.hx)
+			: heading;
+	};
 	const offAt = (when: number) =>
-		Math.abs(wrapAngle(yawAt(tl, tr, when) - heading));
+		Math.abs(wrapAngle(yawAt(tl, tr, when) - headingAt(when)));
 	const off0 = offAt(t);
+	const hold = own ? GAIT_HOLD_OWN : GAIT_HOLD;
+	const offs = () =>
+		own
+			? [
+					off0,
+					offAt(t - hold),
+					offAt(t - hold / 2),
+					offAt(t + hold / 2),
+					offAt(t + hold),
+				]
+			: [off0, offAt(t - hold), offAt(t + hold)];
 	const off =
 		(anim !== "back" && off0 > OPEN_UP) ||
 		(anim === "back" && off0 < TURN_ROUND)
 			? anim === "back"
-				? Math.max(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
-				: Math.min(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
+				? Math.max(...offs())
+				: Math.min(...offs())
 			: off0;
 	if (
 		anim !== "back" &&
@@ -2929,7 +3017,9 @@ const shownSteps = (
 			offAt(Math.min(run.mv.t1, run.mv.t0 + SET_OFF_TURN_MS)) <= OPEN_UP
 		)
 	) {
-		return "back";
+		// (The new possession sim's men, at a walk: walking backward, up on
+		// their feet, the same as a run laid going backward - see stepsOf.)
+		return own && (anim === "walk" || anim === "drift") ? "backWalk" : "back";
 	}
 	if (anim === "back" && off < TURN_ROUND) {
 		const ahead = paceAnim(tl, tr, run);

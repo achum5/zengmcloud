@@ -659,9 +659,48 @@ step's worth of floor in a tenth of a second with no step taken.
 | Jumps from one spot to another (teleport flags) | 18 | 16 |
 | Stood still at the wrong time (statue, frozen) | 42 | 42 |
 
-Still to do in 8b: a choice holds a moment and a target slides - men
-flick between standing and walking, walking and backpedalling, up and
-down in their stance, for a tenth of a second at a time.
+A choice holding a moment. Counted over the first ten minutes of real_11
+(every man, every 50 ms - `zz_body`, not kept), a man's legs and body went
+from one way of going to another and straight back inside 0.15 s 760
+times: standing, a step, standing; walking, a backpedal, walking; up out
+of his stance and down again. Most of it was an inch here and an inch
+there - a man creeping after a spot that moves a hair, each inch laid as a
+step - and a backpedal decided afresh on every few inches of run.
+
+- Creeping laid as stood (`toMoves`, `stepper.ts`, the new sim's men
+  only): no quicker than 1 ft/s for 0.4 s or more, getting no further than
+  0.4 ft/s over it and a foot at most, is one run from still to still - the
+  way the court reads a man stood.
+- A backpedal only when he is turned for a good moment (`shownSteps`,
+  `evaluate.ts`): turned from the way he goes for 0.2 s either side,
+  against the way he goes at each of those moments - not a corner rounded
+  from one run to the next. A run shorter than 0.2 s goes the way the
+  longer of the runs either side of it does; one decided going backward is
+  judged on the way he goes over 0.3 s either side of it.
+- Walking backward, he walks backward up on his feet, as a run laid going
+  backward does - not down in a backpedal for a frame.
+- Stood, all through a crept run (`stoodSpan`, `evaluate.ts`): what a man
+  does stood - calling for it, pointing out his man, a swipe at the ball,
+  hands on his hips at a stoppage - goes on through it, not held off till
+  it ends. (Without it, a man laid creeping for ten seconds stood those ten
+  seconds stock still: real_22's stock-still count went 19 to 26.)
+
+| Measure (real_11, first 10 minutes) | Before | Now |
+| --- | --- | --- |
+| Flicks back inside 0.15 s | 760 | 438 |
+| ... a step, a stance or a backpedal between two of the same kind | 389 | 123 |
+
+What is left of them is mostly the moment going into or out of something
+of his - a catch, a screen, a box-out - a beat early or late (8c). The
+full-game flags on real_11 and real_22 are the same as before it (lurch
+278, teleport 16, statue and frozen 42), and so is the time men stand: 22%
+of the time going slower than 1.5 ft/s over half a second.
+
+Tried and dropped: a man stood within half a foot of a spot that is not
+going anywhere staying stood (a hold in `moveOn`). It took nothing more
+off the flicks (432 with it, 438 without) and had men off their spots
+when a screen or a fight for the ball pinned them there - four more
+teleports on real_11.
 
 ## Natural and smooth (before step 8)
 
