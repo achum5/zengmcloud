@@ -51,6 +51,15 @@ describe("game sound: what is heard, and when", () => {
 		}
 	});
 
+	test("a pass caught is heard where it is caught", () => {
+		const passes = tl.ball.filter(
+			(s) => s.kind === "fly" && "pid" in s.from && "pid" in s.to,
+		).length;
+		const caught = cues.filter((c) => c.kind === "catch");
+		assert.isAbove(caught.length, passes * 0.5);
+		assert.isTrue(caught.every((c) => c.fine && c.x !== undefined));
+	});
+
 	test("sneakers squeak about as often as on a real floor, however it is asked", () => {
 		const all = squeaksIn(tl, 0, tl.end);
 		const perMin = all.length / (tl.end / 60000);

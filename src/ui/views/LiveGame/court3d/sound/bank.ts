@@ -24,6 +24,7 @@ const SLOTS: Slot[] = [
 	"dribble",
 	"floor",
 	"squeak",
+	"catch",
 	"swish",
 	"rim",
 	"dunk",
@@ -223,6 +224,18 @@ const made = (sr: number, slot: Slot, take: number): Float32Array => {
 			}
 			add(x, band(white(x.length, seed), sr, f1, 2), 0.15);
 			return normal(shape(x, sr, 0.004, len * 0.5, len * 0.25), 0.5);
+		}
+		case "catch": {
+			// (Leather into palms: a short slap over a soft thud.)
+			const x = shape(
+				band(white(n(0.12), seed), sr, 1100 + 150 * take, 1.1),
+				sr,
+				0.001,
+				0.004,
+				0.018,
+			);
+			add(x, tone(n(0.12), sr, [140 + 20 * take], [0.02]), 0.4);
+			return normal(x, 0.6);
 		}
 		case "swish":
 			return normal(

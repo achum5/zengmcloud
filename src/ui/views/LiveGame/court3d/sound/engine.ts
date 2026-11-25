@@ -30,6 +30,7 @@ const MIX: Partial<Record<Slot, number>> = {
 	dribble: 0.45,
 	floor: 0.45,
 	squeak: 0.3,
+	catch: 0.35,
 	swish: 0.6,
 	rim: 0.6,
 	dunk: 0.9,

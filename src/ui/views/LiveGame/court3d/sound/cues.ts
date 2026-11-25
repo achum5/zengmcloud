@@ -23,6 +23,8 @@ export type CueKind =
 	| "floor"
 	// Sneakers on it: a man planting hard.
 	| "squeak"
+	// The ball into a man's hands.
+	| "catch"
 	// Down through the net; off the iron; slammed through.
 	| "swish"
 	| "rim"
@@ -162,6 +164,61 @@ const bounceCues = (tl: CourtTimeline, out: Cue[]) => {
 					fine: true,
 				});
 			}
+		}
+	}
+};
+
+// THE BALL INTO A MAN'S HANDS: a pass caught, as hard as it came (a lob
+// soft, a two-hand chest pass in a smack) - and a bounce pass off the floor
+// on its way.
+const PASS_HARD = 45;
+const catchCues = (tl: CourtTimeline, out: Cue[]) => {
+	const ball = tl.ball;
+	const spot = (end: BallSeg, t: number) => {
+		if (end.kind !== "fly") {
+			return undefined;
+		}
+		const e = t === end.t0 ? end.from : end.to;
+		if (!("pid" in e)) {
+			return e;
+		}
+		const tr = tl.tracks.get(e.pid);
+		return tr ? floorSpotOf(tr, t) : undefined;
+	};
+	for (let i = 0; i < ball.length; i++) {
+		const s = ball[i]!;
+		if (s.kind !== "fly" || !(s.t1 > s.t0)) {
+			continue;
+		}
+		const next = ball[i + 1];
+		if ("pid" in s.to) {
+			const pid = s.to.pid;
+			const kept =
+				(next?.kind === "hold" && next.pid === pid) ||
+				(next?.kind === "fly" && "pid" in next.from && next.from.pid === pid);
+			if (!kept) {
+				continue;
+			}
+			const a = spot(s, s.t0);
+			const b = spot(s, s.t1);
+			const v =
+				a && b
+					? Math.hypot(b.x - a.x, b.y - a.y) / ((s.t1 - s.t0) / 1000)
+					: PASS_HARD / 2;
+			out.push({
+				t: s.t1,
+				kind: "catch",
+				hard: Math.min(1, Math.max(0.2, v / PASS_HARD)),
+				x: b?.x,
+				fine: true,
+			});
+		} else if (
+			s.to.z <= BALL_R + 0.5 &&
+			next?.kind === "fly" &&
+			next.t0 === s.t1 &&
+			!("pid" in next.from)
+		) {
+			out.push({ t: s.t1, kind: "floor", hard: 0.5, x: s.to.x, fine: true });
 		}
 	}
 };
@@ -405,6 +462,7 @@ export const cuesOf = (tl: CourtTimeline): Cue[] => {
 		cues = [];
 		dribbleCues(tl, cues);
 		bounceCues(tl, cues);
+		catchCues(tl, cues);
 		fxCues(tl, cues);
 		cues.sort((a, b) => a.t - b.t);
 		made.set(tl, cues);
