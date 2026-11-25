@@ -59,6 +59,7 @@ import { HighlightClip } from "./HighlightClip.tsx";
 import { unpackShots, type ShotSpot } from "./shots.ts";
 import { GAME_S, winProb } from "../winProb.ts";
 import { seriesLine } from "./seriesLine.ts";
+import { spreadLine } from "../../../components/LeagueHub/spreadLine.ts";
 import { MatchupBanner, matchupVars } from "../../../components/TeamBanner.tsx";
 import { NationalTag } from "../../../components/NationalTag.tsx";
 import {
@@ -247,6 +248,47 @@ const MiniLinescore = ({ boxScore }: { boxScore: any }) => {
 				))}
 			</tbody>
 		</table>
+	);
+};
+
+// THE LINE AND THE TOTAL, under the score by quarter: each as it stood at
+// the tip, and how the game went against it ("ATL -2.5 / ATL covered",
+// "O/U 224.5 / Over").
+const BoardLines = ({ boxScore }: { boxScore: any }) => {
+	if (boxScore.exhibition) {
+		return null;
+	}
+	const [away, home] = teamsInDisplayOrder(boxScore.teams as [any, any]);
+	const rows: [string, string][] = [];
+	const raw = boxScore.spread;
+	if (typeof raw === "number" && Number.isFinite(raw)) {
+		const spread = roundHalf(raw);
+		const diff = home.pts - away.pts - spread;
+		rows.push([
+			spreadLine(spread, home.abbrev, away.abbrev) ?? "",
+			diff === 0 ? "Push" : `${(diff > 0 ? home : away).abbrev} covered`,
+		]);
+	}
+	const total: number | undefined = boxScore.gamecast?.total;
+	if (typeof total === "number") {
+		const sum = home.pts + away.pts;
+		rows.push([
+			`O/U ${total}`,
+			sum === total ? "Push" : sum > total ? "Over" : "Under",
+		]);
+	}
+	if (rows.length === 0) {
+		return null;
+	}
+	return (
+		<div className="recap-board-lines">
+			{rows.map(([k, v]) => (
+				<div key={k} className="recap-board-line">
+					<span>{k}</span>
+					<span className="recap-board-result">{v}</span>
+				</div>
+			))}
+		</div>
 	);
 };
 
@@ -711,7 +753,13 @@ const RecapHeader = ({
 								) : null}
 							</>
 						}
-						extra={<MiniLinescore boxScore={boxScore} />}
+						// (The score by quarter, and the line and the total by it.)
+						extra={
+							<div className="recap-board">
+								<MiniLinescore boxScore={boxScore} />
+								<BoardLines boxScore={boxScore} />
+							</div>
+						}
 						navs={
 							teamNav
 								? [
@@ -812,9 +860,11 @@ const RecapHeader = ({
 	);
 };
 
-// The story of the game (the game's note - an AI recap, or one written in):
-// its first line the headline, the rest under it, names linked.
+// The story of the game (the game's note - an auto recap, or one written
+// in): its first line the headline, the rest under it, names linked. A
+// phone shows the headline and the first paragraph, the rest a tap away.
 const RecapStory = ({ boxScore }: { boxScore: any }) => {
+	const [open, setOpen] = useState(false);
 	const note: string | undefined = boxScore.note?.trim();
 	if (!note) {
 		return null;
@@ -831,6 +881,9 @@ const RecapStory = ({ boxScore }: { boxScore: any }) => {
 					.join("\n")
 					.trim()
 			: "";
+	const cut = body.search(/\n\s*\n/);
+	const lead = cut < 0 ? body : body.slice(0, cut);
+	const rest = cut < 0 ? "" : body.slice(cut).trim();
 	return (
 		<Section>
 			<div className="recap-headline">
@@ -838,7 +891,28 @@ const RecapStory = ({ boxScore }: { boxScore: any }) => {
 			</div>
 			{body ? (
 				<div className="recap-body">
-					<Markdown>{body}</Markdown>
+					<Markdown>{lead}</Markdown>
+					{rest ? (
+						<>
+							{open ? null : (
+								<button
+									type="button"
+									className="recap-more"
+									onClick={() => {
+										setOpen(true);
+									}}
+								>
+									Read more
+									<span className="tb-caret" />
+								</button>
+							)}
+							<div
+								className={open ? "recap-rest recap-rest-open" : "recap-rest"}
+							>
+								<Markdown>{rest}</Markdown>
+							</div>
+						</>
+					) : null}
 				</div>
 			) : null}
 		</Section>
@@ -1114,7 +1188,7 @@ export const GameRecap = ({
 			// (Its leaders are in the banner over it.)
 			body: (
 				<div className="gamecast-narrow recap-centered">
-					<RecapStory boxScore={boxScore} />
+					<RecapStory key={boxScore.gid} boxScore={boxScore} />
 				</div>
 			),
 		},
@@ -1350,7 +1424,7 @@ export const GameRecap = ({
 								<>
 									<div className="recap-grid">
 										<div className="recap-mid">
-											<RecapStory boxScore={boxScore} />
+											<RecapStory key={boxScore.gid} boxScore={boxScore} />
 											{boxScore.charts ? (
 												<Section title="Game Flow">
 													<FlowCharts

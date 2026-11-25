@@ -122,6 +122,25 @@ const standBy = (acts: readonly Act[], t: number): number => {
 	return by;
 };
 
+// Whether something of his other than `c` has him stood (or up in the air)
+// somewhere from `t0` till `t1`.
+const pinned = (
+	acts: readonly Act[],
+	c: Act,
+	t0: number,
+	t1: number,
+): boolean =>
+	acts.some(
+		(a) =>
+			a !== c &&
+			a.t0 < t1 &&
+			a.t1 > t0 &&
+			!a.flash &&
+			!a.quiet &&
+			!GATHER_INTO.has(a.anim) &&
+			!ON_THE_GO.has(a.anim),
+	);
+
 // Lays the run that brings him to his catch at `tc` on through it, if the
 // play has him stood there for it. Whether it did.
 export const carryThrough = (
@@ -411,6 +430,8 @@ const BEND_STEP = 0.1;
 // second) harder than from where it had him.
 const IN = 1;
 const NEXT_HARDER = 1;
+// (No run in faster than this on average, feet a second.)
+const TOP_RUN = 18;
 
 // Where a man is at t, as his moves have him (evenly along each).
 export const spotAt = (tr: Track, t: number): { x: number; y: number } => {
@@ -447,15 +468,29 @@ const nearest = (
 	return Math.hypot(A.x + dx * u - Q.x, A.y + dy * u - Q.y);
 };
 
-// Lays his run into the contest `c` of a jumper that leaves the shooter's
-// hands at `r` on through it, if the play has him stood for it. Whether it
-// did. (`shooter`: where the shooter is as it goes, and as he comes down.)
-export const closeThrough = (
-	tr: Track,
-	c: Act,
-	r: number,
-	shooter: readonly { x: number; y: number }[],
-): boolean => {
+// How a run is laid on up into a jump (see upThrough).
+type UpThrough = {
+	// Kept this far (feet) off each of these, at the least, where he goes
+	// - and, `bend`, bent by the first of them as he goes up if he must.
+	avoid: readonly { x: number; y: number }[];
+	near: number;
+	bend: boolean;
+	// The fastest he goes through it (feet a second).
+	most: number;
+	// The run in may carry him on up off the floor, to `r` at the most.
+	carried: boolean;
+	// His way in from no longer than this (ms) before he goes up - and, from
+	// stood, `wait`, set off on it as late as gets him there that fast (not
+	// a walk all the way).
+	back: number;
+	wait: boolean;
+};
+
+// Lays his run into the act `c` - up off the floor - on through it, if the
+// play has him stood for it: on the play's spot at `r` (as the shot leaves
+// the shooter's hands, or the ball comes to his own), still going. Whether
+// it did.
+const upThrough = (tr: Track, c: Act, r: number, o: UpThrough): boolean => {
 	if (!c.jump) {
 		return false;
 	}
@@ -473,13 +508,10 @@ export const closeThrough = (
 		if (L < STOOD) {
 			continue;
 		}
-		// (Not one going up after it is long gone - a hand up as it goes
-		// over him: on his way then, he is coming already.)
 		if (
 			!(m.v1 ?? 0) &&
-			off <= r + UP_AFTER &&
-			m.t1 >= off - ARRIVED_WITHIN &&
-			m.t1 <= off + CLOSE_LATE
+			m.t1 >= off - (o.wait ? o.back : ARRIVED_WITHIN) &&
+			m.t1 <= (o.carried ? Math.max(off + CLOSE_LATE, r) : off + CLOSE_LATE)
 		) {
 			k = i;
 		}
@@ -488,10 +520,14 @@ export const closeThrough = (
 	if (k < 0) {
 		return false;
 	}
-	// (His way in: the run - choppy steps and all - that ends there, back
-	// as far as it goes on the one way, at the most CLOSE_BACK before he
-	// goes up.)
+	// (His way in: the run - choppy steps and all, and the shuffle onto the
+	// spot it ends with - that ends there, back as far as it goes on the one
+	// way, at the most `back` before he goes up, and with nothing of his
+	// that has him stood on the way.)
 	const C = moves[k]!.to;
+	if (pinned(tr.acts, c, moves[k]!.t0, off)) {
+		return false;
+	}
 	let k0 = k;
 	while (k0 > 0) {
 		const a = moves[k0 - 1]!;
@@ -499,10 +535,15 @@ export const closeThrough = (
 		const La = len(a);
 		const Lc = Math.hypot(C.x - a.from.x, C.y - a.from.y);
 		if (
-			Math.abs(a.t1 - b.t0) > 1 ||
-			!(b.v0 ?? 0) ||
+			(o.wait ? a.t1 > b.t0 + 1 : Math.abs(a.t1 - b.t0) > 1) ||
+			!(
+				b.v0 ||
+				(k0 === k && len(b) < CLOSE_RUN_LEAST) ||
+				(o.wait && !(a.v1 ?? 0))
+			) ||
 			La < STOOD ||
-			off - a.t0 > CLOSE_BACK ||
+			off - a.t0 > o.back ||
+			pinned(tr.acts, c, a.t0, b.t0) ||
 			Lc < 1e-6 ||
 			((a.to.x - a.from.x) * (C.x - a.from.x) +
 				(a.to.y - a.from.y) * (C.y - a.from.y)) /
@@ -535,15 +576,15 @@ export const closeThrough = (
 	// He goes on the way he came - or, coming at the shooter, bends by
 	// him as he goes up (no more of a change in the way he is going than
 	// TURN_MOST, nor of a turn than this): by him on the side he is off to.
-	const S0 = shooter[0]!;
-	const side = ux * (S0.y - C.y) - uy * (S0.x - C.x) > 0 ? -1 : 1;
+	const S0 = o.avoid[0];
+	const side = S0 && ux * (S0.y - C.y) - uy * (S0.x - C.x) > 0 ? -1 : 1;
 	const wayAt = (th: number) => {
 		const c = Math.cos(th * side);
 		const sn = Math.sin(th * side);
 		return { x: ux * c - uy * sn, y: uy * c + ux * sn };
 	};
 	// Where he goes up from, coming at `v` and going on `w`: on the play's
-	// spot as it leaves the shooter's hands.
+	// spot at `r`.
 	const upAt = (v: number, w: { x: number; y: number }) => {
 		const s = (v * (off - r)) / 1000;
 		return s >= 0
@@ -560,18 +601,40 @@ export const closeThrough = (
 		E: { x: number; y: number };
 		end: number;
 		p: number;
+		go: number;
+	};
+	// (When he sets off on it, to be going `v` as he goes up from `X`.)
+	const goFor = (v: number, Lin: number): number | undefined => {
+		const T = (off - m.t0) / 1000;
+		if (v <= runShape(Lin, T, m.v0 ?? 0, 0).vc) {
+			return m.t0;
+		}
+		if (!o.wait || (m.v0 ?? 0) > 0) {
+			return undefined;
+		}
+		let lo = 0;
+		let hi = T;
+		for (let i = 0; i < 16; i++) {
+			const mid = (lo + hi) / 2;
+			if (runShape(Lin, mid, 0, 0).vc >= v) {
+				lo = mid;
+			} else {
+				hi = mid;
+			}
+		}
+		return lo > 0 && Lin / lo <= TOP_RUN ? off - lo * 1000 : undefined;
 	};
 	const plan = (v: number): Plan | undefined => {
 		const T = (off - m.t0) / 1000;
-		const most = Math.min(
-			BEND_MOST,
-			2 * Math.asin(Math.min(1, TURN_MOST / (2 * v))),
-		);
+		const most = !o.bend
+			? 0
+			: Math.min(BEND_MOST, 2 * Math.asin(Math.min(1, TURN_MOST / (2 * v))));
 		for (let th = 0; th <= most + 1e-9; th += BEND_STEP) {
 			const w = wayAt(th);
 			const X = upAt(v, w);
 			const Lin = Math.hypot(X.x - m.from.x, X.y - m.from.y);
-			if (T <= 0 || Lin < STOOD || v > runShape(Lin, T, m.v0 ?? 0, 0).vc) {
+			const go = T > 0 && Lin >= STOOD ? goFor(v, Lin) : undefined;
+			if (go === undefined) {
 				return undefined;
 			}
 			const Y = Pt(X.x + w.x * v * air, X.y + w.y * v * air);
@@ -623,8 +686,8 @@ export const closeThrough = (
 			) {
 				continue;
 			}
-			if (shooter.every((S) => nearest(X, E, S) >= CLOSE_NEAR)) {
-				return { w, X, Y, E, end, p };
+			if (o.avoid.every((S) => nearest(X, E, S) >= o.near)) {
+				return { w, X, Y, E, end, p, go };
 			}
 		}
 		return undefined;
@@ -633,7 +696,7 @@ export const closeThrough = (
 		return false;
 	}
 	let lo = CATCH_LEAST;
-	let hi = CLOSE_MOST;
+	let hi = o.most;
 	if (plan(hi)) {
 		lo = hi;
 	} else {
@@ -647,8 +710,9 @@ export const closeThrough = (
 		}
 	}
 	const v = lo;
-	const { X, Y, E, end, p } = plan(v)!;
+	const { X, Y, E, end, p, go } = plan(v)!;
 	const face = m.face !== undefined ? { face: m.face } : {};
+	m.t0 = go;
 	m.to = X;
 	m.t1 = off;
 	m.v1 = v;
@@ -732,9 +796,117 @@ export const throughContests = (
 			if (!c) {
 				continue;
 			}
+			// (Not one going up after it is long gone - a hand up as it goes
+			// over him: on his way then, he is coming already.)
 			const D = c.t1 - c.t0;
+			if (c.t0 + c.jump![0] * D > r + UP_AFTER) {
+				continue;
+			}
 			const S = [spotAt(shooter, r), spotAt(shooter, c.t0 + c.jump![1] * D)];
-			if (closeThrough(tr, c, r, S)) {
+			if (
+				upThrough(tr, c, r, {
+					avoid: S,
+					near: CLOSE_NEAR,
+					bend: true,
+					most: CLOSE_MOST,
+					carried: false,
+					back: CLOSE_BACK,
+					wait: false,
+				})
+			) {
+				n++;
+			}
+		}
+	}
+	return n;
+};
+
+// REBOUNDS. A real man who comes down with a rebound is on the move through
+// it - 4.5 to 5 ft/s in the second before he has it and as he does, median,
+// over the 17 games; stood for half a second or more before it only one
+// time in twelve. The play laid his run to the spot he takes it at as one
+// that ended there - pulled up in the air - and his jump straight up from
+// it. Laid on through it instead: on the play's spot as the ball comes to
+// his hands (the top of his jump), still going, off the floor going and on
+// at that pace in the air, braking once he is down, or on into what he
+// does next. His way in is the play's run there with the shuffle onto the
+// spot at the end of it, and any stop on the way; how fast he goes up is
+// drawn from the real spread, and from stood he sets off as late as gets
+// him there that fast - not a walk all the way.
+
+const BOARDS = new Set<AnimName>(["board", "rebound"]);
+// How fast real men are going as they come down with it (feet a second):
+// its tenth, quarter, half, three quarters and nine tenths, at their own
+// end and at the other - each man's drawn from it, going up for it no
+// faster than his. His way in from no longer than this (ms) before he goes
+// up.
+const BOARD_DEF = [1.5, 2.5, 4.5, 6.7, 8.9];
+const BOARD_OFF = [1.9, 3.1, 5.8, 9.5, 12.8];
+const BOARD_Q = [0.1, 0.25, 0.5, 0.75, 0.9];
+const BOARD_BACK = 2500;
+
+// A number from 0 to 1 that depends only on a and b (rounded to whole
+// numbers) - the same on every device.
+const hash01 = (a: number, b: number): number => {
+	let h =
+		Math.imul(Math.round(a) | 0, 0x9e3779b1) ^
+		Math.imul(Math.round(b) | 0, 0x85ebca77);
+	h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+	h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+// The value at `u` (0 to 1) of one with these quantiles (at BOARD_Q):
+// straight between them, no further out than the outermost.
+const quantileAt = (q: readonly number[], u: number): number => {
+	if (u <= BOARD_Q[0]!) {
+		return q[0]!;
+	}
+	for (let k = 1; k < BOARD_Q.length; k++) {
+		if (u <= BOARD_Q[k]!) {
+			const f = (u - BOARD_Q[k - 1]!) / (BOARD_Q[k]! - BOARD_Q[k - 1]!);
+			return q[k - 1]! + (q[k]! - q[k - 1]!) * f;
+		}
+	}
+	return q.at(-1)!;
+};
+
+// Every rebound laid on through it, where the play has the man stood for
+// it. How many it laid.
+export const throughBoards = (
+	tracks: ReadonlyMap<number, Track>,
+	ball: readonly BallSeg[],
+): number => {
+	let n = 0;
+	for (const tr of tracks.values()) {
+		for (const a of tr.acts) {
+			if (!BOARDS.has(a.anim) || !a.jump) {
+				continue;
+			}
+			const top = a.t0 + ((a.jump[0] + a.jump[1]) / 2) * (a.t1 - a.t0);
+			// (At their own end: the shot he goes up for was theirs.)
+			const shot = ball.findLast(
+				(b) => b.kind === "fly" && "pid" in b.from && b.t0 < top - 300,
+			);
+			const shooter =
+				shot?.kind === "fly" && "pid" in shot.from
+					? tracks.get(shot.from.pid)
+					: undefined;
+			const most = quantileAt(
+				shooter?.team === tr.team ? BOARD_OFF : BOARD_DEF,
+				hash01(tr.pid * 53 + 1, top),
+			);
+			if (
+				upThrough(tr, a, top, {
+					avoid: [],
+					near: 0,
+					bend: false,
+					most,
+					carried: true,
+					back: BOARD_BACK,
+					wait: true,
+				})
+			) {
 				n++;
 			}
 		}

@@ -12,6 +12,26 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 585,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): rebounders go up for the ball on the move, still coming as it gets to their hands, instead of getting to the spot and waiting for it to drop to them. How fast each one is going is drawn from how real rebounders move. Also fixed a one-frame hitch when the ball changed hands.",
+	},
+	{
+		n: 584,
+		date: "2026-11-25",
+		text: "3D game: the scorer's table looks like it does on TV now. Officials and media sit in two rows behind it, the back row up at its own counter in the home team's color, with monitors, laptops, papers and water bottles on the table and a black curtain behind them.",
+	},
+	{
+		n: 583,
+		date: "2026-11-25",
+		text: "3D game: the NBC and Peacock score bug is about a third bigger on phones, so the records, the clock and the network line are easier to read. It was the smallest score bug on a phone. Desktop is unchanged.",
+	},
+	{
+		n: 582,
+		date: "2026-11-25",
+		text: "A finished game's score banner now shows the line and the over/under under the score by quarter, with how each went: who covered, and over or under. On phones the game's recap opens with its headline and first paragraph, and Read more shows the rest.",
+	},
+	{
 		n: 581,
 		date: "2026-11-25",
 		text: "Draft History's Redraft column now shows how far second-round picks rose or fell too, counted from where they went overall.",

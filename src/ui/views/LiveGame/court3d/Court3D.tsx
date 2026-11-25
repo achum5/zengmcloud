@@ -22,6 +22,7 @@ import {
 	paintStands,
 	paintTable,
 } from "./arena.ts";
+import { scorersTableFor } from "./scorersTable.ts";
 import {
 	CAM_HOLD,
 	CAM_PAN,
@@ -737,6 +738,7 @@ const Court3D = ({
 		) => paintStands(h, a, seed, up, seats, end, fans, spec, playoffs, clap);
 		return {
 			courtside: courtsideFor(h, a, spec, fans),
+			scorersTable: scorersTableFor(h, fans),
 			stanchion: paintStanchionPanel(h, h?.colors?.[0] ?? "#8c1d40"),
 			stands: stands(0, crowd, undefined),
 			standsUp: stands(1, crowd, undefined),
@@ -1865,6 +1867,7 @@ const Court3D = ({
 					endStandsSparse: pt.endStandsSparse,
 					endStands: pt.endStands,
 					courtside: pt.courtside,
+					table: pt.scorersTable,
 					stanchion: pt.stanchion,
 					stanchionAds: pt.stanchionAds,
 					boards: pt.boards,

@@ -41,6 +41,10 @@ const TV_TIMEOUTS = __SPORT === "basketball" ? 7 : 0;
 // small to read on a phone.
 const MIN_WIDTH = 150;
 const MIN_HEIGHT = 32;
+// And at least the size it is on a picture this wide, px: a tall bug (three
+// rows, NBC's) kept only that tall had its records and network line too small
+// to read on a phone. (Wider pictures show every bug as on TV.)
+const MIN_PICTURE = 580;
 
 // A team's color written into CSS: "home0" alone, or in a gradient, a
 // border, a shadow ("linear-gradient(90deg, away0, away1)") - or
@@ -552,7 +556,8 @@ export const CustomScoreBug = ({
 	const span = style.span ?? 0.6;
 	const place = style.place ?? "center";
 	// (Never so small on a phone that it can't be read.)
-	const width = `min(96%, max(${span * 100}%, ${Math.max(MIN_WIDTH, (MIN_HEIGHT * W) / H)}px))`;
+	const least = Math.max(MIN_WIDTH, (MIN_HEIGHT * W) / H, span * MIN_PICTURE);
+	const width = `min(96%, max(${span * 100}%, ${least}px))`;
 	// (And never pushed off the side by being made bigger.)
 	const edge = `min(${(style.edge ?? 0.016) * 100}cqw, calc(98% - ${width}))`;
 	return (

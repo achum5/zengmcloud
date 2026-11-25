@@ -170,7 +170,7 @@ const PHOTO_TOPS = ["#18181c", "#262a33", "#3a3a3d", "#1f2a24", "#2d2230"];
 const PHOTO_PANTS = ["#18181a", "#4b4334", "#2b2e35", "#3c3f46"];
 
 const TABLE_TOPS = ["#16181d", "#22252c", "#1b2233", "#2a2a2e"];
-const TABLE_SEATS = [40.5, 45, 49.5, 54];
+export const TABLE_SEATS = [40.5, 45, 49.5, 54];
 export const TABLE_SEAT_Y = -8.1;
 // The people behind the scorer's table are drawn before it, which hides
 // them from the waist down.

@@ -734,7 +734,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			const whole = Math.max(L.from, when);
 			const from =
 				lo > whole
-					? whole + Math.ceil((lo - whole) / STEP_MS) * STEP_MS
+					? whole + Math.ceil((lo - whole) / STEP_MS - 1e-6) * STEP_MS
 					: whole;
 			const until = Math.min(end, tr.shown[k + 1]?.[0] ?? end, hi);
 			if (on && until > from) {

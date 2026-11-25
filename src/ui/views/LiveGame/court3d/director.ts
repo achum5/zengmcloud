@@ -146,6 +146,7 @@ import { type Follow, followWith } from "./possession/follow.ts";
 import { inchesOf, type OwnGait } from "./possession/gait.ts";
 import { signatureOf } from "./possession/signature.ts";
 import {
+	throughBoards,
 	throughContests,
 	throughPasses,
 	throughPullUps,
@@ -31696,12 +31697,14 @@ class Director {
 		// the rest, as he goes.
 		if (this.step) {
 			// (The new sim: a pass thrown and caught on the move, a pull-up
-			// gathered into, a closeout still coming as the shot goes up - not
-			// stood for: see possession/through.ts.)
+			// gathered into, a closeout still coming as the shot goes up, a
+			// rebound gone up for on the way in - not stood for: see
+			// possession/through.ts.)
 			if (this.possession) {
 				throughPasses(this.tracks, this.ball, this.spacing);
 				throughPullUps(this.tracks, this.ball, this.spacing);
 				throughContests(this.tracks, this.ball);
+				throughBoards(this.tracks, this.ball);
 			}
 			stepTimeline(
 				{
