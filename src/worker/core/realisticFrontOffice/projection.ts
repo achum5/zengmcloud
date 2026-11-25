@@ -26,6 +26,10 @@ export type RatingsProjection = {
 	boom: Split[];
 	// Every simulated career, each season, when asked for (keepCareers).
 	careers?: { ratings: number[]; ovr: number; measure: number[] }[][];
+	// His potential as the game defines it (monteCarloPot): the 75th
+	// percentile of his best overall through age 29 over these careers, which
+	// must run that far (years) - his overall now from 29 on.
+	pot: number;
 };
 
 type Split = {
@@ -75,6 +79,7 @@ export const projectRatings = ({
 	const careers: { ratings: number[]; ovr: number; measure: number[] }[][] =
 		Array.from({ length: years + 1 }, () => []);
 
+	const peaks = new Array<number>(samples).fill(0);
 	const realRandom = Math.random;
 	Math.random = makeSeededRandom(seed);
 	try {
@@ -88,6 +93,9 @@ export const projectRatings = ({
 					sums[y]![key]! += (copy as any)[key];
 				}
 				const o = ovr(copy as any);
+				if (y === 0 || age + y < 30) {
+					peaks[s] = Math.max(peaks[s]!, o);
+				}
 				ovrSums[y]! += o;
 				ovrSumSqs[y]! += o * o;
 				if (measure) {
@@ -138,6 +146,10 @@ export const projectRatings = ({
 				)
 			: [],
 		careers: keepCareers ? careers : undefined,
+		pot:
+			age >= 29
+				? ovrSums[0]! / samples
+				: peaks.sort((a, b) => a - b)[Math.floor(0.75 * samples)]!,
 	};
 };
 

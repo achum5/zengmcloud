@@ -3,6 +3,7 @@ import { RetiredPlayers } from "../components/RetiredPlayers.tsx";
 import { SeasonRecap } from "../components/SeasonRecap.tsx";
 import { PlayerRecaps } from "../components/PlayerRecaps.tsx";
 import { AchievementCards } from "../components/AchievementCards.tsx";
+import { SeasonReviewButton } from "../components/SeasonReview.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { useLocal } from "../util/local.ts";
@@ -199,6 +200,8 @@ const History = (props: View<"history">) => {
 	return (
 		<>
 			<MoreLinks type="awards" page="history" season={season} />
+
+			<SeasonReviewButton season={season} />
 
 			<div className="row">
 				<div className="col-md-3 col-sm-4 col-12">

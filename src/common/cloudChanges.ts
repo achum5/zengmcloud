@@ -12,9 +12,24 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
-		n: 586,
+		n: 589,
 		date: "2026-11-25",
 		text: "3D game: the far sideline is laid out like a real NBA arena. The scorer's table is longer, with courtside seats between it and each bench, and the benches sit further toward the baselines, with black padded chairs and the drinks coolers in the row behind. Coaches pace and huddle in front of their own bench, inside the coaching box.",
+	},
+	{
+		n: 588,
+		date: "2026-11-25",
+		text: "Season Summary has a Season in review button for every finished season. Tap through the year like a story: the champions, the Finals MVP and MVP, the other awards, the league leaders, your own season and the biggest careers that ended.",
+	},
+	{
+		n: 587,
+		date: "2026-11-25",
+		text: "Trade Summary now shows a trade tree when something from the deal was traded again: what each team got, what it later turned those players and picks into, and so on, down to where each one ended up.",
+	},
+	{
+		n: 586,
+		date: "2026-11-25",
+		text: "Smart CPU GMs judge young players more carefully, in the draft and in trades and signings. Lottery picks go more often to the prospects most likely to pan out. The player the draft board ranks first can still fall a long way when his potential is mostly luck.",
 	},
 	{
 		n: 585,

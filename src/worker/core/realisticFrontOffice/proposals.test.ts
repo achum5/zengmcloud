@@ -311,10 +311,25 @@ test(
 		// A good player draws bids, picks first when picks are asked for (as
 		// vanilla's: players after, if it would give no more picks).
 		assert.isAbove(offers.length, 0);
+		assert.isAbove(offers.filter(([, cpu]) => cpu.dpids.length > 0).length, 0);
 		for (const [user, cpu] of offers) {
 			assert.deepEqual(user.pids, [pid]);
-			assert.isAbove(cpu.dpids.length, 0);
 			assert.isAtMost(cpu.pids.length + cpu.dpids.length, 5);
+			if (cpu.dpids.length === 0) {
+				// None at all: a team that wants him only to send players out -
+				// no pick of its own would do for him alone.
+				for (const dp of await idb.cache.draftPicks.indexGetAll(
+					"draftPicksByTid",
+					cpu.tid,
+				)) {
+					const verdict = await judgeHumanOffer(
+						{ tid: cpu.tid, pids: [], dpids: [dp.dpid] },
+						{ tid: userTid, pids: user.pids, dpids: user.dpids },
+						{ shop: false },
+					);
+					assert.notStrictEqual(verdict.kind, "yes");
+				}
+			}
 			// One the team would take as offered, before it shops what it gives.
 			const verdict = await judgeHumanOffer(
 				{ tid: cpu.tid, pids: cpu.pids, dpids: cpu.dpids },
