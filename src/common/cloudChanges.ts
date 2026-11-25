@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 606,
+		date: "2026-11-25",
+		text: "Daily Schedule: in the strip of days across the top, the days your team plays show its little logo in the corner, instead of the games count in your team's colors.",
+	},
+	{
 		n: 605,
 		date: "2026-11-25",
 		text: "Daily Schedule: games still to be played get the same cards as played ones, in the teams' colors with each team's record where the score goes, the spread and over/under in the middle, and each team's best player beside it. Watch and Sim sit right on the card, only on games you can sim.",

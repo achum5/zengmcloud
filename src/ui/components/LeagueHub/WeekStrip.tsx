@@ -4,7 +4,6 @@ import {
 	useLayoutEffect,
 	useRef,
 	useState,
-	type CSSProperties,
 	type ReactNode,
 } from "react";
 import {
@@ -18,7 +17,6 @@ import type {
 } from "../../../worker/views/calendar.ts";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
-import { bannerColors, useAllTeamColors } from "../TeamBanner.tsx";
 import { MonthCalendar } from "../MonthCalendar.tsx";
 
 // THE NIGHTS ACROSS THE TOP, as NBA.com and ESPN have them: the month and a
@@ -42,22 +40,25 @@ const SPAN = 7;
 const dayUrl = (season: number, day: number) =>
 	helpers.leagueUrl(["daily_schedule", season, day]);
 
-// The user's team's colors, for the nights it plays.
-const useMineStyle = () => {
-	const { userTid } = useLocal(["userTid"]);
-	const allColors = useAllTeamColors();
-	const { bg, fg } = bannerColors(allColors?.[userTid]);
-	return { "--lh-mine-bg": bg, "--lh-mine-fg": fg } as CSSProperties;
-};
-
-// Under the date: how many games, on the user's team's color when it plays.
+// Under the date: how many games.
 const Games = ({ night }: { night: Night | undefined }) => (
-	<span className={clsx("lh-week-games", night?.mine && "lh-week-mine")}>
+	<span className="lh-week-games">
 		{night && night.numGames > 0
 			? `${night.numGames} ${night.numGames === 1 ? "game" : "games"}`
 			: null}
 	</span>
 );
+
+// The nights the user's team plays: its little logo in the corner.
+const Mine = ({ night }: { night: Night | undefined }) => {
+	const { teamInfoCache, userTid } = useLocal(["teamInfoCache", "userTid"]);
+	if (!night?.mine) {
+		return null;
+	}
+	const info = teamInfoCache[userTid];
+	const logo = info?.imgURLSmall ?? info?.imgURL;
+	return logo ? <img className="lh-week-logo" src={logo} alt="" /> : null;
+};
 
 const useNightTitle = () => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
@@ -290,7 +291,6 @@ const DatedStrip = ({
 		weeks.push(week);
 	}
 	const pager = usePager(weeks.length, weeks.indexOf(weekOf(date)), day);
-	const mineStyle = useMineStyle();
 	const nightTitle = useNightTitle();
 
 	// The month of the week in view: the shown night's, if it's in it.
@@ -299,7 +299,7 @@ const DatedStrip = ({
 		weekOf(date) === inView ? date : addDays(inView, Math.floor(SPAN / 2));
 
 	return (
-		<div className="lh-week" style={mineStyle}>
+		<div className="lh-week">
 			<MonthDropdown
 				calendar={calendar}
 				date={date}
@@ -319,6 +319,7 @@ const DatedStrip = ({
 									<span className="lh-week-top">{WEEKDAYS[weekdayOf(d)]}</span>
 									<span className="lh-week-num">{Number(d.slice(8, 10))}</span>
 									<Games night={night} />
+									<Mine night={night} />
 								</>
 							);
 							// (A day still to come with no games is a day to open too.)
@@ -382,11 +383,10 @@ const DayNumberStrip = ({
 		day,
 	);
 	const playoffs = (pages[pager.shown] ?? pages[0])?.[0]?.playoffs;
-	const mineStyle = useMineStyle();
 	const nightTitle = useNightTitle();
 
 	return (
-		<div className="lh-week" style={mineStyle}>
+		<div className="lh-week">
 			<div className="lh-month-wrap">
 				<span className="lh-month-button lh-month-static">
 					<span className="lh-month-label">
@@ -413,6 +413,7 @@ const DayNumberStrip = ({
 								<span className="lh-week-top">Day</span>
 								<span className="lh-week-num">{night.day}</span>
 								<Games night={night} />
+								<Mine night={night} />
 							</a>
 						))}
 					</div>

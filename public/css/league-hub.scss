@@ -109,6 +109,7 @@
 	}
 }
 .lh-week-day {
+	position: relative;
 	flex: 1 1 0;
 	min-width: 0;
 	display: flex;
@@ -137,7 +138,7 @@
 		color: var(--bs-body-bg);
 		background: var(--bs-emphasis-color);
 		.lh-week-top,
-		.lh-week-games:not(.lh-week-mine) {
+		.lh-week-games {
 			color: inherit;
 			opacity: 0.75;
 		}
@@ -148,8 +149,7 @@
 		opacity: 1;
 	}
 }
-// How many games, under the date - on the user's team's color the nights
-// it plays.
+// How many games, under the date.
 .lh-week-games {
 	min-height: 1rem;
 	margin-top: 0.1rem;
@@ -161,10 +161,14 @@
 	color: var(--bs-secondary-color);
 	border-radius: 999px;
 }
-.lh-week-mine {
-	font-weight: 700;
-	color: var(--lh-mine-fg);
-	background: var(--lh-mine-bg);
+// The nights the user's team plays: its little logo in the corner.
+.lh-week-logo {
+	position: absolute;
+	top: 0.2rem;
+	right: 0.2rem;
+	width: 0.9rem;
+	height: 0.9rem;
+	object-fit: contain;
 }
 .lh-week-off {
 	opacity: 0.35;
@@ -620,6 +624,12 @@
 	.lh-week-games {
 		padding: 0 0.25rem;
 		font-size: 0.56rem;
+	}
+	.lh-week-logo {
+		top: 0.05rem;
+		right: 0.05rem;
+		width: 0.65rem;
+		height: 0.65rem;
 	}
 }
 
