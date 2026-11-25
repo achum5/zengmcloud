@@ -21,6 +21,12 @@ import {
 	setPossessionSim,
 } from "../LiveGame/court3d/possession/setting.ts";
 import { bowlHere, setBowl } from "../LiveGame/court3d/bowlSetting.ts";
+import {
+	SOUND_SHOWN,
+	setSound,
+	soundHere,
+} from "../LiveGame/court3d/sound/setting.ts";
+import { sleepSound } from "../LiveGame/court3d/sound/context.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -56,6 +62,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				: ("hide" as const),
 			possessionSim: possessionSimHere() ? "show" : ("hide" as const),
 			bowl: bowlHere() ? "show" : ("hide" as const),
+			gameSound: soundHere() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -120,6 +127,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setRefreshedLook(state.refreshedLook === "show");
 		setPossessionSim(state.possessionSim === "show");
 		setBowl(state.bowl === "show");
+		if (soundHere() !== (state.gameSound === "show")) {
+			setSound(state.gameSound === "show");
+			if (state.gameSound !== "show") {
+				sleepSound();
+			}
+		}
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -193,6 +206,8 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							| "newInterface"
 							| "refreshedLook"
 							| "possessionSim"
+							| "bowl"
+							| "gameSound"
 					]
 				}
 			>
@@ -327,6 +342,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 						? showHide("bowl", "3D Arena", "On this device", [
 								"New (in progress)",
 								"Current",
+							])
+						: null}
+					{__SPORT === "basketball" && SOUND_SHOWN
+						? showHide("gameSound", "Game Sound", "On this device", [
+								"On (in progress)",
+								"Off",
 							])
 						: null}
 				</div>

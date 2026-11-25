@@ -49,6 +49,21 @@ const hopsOf = (r: FloorRoll) => {
 	return { hops, roll: h };
 };
 
+// Each time it comes down on the floor (for the sound of it): seconds after
+// it first comes off it - that first time too - and how fast it was going
+// up off it then (feet a second).
+export const floorTouches = (r: FloorRoll): { s: number; up: number }[] => {
+	const { hops } = hopsOf(r);
+	const out = [{ s: 0, up: r.up }];
+	let s = 0;
+	for (const [k, hop] of hops.entries()) {
+		s += hop.s;
+		const next = hops[k + 1];
+		out.push({ s, up: next ? next.up : hop.up * BOUNCE_E });
+	}
+	return out;
+};
+
 // Up against the wall, if it gets there: how long after it first comes off
 // the floor, and how high it is then and how fast it is going up. (There it
 // is dead: it drops where it is.)

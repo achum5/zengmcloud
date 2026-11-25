@@ -20,6 +20,8 @@ import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import { useHideTitleBar } from "../../components/TeamBanner.tsx";
 import { MatchupLine } from "./MatchupLine.tsx";
 import KeyPlaysSettings, { type BroadcastPick } from "./KeyPlaysSettings.tsx";
+import SoundButton from "./court3d/sound/SoundButton.tsx";
+import { SOUND_SHOWN } from "./court3d/sound/setting.ts";
 import type { LocalBroadcasts } from "../../../common/scoreBug.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
@@ -3387,6 +3389,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// button, and every play or the key plays picked under the gear.
 	const overlaySpeedControls = court3d ? (
 		<>
+			{__SPORT === "basketball" && SOUND_SHOWN ? (
+				<SoundButton className="btn btn-sm btn-light-bordered" />
+			) : null}
 			<Court3DSpeedMenu
 				value={rate3d}
 				onChange={(s) => {
@@ -3697,6 +3702,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 																	/>
 																</>
 															) : null}
+															{__SPORT === "basketball" && SOUND_SHOWN ? (
+																<SoundButton className="btn btn-sm btn-outline-primary ms-2" />
+															) : null}
 														</>
 													) : (
 														<input
@@ -3826,6 +3834,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 																onChange={setKeyPlaysState}
 															/>
 														</>
+													) : null}
+													{__SPORT === "basketball" && SOUND_SHOWN ? (
+														<SoundButton className="btn btn-sm btn-outline-primary ms-2" />
 													) : null}
 												</>
 											) : (

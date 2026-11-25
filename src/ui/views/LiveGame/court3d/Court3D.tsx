@@ -23,6 +23,10 @@ import {
 	paintTable,
 } from "./arena.ts";
 import { scorersTableFor } from "./scorersTable.ts";
+import { GameSound } from "./sound/engine.ts";
+import { loadBank } from "./sound/bank.ts";
+import { keepSoundAwake, wakeSound } from "./sound/context.ts";
+import { useSound } from "./sound/setting.ts";
 import {
 	CAM_HOLD,
 	CAM_PAN,
@@ -1389,6 +1393,46 @@ const Court3D = ({
 			until !== undefined && timeline ? clipStopAt(timeline, until) : undefined,
 		[until, timeline],
 	);
+	// THE GAME'S SOUND, with sound on on this device (see sound/): the
+	// building's night - a playoff game, as full as the gate says - and
+	// the sounds fetched once it is on.
+	const soundOn = useSound() && !preview && !authoredProp;
+	const sound = useRef<GameSound | undefined>(undefined);
+	const playoffsNight = !!boxScore?.playoffs;
+	const attNight: number | undefined = boxScore?.att;
+	const capacityNight: number | undefined = boxScore?.arena?.capacity;
+	useEffect(() => {
+		if (!soundOn) {
+			return;
+		}
+		const ctx = wakeSound();
+		if (!ctx) {
+			return;
+		}
+		const awake = keepSoundAwake();
+		const g = new GameSound(ctx, ctx.destination, {
+			playoffs: playoffsNight,
+			full:
+				attNight !== undefined && capacityNight
+					? Math.min(1, attNight / capacityNight)
+					: 0.93,
+		});
+		sound.current = g;
+		let gone = false;
+		void loadBank(ctx).then((bank) => {
+			if (!gone) {
+				g.setBank(bank);
+			}
+		});
+		return () => {
+			gone = true;
+			awake();
+			g.dispose();
+			sound.current = undefined;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [soundOn, gid]);
+
 	const live = useRef({
 		cursor,
 		paused,
@@ -1573,6 +1617,13 @@ const Court3D = ({
 				Date.now(),
 				p.authored ? Infinity : undefined,
 			);
+			sound.current?.tick({
+				tl,
+				t: s.t,
+				rate,
+				on: !p.paused && !s.replay,
+				camX: s.camX,
+			});
 			if (!staging && tl.clips && onCutRef.current) {
 				const k = tl.clips.findLastIndex((c) => c <= s.t);
 				if (k !== cutSeen.current) {

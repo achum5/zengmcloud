@@ -434,7 +434,7 @@ const crossMoveAt = (
 // the floor), for a point `ph` through the dribble: pushed down hard and
 // falling faster all the way to the floor, then rising off it and slowing
 // into the hand.
-const DOWN = 0.42;
+export const DOWN = 0.42;
 const dribbleDepth = (ph: number): number =>
 	ph < DOWN
 		? Math.pow(ph / DOWN, 1.55)
