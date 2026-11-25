@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 584,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): rebounders go up for the ball on the move, still coming as it gets to their hands, instead of getting to the spot and waiting for it to drop to them. How fast each one is going is drawn from how real rebounders move. Also fixed a one-frame hitch when the ball changed hands.",
+	},
+	{
 		n: 583,
 		date: "2026-11-25",
 		text: "3D game: the NBC and Peacock score bug is about a third bigger on phones, so the records, the clock and the network line are easier to read. It was the smallest score bug on a phone. Desktop is unchanged.",
