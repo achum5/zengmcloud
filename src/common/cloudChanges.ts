@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 601,
+		date: "2026-11-25",
+		text: "Player pages: the all-time milestones moved to the bottom as All-Time Ranks, shown for everyone who has played, retired players too: where they stand on the career lists for points, rebounds, assists, steals, blocks and 3-pointers. Tap one to open Player Stats' career totals sorted by that stat, the same as Full list on Milestone Watch.",
+	},
+	{
 		n: 600,
 		date: "2026-11-25",
 		text: "3D game: with two minutes left in the 4th, a team or network score bug's timeouts drop to the two a team can still use and count down from there as they're called. In overtime it shows each team's two.",
