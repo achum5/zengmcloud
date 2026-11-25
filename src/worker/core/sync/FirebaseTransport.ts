@@ -338,6 +338,12 @@ export class FirebaseTransport implements SyncTransport {
 		return this.lastContactAt;
 	}
 
+	// How long since then (the engine's contactAge, and the "Copy sync logs"
+	// snapshot's contactAgeMs, which read "—" while this was missing).
+	contactAge(): number {
+		return Date.now() - this.lastContactAt;
+	}
+
 	// Is the cloud connection ACTUALLY live right now? Cheap when we've had recent
 	// confirmed contact; otherwise does a real, timed round-trip. This is what lets
 	// the sim/advance guard refuse to advance when the app only *looks* connected
@@ -1294,9 +1300,34 @@ export class FirebaseTransport implements SyncTransport {
 		return out;
 	}
 
+	// One live game's doc as the SERVER has it, never the listener's copy,
+	// which after a sleep can be minutes behind (see sweepLiveGames in
+	// connect.ts). meta: undefined if no live game is there. updatedAt: when
+	// the server took its last write (the server's clock, ms).
+	async fetchLiveGameFromServer(gid: number): Promise<{
+		meta: LiveBroadcastMeta | undefined;
+		updatedAt: number | undefined;
+	}> {
+		const snap = await withTimeout(
+			getDocFromServer(
+				doc(this.db, "leagues", this.code, "control", liveGameDocId(gid)),
+			),
+			CONNECTION_PROBE_TIMEOUT_MS,
+		);
+		this.markContact();
+		const data = snap.data();
+		return {
+			meta: parseLiveBroadcastMeta(data, false),
+			updatedAt:
+				data?.updatedAt instanceof Timestamp
+					? data.updatedAt.toMillis()
+					: undefined,
+		};
+	}
+
 	// The game is over here: its doc and payload go. (A doc left by a device
-	// that never got to this is ignored once its lease is long gone, and
-	// cleared by the next device to start a live game - see connect.ts.)
+	// that never got to this is cleared by whoever finds it left behind - see
+	// sweepLiveGames in connect.ts.)
 	async clearLiveGame(gid: number, chunkCount: number) {
 		if (!validLiveGameRef(gid, chunkCount)) {
 			throw new Error(`Not a live game to clear: ${gid} (${chunkCount})`);

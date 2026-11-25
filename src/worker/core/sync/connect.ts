@@ -46,6 +46,7 @@ import {
 	setPhasePaintHold,
 } from "./liveWatchGate.ts";
 import {
+	broadcastStillLiveAfterReconnect,
 	chooseFocusGame,
 	createFollowerHold,
 	createLiveResultWait,
@@ -57,6 +58,10 @@ import {
 	mateLiveCall,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
+import {
+	createLatestOnlyQueue,
+	createLiveGameSweep,
+} from "./liveGameLeftovers.ts";
 import { isLiveSimNotificationHoldActive } from "./liveSimNotificationHold.ts";
 import {
 	readLocalLeagueId,
@@ -100,7 +105,7 @@ import { readRecoveryAttempt } from "./recoveryBreadcrumb.ts";
 import { createLiveHoldLease } from "./liveHoldLease.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {} from "../../../common/syncRetention.ts";
-import type { LiveBroadcastMeta, SyncTransport } from "./types.ts";
+import type { LiveBroadcastMeta } from "./types.ts";
 import type {
 	LiveScore,
 	LiveSync3D,
@@ -486,17 +491,34 @@ const wakeClock = createWakeClock(HEALTH_TICK_MS);
 let liveBroadcastUnsub: (() => void) | undefined;
 
 // Set on the BROADCASTER while it's broadcasting (for heartbeats + teardown).
+// Kept across a reconnect to the same room, so a dropped connection mid game
+// picks the broadcast back up rather than leaving its doc behind (see
+// resumeLiveBroadcast).
 let activeBroadcast:
 	| {
 			gid: number;
 			startedAt: number;
 			chunkCount: number;
 			byName: string;
+			label: string;
+			tids: [number, number] | undefined;
+			day: number | undefined;
 			playoffs: boolean;
 			// Its page's last heartbeat (see liveGameHoldingDay).
 			beatAt: number;
+			// The lease on the last heartbeat the server took: what the room has
+			// heard of this game (see broadcastStillLiveAfterReconnect).
+			liveUntil: number;
+			// The room and league it is in: a reconnect to these picks it back up,
+			// however many tries that takes.
+			code: string | undefined;
+			lid: number | undefined;
 	  }
 	| undefined;
+
+// The game a live broadcast is being started for, from before its payload is
+// written: its docs are this device's, mid write (see sweepLiveGames).
+let startingLiveGid: number | undefined;
 
 // Set on a FOLLOWER while it's watching someone else's broadcast. Tracks which
 // broadcast (startedAt) we've already navigated to, and the lease expiry so a
@@ -997,51 +1019,54 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 			return;
 		}
 
-		// (A game that played out somewhere else, never cleared - out of the way.)
-		void clearDeadLiveGames(transport, gid);
+		// (Games left behind - somebody's lost connection - out of the way.)
+		startingLiveGid = gid;
+		void sweepLiveGames();
 
 		const serialized = serializeChangeset({ boxScore, playByPlay });
 		const chunkCount = await transport.publishLiveGameData(gid, serialized);
 
 		const startedAt = Date.now();
 		const byName = engine.localName;
-		activeBroadcast = {
+		const tids: [number, number] | undefined =
+			typeof boxScore.teams?.[0]?.tid === "number" &&
+			typeof boxScore.teams?.[1]?.tid === "number"
+				? [boxScore.teams[0].tid, boxScore.teams[1].tid]
+				: undefined;
+		const broadcast = {
 			gid,
 			startedAt,
 			chunkCount,
 			byName,
+			label: await broadcastLabel(boxScore),
+			tids,
+			day: typeof boxScore.day === "number" ? boxScore.day : undefined,
 			playoffs: boxScore.playoffs === true,
 			beatAt: startedAt,
+			liveUntil: 0,
+			code: currentCode,
+			lid: connectedLid,
 		};
+		activeBroadcast = broadcast;
+		startingLiveGid = undefined;
 
 		// Scope chat to THIS broadcast and wipe the room's chat doc, so last
 		// game's conversation cannot appear over this one.
 		await beginLiveChat(gid, startedAt, true);
 
 		// Payload is written; now the meta doc says active so followers react.
-		const tids: [number, number] | undefined =
-			typeof boxScore.teams?.[0]?.tid === "number" &&
-			typeof boxScore.teams?.[1]?.tid === "number"
-				? [boxScore.teams[0].tid, boxScore.teams[1].tid]
-				: undefined;
+		const expiresAt = Date.now() + LIVE_BROADCAST_LEASE_MS;
 		await transport.publishLiveGame(gid, {
-			active: true,
-			gid,
-			byName,
-			label: await broadcastLabel(boxScore),
+			...liveGameIdentity(broadcast),
 			cursor: 0,
 			paused: false,
 			speed: 7,
 			gameOver: false,
-			startedAt,
-			chunkCount,
-			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
+			expiresAt,
 			// Until the simmer's first heartbeat says otherwise.
 			view: "classic",
-			tids,
-			day: typeof boxScore.day === "number" ? boxScore.day : undefined,
-			playoffs: boxScore.playoffs === true,
 		});
+		broadcast.liveUntil = Math.max(broadcast.liveUntil, expiresAt);
 
 		// Tell our own UI it's broadcasting, so the LiveGame view heartbeats the
 		// cursor and shows the "broadcasting" banner.
@@ -1061,39 +1086,83 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 		]);
 	} catch (error) {
 		console.error("startLiveBroadcast failed", error);
+	} finally {
+		if (startingLiveGid === gid) {
+			startingLiveGid = undefined;
+		}
 	}
 };
 
-// A live game doc whose lease ran out this long ago is a device that went
-// away mid game and never cleared it. Whoever starts the next one clears it.
-const DEAD_LIVE_GAME_MS = 30 * 60 * 1000;
-const clearDeadLiveGames = async (
-	transport: SyncTransport,
-	// The game being started here: its docs are being written right now.
-	startingGid: number,
-) => {
-	const now = Date.now();
-	for (const meta of lastLiveGameMetas) {
-		if (
-			meta.legacy ||
-			meta.gid === startingGid ||
-			now - meta.expiresAt < DEAD_LIVE_GAME_MS
-		) {
-			continue;
-		}
-		try {
-			await transport.clearLiveGame?.(meta.gid, meta.chunkCount);
-			syncDebugLog("live:dead-game-cleared", { gid: meta.gid });
-		} catch {
-			// Somebody else's to clear next time.
-		}
+// What says which game a live game doc is, written whole: at the start, and
+// again when a broadcast is picked back up after a reconnect (the doc may
+// have been cleared meanwhile, and a heartbeat alone makes no game of it).
+const liveGameIdentity = (broadcast: NonNullable<typeof activeBroadcast>) => ({
+	active: true,
+	gid: broadcast.gid,
+	byName: broadcast.byName,
+	label: broadcast.label,
+	startedAt: broadcast.startedAt,
+	chunkCount: broadcast.chunkCount,
+	tids: broadcast.tids,
+	day: broadcast.day,
+	playoffs: broadcast.playoffs,
+});
+
+// This device's own game, back from a reconnect to the same room part way
+// through it: still the room's live game if the room has not called it over
+// meanwhile (heartbeats go on from here, the final and the clear at the end
+// with them). Otherwise it is over for everyone already, and the broadcast
+// ends here too - the page plays on, on this screen only.
+const resumeLiveBroadcast = async (transport: FirebaseTransport) => {
+	const broadcast = activeBroadcast;
+	if (!broadcast || !transport.publishLiveGame) {
+		return;
+	}
+	if (!broadcastStillLiveAfterReconnect(broadcast.liveUntil, Date.now())) {
+		syncDebugLog("live:broadcast-over-after-reconnect", {
+			gid: broadcast.gid,
+			quietMs: Date.now() - broadcast.liveUntil,
+		});
+		await endLiveBroadcast();
+		return;
+	}
+	syncDebugLog("live:broadcast-kept-across-reconnect", { gid: broadcast.gid });
+	const expiresAt = Date.now() + LIVE_BROADCAST_LEASE_MS;
+	try {
+		await transport.publishLiveGame(broadcast.gid, {
+			...liveGameIdentity(broadcast),
+			expiresAt,
+		});
+		broadcast.liveUntil = Math.max(broadcast.liveUntil, expiresAt);
+	} catch {
+		// The page's next heartbeat tries again; the sweep backs it up.
 	}
 };
+
+// LIVE GAMES LEFT BEHIND (see liveGameLeftovers.ts). Every device, on the
+// health tick and whenever the room's live games change.
+const sweepLiveGames = createLiveGameSweep({
+	transport: () => currentTransport,
+	metas: () => lastLiveGameMetas,
+	playingHere: (gid) => gid === startingLiveGid || gid === activeBroadcast?.gid,
+	giveUp: (meta) => {
+		if (roomLiveCheck.givenUp(meta.startedAt)) {
+			return false;
+		}
+		roomLiveCheck.giveUp(meta);
+		return true;
+	},
+	onCalledOver: () => {
+		recheckLiveSpoilers();
+	},
+	log: syncDebugLog,
+});
 
 // Heartbeat the broadcaster's playback position to the room. Called from the
 // LiveGame view's heartbeat while broadcasting - on a change, at most a few
 // times a second. Cheap merge write; no-op if we're not actually broadcasting.
-export const updateLiveBroadcast = async (update: {
+// One at a time, the latest waiting (see createLatestOnlyQueue).
+type LiveBeat = {
 	cursor: number;
 	paused: boolean;
 	speed: number;
@@ -1101,13 +1170,19 @@ export const updateLiveBroadcast = async (update: {
 	view?: string;
 	sync?: Omit<LiveSync3D, "of">;
 	score?: LiveScore;
-}) => {
+};
+const liveBeats = createLatestOnlyQueue<LiveBeat>();
+
+export const updateLiveBroadcast = async (update: LiveBeat) => {
 	const transport = currentTransport;
 	const broadcast = activeBroadcast;
+	if (broadcast) {
+		// (The page is still playing it, connection or not.)
+		broadcast.beatAt = Date.now();
+	}
 	if (!transport || !broadcast || !transport.publishLiveGame) {
 		return;
 	}
-	broadcast.beatAt = Date.now();
 
 	// Mirror to our own UI first (instant, can't fail), then push to the cloud.
 	void toUI("updateLocal", [
@@ -1125,23 +1200,29 @@ export const updateLiveBroadcast = async (update: {
 		},
 	]);
 
-	try {
-		await transport.publishLiveGame(broadcast.gid, {
-			active: true,
-			cursor: update.cursor,
-			paused: update.paused,
-			speed: update.speed,
-			gameOver: update.gameOver,
-			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
-			view: update.view,
-			sync: update.sync
-				? { ...update.sync, of: broadcast.startedAt }
-				: undefined,
-			score: update.score,
-		});
-	} catch {
-		// A dropped heartbeat is harmless - the next one re-stamps the lease.
-	}
+	await liveBeats.push(update, async (beat) => {
+		// (Not once the broadcast is over, or onto a connection gone since.)
+		if (activeBroadcast !== broadcast || currentTransport !== transport) {
+			return;
+		}
+		const expiresAt = Date.now() + LIVE_BROADCAST_LEASE_MS;
+		try {
+			await transport.publishLiveGame(broadcast.gid, {
+				active: true,
+				cursor: beat.cursor,
+				paused: beat.paused,
+				speed: beat.speed,
+				gameOver: beat.gameOver,
+				expiresAt,
+				view: beat.view,
+				sync: beat.sync ? { ...beat.sync, of: broadcast.startedAt } : undefined,
+				score: beat.score,
+			});
+			broadcast.liveUntil = Math.max(broadcast.liveUntil, expiresAt);
+		} catch {
+			// A dropped heartbeat is harmless - the next one re-stamps the lease.
+		}
+	});
 };
 
 // End the current broadcast (the simmer left the live game, or it's being torn
@@ -1150,6 +1231,8 @@ export const endLiveBroadcast = async () => {
 	const transport = currentTransport;
 	const broadcast = activeBroadcast;
 	activeBroadcast = undefined;
+	// (A heartbeat still waiting would put the doc back after the clear.)
+	liveBeats.clear();
 
 	void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
 
@@ -1634,6 +1717,8 @@ const handleLiveGames = async (
 		}
 	}
 	pushLiveGames();
+	// (A game left behind, looked into the moment it is heard of.)
+	void sweepLiveGames();
 };
 
 // The header's live scores and the schedules' LIVE: every league mate's game
@@ -2732,9 +2817,26 @@ const doConnectSharedLeague = async ({
 		connectedLid ===
 			(typeof lidAtConnect === "number" ? lidAtConnect : undefined);
 
+	// And so does this device's own game being broadcast: a dropped connection
+	// part way through it used to end the broadcast with the clear going out
+	// on the dead connection, leaving the game Delayed on every other device
+	// while its page played on to the final, heard by nobody.
+	// (By the room it started in: a try that failed in between has already
+	// forgotten which room this device was in.)
+	const keepBroadcast =
+		activeBroadcast !== undefined &&
+		activeBroadcast.code === trimmed &&
+		activeBroadcast.lid !== undefined &&
+		activeBroadcast.lid ===
+			(typeof lidAtConnect === "number" ? lidAtConnect : undefined);
+
 	// Tear down any existing live session first, but do not erase the persisted
 	// room intent while reconnecting/switching transports.
-	await teardownSharedLeague({ clearPersisted: false, keepFollow });
+	await teardownSharedLeague({
+		clearPersisted: false,
+		keepFollow,
+		keepBroadcast,
+	});
 
 	// From here on this device is committed to the session, so simming stays
 	// gated through the whole async connect (and if it throws) - never sim
@@ -2826,7 +2928,7 @@ const doConnectSharedLeague = async ({
 	} catch (error) {
 		syncDebugLog("connect:room-state-failed", { error: String(error) });
 		if (explicit) {
-			await teardownSharedLeague({ clearPersisted: false });
+			await teardownSharedLeague({ clearPersisted: false, keepBroadcast });
 			void toUI("updateLocal", [{ mpSyncActive: false }]);
 		}
 		throw new Error(
@@ -2845,7 +2947,7 @@ const doConnectSharedLeague = async ({
 			.countEntriesSince(0)
 			.catch(() => undefined);
 		if (legacyEntries === undefined || legacyEntries > 0) {
-			await teardownSharedLeague({ clearPersisted: false });
+			await teardownSharedLeague({ clearPersisted: false, keepBroadcast });
 			void toUI("updateLocal", [{ mpSyncActive: false }]);
 			throw new Error(
 				"This room uses the old sync protocol, which has been removed. Create a new room, then have everyone import the same league export and join it.",
@@ -2869,7 +2971,7 @@ const doConnectSharedLeague = async ({
 		}
 	}
 	if (v2State === undefined) {
-		await teardownSharedLeague({ clearPersisted: false });
+		await teardownSharedLeague({ clearPersisted: false, keepBroadcast });
 		void toUI("updateLocal", [{ mpSyncActive: false }]);
 		throw new Error(
 			"Couldn't set up this room. Check your connection and try again.",
@@ -3194,7 +3296,7 @@ const doConnectSharedLeague = async ({
 			await engine.claimAuthorityIfVacant();
 		}
 	} catch (error) {
-		await teardownSharedLeague({ clearPersisted: false });
+		await teardownSharedLeague({ clearPersisted: false, keepBroadcast });
 		throw error;
 	}
 
@@ -3270,6 +3372,8 @@ const doConnectSharedLeague = async ({
 		checkStrandedLiveFlag();
 		// (A watch ending, a broadcast lapsing: the bars catch up.)
 		recheckLiveSpoilers();
+		// And a live game somebody's dropped connection left behind is over.
+		void sweepLiveGames();
 		// V2's whole health story: ask the server where the head is (the live
 		// listener is the fast path, but this probe is what bounds staleness
 		// when a listener dies silently - one tiny doc read per tick), and
@@ -3332,7 +3436,11 @@ const doConnectSharedLeague = async ({
 	// Watch for a live-sim broadcast. On a follower this navigates into the live
 	// game and drives lockstep playback; on the broadcaster its own echo is
 	// ignored (handled locally).
-	activeBroadcast = undefined;
+	if (keepBroadcast && activeBroadcast) {
+		void resumeLiveBroadcast(transport);
+	} else {
+		activeBroadcast = undefined;
+	}
 	if (keepFollow && followedBroadcast) {
 		syncDebugLog("live:follow-kept-across-reconnect", {
 			gid: followedBroadcast.gid,
@@ -3452,11 +3560,15 @@ const doConnectSharedLeague = async ({
 export const teardownSharedLeague = async ({
 	clearPersisted = false,
 	keepFollow = false,
+	keepBroadcast = false,
 }: {
 	clearPersisted?: boolean;
 	// Reconnecting to the same room: leave a watch in progress as it is (see
 	// doConnectSharedLeague).
 	keepFollow?: boolean;
+	// Reconnecting to the same room: this device's own game being broadcast
+	// goes on (see resumeLiveBroadcast).
+	keepBroadcast?: boolean;
 } = {}) => {
 	const lid = g.get("lid");
 	const lidToClear =
@@ -3489,10 +3601,14 @@ export const teardownSharedLeague = async ({
 	teardownLiveChat();
 	teardownTriviaScores();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
-	if (activeBroadcast) {
-		void endLiveBroadcast();
+	// (Unless it goes on after a reconnect; if that never comes, its doc is
+	// cleared as left behind - see sweepLiveGames.)
+	if (!keepBroadcast) {
+		if (activeBroadcast) {
+			void endLiveBroadcast();
+		}
+		activeBroadcast = undefined;
 	}
-	activeBroadcast = undefined;
 	if (!keepFollow) {
 		withdrawOffer();
 		followedBroadcast = undefined;
@@ -3519,8 +3635,8 @@ export const teardownSharedLeague = async ({
 			mpSyncHealthy: false,
 			mpEditsPaused: false,
 			mpCatchUp: undefined,
-			// (A watch kept across a reconnect keeps its page.)
-			...(keepFollow ? {} : { mpLiveBroadcast: undefined }),
+			// (A watch or a broadcast kept across a reconnect keeps its page.)
+			...(keepFollow || keepBroadcast ? {} : { mpLiveBroadcast: undefined }),
 			mpLiveGames: [],
 			mpLotteryReveal: undefined,
 			mpPendingUploads: 0,

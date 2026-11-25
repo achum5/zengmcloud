@@ -2758,6 +2758,53 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Field (2026-11-24): the dot went red mid game and stayed red - the
+	// league mates' screens frozen on the simmer's last heartbeat - until the
+	// page was reloaded, while the head probe (a read) kept passing. A write
+	// half that stops answering gets the read side's cure: a fresh channel,
+	// then a fresh client.
+	test("readiness pings going unanswered get the network cycled, then the client restarted", async () => {
+		const room = new Room();
+		initRoom(room);
+		const transport = new V2Transport("B", room);
+		const calls: string[] = [];
+		(transport as any).cycleNetwork = async () => {
+			calls.push("cycle");
+		};
+		(transport as any).hardRestart = async () => {
+			calls.push("restart");
+		};
+		let pingFails = true;
+		transport.ping = async () => {
+			if (pingFails) {
+				throw new Error("Timed out after 8000ms");
+			}
+		};
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+
+		await engine.ensureReady().catch(() => {});
+		assert.deepStrictEqual(calls, [], "one miss is a blip");
+		await engine.ensureReady().catch(() => {});
+		assert.deepStrictEqual(calls, ["cycle"]);
+		assert.strictEqual(engine.isReady(), false);
+
+		// Still unanswered after the cycle (and past its spacing).
+		(engine as any).lastNetworkCycleAt = 0;
+		await engine.ensureReady().catch(() => {});
+		await engine.ensureReady().catch(() => {});
+		assert.deepStrictEqual(calls, ["cycle", "restart"]);
+
+		// Answered again: ready, and the next stuck spell starts at the cheap
+		// rung.
+		pingFails = false;
+		await engine.ensureReady(true);
+		assert.strictEqual(engine.isReady(), true);
+		assert.strictEqual((engine as any).readyRemedyCount, 0);
+		assert.strictEqual((engine as any).readyPingFailures, 0);
+		engine.stop();
+	});
+
 	// v2 shipped subscribeAuthority with no error handler. A Firestore listener
 	// is terminal once it errors, so one blip left the device believing forever
 	// that whoever was simming at that moment still was - and isRoomBusy()

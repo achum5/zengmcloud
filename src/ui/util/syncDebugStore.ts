@@ -19,6 +19,57 @@ const STORAGE_KEY = "syncDebugLog";
 let entries: SyncDebugEntry[] = [];
 let seq = 0;
 
+// Kept across a reload of this tab: the capture copied after refreshing a page
+// that got stuck is the one that has to say what happened BEFORE the refresh,
+// and that used to go with the page. (sessionStorage: this tab only, gone with
+// it.)
+const SESSION_KEY = "syncDebugEntries";
+const SESSION_MAX = 300;
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+const saveEntries = () => {
+	if (saveTimer !== undefined) {
+		clearTimeout(saveTimer);
+		saveTimer = undefined;
+	}
+	try {
+		sessionStorage.setItem(
+			SESSION_KEY,
+			JSON.stringify(entries.slice(-SESSION_MAX)),
+		);
+	} catch {
+		// Full or unavailable: this page's lines are still on screen.
+	}
+};
+const scheduleSave = () => {
+	if (saveTimer === undefined) {
+		saveTimer = setTimeout(saveEntries, 1000);
+	}
+};
+try {
+	const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "[]");
+	if (Array.isArray(saved) && saved.length > 0) {
+		entries = saved.filter(
+			(e): e is SyncDebugEntry =>
+				e &&
+				typeof e.seq === "number" &&
+				typeof e.at === "string" &&
+				typeof e.event === "string",
+		);
+		seq = entries.reduce((max, e) => Math.max(max, e.seq), 0);
+		seq += 1;
+		const at = new Date().toISOString();
+		entries.push({
+			seq,
+			at,
+			event: "page:reloaded",
+			payload: { at, event: "page:reloaded" },
+		});
+	}
+	window.addEventListener("pagehide", saveEntries);
+} catch {
+	// No storage here: a capture covers this page only, as before.
+}
+
 const emitter = createNanoEvents<{
 	change: (entries: SyncDebugEntry[]) => void;
 }>();
@@ -73,6 +124,7 @@ const PINNED_EVENTS = new Set([
 	"v2:slot-taken",
 	"v2:network-cycled",
 	"v2:hard-restart",
+	"page:reloaded",
 	"v2:hard-restart-failed",
 	"v2:drain-failed",
 	"v2:apply-declined",
@@ -105,6 +157,7 @@ export const pushSyncDebugEntry = (payload: Record<string, unknown>) => {
 		}
 	}
 	entries = next;
+	scheduleSave();
 	emitter.emit("change", entries);
 };
 
@@ -112,6 +165,7 @@ export const getSyncDebugEntries = (): SyncDebugEntry[] => entries;
 
 export const clearSyncDebugEntries = () => {
 	entries = [];
+	saveEntries();
 	emitter.emit("change", entries);
 };
 

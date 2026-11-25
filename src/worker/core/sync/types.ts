@@ -629,6 +629,12 @@ export interface SyncTransport {
 		chunkCount: number,
 	): Promise<string | undefined>;
 	clearLiveGame?(gid: number, chunkCount: number): Promise<void>;
+	// One live game's doc read from the server, never a cache (see
+	// sweepLiveGames in connect.ts).
+	fetchLiveGameFromServer?(gid: number): Promise<{
+		meta: LiveBroadcastMeta | undefined;
+		updatedAt: number | undefined;
+	}>;
 
 	// Live lottery-reveal broadcast (see LotteryRevealMeta). Optional so the
 	// in-memory test transport can skip it.

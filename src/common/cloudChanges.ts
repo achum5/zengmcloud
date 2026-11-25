@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 613,
+		date: "2026-11-25",
+		text: "Shared leagues: a game being played live no longer gets stuck as Delayed on everyone else's screen when the person playing it loses their connection. If they get back within a couple of minutes the game carries on; if not, it ends for everyone within a few minutes instead of hanging around. The dot by the date also gets itself back to green when uploads stall, instead of staying red until you refresh.",
+	},
+	{
 		n: 612,
 		date: "2026-11-25",
 		text: "Daily Schedule: upcoming game cards no longer say Today in the middle, just the line and the over/under. Games on national TV still show the network's logo above them.",
