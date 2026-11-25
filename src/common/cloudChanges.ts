@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 636,
+		date: "2026-11-25",
+		text: "3D game, New sim: legs move more like a real body. Toes point out instead of in, so knees stop caving inward, hips turn with the feet, and players step around as they turn instead of twisting on planted feet until their legs cross. A foot no longer gets left behind on its toes, and the stepping leg no longer kicks out to the side.",
+	},
+	{
 		n: 635,
 		date: "2026-11-25",
 		text: "3D game: the score bug keeps the same proportions on every size of picture, as if the whole picture were shrunk or blown up. The small picture in the Daily Schedule's Nightly Recap no longer has an oversized score bug, and a full size game shows the bug in proportion too. Phones keep their bigger, easier to read bug.",

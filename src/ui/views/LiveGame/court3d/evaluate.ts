@@ -2201,6 +2201,33 @@ const calm = (tl: CourtTimeline, tr: Track, k: number): boolean => {
 	}
 	return !passComing(tl, tr.pid, k);
 };
+// The new possession sim's men turn as a body does - stepping round with
+// it, a foot at a time (see possession/footsteps.ts) - no quicker than
+// BODY_TURN of a pivot's rate: not whipped half round in a third of a
+// second on feet left pointing the old way. Unless rushed round onto where
+// he is going, with the ball in his hands or coming to him, or in a move of
+// his own or about to be (a catch, a shot) - each timed on a pivot's rate.
+const BODY_TURN = 0.6;
+const BODY_TURN_NEAR = 600;
+const bodied = (tl: CourtTimeline, tr: Track, k: number): boolean => {
+	if (!tl.gaits?.has(tr.pid)) {
+		return false;
+	}
+	for (let i = lastT0(tr.acts, k + BODY_TURN_NEAR); i >= 0; i--) {
+		const a = tr.acts[i]!;
+		if (a.t1 > k - BODY_TURN_NEAR && !a.flash && !a.quiet) {
+			return false;
+		}
+		if (a.t0 < k - 4 * BODY_TURN_NEAR) {
+			break;
+		}
+	}
+	const seg = ballSegAt(tl, k);
+	if (seg?.kind === "hold" && seg.pid === tr.pid) {
+		return false;
+	}
+	return !passComing(tl, tr.pid, k);
+};
 // Worked-out beats, kept per player: keyed by the beat and which settling
 // moment it was worked out from.
 const beatYaws = new WeakMap<Track, Map<number, Turning>>();
@@ -2246,7 +2273,9 @@ const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 					? TURN_MAX * CALM_TURN
 					: sliding(tr, k)
 						? TURN_MAX * SLIDE_TURN
-						: TURN_MAX,
+						: bodied(tl, tr, k)
+							? TURN_MAX * BODY_TURN
+							: TURN_MAX,
 		);
 		kept.set(key(k), turning);
 	}
@@ -5043,9 +5072,9 @@ export const evalPlayer = (
 					...st,
 					// (A foot swinging through, mid-swing, his stride's own.)
 					feet: st.feet!.map((f) =>
-						f.swing === undefined || f.air
+						f.swing === undefined || f.air || !f.stride
 							? f
-							: { ...f, w: f.w * (1 - ownSwing(f.swing)) },
+							: { ...f, w: f.w * (1 - ownSwing(f.swing)), on: f.w },
 					) as [FootHere, FootHere],
 					phase: feet.phase ?? st.phase,
 				};
@@ -5105,6 +5134,11 @@ export type FootHere = {
 	swing?: number;
 	land?: { x: number; y: number; w: number };
 	lifted?: { x: number; y: number; w: number };
+	// (And whether it is a stride - see STRIDE_LEAST.)
+	stride?: boolean;
+	// (How much his legs go to his feet at all, as w is before a stride's
+	// own picture takes a foot swinging through - see hipsOver.)
+	on?: number;
 };
 // (A stretch's edges: what his legs are doing on the other side - up in a
 // jump, so they go over to it once he is off the floor, and come down out
@@ -5431,6 +5465,15 @@ const SWING_INTO = 0.3;
 const SWING_OUT_OF = 0.35;
 const ownSwing = (u: number): number =>
 	smooth01(u / SWING_INTO) * smooth01((1 - u) / SWING_OUT_OF);
+// (Only on a stride, though: a step on the way it points, at least so far
+// (feet) and no further off it than so much (radians) - his stride's picture
+// swings a leg out in front of his hips, and a step round or across with
+// it would kick his foot out to his side. Any other step swings straight
+// from where it came up to where it comes down, his knee bent as that
+// takes.)
+const STRIDE_LEAST = 0.6;
+const STRIDE_OFF = (35 * Math.PI) / 180;
+const STEP_HIGH = 0.4;
 // How high a foot swings (feet): higher the quicker it goes through.
 const swingHigh = (d: number, ms: number): number => {
 	const v = d / Math.max(0.05, ms / 1000);
@@ -5482,7 +5525,12 @@ const footOn = (
 		return floor + (withHim - floor) * m;
 	};
 	const d = Math.hypot(n.x - s.x, n.y - s.y);
-	const high = swingHigh(d, T);
+	const stride =
+		d >= STRIDE_LEAST &&
+		Math.abs(wrapAngle(Math.atan2(n.y - s.y, n.x - s.x) - n.yaw)) <= STRIDE_OFF;
+	// (A step swung straight through, not as a stride's picture has it, up
+	// off the floor only as far as a step clears it.)
+	const high = stride ? swingHigh(d, T) : Math.min(STEP_HIGH, swingHigh(d, T));
 	return {
 		x: at("x"),
 		y: at("y"),
@@ -5494,6 +5542,7 @@ const footOn = (
 		swing: u,
 		land: { x: c.x + n.x - c1.x, y: c.y + n.y - c1.y, w: 1 },
 		lifted: { x: c.x + s.x - c0.x, y: c.y + s.y - c0.y, w: 1 },
+		stride,
 	};
 };
 // His feet up in his jump, `w` of the way to where the k'th stretch has
@@ -8496,11 +8545,70 @@ export const poseOf = (st: PlayerState): Posed => {
 			down: p.down,
 			...(p.air ? { air: true } : {}),
 			...(p.swing === undefined ? {} : { swing: p.swing }),
+			...(p.on === undefined ? {} : { on: p.on }),
 			...(p.land ? { land: bodySpot(st, p.land) } : {}),
 			...(p.lifted ? { lifted: bodySpot(st, p.lifted) } : {}),
 		};
 	}) as [FootAt, FootAt];
-	return { ...q, feetAt, ...(st.ride ? { hips: st.ride } : {}) };
+	return {
+		...hipsOver(q, feetAt),
+		feetAt,
+		...(st.ride ? { hips: st.ride } : {}),
+	};
+};
+
+// HIS HIPS OVER HIS FEET. Stepping on his own feet, his hips and legs turn
+// under him the way his feet point - halfway between the two, each turned
+// out as far as the other - not left square to the way he faces while his
+// feet point off another way, his knees caving in over them and his feet
+// crossing under him. His shoulders still face where he faces, turned on
+// his hips as far as a body turns (LEGS_MOST degrees, eased into over the
+// last LEGS_SOFT of it): past that, it is his feet that are turned. (As
+// much as his legs go to his feet: none of it as they ease over to a move
+// of his own - a shot, say - whose legs are its own.)
+const LEGS_MOST = 55;
+const LEGS_SOFT = 15;
+const LEGS_TOE_OUT = 10;
+const LEGS_SWING = 0.85;
+const hipsOver = (q: Pose, feet: readonly [FootAt, FootAt]): Pose => {
+	const [R, L] = feet;
+	// (As far as his legs go to his feet at all - not a foot swinging
+	// through as his stride's picture has it.)
+	const w = clamp01(Math.min(R.on ?? R.w, L.on ?? L.w));
+	if (w <= 0) {
+		return q;
+	}
+	// (Each the way it points, less how far it turns out (his right foot's
+	// round to his right) - a foot swinging through counting for less the
+	// further through it is, so his hips stay over the foot he is on, not
+	// swung round with one going through the air.)
+	const out = (LEGS_TOE_OUT * Math.PI) / 180;
+	const k = (p: FootAt) =>
+		p.swing === undefined ? 1 : 1 - LEGS_SWING * Math.sin(Math.PI * p.swing);
+	const kR = k(R);
+	const kL = k(L);
+	const mid =
+		(Math.atan2(
+			Math.sin(R.yaw + out) * kR + Math.sin(L.yaw - out) * kL,
+			Math.cos(R.yaw + out) * kR + Math.cos(L.yaw - out) * kL,
+		) *
+			180) /
+		Math.PI;
+	// (His feet pointing back behind him - round further than a body turns
+	// and steps round after - his hips come back square to him the further
+	// round they are: not round as far as they go one way, then the other,
+	// as his feet go past straight back.)
+	const a = Math.abs(mid);
+	const knee = LEGS_MOST - LEGS_SOFT;
+	const most =
+		a <= knee ? a : knee + LEGS_SOFT * (1 - Math.exp(-(a - knee) / LEGS_SOFT));
+	const turn = Math.sign(mid) * (a <= 90 ? most : (most * (180 - a)) / 90);
+	return {
+		...q,
+		legs: q.legs + (turn - q.legs) * w,
+		spinN: q.spinN * (1 - w),
+		spinF: q.spinF * (1 - w),
+	};
 };
 
 // HIS LEGS UP IN THE AIR. A move that draws his heels up under him as he

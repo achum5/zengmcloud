@@ -282,6 +282,13 @@ const film = (
 		nx = -nx;
 		ny = -ny;
 	}
+	// (LAB_FRONT=1: from in front of him instead, the way he faces halfway
+	// through - his knees and feet as they line up, or don't.)
+	if (process.env.LAB_FRONT) {
+		const yaw = evalPlayer(tl, clip.pid, (clip.t0 + clip.t1) / 2).yaw;
+		nx = Math.cos(yaw);
+		ny = Math.sin(yaw);
+	}
 	let cx: number | undefined;
 	let cy: number | undefined;
 	for (let t = clip.t0; t <= clip.t1; t += 1000 / FPS) {

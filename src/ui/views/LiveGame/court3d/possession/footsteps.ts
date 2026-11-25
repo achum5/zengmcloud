@@ -111,8 +111,17 @@ const SWING_LEAST_RUN = 230;
 // turned more than this from the way they point, and he steps (a step this
 // long, ms) - the foot whose place under him is the further off.
 const STAY_OVER = 0.4;
-const STAY_TURN = (40 * Math.PI) / 180;
+const STAY_TURN = (35 * Math.PI) / 180;
 const SET_STEP = 260;
+// (Turned - either foot so far off the way he will face as it comes down -
+// quicker: a step this long, and the next as soon after. A body turning
+// where it stands steps round with it, a foot at a time, the one on the
+// side it turns to first - not left stood on feet that point the old way
+// till its legs are across each other.)
+const TURN_STEP = 200;
+const TURN_EVEN = (10 * Math.PI) / 180;
+// (Going, a foot steps round before he is turned this far off it.)
+const TURN_LAND = (50 * Math.PI) / 180;
 // Stepping any way but running, a foot stays to its own side of the other,
 // at least this far (feet, for a man 6 ft 6 in) - sliding, in his stance,
 // further: his feet closing, never together.
@@ -137,9 +146,15 @@ const STAGGER_REACH = 1.9;
 // Sliding, his steps a second: so many, and more the quicker he goes (a
 // second for each foot a second), up to so many.
 const SLIDE_RATE = [2.4, 0.36, 5.5] as const;
-// Leaned no further than this (feet off under him): what is left of a pull
+// Leaned only so much of that, though - as far as he is drawn leaning, his
+// body tipped over his feet and his trunk into it (see tipAt, driven and
+// banked in evaluate.ts), not a whole pendulum's lean under a body drawn
+// up straight: his feet strung out behind him getting going, off to one
+// side of him on a bend and across each other from one step to the next.
+// And no further than this (feet off under him): what is left of a pull
 // harder than that he takes on more steps.
-const LEAN_MOST = 1.6;
+const LEAN_SHARE = 0.55;
+const LEAN_MOST = 0.9;
 // And no further out from under him, as a foot comes down, than this (feet):
 // about half as far as his leg is long (a hard stop's plant - further, and
 // his hips would have to sink a long way down to get to it).
@@ -162,9 +177,15 @@ const HIPS = 0.55;
 // walking one is a running one (a foot down a run's short time, not a
 // walk's, out in front of him only as far as a runner's).
 const RUN_FROM = 6;
-// Going, he steps the way he goes; under this pace (feet a second), the way
-// he faces.
-const POINT_WITH = 4;
+// Walking or running, his legs - his hips, his toes, his feet put out to
+// either side of them - go the way he goes from this pace on (feet a
+// second), and the way he faces up to so much: part the way round between.
+// (Not his toes one way and his feet set off to either side of another:
+// his hips turn with his feet - see hipsOver in evaluate.ts - and over
+// feet set out square to some other way his feet would be across each
+// other under them.)
+const POINT_FROM = 2;
+const POINT_WITH = 5;
 // Toes turned out (radians): a little going, more in his stance.
 const TOE_OUT = (8 * Math.PI) / 180;
 const TOE_OUT_STANCE = (14 * Math.PI) / 180;
@@ -297,16 +318,22 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		}
 		return pace < RUN_FROM ? "walk" : "run";
 	};
-	// Out to his right (a unit), going that way at t: for stepping forward
-	// or back, square to the way he goes; stood or sliding, to the way he
-	// faces.
-	const rightAt = (t: number, mode: StepMode): Pt => {
+	// The way his legs go at t, stepping so (see POINT_WITH).
+	const wayAt = (t: number, mode: StepMode): number => {
+		const face = yawAt(t);
+		if (mode !== "walk" && mode !== "run") {
+			return face;
+		}
 		const v = velAt(t);
-		const pace = Math.hypot(v.x, v.y);
-		const dir =
-			(mode === "walk" || mode === "run") && pace > 0.5
-				? Math.atan2(v.y, v.x)
-				: yawAt(t);
+		const k = clamp01(
+			(Math.hypot(v.x, v.y) - POINT_FROM) / (POINT_WITH - POINT_FROM),
+		);
+		return k > 0 ? face + wrap(Math.atan2(v.y, v.x) - face) * k : face;
+	};
+	// Out to his right (a unit), going that way at t: square to the way his
+	// legs go.
+	const rightAt = (t: number, mode: StepMode): Pt => {
+		const dir = wayAt(t, mode);
 		// (The floor's y runs toward the camera: his left is (sin, -cos) - see
 		// bodyPoint in evaluate.ts.)
 		return { x: -Math.sin(dir), y: Math.cos(dir) };
@@ -315,16 +342,11 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		(stanceAt(t) ? Math.max(SPREAD[mode], STANCE_SPREAD) : SPREAD[mode]) *
 		scale;
 	const toeAt = (t: number, mode: StepMode, foot: 0 | 1) => {
-		const v = velAt(t);
-		const pace = Math.hypot(v.x, v.y);
-		const face = yawAt(t);
-		const dir =
-			(mode === "walk" || mode === "run") && pace > POINT_WITH
-				? Math.atan2(v.y, v.x)
-				: face;
+		const dir = wayAt(t, mode);
 		const out = stanceAt(t) || mode === "slide" ? TOE_OUT_STANCE : TOE_OUT;
-		// (Turned out: the right foot round to his right.)
-		return wrap(dir + (foot === 0 ? -out : out));
+		// (Turned out: the right foot round to his right - a yaw turned on,
+		// as the floor's y runs toward the camera.)
+		return wrap(dir + (foot === 0 ? out : -out));
 	};
 	// Where a foot comes down for a time down over [t0, t1]: under him
 	// halfway through it, out to its side, and leaned off how hard his going
@@ -344,8 +366,8 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		}
 		ax /= Math.max(1, k);
 		ay /= Math.max(1, k);
-		let lx = (-h / G) * ax;
-		let ly = (-h / G) * ay;
+		let lx = (-h / G) * ax * LEAN_SHARE;
+		let ly = (-h / G) * ay * LEAN_SHARE;
 		const l = Math.hypot(lx, ly);
 		const most = LEAN_MOST * scale;
 		if (l > most) {
@@ -393,6 +415,9 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	};
 	// Which foot steps next, and when the last came down.
 	let next: 0 | 1 = 0;
+	// (Whether the last step going was the other foot's, stepping instead -
+	// see below.)
+	let swapped = false;
 	let t = from;
 	let landed = from;
 	const going = x.feet || x.set ? "stand" : modeAt(from);
@@ -490,8 +515,6 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 		}
 		return Infinity;
 	};
-	const meanYaw = (a: number, b: number) =>
-		Math.atan2(Math.sin(a) + Math.sin(b), Math.cos(a) + Math.cos(b));
 	let done = false;
 	const finish = () => {
 		// (Whatever is down as it ends stays down.)
@@ -605,24 +628,37 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 					continue;
 				}
 				// ... and otherwise a step only to stay over his feet: his weight
-				// off them, or turned from the way they point.
+				// off them, or a foot turned from the way he will face as it comes
+				// down.
 				const c = posAt(Math.min(to, t + 150));
 				const mid = { x: (R.x + L.x) / 2, y: (R.y + L.y) / 2 };
 				const off = Math.hypot(c.x - mid.x, c.y - mid.y) / scale;
-				const turned = Math.abs(wrap(yawAt(t) - meanYaw(R.yaw, L.yaw)));
+				const ahead = Math.min(to, t + TURN_STEP);
+				const tR = wrap(toeAt(ahead, "stand", 0) - R.yaw);
+				const tL = wrap(toeAt(ahead, "stand", 1) - L.yaw);
+				const turning = Math.max(Math.abs(tR), Math.abs(tL)) > STAY_TURN;
+				const step = turning ? TURN_STEP : SET_STEP;
 				if (
 					R.t0 <= t &&
 					L.t0 <= t &&
-					(off > STAY_OVER || turned > STAY_TURN) &&
-					t - landed >= SET_STEP
+					(off > STAY_OVER || turning) &&
+					t - landed >= step
 				) {
-					const land = Math.min(to, t + SET_STEP);
+					const land = Math.min(to, t + step);
 					const want = ([0, 1] as const).map((f) =>
 						spotFor(f, land, land + 400, "stand"),
 					);
 					const d0 = Math.hypot(want[0]!.x - R.x, want[0]!.y - R.y);
 					const d1 = Math.hypot(want[1]!.x - L.x, want[1]!.y - L.y);
-					const foot: 0 | 1 = d0 >= d1 ? 0 : 1;
+					let foot: 0 | 1 = d0 >= d1 ? 0 : 1;
+					if (turning) {
+						// (The foot further off round, the one on the side he turns
+						// to - his right, turning his yaw on - if they are about as
+						// far: then the other, a foot at a time.)
+						const lead: 0 | 1 = tR + tL >= 0 ? 0 : 1;
+						const by = Math.abs(tR) - Math.abs(tL);
+						foot = Math.abs(by) < TURN_EVEN ? lead : by > 0 ? 0 : 1;
+					}
 					const o = foot === 0 ? L : R;
 					const at = keepSide(
 						foot,
@@ -691,6 +727,21 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 				if (o.t1 > t) {
 					const out = outrun(o, Math.max(t, o.t0), TRAIL * scale);
 					land = Math.min(land, out + (mode === "run" ? FLIGHT_MOST : 0));
+				}
+			}
+			// (And, turning as he goes, down by the time he has come round
+			// TURN_LAND off the foot that steps - not walked on round over a
+			// foot left pointing the old way till it points back behind him.)
+			if (mode !== "run" && !setOff) {
+				const mine = steps[last[next]]!;
+				for (let s = t; s < land; s += GRID) {
+					if (Math.abs(wrap(toeAt(s, mode, next) - mine.yaw)) > TURN_LAND) {
+						land = Math.min(
+							land,
+							Math.max(s, mine.t1 > t ? t + swingLeast : t),
+						);
+						break;
+					}
 				}
 			}
 			// Pulling up before then: this foot comes down beside the other, set,
@@ -765,21 +816,33 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 			// (However it came to be put there, no further out from under him
 			// than he reaches - only then kept to its own side of the other.)
 			at = within(at, land);
-			if (mode !== "run") {
+			if (mode === "run") {
+				swapped = false;
+			} else {
 				// Never across the other foot, stepping any way but running: if it
 				// would be, the other steps instead (out first, then this one
 				// closes) - kept to its own side whichever. (This one down only
 				// till he is past it, as any: not left down behind him while the
-				// other steps on and on.)
+				// other steps on and on. And only the once in a row: the same
+				// foot never stepping out again and again while the other is
+				// left down behind him, up on its toes - the next time, it steps,
+				// kept to its own side.)
 				const o = steps[last[foot === 0 ? 1 : 0]]!;
-				if (sideOf(foot, at, o, r) < SIDE_LEAST * scale && !setOff) {
+				if (
+					sideOf(foot, at, o, r) < SIDE_LEAST * scale &&
+					!setOff &&
+					!swapped
+				) {
 					const other: 0 | 1 = foot === 0 ? 1 : 0;
 					const mine = steps[last[foot]]!;
 					if (mine.t1 === Infinity || mine.t1 > t) {
 						mine.t1 = outrun(mine, Math.max(t, mine.t0), TRAIL * scale);
 						foot = other;
 						at = spotFor(foot, land, land + down, mode);
+						swapped = true;
 					}
+				} else {
+					swapped = false;
 				}
 				at = keepSide(
 					foot,

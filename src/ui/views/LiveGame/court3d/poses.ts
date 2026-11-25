@@ -14154,6 +14154,9 @@ export type FootAt = {
 	swing?: number;
 	land?: { f: number; s: number; w: number };
 	lifted?: { f: number; s: number; w: number };
+	// (How much his legs go to his feet at all, as w is before a stride's
+	// own picture takes a foot swinging through.)
+	on?: number;
 };
 // (And how high his hips ride over them - a typical man's, see
 // strideHips - and how much of that is so, rather than where his move's own
@@ -14175,17 +14178,71 @@ const ROLL_REACH = 65;
 // moment it leaves.)
 const SINK_INTO = 0.5;
 const SINK_OUT = 0.5;
+// A FOOT TURNS ON ITS BALL. A foot points no further from the way his hips
+// do than a hip turns: turned out up to FOOT_OUT_MOST degrees, in up to
+// FOOT_IN_MOST (each eased into over the last FOOT_SOFT of it). Turning
+// past that over a foot down, he turns on the ball of it - his heel coming
+// round, his toes where they are on the floor - rather than his leg wrung
+// round over a foot left pointing the old way; and a foot up comes round
+// as it swings.
+const FOOT_OUT_MOST = 32;
+const FOOT_IN_MOST = 10;
+const FOOT_SOFT = 10;
+const turnedOn = (
+	b: Body,
+	feet: readonly [FootAt, FootAt],
+	hips: number,
+): readonly [FootAt, FootAt] => {
+	const rad = Math.PI / 180;
+	const toe = b.foot * 0.72;
+	const soft = (x: number, most: number) =>
+		x <= most - FOOT_SOFT
+			? x
+			: most -
+				FOOT_SOFT +
+				FOOT_SOFT * (1 - Math.exp(-(x - most + FOOT_SOFT) / FOOT_SOFT));
+	const turn = (p: FootAt, i: number): FootAt => {
+		// (How far out it is turned from his hips, degrees - his right foot
+		// round to his right, his left to his left.)
+		const side = i === 0 ? -1 : 1;
+		const rel =
+			Math.atan2(Math.sin(p.yaw - hips * rad), Math.cos(p.yaw - hips * rad)) /
+			rad;
+		const out = rel * side;
+		const to = out >= 0 ? soft(out, FOOT_OUT_MOST) : -soft(-out, FOOT_IN_MOST);
+		if (to === out) {
+			return p;
+		}
+		const yaw = (hips + to * side) * rad;
+		if (!p.down) {
+			return { ...p, yaw };
+		}
+		// (Round on its ball: its toes stay put.)
+		const bf = p.f + toe * Math.cos(p.yaw);
+		const bs = p.s + toe * Math.sin(p.yaw);
+		return {
+			...p,
+			yaw,
+			f: bf - toe * Math.cos(yaw),
+			s: bs - toe * Math.sin(yaw),
+		};
+	};
+	return [turn(feet[0], 0), turn(feet[1], 1)];
+};
 // Each leg from his hip to where its foot is planned: the knee bent as much
 // as that takes, out over the way the foot points - and his hips let down,
 // if they must be, to get to a foot down on the floor (one swinging through
-// it only reaches toward).
+// it only reaches toward). (His hips turned under him so far, degrees: each
+// foot turned on as far as a hip turns - see turnedOn.)
 const reachFeet = (
 	b: Body,
-	feet: readonly [FootAt, FootAt],
+	planned: readonly [FootAt, FootAt],
 	legs: [Limb, Limb],
+	hips: number,
 ): number => {
 	const rad = Math.PI / 180;
 	const most = (b.thigh + b.shin) * 0.995;
+	const feet = turnedOn(b, planned, hips);
 	// (Part the way from where his pose has each, as he eases over to them.)
 	const toe = b.foot * 0.72;
 	// (A foot rolling up onto its toes rolls over them: they stay where they
@@ -14539,7 +14596,7 @@ export const skeleton = (b: Body, q0: Posed): Skeleton => {
 		}
 	}
 	const sink = Array.isArray(q0.feetAt)
-		? reachFeet(b, q0.feetAt, [legR as Limb, legL as Limb])
+		? reachFeet(b, q0.feetAt, [legR as Limb, legL as Limb], q.legs)
 		: 0;
 	const L = q.lean * rad;
 	const pelvis = v3(0, 0, b.hipH + off - sink);
