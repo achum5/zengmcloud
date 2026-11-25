@@ -318,7 +318,7 @@ describe("closing out through the shot", () => {
 		assert.strictEqual(air!.v0, a!.v1);
 		assert.strictEqual(air!.v1, a!.v1);
 		assert.strictEqual(brake!.v1, 0);
-		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 4000), 2 - 1e-6);
+		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 4000), 1.5 - 1e-6);
 	});
 
 	test("off to the boards straight after he comes down, he goes on into it", () => {
@@ -351,7 +351,7 @@ describe("closing out through the shot", () => {
 		assert.deepEqual(brake.to, n.from);
 		assert.isAbove(n.v0!, 0);
 		assert.strictEqual(brake.v1, n.v0);
-		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 3500), 2 - 1e-6);
+		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 3500), 1.5 - 1e-6);
 	});
 
 	test("a box-out straight after: stopped by the time it starts", () => {
@@ -375,7 +375,7 @@ describe("closing out through the shot", () => {
 		assert.isAtMost(stop.t1, down + 150);
 	});
 
-	test("stood a long while for it: as it was", () => {
+	test("stood on his spot a long while for it: stood a step further off, and in through it", () => {
 		const d = defender(
 			[
 				{ ...closeout(), t1: 500 },
@@ -386,6 +386,145 @@ describe("closing out through the shot", () => {
 				},
 			],
 			[contest],
+		);
+		const tracks = new Map([
+			[1, shooterAt(60, 20)],
+			[2, d],
+		]);
+		assert.strictEqual(throughContests(tracks, shot), 1);
+		// (On the play's spot as it leaves his hands, still coming.)
+		const R = spotAt(d, 2000);
+		assert.isBelow(Math.hypot(R.x - 60, R.y - 25), 1e-6);
+		const into = d.moves.find((m) => m.t1 === off)!;
+		assert.isAtLeast(into.v1!, 1.5);
+		// (Stood further off him before it, not on the spot.)
+		const B = spotAt(d, 1000);
+		assert.isAtLeast(Math.hypot(B.x - 60, B.y - 20), 5 + 1);
+		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 4000), 1.5 - 1e-6);
+	});
+
+	test("still on his way to his spot as he goes up: in through it, not stopped in the air", () => {
+		const d = defender(
+			[
+				{ ...closeout(), t0: 500, t1: off + 300 },
+				{
+					...stand(off + 300, 4000, 60),
+					from: { x: 60, y: 25 },
+					to: { x: 60, y: 25 },
+				},
+			],
+			[contest],
+		);
+		const R0 = spotAt(d, 2000);
+		const tracks = new Map([
+			[1, shooterAt(60, 20)],
+			[2, d],
+		]);
+		assert.strictEqual(throughContests(tracks, shot), 1);
+		// (Where the play's run had him as it leaves the shooter's hands.)
+		const R = spotAt(d, 2000);
+		assert.isBelow(Math.hypot(R.x - R0.x, R.y - R0.y), 1e-6);
+		const into = d.moves.find((m) => m.t1 === off)!;
+		assert.isAtLeast(into.v1!, 1.5);
+		const air = d.moves.find((m) => m.t0 === off)!;
+		assert.strictEqual(air.t1, down);
+		assert.strictEqual(air.v0, into.v1);
+		assert.strictEqual(air.v1, into.v1);
+		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 4000), 1.5 - 1e-6);
+	});
+
+	test("his next run set off while he is still up: off on it once he is down", () => {
+		const d = defender(
+			[
+				closeout(),
+				{
+					...stand(1500, off + 100, 60),
+					from: { x: 60, y: 25 },
+					to: { x: 60, y: 25 },
+				},
+				{
+					t0: off + 100,
+					t1: 3500,
+					from: { x: 60, y: 25 },
+					to: { x: 66, y: 25 },
+					anim: "run",
+				},
+				{
+					...stand(3500, 4500, 66),
+					from: { x: 66, y: 25 },
+					to: { x: 66, y: 25 },
+				},
+			],
+			[contest],
+		);
+		const tracks = new Map([
+			[1, shooterAt(60, 20)],
+			[2, d],
+		]);
+		assert.strictEqual(throughContests(tracks, shot), 1);
+		const [before, n, after] = d.moves.slice(-3);
+		assert.deepEqual(n!.to, { x: 66, y: 25 });
+		assert.isAtLeast(n!.t0, down);
+		assert.strictEqual(before!.t1, n!.t0);
+		assert.deepEqual(before!.to, n!.from);
+		// (All of it that much later: he is only stood after it.)
+		assert.closeTo(n!.t1 - n!.t0, 3500 - (off + 100), 1e-6);
+		assert.strictEqual(after!.t0, n!.t1);
+		assert.strictEqual(after!.t1, 4500);
+		assert.isAtLeast(nearestTo(d, { x: 60, y: 20 }, 2000, 3500), 1.5 - 1e-6);
+	});
+
+	test("drifting in too near his spot to get going that fast: pulls up, then in", () => {
+		const d = defender(
+			[
+				{
+					t0: -400,
+					t1: 300,
+					from: { x: 60, y: 36 },
+					to: { x: 60, y: 29 },
+					anim: "run",
+					v1: 8,
+				},
+				{ ...closeout(), t0: 300, from: { x: 60, y: 29 }, v0: 8 },
+				{
+					...stand(1500, 4000, 60),
+					from: { x: 60, y: 25 },
+					to: { x: 60, y: 25 },
+				},
+			],
+			[contest],
+		);
+		const tracks = new Map([
+			[1, shooterAt(60, 20)],
+			[2, d],
+		]);
+		assert.strictEqual(throughContests(tracks, shot), 1);
+		// (Pulled up from the pace he came at...)
+		const brake = d.moves[1]!;
+		assert.strictEqual(brake.t0, 300);
+		assert.strictEqual(brake.v0, 8);
+		assert.isNotOk(brake.v1);
+		assert.isBelow(brake.to.y, 29);
+		// (...and in from there, on the play's spot as it goes, still coming.)
+		const into = d.moves.find((m) => m.t1 === off)!;
+		assert.isNotOk(into.v0);
+		assert.deepEqual(into.from, brake.to);
+		assert.isAtLeast(into.v1!, 1.5);
+		const R = spotAt(d, 2000);
+		assert.isBelow(Math.hypot(R.x - 60, R.y - 25), 1e-6);
+	});
+
+	test("boxing out right up to it: as it was", () => {
+		const d = defender(
+			[
+				{ ...closeout(), t1: 500 },
+				{
+					...stand(500, 4000, 60),
+					from: { x: 60, y: 25 },
+					to: { x: 60, y: 25 },
+				},
+			],
+			[act(600, 1700, "boxOut"), contest],
 		);
 		const tracks = new Map([
 			[1, shooterAt(60, 20)],

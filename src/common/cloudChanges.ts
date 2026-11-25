@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 590,
+		date: "2026-11-25",
+		text: "3D game, New sim (Global Settings, 3D Game Sim): closeouts look like real ones. The defender is still coming at the shooter as the shot goes up, at a pace drawn from how real defenders close out, and carries on by him after it instead of stopping on his spot and hopping straight up. A defender already on his way flies on through it, and one who was set on his spot starts from a step further off.",
+	},
+	{
 		n: 589,
 		date: "2026-11-25",
 		text: "3D game: the far sideline is laid out like a real NBA arena. The scorer's table is longer, with courtside seats between it and each bench, and the benches sit further toward the baselines, with black padded chairs and the drinks coolers in the row behind. Coaches pace and huddle in front of their own bench, inside the coaching box.",
