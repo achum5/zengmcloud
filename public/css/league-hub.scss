@@ -720,10 +720,11 @@
 		position: relative;
 		z-index: 1;
 	}
-	&:hover {
-		filter: brightness(1.06);
-		text-decoration: none;
-	}
+}
+// (A played game's card is one link, to its box score.)
+a.lh-gc-card:hover {
+	filter: brightness(1.06);
+	text-decoration: none;
 }
 .lh-gc-side {
 	position: relative;
@@ -1047,6 +1048,26 @@
 			max-width: 3.4rem;
 			max-height: none;
 		}
+	}
+}
+// Each end and each team's words a link to its page: its name underlined
+// when either is hovered or tapped.
+.lh-gc-upcoming {
+	a.lh-gc-team,
+	a.lh-gc-side {
+		text-decoration: none;
+	}
+	// (Its colors kept, hovered or not.)
+	a.lh-gc-team-away {
+		color: var(--gc-a-fg);
+	}
+	a.lh-gc-team-home {
+		color: var(--gc-h-fg);
+	}
+	a.lh-gc-team:hover .lh-gc-name,
+	.lh-gc-card:has(a.lh-gc-side-away:hover) .lh-gc-team-away .lh-gc-name,
+	.lh-gc-card:has(a.lh-gc-side-home:hover) .lh-gc-team-home .lh-gc-name {
+		text-decoration: underline;
 	}
 }
 // (The over/under under the spread, under one hairline.)

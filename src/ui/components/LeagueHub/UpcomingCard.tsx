@@ -18,9 +18,10 @@ import { spreadLine } from "./spreadLine.ts";
 
 // A GAME STILL TO BE PLAYED, on the played game's card (GameCard): each
 // team's colors at its end, its city and name - and where a played game has
-// its score, its record, with its overall beside it. Between them, the line
-// (under its network, if it's on one); hung from the foot, watch it or sim it;
-// beside it all (on a phone, under it), each team's best player.
+// its score, its record, with its overall beside it; each end, and its words,
+// a link to that team's page. Between them, the line (under its network, if
+// it's on one); hung from the foot, watch it or sim it; beside it all (on a
+// phone, under it), each team's best player.
 
 export type UpcomingCardTeam = {
 	tid: number;
@@ -60,24 +61,32 @@ const recordOf = (t: UpcomingCardTeam) =>
 			? helpers.formatRecord({ ...t, won: t.won, lost: t.lost })
 			: undefined;
 
+// A team's page, for its season.
+const teamUrl = (t: { tid: number }, abbrev: string, season: number) =>
+	helpers.leagueUrl(["roster", `${abbrev}_${t.tid}`, season]);
+
 const UpcomingWords = ({
 	t,
 	side,
 	showOvr,
+	season,
 }: {
 	t: UpcomingCardTeam;
 	side: "away" | "home";
 	// (Not where the league hides team ratings.)
 	showOvr: boolean;
+	season: number;
 }) => {
 	const brand = useBrand(t);
 	const record = recordOf(t);
+	// (Its city, name and record one link to its page.)
 	return (
-		<div
+		<a
 			className={clsx(
 				"lh-gc-team",
 				side === "home" ? "lh-gc-team-home" : "lh-gc-team-away",
 			)}
+			href={teamUrl(t, brand.abbrev, season)}
 		>
 			<div className="lh-gc-region">{brand.region}</div>
 			<div
@@ -94,7 +103,7 @@ const UpcomingWords = ({
 					<div className="lh-gc-record">{t.ovr} ovr</div>
 				) : null}
 			</div>
-		</div>
+		</a>
 	);
 };
 
@@ -238,8 +247,15 @@ export const UpcomingCard = ({
 							side="away"
 							colors={colors?.[away.tid]}
 							logo={awayBrand.logo}
+							href={teamUrl(away, awayBrand.abbrev, season)}
+							label={`${awayBrand.region} ${awayBrand.name}`}
 						/>
-						<UpcomingWords t={away} side="away" showOvr={showOvr} />
+						<UpcomingWords
+							t={away}
+							side="away"
+							showOvr={showOvr}
+							season={season}
+						/>
 						<div className={clsx("lh-gc-mid", !heading && "lh-gc-mid-lines")}>
 							{heading ? (
 								<div className="lh-gc-final lh-gc-when">{heading}</div>
@@ -258,12 +274,19 @@ export const UpcomingCard = ({
 								</div>
 							) : null}
 						</div>
-						<UpcomingWords t={home} side="home" showOvr={showOvr} />
+						<UpcomingWords
+							t={home}
+							side="home"
+							showOvr={showOvr}
+							season={season}
+						/>
 						<Side
 							t={home}
 							side="home"
 							colors={colors?.[home.tid]}
 							logo={homeBrand.logo}
+							href={teamUrl(home, homeBrand.abbrev, season)}
+							label={`${homeBrand.region} ${homeBrand.name}`}
 						/>
 						{/* Watch or sim it, on a tab hung from the foot over the seam. */}
 						{actions ? (

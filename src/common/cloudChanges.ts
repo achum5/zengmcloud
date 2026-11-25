@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 627,
+		date: "2026-11-25",
+		text: "Daily Schedule: on games still to be played, a team's logo, name and record now take you to that team's page.",
+	},
+	{
 		n: 626,
 		date: "2026-11-25",
 		text: "3D game: the basket's stanchion no longer glitches as the camera moves. The pad on the arm by the backboard stopped blinking in and out, and the post behind the padded column stopped flickering.",

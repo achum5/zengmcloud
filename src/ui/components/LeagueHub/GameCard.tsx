@@ -305,24 +305,34 @@ export const Side = ({
 	side,
 	colors,
 	logo,
+	href,
+	label,
 }: {
 	t: { tid: number };
 	side: "away" | "home";
 	colors: string[] | undefined;
 	logo: string | undefined;
+	// (Where the card itself isn't a link: the logo to the team's page.)
+	href?: string;
+	label?: string;
 }) => {
 	const { accent } = bannerColors(colors);
-	return (
-		<div
-			className={clsx(
-				"lh-gc-side",
-				// (Whole class names: the build keeps only styles whose names it
-				// finds written out in the code.)
-				side === "home" ? "lh-gc-side-home" : "lh-gc-side-away",
-			)}
-			style={{ "--gc-accent": accent } as CSSProperties}
-			data-tid={t.tid}
-		>
+	const props = {
+		className: clsx(
+			"lh-gc-side",
+			// (Whole class names: the build keeps only styles whose names it
+			// finds written out in the code.)
+			side === "home" ? "lh-gc-side-home" : "lh-gc-side-away",
+		),
+		style: { "--gc-accent": accent } as CSSProperties,
+		"data-tid": t.tid,
+	};
+	return href ? (
+		<a {...props} href={href} aria-label={label} title={label}>
+			<Logo url={logo} size={44} />
+		</a>
+	) : (
+		<div {...props}>
 			<Logo url={logo} size={44} />
 		</div>
 	);
