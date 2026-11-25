@@ -201,9 +201,9 @@ describe("uniforms drawn from a picture", () => {
 		const read = readFit(data, W, scale)!;
 		assert.closeTo(read.numberSize, 0.27, 0.01);
 		assert.closeTo(read.numberAcross, -0.5, 0.01);
-		// Without the two newer squares (a picture made before them): the
+		// Without the newer squares (a picture made before them): the
 		// number in the middle, no smaller than the older range.
-		for (const i of [FIT_SQUARES - 2, FIT_SQUARES - 1]) {
+		for (const i of [5, 4, 3, 2, 1].map((k) => FIT_SQUARES - k)) {
 			for (let y = 308 * scale; y < 316 * scale; y++) {
 				for (let x = (8 + i * 8) * scale; x < (16 + i * 8) * scale; x++) {
 					data[(y * W + x) * 4 + 3] = 0;
@@ -213,6 +213,33 @@ describe("uniforms drawn from a picture", () => {
 		const old = readFit(data, W, scale)!;
 		assert.strictEqual(old.numberAcross, 0);
 		assert.closeTo(old.numberSize, 0.5, 0.01);
+	});
+
+	test("the number up top with the name under it, a real arch; an older strip keeps the narrow ones", () => {
+		const scale = 4;
+		const W = ART_W * scale;
+		const data = new Uint8ClampedArray(W * ART_H_LETTERED * scale * 4);
+		writeFit(data, W, scale, {
+			...DEFAULT_FIT,
+			backUp: 0.38,
+			nameUp: -0.3,
+			nameArch: 2.3,
+		});
+		const read = readFit(data, W, scale)!;
+		assert.closeTo(read.backUp, 0.38, 0.005);
+		assert.closeTo(read.nameUp, -0.3, 0.005);
+		assert.closeTo(read.nameArch, 2.3, 0.04);
+		for (const i of [3, 2, 1].map((k) => FIT_SQUARES - k)) {
+			for (let y = 308 * scale; y < 316 * scale; y++) {
+				for (let x = (8 + i * 8) * scale; x < (16 + i * 8) * scale; x++) {
+					data[(y * W + x) * 4 + 3] = 0;
+				}
+			}
+		}
+		const old = readFit(data, W, scale)!;
+		assert.closeTo(old.backUp, 0.248, 0.005);
+		assert.closeTo(old.nameUp, -0.25, 0.005);
+		assert.strictEqual(old.nameArch, 1);
 	});
 
 	test("a lettered picture's characters: as wide as painted, standing on one line", () => {

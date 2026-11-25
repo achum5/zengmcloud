@@ -105,10 +105,10 @@ const FIT_SLIDERS: [keyof KitFit, string, number, number, number][] = [
 	["numberUp", "Number height", -0.15, 0.25, 0.005],
 	["numberAcross", "Number left/right", -0.8, 0.8, 0.02],
 	["backSize", "Back number size", 0.6, 1.6, 0.02],
-	["backUp", "Back number height", -0.15, 0.15, 0.005],
+	["backUp", "Back number height", -0.15, 0.45, 0.005],
 	["nameSize", "Name size", 0.6, 1.8, 0.02],
-	["nameUp", "Name height", -0.15, 0.1, 0.005],
-	["nameArch", "Name arch", -1, 1, 0.05],
+	["nameUp", "Name height", -0.35, 0.1, 0.005],
+	["nameArch", "Name arch", -1, 3, 0.05],
 ];
 
 const FitControls = ({

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 646,
+		date: "2026-11-25",
+		text: "3D jerseys: the number on the back can sit higher with the name under it, the way Memphis wears it, and names can arch as much as on the real jerseys. Manage Teams, 3D jerseys, Lettering: the back number height, name height and name arch sliders go further.",
+	},
+	{
 		n: 645,
 		date: "2026-11-25",
 		text: "3D game, New sim: players speed up and slow down more smoothly. A step or two to a new spot eases in and out the way the player actually moved, instead of a burst and a hard stop, and off-ball defenders shift with the ball instead of darting from spot to spot. About a third fewer jerky moments in a game.",

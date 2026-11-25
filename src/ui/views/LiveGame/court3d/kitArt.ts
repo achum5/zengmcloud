@@ -262,7 +262,10 @@ export const artScaleOf = (width: number, height: number) => {
 // red, the rest of 255 in the green (a check), a mark in the blue - after a
 // first square that says the strip is there. After the trim's square, two
 // that older pictures don't have: the chest number across him, and its size
-// again over a wider range (down to a number inside a logo).
+// again over a wider range (down to a number inside a logo). Then three
+// newer still: the back number's and the name's heights and the name's arch
+// over wider ranges (a number up top with the name under it, a name arched
+// like the real ones).
 const FIT_MARK = 0x5a;
 const FIT_MAGIC = 0xa5;
 const FIT_KEYS = [
@@ -295,11 +298,17 @@ const fromByte = (key: (typeof FIT_KEYS)[number], b: number) =>
 			: (b - 128) / 512;
 
 // (How many squares the strip has: the first, the settings, the trim's, the
-// two newer ones.)
-export const FIT_SQUARES = FIT_KEYS.length + 4;
+// two newer ones, the three newest.)
+export const FIT_SQUARES = FIT_KEYS.length + 7;
 const NUMBER_SIZE_MIN = 0.2;
+const WIDE_UP = 0.5;
+const WIDE_ARCH = 4;
 const acrossByte = (v: number) => clampTo(Math.round(128 + v * 127), 0, 255);
 const wideSizeByte = (v: number) => clampTo(Math.round((v / 2) * 255), 0, 255);
+const wideUpByte = (v: number) =>
+	clampTo(Math.round(128 + (v / WIDE_UP) * 127), 0, 255);
+const wideArchByte = (v: number) =>
+	clampTo(Math.round(128 + (v / WIDE_ARCH) * 127), 0, 255);
 
 // The squares' bytes, in order.
 const fitBytes = (fit: KitFit) => [
@@ -308,6 +317,9 @@ const fitBytes = (fit: KitFit) => [
 	fit.trim === "picture" ? 1 : 0,
 	acrossByte(fit.numberAcross),
 	wideSizeByte(fit.numberSize),
+	wideUpByte(fit.backUp),
+	wideUpByte(fit.nameUp),
+	wideArchByte(fit.nameArch),
 ];
 
 // A KitFit written into a lettered picture's pixels (RGBA, ART_W * scale
@@ -388,6 +400,13 @@ export const readFit = (
 	if (across !== undefined && wideSize !== undefined) {
 		fit.numberAcross = clampTo((across - 128) / 127, -1, 1);
 		fit.numberSize = clampTo((wideSize * 2) / 255, NUMBER_SIZE_MIN, 2);
+	}
+	const wide = [4, 5, 6].map((i) => byteAt(FIT_KEYS.length + i));
+	if (wide.every((b) => b !== undefined)) {
+		const [backUp, nameUp, nameArch] = wide as number[];
+		fit.backUp = ((backUp! - 128) / 127) * WIDE_UP;
+		fit.nameUp = ((nameUp! - 128) / 127) * WIDE_UP;
+		fit.nameArch = ((nameArch! - 128) / 127) * WIDE_ARCH;
 	}
 	return fit;
 };
