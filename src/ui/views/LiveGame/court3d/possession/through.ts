@@ -47,6 +47,13 @@ const GATHER_MOST = 450;
 const GATHER_BRAKE = 11;
 const CATCH_MOST = 7;
 const GATHER_LEAST = 120;
+// A pass caught and held on to: his gather this long at the most (ms) - and,
+// given the time, eased to a stop about this hard (feet a second, a second),
+// not pulled up as hard as he can. (Real: 4.4 ft/s at the catch, 3.5 a fifth
+// of a second on, 2.7 at 0.4 s, 2.1 at 0.6 - medians, 17 games; ours had
+// stopped by 0.4 s.)
+const HELD_GATHER_MOST = 1200;
+const GATHER_EASE = 4.5;
 // Going slower than this (feet a second) at the catch, it is not worth it.
 const CATCH_LEAST = 1.5;
 // At most this much of the run (its length) is left for after the catch.
@@ -177,6 +184,9 @@ export const carryThrough = (
 	// The set's spacing: runs a man makes on his own, as the set has him go
 	// (see loop.ts) - the stride or two after one of them, too.
 	spacing?: Set<Move>,
+	// A pass he catches: gathered as a man with it in his hands does (see
+	// HELD_GATHER_MOST).
+	caught = false,
 ): boolean => {
 	const moves = tr.moves;
 	// The run in: the last of his that ends about the catch, nothing but
@@ -272,27 +282,34 @@ export const carryThrough = (
 	}
 
 	// Or stopped on his spot a stride or two after it.
-	const cap = Math.min(tc + GATHER_MOST, stand, n?.t0 ?? Infinity);
-	const T2 = (cap - tc) / 1000;
-	if (T2 * 1000 < GATHER_LEAST) {
+	const gatherMost = caught ? HELD_GATHER_MOST : GATHER_MOST;
+	const cap = Math.min(tc + gatherMost, stand, n?.t0 ?? Infinity);
+	const most = (cap - tc) / 1000;
+	if (most * 1000 < GATHER_LEAST) {
 		return false;
 	}
 	const D = (m.t1 - m.t0) / 1000;
 	// (As fast as he was running, at the most - and no faster than he can
-	// stop from in the time, nor so fast it leaves too much of the run.)
+	// stop from in the time: into whatever has him stood, still going till
+	// it; nothing coming, eased to a stop over as long as that takes. Nor
+	// so far it leaves too much of the run: in that, pulled up harder - as
+	// hard as he can at the most, then slower at the catch.)
 	let p = Math.min(
 		runShape(L, D, m.v0 ?? 0, 0).vc,
 		CATCH_MOST,
-		GATHER_BRAKE * T2,
+		GATHER_BRAKE * most,
 	);
-	let g = (p * T2) / 2;
-	if (g > AFTER_MOST * L) {
-		g = AFTER_MOST * L;
-		p = (2 * g) / T2;
+	let T2 =
+		caught && cap >= tc + gatherMost ? Math.min(most, p / GATHER_EASE) : most;
+	const room = AFTER_MOST * L;
+	if ((p * T2) / 2 > room) {
+		p = Math.min(p, Math.sqrt(2 * GATHER_BRAKE * room));
+		T2 = (2 * room) / p;
 	}
-	if (p < CATCH_LEAST) {
+	if (p < CATCH_LEAST || T2 * 1000 < GATHER_LEAST) {
 		return false;
 	}
+	const g = (p * T2) / 2;
 	const S = { ...m.to };
 	const C = { x: S.x - ux * g, y: S.y - uy * g };
 	const end = tc + T2 * 1000;
@@ -369,7 +386,7 @@ export const throughPasses = (
 			s?.kind === "hold" &&
 			s.pid === to &&
 			tr &&
-			carryThrough(tr, s.t0, spacing)
+			carryThrough(tr, s.t0, spacing, true)
 		) {
 			n++;
 		}

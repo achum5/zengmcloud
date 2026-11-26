@@ -213,6 +213,9 @@ const AGENT_LEAST = 500;
 const GUARD_SLACK = 100;
 // A run of the play's: one that takes him at least this far (feet).
 const RUN_LEAST = 1;
+// A run of its dribble shorter than this (feet) is the play working the
+// ball - the man with it does that himself.
+const WORKED_MOST = 6;
 // Rid of the ball this long ago (ms) at the most, a man on offense still
 // answers it (see offense.ts).
 const PASS_ANSWER = 1500;
@@ -577,6 +580,28 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			),
 		);
 	}
+	// ...and those of them that take the man with the ball off his own
+	// working of it: not a step or two of its dribble this way or that, the
+	// play working it - his own to do (see handler.ts) - but a drive, coming
+	// off a screen, backing in.
+	const handRunsOf = new Map<number, Spans>();
+	for (const tr of x.men) {
+		handRunsOf.set(
+			tr.pid,
+			x.spans(
+				tr.moves
+					.filter((m) => {
+						const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+						return (
+							L >= RUN_LEAST &&
+							!x.attacking?.spacing.has(m) &&
+							!(m.anim === "dribble" && L < WORKED_MOST)
+						);
+					})
+					.map((m) => [m.t0, m.t1] as [number, number]),
+			),
+		);
+	}
 	// When each man had the ball, from when till when.
 	const holdsOf = new Map<number, [number, number][]>();
 	x.ball.forEach((s, k) => {
@@ -657,7 +682,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			teamOf.get(pid) !== O ||
 			x.holderAt(t) !== pid ||
 			strict.get(pid)!.hit(t - STEP_MS, t + ACT_LEAD) ||
-			runsOf.get(pid)!.hit(t - STEP_MS, t + STEP_MS) ||
+			handRunsOf.get(pid)!.hit(t - STEP_MS, t + STEP_MS) ||
 			x.cut.hit(t - STEP_MS, t + STEP_MS) ||
 			x.sharp.hit(t, t + 1) ||
 			x.ft.hit(t, t + 1) ||
@@ -668,6 +693,30 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		}
 		const P = x.laid.get(pid)?.at(t);
 		return P !== undefined && (P.x - COURT_W / 2) * (rimX(O) - COURT_W / 2) > 0;
+	};
+	// How long ago (ms) he caught the pass that has the ball his at t - if a
+	// pass of theirs is how he came to have it.
+	const caughtAgo = (pid: number, t: number): number | undefined => {
+		let k = lastAtOrBefore(x.ball, t, (q) => q.t0);
+		while (k > 0) {
+			const s = x.ball[k]!;
+			const b = x.ball[k - 1]!;
+			if (s.kind !== "hold" || b.kind !== "hold" || b.pid !== pid) {
+				break;
+			}
+			k--;
+		}
+		const s = x.ball[k];
+		const f = x.ball[k - 1];
+		return s?.kind === "hold" &&
+			s.pid === pid &&
+			f?.kind === "fly" &&
+			!f.dead &&
+			"pid" in f.from &&
+			"pid" in f.to &&
+			f.to.pid === pid
+			? t - s.t0
+			: undefined;
 	};
 	// Whether he has the ball on his dribble at t - not in his hands,
 	// not a move put through where he stands, not passing it.
@@ -1030,6 +1079,11 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			const f = commit ? due : end;
 			let handTo: Guarding["handTo"];
 			const A = mine.want(f);
+			const B = mine.want(f + STEP_MS);
+			const goingThen: Pt =
+				A && B
+					? { x: (B.x - A.x) / STEP_S, y: (B.y - A.y) / STEP_S }
+					: { x: 0, y: 0 };
 			if (A) {
 				const gap = Math.hypot(A.x - m.x, A.y - m.y);
 				const lead = !commit
@@ -1042,13 +1096,10 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 				if (commit && f - t <= lead) {
 					w.sure = f;
 				}
-				const B = mine.want(f + STEP_MS);
 				if (f - t <= lead) {
 					handTo = {
 						at: A,
-						v: B
-							? { x: (B.x - A.x) / STEP_S, y: (B.y - A.y) / STEP_S }
-							: { x: 0, y: 0 },
+						v: goingThen,
 						until: f - t,
 						lead: Math.min(lead, COMMIT_MOST),
 						commit,
@@ -1096,6 +1147,10 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 					man,
 					mates,
 					handTo,
+					caught: caughtAgo(pid, t),
+					// (Or, nothing of his coming before the play takes him back,
+					// where it has him by then: there by then just the same, not
+					// snatched onto it.)
 					home:
 						H && up !== undefined
 							? {
@@ -1105,7 +1160,9 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 										? { x: (H1.x - H.x) / STEP_S, y: (H1.y - H.y) / STEP_S }
 										: { x: 0, y: 0 },
 								}
-							: undefined,
+							: A
+								? { at: A, in: f - t, v: goingThen, end: true }
+								: undefined,
 				},
 				me,
 				w.hand!,

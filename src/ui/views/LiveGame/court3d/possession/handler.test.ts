@@ -90,6 +90,69 @@ describe("3D possession sim: the man with the ball", () => {
 		assert.isBelow(Math.max(...after.map((q) => dist(q, steps[stop]!))), 0.3);
 	});
 
+	test("a pass he caught and holds on to: eased to a stop over most of a second, not pulled up on the spot", () => {
+		const set = { x: 28, y: 25 };
+		// (Caught at 4.4 ft/s, real men's median.)
+		const steps = run(
+			guard(7),
+			7,
+			set,
+			2000,
+			(t) => ({ set, dribbling: false, mates: [], caught: t }),
+			{ vx: -4.4, vy: 0 },
+		);
+		const at = (ms: number) => {
+			const q = steps.find((s) => s.t >= ms)!;
+			return Math.hypot(q.vx, q.vy);
+		};
+		// (Real: 2.7 ft/s 0.4 s on, 1.7 at 0.8 s.)
+		assert.isAbove(at(400), 1.8);
+		assert.isAbove(at(800), 0.3);
+		assert.isBelow(at(1400), 0.3);
+	});
+
+	test("straight off a catch, on the dribble, he goes somewhere with it - not stood sizing his man up", () => {
+		const set = { x: 28, y: 31 };
+		let ft = 0;
+		const pids = [2, 5, 11, 17, 23, 31, 40, 48];
+		for (const pid of pids) {
+			const steps = run(guard(pid), pid, set, 1000, (t, m) => ({
+				set,
+				dribbling: true,
+				man: manOff(m, 5),
+				mates: [],
+				caught: 200 + t,
+			}));
+			ft += dist(steps.at(-1)!, set);
+		}
+		// (Real, a catch put on the floor: 7.1 ft in its first second.)
+		assert.isAbove(ft / pids.length, 3);
+	});
+
+	test("the play taking him back with nothing of his first: about on its spot by then, wherever he was working it", () => {
+		const set = { x: 30, y: 25 };
+		const end = 2500;
+		const at = { x: 31, y: 28 };
+		for (const pid of [3, 9, 21, 30]) {
+			// (Going away from it at a dribbling pace to start with.)
+			const steps = run(
+				guard(pid, 0.9),
+				pid,
+				set,
+				end,
+				(t, m) => ({
+					set,
+					dribbling: true,
+					man: manOff(m, 6),
+					mates: [],
+					home: { at, in: end - t, v: { x: 0, y: 0 }, end: true },
+				}),
+				{ vx: 0, vy: -5 },
+			);
+			assert.isBelow(dist(steps.at(-1)!, at), 1, `pid ${pid}`);
+		}
+	});
+
 	test("crowded, he gives ground; given room, he attacks it", () => {
 		const set = { x: 30, y: 25 };
 		const mean = (crowd: boolean) => {

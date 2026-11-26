@@ -24168,7 +24168,12 @@ class Director {
 					// that takes him - not the even pace of a run already going.)
 					const go = Math.max(300, runMs(L, SPRINT, 0, BURST));
 					const out = Math.max(560, (L / 7) * 1000);
+					// (The new possession sim: in the front court he works his man
+					// himself there - see possession/handler.ts - not walked
+					// through the play's own steps.)
+					const works = this.possession && (P.x - COURT_W / 2) * face >= 1;
 					if (
+						!works &&
 						!walked &&
 						!attacked &&
 						dist(here, P) < 0.1 &&
@@ -24203,6 +24208,7 @@ class Director {
 					const walk = Math.max(500, (dist(P, W) / this.rand(4.5, 6)) * 1000);
 					const back = Math.max(450, (dist(P, W) / 5) * 1000);
 					if (
+						!works &&
 						!walked &&
 						dist(here, P) < 0.1 &&
 						walk + back + (behind ? 200 : 900) <= left &&

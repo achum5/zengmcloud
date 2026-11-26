@@ -40,11 +40,15 @@ export type Handling = {
 	// Handing over to the play by `until` (ms from now): where it has him
 	// then (see offense.ts Floor).
 	handTo?: { at: Pt; v: Pt; until: number; lead: number; commit?: boolean };
+	// A pass he caught this long ago (ms), this touch of his.
+	caught?: number;
 	// Picking it up this soon (ms) with something of the play's to come
 	// before it leaves his hands (a shot): where the play has him then -
 	// there by then, since he cannot go anywhere with it after - and how
-	// fast it has him going (into a pass on the move, still going).
-	home?: { at: Pt; in: number; v: Pt };
+	// fast it has him going (into a pass on the move, still going). Or,
+	// `end`, nothing of his before the play takes him back: where it has
+	// him then - there about by then too, not snatched onto it after.
+	home?: { at: Pt; in: number; v: Pt; end?: boolean };
 };
 
 // What he keeps between picks of what next.
@@ -60,8 +64,10 @@ export type HandMind = {
 	set?: Pt;
 	// Picks so far (his own draws).
 	n: number;
-	// Where his feet are with it in his hands (his gather's end).
+	// Where his feet are with it in his hands (his gather's end) - and
+	// from when, how fast, and how hard he eases to a stop there.
 	pivot?: Pt;
+	gather?: { ux: number; uy: number; ease: number };
 };
 export const handMindOf = (): HandMind => ({
 	kind: "size",
@@ -80,23 +86,39 @@ const SET_MOVED = 3;
 // Attacking his man: this far in (feet), this fast (feet a second; the
 // quicker and better a handler, the harder) - and in at all, more the
 // better his handle and the more room his man gives him.
-const PROBE_FT: [number, number] = [3, 6];
+const PROBE_FT: [number, number] = [3.5, 6.5];
 const PROBE_PACE: [number, number] = [8, 13];
 const PROBE_SHARE = 0.3;
+// Putting it on the floor straight off a catch (this soon after it, ms),
+// he goes somewhere with it: at his man far more often (this share, as
+// above), this far in (feet) - or across - and never stood sizing him up.
+// (Real, a catch put on the floor within a second: 7.1 ft in the first
+// second of it at 8.1 ft/s, half of them 3 ft and more nearer the rim -
+// medians, 17 games; ours 3.1 ft at 3.1.)
+const OFF_CATCH_MS = 1200;
+const OFF_CATCH_SHARE = 0.55;
+const OFF_CATCH_FT: [number, number] = [4, 7];
 // Across the floor along the arc: this far (feet), this fast.
-const SIDE_FT: [number, number] = [3, 6.5];
-const SIDE_PACE: [number, number] = [4.5, 8.5];
+const SIDE_FT: [number, number] = [4, 7.5];
+const SIDE_PACE: [number, number] = [5.5, 9.5];
 const SIDE_SHARE = 0.45;
 // (Going one way along it, he goes on that way rather than straight back
 // about this much more often - feet of room it is worth.)
 const ON_WAY = 2.5;
 // Sizing him up where he is: this long (ms).
-const SIZE_MS: [number, number] = [350, 900];
-const SIZE_SHARE = 0.25;
+const SIZE_MS: [number, number] = [250, 700];
+const SIZE_SHARE = 0.12;
 // Backing out to his spot after attacking: this fast; set there this
 // long (ms) after.
-const BACK_PACE: [number, number] = [5, 7.5];
-const BACK_SET: [number, number] = [100, 450];
+const BACK_PACE: [number, number] = [5.5, 8];
+const BACK_SET: [number, number] = [80, 300];
+// Across, in at his man, giving ground: still going as he gets there (this
+// share of his pace) and straight on into whatever next - not pulled up
+// and stood between one and the next. (Real men on the dribble in the half
+// court: 6.6 ft/s, median, stood 8% of it; ours 4.1, stood 18%.) Done
+// with one this near where it was going (feet).
+const FLOW = 0.65;
+const THERE_GOING = 2.5;
 // His man this near (feet), in front of him: crowded, he gives ground -
 // this far back (feet). His man farther off than this (feet), or not in
 // front of him: room to attack.
@@ -112,19 +134,30 @@ const THERE = 0.8;
 const HOME_LEAD = 1400;
 const HOME_SPARE = 900;
 const HOME_SURE = 450;
+// (Making for it no slower than this, feet a second.)
+const HOME_LEAST_PACE = 3;
+// (The play taking him back with nothing of his first: near enough there
+// is enough, he makes for it later - from this long before (ms), with this
+// to spare. Handed back 0.6 ft off its spot, median, where his own moves
+// left him 2.3 ft off and snatched onto it.)
+const END_LEAD = 700;
+const END_SPARE = 300;
 // A move he could not be back from in time, cut down to these shares of
 // it - no smaller than this (feet).
 const SHRINK = [0.6, 0.35];
 const SHRINK_LEAST = 1.5;
-// Gathering, he stops in a stride or two: about this hard (a share of his
-// brakes), and in this far at the most (feet) - carried on by the catch,
-// not stopped dead on it. (Real, a catch he holds on to: caught at 4.2
-// ft/s, still going 2.5 half a second on, 2 ft gone in 0.7 s - all
-// medians, 17 games; stopped hard, ours had gone half a foot.)
-const GATHER = 0.15;
+// Gathering, he stops in a stride or two: easing off about this hard all
+// the way (a share of his brakes), and in this far at the most (feet) -
+// carried on by the catch, not stopped dead on it, nor going on at the
+// pace he caught it and pulled up on the spot. (Real, a catch he holds on
+// to: 4.4 ft/s at the catch, 3.5 a fifth of a second on, 2.7 at 0.4 s, 2.1
+// at 0.6 - medians, 17 games.)
+const GATHER = 0.2;
 const GATHER_MOST = 3.2;
-// (Easing into it, not pulled up hard on the spot: this hard at it.)
+// (Easing into it, not pulled up hard on the spot: this hard at it - and
+// this far ahead (s) of where he is, as he answers.)
 const GATHER_EFFORT = 0.8;
+const GATHER_LAG = 0.15;
 // Facing the way he goes from this fast (feet a second); slower, square to
 // the rim.
 const FACE_GOING = 8;
@@ -196,6 +229,7 @@ const pick = (
 	a: Attacker,
 	mind: HandMind,
 	pid: number,
+	fresh: boolean,
 ) => {
 	const here = { x: m.x, y: m.y };
 	const draw = (salt: number) => own01(pid, mind.n * 37 + salt);
@@ -240,18 +274,19 @@ const pick = (
 	}
 	const probe =
 		r > INSIDE + 2
-			? PROBE_SHARE *
+			? (fresh ? OFF_CATCH_SHARE : PROBE_SHARE) *
 				(0.4 + 1.2 * a.handle) *
 				(a.big ? 0.4 : 1) *
 				(room ? 1.6 : 1)
 			: 0;
-	const size = SIZE_SHARE * (a.big ? 1.6 : 1) * (1.3 - 0.6 * skill);
+	const size = fresh ? 0 : SIZE_SHARE * (a.big ? 1.6 : 1) * (1.3 - 0.6 * skill);
 	const side = SIDE_SHARE;
 	const x = draw(1) * (probe + size + side);
 	if (x < probe) {
 		// In at him - by his weak side: off the way he is set, the side of
 		// him with more room.
-		const k = lerp(PROBE_FT[0], PROBE_FT[1], draw(9));
+		const ft = fresh ? OFF_CATCH_FT : PROBE_FT;
+		const k = lerp(ft[0], ft[1], draw(9));
 		let across = (draw(10) - 0.5) * 3;
 		if (man) {
 			const s = (f.man!.x - here.x) * -uy + (f.man!.y - here.y) * ux;
@@ -328,34 +363,73 @@ export const decide = (
 	if (!f.dribbling) {
 		// In his hands: a stride or two to stop, and there.
 		if (!mind.pivot) {
-			const k =
+			const far =
 				v > 0.5
-					? Math.min(GATHER_MOST, (v * v) / (2 * GATHER * a.body.brake)) / v
+					? Math.min(GATHER_MOST, (v * v) / (2 * GATHER * a.body.brake))
 					: 0;
+			const k = v > 0.5 ? far / v : 0;
 			mind.pivot = { x: m.x + m.vx * k, y: m.y + m.vy * k };
+			mind.gather = {
+				ux: v > 0.5 ? m.vx / v : 0,
+				uy: v > 0.5 ? m.vy / v : 0,
+				ease: far > 0 ? (v * v) / (2 * far) : 0,
+			};
 		}
 		// (Into something of the play's from where he is: a step into it.)
 		const into = f.handTo?.commit === true;
-		const to = into ? f.handTo!.at : mind.pivot;
+		if (into) {
+			return {
+				goal: { to: f.handTo!.at, effort: 1, arrive: 0, face },
+				anim: "walk",
+			};
+		}
+		// (Eased off as he goes, as fast as stopping that easily on the spot
+		// has him going - from a beat ahead, as he answers - not carried on
+		// and settled onto it.)
+		const g = mind.gather!;
+		const left =
+			(mind.pivot.x - m.x) * g.ux +
+			(mind.pivot.y - m.y) * g.uy -
+			v * GATHER_LAG;
+		const now = left > 0 ? Math.sqrt(2 * g.ease * left) : 0;
 		return {
-			goal: { to, effort: into ? 1 : GATHER_EFFORT, arrive: 0, face },
+			goal: {
+				to: mind.pivot,
+				effort: GATHER_EFFORT,
+				arrive: now,
+				most: now,
+				face,
+			},
 			anim: "walk",
 		};
 	}
 	mind.pivot = undefined;
+	mind.gather = undefined;
 	const moved = !mind.set || dist(f.set, mind.set) > SET_MOVED;
-	const homing = f.home !== undefined && f.home.in <= HOME_LEAD;
+	const homing =
+		f.home !== undefined && f.home.in <= (f.home.end ? END_LEAD : HOME_LEAD);
 	const homeFrom = () => {
 		mind.kind = "back";
 		mind.at = f.home!.at;
-		mind.pace = BACK_PACE[1];
+		// (There about as he must be - not early and stood waiting there.)
+		mind.pace = Math.min(
+			BACK_PACE[1],
+			Math.max(
+				HOME_LEAST_PACE,
+				(1000 * dist(here, f.home!.at)) / Math.max(1, f.home!.in - HOME_SURE),
+			),
+		);
 		mind.until = f.t + f.home!.in;
 		mind.set = { ...f.set };
 	};
+	// (His first pick, straight off a catch.)
+	const fresh = !mind.at && f.caught !== undefined && f.caught <= OFF_CATCH_MS;
+	const going = mind.kind !== "size" && mind.kind !== "back";
 	if (
 		!mind.at ||
 		moved ||
 		f.t >= mind.until ||
+		(going && dist(here, mind.at) < THERE_GOING) ||
 		(mind.kind !== "size" && dist(here, mind.at) < THERE && v < 2)
 	) {
 		if (homing) {
@@ -363,7 +437,7 @@ export const decide = (
 			homeFrom();
 			mind.n += 1;
 		} else {
-			pick(m, f, a, mind, pid);
+			pick(m, f, a, mind, pid, fresh);
 			// (Nor anything he could not be done with and back from in time -
 			// but a smaller one of the same that he could, not stood waiting
 			// on the spot.)
@@ -372,7 +446,7 @@ export const decide = (
 				mind.until -
 					f.t +
 					(1000 * dist(mind.at!, f.home.at)) / BACK_PACE[0] +
-					HOME_SPARE <=
+					(f.home.end ? END_SPARE : HOME_SPARE) <=
 					f.home.in;
 			if (!fits()) {
 				const A = mind.at!;
@@ -399,17 +473,21 @@ export const decide = (
 	let to = mind.at!;
 	let toV: Pt = { x: 0, y: 0 };
 	let most = mind.kind === "size" ? undefined : mind.pace;
+	let arrive =
+		mind.kind === "size" || mind.kind === "back" ? 0 : FLOW * mind.pace;
 	let effort = mind.kind === "probe" ? 0.85 : mind.kind === "size" ? 0.3 : 0.55;
 	// Something of the play's coming: back to its spot for it.
 	if (f.handTo?.commit) {
 		to = f.handTo.at;
 		toV = f.handTo.v;
 		most = undefined;
+		arrive = 0;
 		effort = 1;
 	} else if (f.home && f.home.in <= HOME_SURE) {
 		to = homeNow(f.home);
 		toV = f.home.v;
 		most = undefined;
+		arrive = 0;
 		effort = 1;
 	} else {
 		const homes: { at: Pt; v: Pt; u: number }[] = [];
@@ -420,11 +498,12 @@ export const decide = (
 				u: smooth01(1 - f.handTo.until / f.handTo.lead),
 			});
 		}
-		if (f.home && f.home.in <= HOME_LEAD) {
+		const homeLead = f.home?.end ? END_LEAD : HOME_LEAD;
+		if (f.home && f.home.in <= homeLead) {
 			homes.push({
 				at: homeNow(f.home),
 				v: f.home.v,
-				u: smooth01((HOME_LEAD - f.home.in) / (HOME_LEAD - HOME_SURE)),
+				u: smooth01((homeLead - f.home.in) / (homeLead - HOME_SURE)),
 			});
 		}
 		for (const h of homes) {
@@ -435,6 +514,7 @@ export const decide = (
 			};
 			if (h.u > 0.5) {
 				most = undefined;
+				arrive = 0;
 				effort = Math.max(effort, 0.7);
 			}
 		}
@@ -443,6 +523,7 @@ export const decide = (
 		to,
 		toV,
 		effort,
+		arrive,
 		...(most !== undefined ? { most } : {}),
 		...(v < FACE_GOING || mind.kind !== "probe" ? { face } : {}),
 	};

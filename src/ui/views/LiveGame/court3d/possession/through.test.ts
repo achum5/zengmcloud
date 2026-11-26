@@ -233,6 +233,23 @@ describe("on through the catch", () => {
 		assert.isTrue(spacing.has(tr.moves[1]!));
 	});
 
+	test("a pass he catches and holds on to, nothing after it: eased to a stop over most of a second, not pulled up in a stride", () => {
+		const moves = () => [run(0, 1500, 40, 60), stand(1500, 5000, 60)];
+		const held = track(moves(), [act(1700, 1900, "catch")]);
+		assert.isTrue(carryThrough(held, 1800, undefined, true));
+		const [a, b] = held.moves;
+		const T = (b!.t1 - b!.t0) / 1000;
+		assert.isAtLeast(T, 0.6);
+		// (Easing off - not braking as a stride or two to stop takes, 11 ft/s
+		// a second.)
+		assert.isAtMost(a!.v1! / T, 6);
+		assert.deepEqual(b!.to, { x: 60, y: 20 });
+		// (A loose ball, say: gathered in a stride or two, as before.)
+		const loose = track(moves(), [act(1700, 1900, "catch")]);
+		assert.isTrue(carryThrough(loose, 1800));
+		assert.isAtMost(loose.moves[1]!.t1 - loose.moves[1]!.t0, 450);
+	});
+
 	test("stood a long while for it, or barely moved to it: as it was", () => {
 		const long = track(
 			[run(0, 500, 40, 60), stand(500, 4000, 60)],

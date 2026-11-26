@@ -888,6 +888,59 @@ arms, both out wide of a man up on the ball, read as a plane's wings from
 in front; the brief drops left are mostly a defender slowing near the ball
 between two runs.
 
+## The man with the ball on the move (holder standing)
+
+Where it started (real_11 and real_22 watched in whole possessions, against
+17 real games): in his hands after a catch he had stopped by 0.4 s (real
+men are still going 2.7 ft/s then, 2.1 at 0.6 s); on the dribble 4.1 ft/s,
+median, and stood 18% of it (real: 6.6, 8%); stood with the ball 32% of
+the time he had it (real: 15%). Causes:
+
+- A pass caught and held on to was gathered as a stride or two to stop,
+  450 ms at 11 ft/s a second (`through.ts`), and the handler's own gather
+  settled onto its spot rather than easing into it.
+- The play's own dribble runs - about 3 ft over half a second each, a stop
+  between - pinned him, chopping his own stretches to under a second.
+- His own moves ended stood on their spot before the next, and the
+  director walked him through little dribble steps of its own in the front
+  court.
+
+Now:
+
+- A pass he catches and holds on to is eased to a stop over up to 1.2 s
+  (`HELD_GATHER_MOST`, `GATHER_EASE`); in his hands his gather is paced by
+  how far he has left to go (`GATHER`, `GATHER_LAG`).
+- The play's dribble runs shorter than 6 ft are his own to work
+  (`loop.ts` `WORKED_MOST`); its drives, screens and post-ups still pin
+  him. For the new sim the director no longer walks him about in the front
+  court (`keepDribbling`).
+- His moves flow: still going as he gets to one (`FLOW`), done with it
+  2.5 ft out (`THERE_GOING`), across and in a little farther and quicker,
+  sizing his man up less often.
+- Putting a catch on the floor, his first move goes somewhere: at his man
+  far more often (`OFF_CATCH_*`), never stood sizing him up.
+- The play taking him back with nothing of his own first: he is about on
+  its spot by then (`END_LEAD`, `END_SPARE`), handed back 0.6 ft off it,
+  median, not 2.3 ft and snatched onto it (the first try, without this,
+  had 202 jolt flags).
+
+| Measure (both games) | Before | Now | Real |
+| --- | --- | --- | --- |
+| On the dribble, pace (median, ft/s) | 4.1 | 4.6 | 6.6 |
+| On the dribble, stood | 18% | 12% | 8% |
+| Stood with the ball, all the time he has it | 32% | 29% | 15% |
+| ... the middle of a touch (not its first 1 s or last 1.5 s) | 24% | 18% | |
+| In his hands after a catch, 0.2 / 0.4 / 0.6 s on (ft/s) | 2.3 / 0.7 / 0.8 | 2.5 / 1.4 / 0.6 | 3.5 / 2.7 / 2.1 |
+| A catch put on the floor: its first second (ft) | 3.2 | 3.5 | 7.1 |
+| Tape flags: lurches, teleports | 133, 16 | 138, 14 | |
+
+Still short: in his hands after a catch he still stops too soon - most
+catches go straight into something the play lays where it has him (facing
+up, a pass), stood for it; off the catch he goes in at his man half as far
+as real men; and before each thing of the play's he makes back for its
+spot (a few steps' leash, Alex's call), about half his time on the
+dribble.
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it

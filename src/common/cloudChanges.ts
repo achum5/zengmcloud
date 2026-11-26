@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 648,
+		date: "2026-11-26",
+		text: "3D game, New sim: the player with the ball stands still less. After catching a pass he eases to a stop over most of a second instead of pulling up in a stride, and on the dribble he keeps working his defender himself: crossing the floor, attacking off the catch and flowing from one move into the next, rather than being walked through the play in short steps with stops in between.",
+	},
+	{
 		n: 647,
 		date: "2026-11-25",
 		text: "3D game, New sim: players no longer flinch into a defensive crouch. Someone nudged a step aside, slowing for a moment near the ball, or backing off at a walk now stays upright instead of dropping into a slide with arms flung out and popping straight back up, and getting into or out of a stance takes a third of a second instead of a blink.",
