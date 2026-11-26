@@ -19,7 +19,9 @@ import {
 	ownWay,
 	poseAt,
 	releaseAt,
+	RUN_STYLE_MID,
 	skeleton,
+	styledStance,
 	underPalm,
 	waysOf,
 	type AnimName,
@@ -556,6 +558,35 @@ describe("3D poses", () => {
 				);
 				assert.isBelow(d, 0.45, `${anim} ${k}`);
 				prev = sk;
+			}
+		}
+	});
+
+	test("the new sim's men slide in their stance with their hands low and working - never both arms out level like a plane's wings", () => {
+		const body = bodyOf();
+		// (From in front: an arm out to his side, no more than this far
+		// below level - degrees.)
+		const wing = (root: V3, end: V3, side: 1 | -1) => {
+			const out = (end.s - root.s) * side;
+			return (
+				out > 0.6 && Math.atan2(root.u - end.u, out) < (30 * Math.PI) / 180
+			);
+		};
+		for (const anim of ["shuffle", "slide", "back"] as const) {
+			for (const hands of [0.1, 0.5, 0.9]) {
+				const style = { ...RUN_STYLE_MID, hands, depth: 0.62 };
+				for (let k = 0; k <= 20; k++) {
+					const sk = skeleton(
+						body,
+						styledStance(poseAt(anim, k / 20), anim, style),
+					);
+					const both =
+						wing(sk.armR.root, sk.armR.end, -1) &&
+						wing(sk.armL.root, sk.armL.end, 1);
+					assert.isFalse(both, `${anim} ${hands} ${k}`);
+					// (His lead hand down about his hip.)
+					assert.isBelow(sk.armR.end.u - sk.armR.root.u, -0.7);
+				}
 			}
 		}
 	});

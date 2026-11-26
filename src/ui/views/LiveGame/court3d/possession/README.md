@@ -888,6 +888,26 @@ arms, both out wide of a man up on the ball, read as a plane's wings from
 in front; the brief drops left are mostly a defender slowing near the ball
 between two runs.
 
+## Hands in the slide (fix list, first item, the rest)
+
+What was left of Alex's clip: sliding with his man, stepping up or giving
+ground in his stance, a defender held both arms out to his sides at about
+level - from in front, a plane's wings. Counted over the first ten minutes
+of real_11 from in front (an arm reaching out past 0.6 ft to his side, no
+more than 30 degrees below level, both at once): 78% of the slide's frames,
+60% of stepping up, 51% of giving ground; 7% of every frame of every man.
+Real defenders on the ball carry their hands low and working, bent at the
+elbow: one down at the ball about the hip, the other up in front in the
+way of a pass, or both down and out at the hips.
+
+For the new sim's men (`poses.ts` `slideHandsOwn`, those with a stance
+depth of their own; the old sim's look as it was), the slide, stepping up
+and giving ground carry the hands that way: his lead hand down and out at
+his hip, the other up in front of him at about his shoulder - or, for the
+men who carry both hands out on the ball (`GUARD_HANDS`), both down and out
+at the hips - with a little of the slide's working of them kept. Those
+frames now: none (the wide arms left are boxing out and bumping, as real).
+
 ## The man with the ball on the move (holder standing)
 
 Where it started (real_11 and real_22 watched in whole possessions, against

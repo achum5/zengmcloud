@@ -15511,8 +15511,43 @@ const CLOSE_TWO = {
 	abF: 18,
 	wrF: 0,
 };
+// (The new possession sim's men - those with a depth of their own - sliding
+// with their man, stepping up or giving ground in their stance: hands low
+// and working, not both arms held out level like a plane's wings, as from
+// in front ours were 4 frames in 5 of it. One down and out at the ball
+// (his lead hand, at his hip), the other up in front of him at about his
+// shoulder, in the way of a pass; those who carry both out at their chest
+// on the ball (see GUARD_HANDS) slide with both down and out at their
+// hips. A little of the slide's own working of them kept.)
+const SLIDES = new Set<AnimName>(["shuffle", "slide", "back"]);
+const SLIDE_LOW = { sh: 25, el: 35, ab: 26, wr: 10 };
+const SLIDE_UP = { sh: 76, el: 32, ab: 14, wr: 4 };
+const SLIDE_BOTH = { sh: 32, el: 38, ab: 30, wr: 10 };
+const slideHandsOwn = (q: Pose, anim: AnimName, s: RunStyle): Pose => {
+	if (s.depth === undefined || !SLIDES.has(anim)) {
+		return q;
+	}
+	const both = s.hands < GUARD_HANDS;
+	const N = both ? SLIDE_BOTH : SLIDE_LOW;
+	const F = both ? SLIDE_BOTH : SLIDE_UP;
+	return {
+		...q,
+		shN: N.sh + (q.shN - 26),
+		elN: N.el,
+		abN: N.ab + (q.abN - 54) / 2,
+		wrN: N.wr,
+		shF: F.sh + (q.shF - 53),
+		elF: F.el,
+		abF: F.ab + (q.abF - 35) / 2,
+		wrF: F.wr,
+	};
+};
 export const styledStance = (q0: Pose, anim: AnimName, s: RunStyle): Pose => {
-	const q1 = readyOwn(guardHandsOwn(q0, anim, s), anim, s);
+	const q1 = readyOwn(
+		guardHandsOwn(slideHandsOwn(q0, anim, s), anim, s),
+		anim,
+		s,
+	);
 	const q = s.depth !== undefined && STANCES.has(anim) ? upTo(q1, s.depth) : q1;
 	return STANCES.has(anim)
 		? {
