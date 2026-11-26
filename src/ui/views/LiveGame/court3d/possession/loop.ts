@@ -341,13 +341,25 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 		}
 		return mergedFrom(want, q, bodyOf(pid).top, held.next(q.t + 1));
 	};
-	// A pass in the air, from one of them to another.
+	// A pass in the air, from one of them to another (bounced to him: from
+	// the throw till it is in his hands).
 	const passes: [number, number][] = [];
-	for (const s of x.ball) {
-		if (s.kind === "fly" && !s.dead && "pid" in s.from && "pid" in s.to) {
-			passes.push([s.t0, s.t1]);
+	x.ball.forEach((s, k) => {
+		if (s.kind !== "fly" || s.dead || !("pid" in s.from)) {
+			return;
 		}
-	}
+		const n = x.ball[k + 1];
+		if ("pid" in s.to) {
+			passes.push([s.t0, s.t1]);
+		} else if (
+			s.to.z < 1 &&
+			n?.kind === "fly" &&
+			n.t0 === s.t1 &&
+			"pid" in n.to
+		) {
+			passes.push([s.t0, n.t1]);
+		}
+	});
 	const passing = (t: number) => {
 		const i = lastAtOrBefore(passes, t, (p) => p[0]);
 		return i >= 0 && t < passes[i]![1];
@@ -626,24 +638,34 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			? m.to
 			: x.laid.get(tr.pid)!.at(t);
 	};
-	// The man the ball is in the air to at t, if it is.
-	const flyingTo = (t: number): number | undefined => {
-		const s = x.ball[lastAtOrBefore(x.ball, t, (q) => q.t0)];
-		return s?.kind === "fly" && "pid" in s.to ? s.to.pid : undefined;
+	// Who the ball in the air (the k-th of it) is on its way to, if a man:
+	// bounced to him, from the throw on - down to the floor, and up off it
+	// into his hands.
+	const goingTo = (k: number): number | undefined => {
+		const s = x.ball[k];
+		if (s?.kind !== "fly") {
+			return undefined;
+		}
+		if ("pid" in s.to) {
+			return s.to.pid;
+		}
+		const n = x.ball[k + 1];
+		return s.to.z < 1 && n?.kind === "fly" && n.t0 === s.t1 && "pid" in n.to
+			? n.to.pid
+			: undefined;
 	};
+	// The man the ball is in the air to at t, if it is.
+	const flyingTo = (t: number): number | undefined =>
+		goingTo(lastAtOrBefore(x.ball, t, (q) => q.t0));
 	// Where the play has the ball at t: with the man who has it, or the man
 	// it is on its way to.
 	const ballLaid = (t: number): Pt | undefined => {
-		const s = x.ball[lastAtOrBefore(x.ball, t, (q) => q.t0)];
+		const k = lastAtOrBefore(x.ball, t, (q) => q.t0);
+		const s = x.ball[k];
 		if (!s) {
 			return undefined;
 		}
-		const pid =
-			s.kind === "hold"
-				? s.pid
-				: s.kind === "fly" && "pid" in s.to
-					? s.to.pid
-					: undefined;
+		const pid = s.kind === "hold" ? s.pid : goingTo(k);
 		return pid === undefined ? undefined : x.laid.get(pid)?.at(t);
 	};
 	// Whether a man on offense works his spot himself at t: off the ball, in

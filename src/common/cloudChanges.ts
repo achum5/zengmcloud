@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 650,
+		date: "2026-11-26",
+		text: "3D game, New sim: nobody stands around watching a shot anymore. Players getting back keep jogging back while the ball is in the air, the shooter heads back or a big follows his shot in, and defenders with nobody to box out drift in toward the rebound. Players also no longer freeze for two seconds on every bounce pass.",
+	},
+	{
 		n: 649,
 		date: "2026-11-26",
 		text: "3D game, New sim: defenders sliding with their man no longer hold both arms straight out like airplane wings. They keep their hands low and active, one down at the ball and the other up in the passing lane, the way real defenders do.",

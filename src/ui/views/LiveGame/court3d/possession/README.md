@@ -116,7 +116,8 @@ looks better.
    - 8b, calm decisions: a choice holds a moment; a target slides.
    - 8c, plays run live: the action, roles and coverage from the players
      on the floor (the ball moved round before the set built: see Moving
-     it round; runs eased in and out: see Easing in and out).
+     it round; runs eased in and out: see Easing in and out; a shot up
+     played by all ten: see A shot up).
    - 8d, transition: push or walk it up, lanes, a rim runner, a trailer.
    - 8e, team styles from the lineup's ratings.
 
@@ -960,6 +961,68 @@ up, a pass), stood for it; off the catch he goes in at his man half as far
 as real men; and before each thing of the play's he makes back for its
 spot (a few steps' leash, Alex's call), about half his time on the
 dribble.
+
+## A shot up (stop-and-go, second piece)
+
+From a shot going up till 1.5 s after it comes down, real men are on the
+move: the offense stood 11% of that time, the defense 13% (17 games of
+tracking; a sixth of the live half court). Ours stood 32% and 41% (both
+games taped whole). Two causes:
+
+- `stepper.ts` took every ball out of a man's hands to a spot as a shot,
+  and through a shot the new sim's men play the play's plan, none working
+  his own way: a bounce pass too (down to the floor, up off it to the
+  man). On each, everybody off the ball stood on the play's spot for two
+  seconds - about two bounce passes a minute.
+- The play's plan for a shot (`director.ts`, `crashTheGlass`) had the men
+  going to the glass go well before it came down, but the rest only from
+  1.5 s before it did - a dash back a few steps and stood watching it -
+  and the men with nothing in it stood where they were.
+
+Now, the new sim only:
+
+- A bounce pass is a pass: played by every man as he plays one
+  (`stepper.ts`), the ball on its way to the man it is bounced to from the
+  throw (`loop.ts`, `goingTo`), not lost on the floor between. (The first
+  try without that had a man meeting a bounce pass snatched onto the
+  play's spot for the catch: jumps of 4 ft in a tenth of a second.)
+- Everybody plays the shot as it goes up. A man getting back goes back
+  the whole time it is up and a little after (`SHOT_BACK_ON`) at an easy
+  pace, his own draw of 4 to 7 ft/s (`SHOT_BACK_PACE`), walking it or
+  backing off facing it, no further than 20 ft - not a dash and a stand.
+- A man with nothing yet to do about it - the shooter come down from it,
+  one left out of the crash - is not stood watching it either: on offense
+  he heads back the same way (a big in close follows it in a step or two,
+  `SHOT_FOLLOW_IN`); on defense he goes in to where a long one comes down,
+  there as it does. A defender with nobody to box out goes in at an easy
+  pace if he has the time, not a dash in and stood.
+
+| Measure (real_11 + real_22, whole games) | Real | Before | Now |
+| --- | --- | --- | --- |
+| A shot up: offense stood | 11% | 32% | 22% |
+| A shot up: defense stood | 13% | 41% | 32% |
+| ... its first half second, offense / defense | 16% / 13% | 36% / 39% | 34% / 33% |
+| ... after it comes down, offense / defense | 8% / 12% | 34% / 43% | 17% / 32% |
+| Half court, off the ball on offense stood | 17.0% | 28.8% | 24.5% |
+| Half court, the man with the ball stood | 15.2% | 31.9% | 29.7% |
+| Half court, defense stood | 16.6% | 28.6% | 26.4% |
+| Set off from standing, a live minute | 41.5 | 93.7 | 95.4 |
+| Tape flags: lurch, teleport | | 138, 14 | 126, 20 |
+
+The teleport flags up from 14 to 20 are plays the director lays faster
+than a body goes (a loose ball picked up, a heave at the buzzer, a swipe
+at the ball on the break), the same kinds as before, in other trips: the
+game goes another way after the first shot, the plan drawing its own luck
+for each man's way back.
+
+Still short: the first half second (men stood till their way in or back
+starts, a beat after the shot leaves his hand), and the defense after it
+comes down - stood boxed out once it is down, and round the man who has
+it till the trip the other way starts, once he is down with it. Starting
+the rest off as soon as the board is had was tried (`develop`): it moved
+them a tenth or two of a second, nothing in the numbers. And men set off
+from standing no less often: most of that is the play's own runs, a dash
+and a stand each (the players timing the play's actions, next).
 
 ## Natural and smooth (before step 8)
 

@@ -1085,6 +1085,18 @@ const GLASS_TURN = 0.4;
 // Backing out after a shot only if that keeps the rim within this (cosine)
 // of straight ahead of him.
 const BACK_FACING = 0.6;
+// The new sim's men getting back with a shot up: at this pace (feet a
+// second, his own draw between), as long as it is up and this long (ms)
+// after it comes down, no further than this (feet) - walking it under this
+// pace (feet a second).
+const SHOT_BACK_PACE: [number, number] = [4, 7];
+const SHOT_BACK_ON = 600;
+const SHOT_BACK_MOST = 20;
+const SHOT_BACK_WALK = 5.5;
+// (Free this long (ms) before it comes down at the least, he plays it; a big
+// within this far of the rim (feet) follows his own shot in.)
+const SHOT_IDLE_LEAST = 400;
+const SHOT_FOLLOW_IN = 15;
 // The ball theirs, the other five turn and get back (see getBack): from this
 // long after (ms), anybody further than this from the rim at their end
 // (feet), this much nearer it - and back in to the top of the key, not
@@ -16208,7 +16220,11 @@ class Director {
 	) {
 		// Everybody plays it as it goes up: into each other well before it
 		// comes down.
-		const go = Math.max(gather + 250, land - 1500);
+		// (The new sim's men: as it goes up - nobody stood watching it till
+		// it is nearly down.)
+		const go = this.possession
+			? gather + 250
+			: Math.max(gather + 250, land - 1500);
 		const meet = Math.max(go + 380, land - 900);
 		const until = land + 150;
 		if (until - meet < 280) {
@@ -16340,6 +16356,43 @@ class Director {
 				const C = apart(inPlay({ x: M.x + u.x * k, y: M.y + u.y * k }));
 				crash.set(pid, C);
 				inAt.set(pid, this.goBy(pid, C, r0, meet, "run", undefined, BURST));
+			} else if (this.possession) {
+				// (The new sim's men: on their way back the whole time it is up,
+				// at an easy pace, eyes on it - not a dash back a few steps and
+				// stood watching. Real men stand 11% of the time a shot is up,
+				// going a median 4.8 ft/s.)
+				const pace =
+					SHOT_BACK_PACE[0] + (SHOT_BACK_PACE[1] - SHOT_BACK_PACE[0]) * draw();
+				const k = Math.min(
+					SHOT_BACK_MOST,
+					(pace * Math.max(0, until + SHOT_BACK_ON - r0)) / 1000,
+				);
+				// (No further than half court.)
+				const x = M.x - dir * k;
+				const back = clampPt({
+					x: (x - COURT_W / 2) * dir < 0 ? COURT_W / 2 : x,
+					y: M.y + (COURT_H / 2 - M.y) * 0.3,
+				});
+				const going = unitVec(M, back);
+				const away = unitVec(rim, M);
+				const facing = going.x * away.x + going.y * away.y > BACK_FACING;
+				const v = Math.min(
+					pace,
+					(dist(M, back) * 1000) / Math.max(250, until + SHOT_BACK_ON - r0),
+				);
+				this.go(
+					pid,
+					back,
+					r0,
+					Math.max(SHOT_BACK_PACE[0], v),
+					v < SHOT_BACK_WALK
+						? facing
+							? "backWalk"
+							: "walk"
+						: facing
+							? "back"
+							: "jog",
+				);
 			} else if (out < 30) {
 				// Back on defense, eyes on the shot - backing out if that keeps
 				// the rim in front of him, turning and jogging back if not (out of
@@ -16439,7 +16492,23 @@ class Director {
 				spot = this.runsThrough(d, near, r0 + 80, meet, shooter) ? D0 : near;
 				C = undefined;
 			}
-			const there = this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
+			// (The new sim's men with nobody to put a body on: in to it at an
+			// easy pace, there as it comes down - not a dash in and stood.)
+			const D1 = this.posOf(d);
+			const easy =
+				this.possession && !C
+					? (dist(D1, spot) * 1000) / Math.max(250, until - r0 - 80)
+					: Infinity;
+			const there =
+				easy < JOG
+					? this.go(
+							d,
+							spot,
+							r0 + 80,
+							Math.max(SHOT_BACK_PACE[0], easy),
+							easy < SHOT_BACK_WALK ? "walk" : "jog",
+						)
+					: this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
 			if (C && there < until - 250) {
 				this.act(d, "boxOut", Math.max(meet, there), until, { look: rim });
 				boxed.set(mark, Math.max(meet, there));
@@ -16461,6 +16530,84 @@ class Director {
 				this.act(man, "fight", Math.max(meet, there, from - 150), until, {
 					look: rim,
 				});
+			}
+		}
+		// The new sim's men with nothing yet to do about it - the shooter
+		// come down from it, a man left out of all that: none of them stood
+		// watching it. On offense he heads back at an easy pace (a big in
+		// close follows it in a step or two); on defense he goes in to where
+		// a long one comes down, there as it does.
+		if (this.possession) {
+			for (const pid of [...this.slots(team), ...this.slots(other(team))]) {
+				if (pid !== shooter && busy.includes(pid)) {
+					continue;
+				}
+				const tr = this.track(pid);
+				const r0 = readyAt(pid);
+				if (!tr || r0 > until - SHOT_IDLE_LEAST) {
+					continue;
+				}
+				if (
+					tr.moves.some((m) => m.t1 > r0 && m.t0 < until) ||
+					tr.acts.some((a) => a.t1 > r0 && a.t0 < until)
+				) {
+					continue;
+				}
+				const M = this.posOf(pid);
+				const out = dist(M, rim);
+				const draw = luck(pid, until - SHOT_IDLE_LEAST);
+				const left = Math.max(250, until + SHOT_BACK_ON - r0);
+				let to: Pt;
+				let pace: number;
+				if (this.teamOf(pid) === team) {
+					if ((this.rank.get(pid) ?? 4) >= 6 && out < SHOT_FOLLOW_IN) {
+						const u = unitVec(M, rim);
+						const k = Math.min(out - 4, 2 + 2 * draw());
+						to = apart(inPlay({ x: M.x + u.x * k, y: M.y + u.y * k }));
+						pace = (dist(M, to) * 1000) / Math.max(250, until - r0);
+					} else {
+						pace =
+							SHOT_BACK_PACE[0] +
+							(SHOT_BACK_PACE[1] - SHOT_BACK_PACE[0]) * draw();
+						const k = Math.min(SHOT_BACK_MOST, (pace * left) / 1000);
+						const x = M.x - dir * k;
+						to = clampPt({
+							x: (x - COURT_W / 2) * dir < 0 ? COURT_W / 2 : x,
+							y: M.y + (COURT_H / 2 - M.y) * 0.3,
+						});
+						pace = Math.min(pace, (dist(M, to) * 1000) / left);
+					}
+				} else {
+					const u = unitVec(rim, M);
+					const k = Math.min(
+						out,
+						LONG_BOARD[0] + (LONG_BOARD[1] - LONG_BOARD[0]) * draw(),
+					);
+					to = apart(clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k }));
+					pace = (dist(M, to) * 1000) / Math.max(250, until - r0);
+				}
+				if (dist(M, to) < 0.5) {
+					continue;
+				}
+				const going = unitVec(M, to);
+				const away = unitVec(rim, M);
+				const facing =
+					this.teamOf(pid) === team &&
+					going.x * away.x + going.y * away.y > BACK_FACING;
+				const v = Math.min(JOG, Math.max(SHOT_BACK_PACE[0], pace));
+				this.go(
+					pid,
+					to,
+					r0,
+					v,
+					v < SHOT_BACK_WALK
+						? facing
+							? "backWalk"
+							: "walk"
+						: facing
+							? "back"
+							: "jog",
+				);
 			}
 		}
 	}

@@ -2377,11 +2377,22 @@ export const stepTimeline = <T extends Stepped>(
 	// A shot up, till it is rebounded: every man going for it - to the glass,
 	// boxing out - when the play has him go, no beat to it (who goes when is
 	// the play's: see crash and boxOut in director.ts).
-	const shots = tl.ball.flatMap((s) =>
-		s.kind === "fly" && "pid" in s.from && !("pid" in s.to)
-			? [[s.t0 - SHOT_BEFORE, s.t1 + SHOT_AFTER] as const]
-			: [],
-	);
+	// (The new sim's: not a pass bounced to a man - out of the passer's hands
+	// down to the floor, and up off it into the other's. A pass is played by
+	// every man as he plays it, the play's men as the play has them.)
+	const shots = tl.ball.flatMap((s, i) => {
+		if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
+			return [];
+		}
+		const next = tl.ball[i + 1];
+		const bounced =
+			defending !== undefined &&
+			s.to.z < 1 &&
+			next?.kind === "fly" &&
+			next.t0 === s.t1 &&
+			"pid" in next.to;
+		return bounced ? [] : [[s.t0 - SHOT_BEFORE, s.t1 + SHOT_AFTER] as const];
+	});
 	const sharp = spansAt(shots);
 	// Each man stepped after what he wants, over his stretches on the floor
 	// - those of them from `lo` till `hi` (ms), on into `samples`.
