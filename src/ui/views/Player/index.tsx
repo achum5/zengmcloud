@@ -22,7 +22,6 @@ import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { PressButton } from "../../components/PressButton.tsx";
-import { RumorHeat } from "../../components/Rumor.tsx";
 import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import { contractValueCell } from "../../util/contractValueCell.tsx";
 import { useLocal } from "../../util/local.ts";
@@ -468,12 +467,10 @@ const Player2 = ({
 							{rumors.map((e) => (
 								<p key={e.eid}>
 									{e.date !== undefined ? (
-										<b>{formatGameDate(e.date, "withYear")}</b>
+										<>
+											<b>{formatGameDate(e.date, "withYear")}</b>:{" "}
+										</>
 									) : null}
-									{e.rumor ? (
-										<RumorHeat rumor={e.rumor} className="ms-2" />
-									) : null}
-									<br />
 									<SafeHtml dirty={e.text} />
 								</p>
 							))}

@@ -8,11 +8,6 @@ $dropdown-link-active-bg: #f8f9fa !default; // Matches hover: $gray-100
 // For datatable.scss
 $sorting-highlight-bg: #ececec !default; // Matches var(--bs-table-hover-bg) but without transparency, which is needed for sticky-x
 
-// Rumor heat colors (components/Rumor.tsx); dark.scss sets its own.
-$rumor-close: #b02a37 !default;
-$rumor-near: #9a5800 !default;
-$rumor-available: #087990 !default;
-
 // Make it more like Bootstrap 4
 $link-decoration: none;
 $link-hover-decoration: underline;
@@ -3133,26 +3128,6 @@ $score-box-player-width: 200px;
 	background-color: transparent;
 	color: var(--bs-body-color) !important;
 	box-shadow: inset 0 0 0 1px var(--bs-secondary-color);
-}
-
-// How far a rumor's talk got, as a newsroom kicker (components/Rumor.tsx).
-.rumor-heat {
-	font-size: 0.75em;
-	font-weight: 600;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	white-space: nowrap;
-}
-// Its color by how hot the talk is, readable on either theme (Bootstrap's
-// -emphasis colors go dark on this dark theme, which flips its grays).
-.rumor-heat-close {
-	color: $rumor-close;
-}
-.rumor-heat-near {
-	color: $rumor-near;
-}
-.rumor-heat-available {
-	color: $rumor-available;
 }
 
 .bg-warning,

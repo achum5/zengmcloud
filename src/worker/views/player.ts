@@ -811,7 +811,6 @@ export default defineView({
 					eid: event.eid,
 					date: event.date,
 					text: helpers.correctLinkLid(g.get("lid"), event.text as any),
-					rumor: event.rumor,
 				}));
 			const eventsFiltered = eventsAll.filter((event) => {
 				// undefined is a temporary workaround for bug from commit 999b9342d9a3dc0e8f337696e0e6e664e7b496a4

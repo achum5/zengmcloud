@@ -1,47 +1,12 @@
-import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
 import type { EventBBGM } from "../../common/types.ts";
 
-// THE RUMOR MILL'S LOOK (smartCpu/rumors.ts; owner, 2026-11-27: heat tags and
-// who's after whom, "steer away from an ai vibe code look"). A rumor says how
-// far the talk got the way a newsroom kicker does - a short word above the
-// story, its color by how hot it is - and its card says who is after whom in
-// the header, abbreviations beside the logos like the scores bar.
+// THE RUMOR MILL'S LOOK (smartCpu/rumors.ts; owner, 2026-11-27: who's after
+// whom, no heat words, "steer away from an ai vibe code look"). A rumor's card
+// says who is after whom in the header, abbreviations beside the logos like
+// the scores bar.
 
 type Rumor = NonNullable<EventBBGM["rumor"]>;
-
-// Class names spelled out whole: the live CSS keeps only those it finds here.
-const HEAT: Record<string, { text: string; className: string }> = {
-	close: { text: "Close", className: "rumor-heat-close" },
-	near: { text: "Offer made", className: "rumor-heat-near" },
-	available: { text: "Available", className: "rumor-heat-available" },
-	interest: { text: "Interest", className: "text-body-secondary" },
-	team: { text: "Calling around", className: "text-body-secondary" },
-	apart: { text: "Long shot", className: "text-body-tertiary" },
-};
-
-const heatOf = (rumor: Rumor) =>
-	HEAT[rumor.kind ?? ""] ??
-	(rumor.tier >= 3
-		? HEAT.close!
-		: rumor.tier === 2
-			? HEAT.near!
-			: HEAT.interest!);
-
-export const RumorHeat = ({
-	rumor,
-	className,
-}: {
-	rumor: Rumor;
-	className?: string;
-}) => {
-	const heat = heatOf(rumor);
-	return (
-		<span className={clsx("rumor-heat", heat.className, className)}>
-			{heat.text}
-		</span>
-	);
-};
 
 type TeamInfo = {
 	abbrev: string;
