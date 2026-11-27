@@ -16,6 +16,17 @@ const CORNER_LEN = RIM_INSET + Math.sqrt(THREE_R ** 2 - 22 ** 2);
 export const FLOOR_TEMPLATE_W = (COURT_W + 2 * END) * FT;
 export const FLOOR_TEMPLATE_H = (COURT_H + 2 * SIDE) * FT;
 
+// A WIDE FLOOR PICTURE: the same floor with more of its apron in it - twelve
+// feet past each baseline and eight past each sideline, 118 x 66 ft - for a
+// floor whose lettering runs out further than the template's apron, the way
+// most real floors' does. Told apart by its shape alone, so a court needs
+// nothing else saying so.
+export const WIDE_END = 12;
+export const WIDE_SIDE = 8;
+const WIDE_SHAPE = (COURT_W + 2 * WIDE_END) / (COURT_H + 2 * WIDE_SIDE);
+export const isWideFloor = (w: number, h: number) =>
+	w > 0 && h > 0 && Math.abs(w / h - WIDE_SHAPE) < 0.004;
+
 export const floorTemplate = (): HTMLCanvasElement => {
 	const cv = document.createElement("canvas");
 	cv.width = FLOOR_TEMPLATE_W;

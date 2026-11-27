@@ -29,6 +29,7 @@ import {
 	type HoopFx,
 } from "./arena.ts";
 import { drawJumbotron, ribbonScore, type Jumbotron } from "./jumbotron.ts";
+import type { CourtPicture } from "./courtTexture.ts";
 import type { Bowl } from "./bowlData.ts";
 import type { SeatedCrowd } from "./bowlFans.ts";
 import { drawBowl } from "./bowlGl.ts";
@@ -614,7 +615,7 @@ const fastLegs = (
 export type ArenaPaint = {
 	// The home floor, from the 2D court's drawing (see courtTexture) - until it
 	// is ready, plain wood.
-	court?: HTMLCanvasElement;
+	court?: CourtPicture;
 	stands: HTMLCanvasElement;
 	standsUp: HTMLCanvasElement;
 	standsWave: HTMLCanvasElement;
@@ -649,14 +650,15 @@ export type ArenaPaint = {
 	bowl?: { data: Bowl; crowd: SeatedCrowd; seatColor: string };
 };
 
-// The court picture's plane: the 2D court's own frame, in feet.
-const COURT_PICTURE: TexturedPlane = {
-	origin: { x: -5, y: -2.5, z: 0 },
+// The court picture's plane: where the picture lies, in feet - the 2D
+// court's own frame, or more round it for a wide floor picture.
+const courtPlane = (pic: CourtPicture): TexturedPlane => ({
+	origin: { x: pic.x, y: pic.y, z: 0 },
 	alongX: { x: 1, y: 0, z: 0 },
 	alongY: { x: 0, y: 1, z: 0 },
-	w: COURT_W + 10,
-	h: 55,
-};
+	w: pic.w,
+	h: pic.h,
+});
 
 export type Frame = {
 	// The frame being drawn: small, a pixel-art pixel to a canvas pixel.
@@ -2251,7 +2253,15 @@ export const drawFrame = (f: Frame) => {
 			round?.corner,
 		);
 		if (arena.court) {
-			drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
+			// (In pieces of four feet or so, the 2D court's frame 26 x 12.)
+			drawTexturedPlane(
+				ctx,
+				cam,
+				courtPlane(arena.court),
+				arena.court.canvas,
+				Math.round(arena.court.w / 4),
+				Math.round(arena.court.h / 4.6),
+			);
 		} else {
 			floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 		}

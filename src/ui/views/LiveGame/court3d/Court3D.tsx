@@ -41,7 +41,8 @@ import {
 	type Cover,
 	type Rig,
 } from "./camera.ts";
-import { courtTexture, edgeColor } from "./courtTexture.ts";
+import { courtTexture, edgeColor, type CourtPicture } from "./courtTexture.ts";
+import { useWideFloor } from "../useWideFloor.ts";
 import {
 	adjust,
 	fineNow,
@@ -1206,28 +1207,37 @@ const Court3D = ({
 	// at 10 its planks ran together, the floor coarser than the frame round
 	// it at the finest.
 	const floorRef = useRef<HTMLDivElement | null>(null);
-	const courtPicture = useRef<HTMLCanvasElement | undefined>(undefined);
+	const courtPicture = useRef<CourtPicture | undefined>(undefined);
 	// A floor picture's edge color, the floor carried on out in it.
 	const floorEdge = useRef<string | undefined>(undefined);
+	// (A floor picture is laid out once its shape is known: see useWideFloor.)
+	const floorWide = useWideFloor(home?.court?.floorImageURL || undefined);
 	useEffect(() => {
 		courtPicture.current = undefined;
 		floorEdge.current = undefined;
 		const svg = floorRef.current?.querySelector("svg");
-		if (!svg) {
+		if (!svg || floorWide === undefined) {
 			return;
 		}
 		let alive = true;
-		void courtTexture(svg, 20).then((canvas) => {
+		void courtTexture(svg, 20).then((pic) => {
 			if (alive) {
-				courtPicture.current = canvas;
+				courtPicture.current = pic;
 				floorEdge.current =
-					canvas && home?.court?.floorImageURL ? edgeColor(canvas) : undefined;
+					pic && home?.court?.floorImageURL ? edgeColor(pic.canvas) : undefined;
 			}
 		});
 		return () => {
 			alive = false;
 		};
-	}, [gid, home?.court, home?.colors, home?.imgURL, boxScore?.finals]);
+	}, [
+		gid,
+		home?.court,
+		home?.colors,
+		home?.imgURL,
+		boxScore?.finals,
+		floorWide,
+	]);
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);

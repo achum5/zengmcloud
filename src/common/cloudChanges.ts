@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 653,
+		date: "2026-11-27",
+		text: "3D game: a floor picture can now take in more of the floor around the court, so lettering behind the baselines and along the sidelines shows in full instead of getting cut off. A floor picture made 118 x 66 ft (12 ft past each baseline and 8 past each sideline, 2360 x 1320 at 20 px a foot) is laid down that wide; pictures made on the usual template work as before.",
+	},
+	{
 		n: 652,
 		date: "2026-11-27",
 		text: "3D game, New sim: players no longer jerk sideways when they get too close to a teammate or an opponent. They see each other coming and bend their run around smoothly, staying on one side instead of swerving one way and then cutting back the other.",
