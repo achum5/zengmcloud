@@ -311,6 +311,8 @@ export const advanceSeasons = async (
 		// Called in the preseason, once ratings have progressed, before any
 		// games.
 		onPreseason?: () => Promise<void>;
+		// Called as the playoffs begin, before any of their games.
+		onPlayoffs?: () => Promise<void>;
 	} = {},
 ) => {
 	const snapshots: SeasonSnapshot[] = [];
@@ -449,6 +451,7 @@ export const advanceSeasons = async (
 					underContract: contractOf(p).exp > g.get("season"),
 				});
 			}
+			await options.onPlayoffs?.();
 			await game.play(100, conditions);
 		} else if (currentPhase === PHASE.DRAFT_LOTTERY) {
 			for (const [i, pid] of rostered.entries()) {

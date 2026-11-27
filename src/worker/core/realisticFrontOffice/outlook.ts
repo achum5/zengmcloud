@@ -406,6 +406,16 @@ export const injuredShare = (
 	return Math.min(1, left / numGames);
 };
 
+// The playoff games a team plays, about: three quarters of the most a run
+// could last.
+const playoffGamesNow = () =>
+	Math.round(
+		0.75 *
+			g
+				.get("numGamesPlayoffSeries", "current")
+				.reduce((a: number, x: number) => a + x, 0),
+	);
+
 // One player's line for a season of the outlook: what he plays like, and how
 // much of that season we expect to have him.
 const computeSeasonLine = (
@@ -421,8 +431,14 @@ const computeSeasonLine = (
 	if (index === 0) {
 		const r = last(p.ratings);
 		const out = p.injury.gamesRemaining;
+		// In the playoffs no regular season games are left: what he misses of
+		// them - not, as before, all of them for a game out.
+		const horizon =
+			gamesRemaining > 0 || g.get("phase") !== PHASE.PLAYOFFS
+				? gamesRemaining
+				: playoffGamesNow();
 		const availability =
-			out <= 0 ? 1 : 1 - Math.min(1, out / Math.max(1, gamesRemaining));
+			out <= 0 ? 1 : 1 - Math.min(1, out / Math.max(1, horizon));
 		return {
 			...playerLine(r as unknown as ValueRatings, r.pos),
 			valueNoPot: p.valueNoPot,
@@ -742,6 +758,8 @@ type PlayerLines = {
 	season: number;
 	injury: number;
 	gamesRemaining: number;
+	// In the playoffs (where an injury counts against their games).
+	playoffs: boolean;
 	exp: number;
 	ovr: number;
 	valueNoPot: number;
@@ -772,11 +790,13 @@ const playerLines = (
 	const exp = contractOf(p).exp;
 	const ovr = last(p.ratings).ovr;
 	const valueNoPot = p.valueNoPot;
+	const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 	for (const entry of list) {
 		if (
 			entry.season === season &&
 			entry.injury === injury &&
 			entry.gamesRemaining === gamesRemaining &&
+			entry.playoffs === playoffs &&
 			entry.exp === exp &&
 			entry.ovr === ovr &&
 			entry.valueNoPot === valueNoPot &&
@@ -789,6 +809,7 @@ const playerLines = (
 		season,
 		injury,
 		gamesRemaining,
+		playoffs,
 		exp,
 		ovr,
 		valueNoPot,
@@ -930,6 +951,9 @@ export const outlookSettings = {
 	// playoff rounds to 382, 65 seasons under 20 wins to 49 - surer of who
 	// can win, contenders push and the rest wait.
 	measuredUncertainty: true,
+	// What a point of strength is worth in a playoff game against one in the
+	// regular season (seasonSim's playoffScale). 1: the same.
+	playoffScale: 1,
 	// THE TEAM'S OWN CURVES. What a point of strength is worth in title
 	// chances to a team, read off its own seasons (ownCurve) - not off one
 	// curve fit across every team. The league's curve gave the favourite in
@@ -4152,6 +4176,7 @@ export const buildOutlook = async ({
 				seed: season * 1009 + y * 101 + Math.round(progress * 1000),
 				shifts:
 					measured === outlookSettings.measuredUncertainty ? shifts : undefined,
+				playoffScale: outlookSettings.playoffScale,
 			});
 		const sim = simWith(outlookSettings.measuredUncertainty);
 		for (const t of teams) {
@@ -4318,6 +4343,7 @@ export const buildOutlook = async ({
 				numGamesPlayoffSeries: g.get("numGamesPlayoffSeries", "current"),
 				playIn: g.get("playIn"),
 				byConference: g.get("playoffsByConf", "current") ?? true,
+				playoffScale: outlookSettings.playoffScale,
 				uncertaintyNow: uncertaintyAt(progress),
 				uncertaintyAtDeadline: uncertaintyAt(progressAtDeadline),
 				measuredNow: measuredStrengthUncertainty(0, progress),
@@ -4348,13 +4374,7 @@ export const buildOutlook = async ({
 		classBoard: await buildClassBoard(base),
 		playoffWeight,
 		...(ambition > 0 ? { ambition } : {}),
-		// About three quarters of the most a run could last.
-		playoffGames: Math.round(
-			0.75 *
-				g
-					.get("numGamesPlayoffSeries", "current")
-					.reduce((a: number, x: number) => a + x, 0),
-		),
+		playoffGames: playoffGamesNow(),
 	};
 };
 

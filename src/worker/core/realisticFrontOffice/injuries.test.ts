@@ -67,3 +67,40 @@ test(
 		assert.closeTo(points(before, outForTheYear), gone, 1e-9);
 	},
 );
+
+test(
+	"in the playoffs, a star out a game or two counts for most of them",
+	{ timeout: 120_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		const tid = 3;
+		const players = (
+			await idb.cache.players.indexGetAll("playersByTid", tid)
+		).sort((a, b) => b.valueNoPot - a.valueNoPot);
+		const out = (games: number) =>
+			players.map((p, i) =>
+				i === 0
+					? {
+							...helpers.deepCopy(p),
+							injury: { type: "Sprained Ankle", gamesRemaining: games },
+						}
+					: p,
+			);
+		const playoffs = {
+			...outlook,
+			remaining: new Map([...outlook.remaining.keys()].map((t) => [t, 0])),
+		};
+		const points = (roster: typeof players) =>
+			teamPoints(playoffs, tid, roster, [])[0]!;
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		try {
+			const healthy = points(players);
+			const twoGames = points(out(2));
+			const gone = points(out(200));
+			assert.isBelow(twoGames, healthy);
+			assert.isAbove(twoGames, healthy - 0.25 * (healthy - gone));
+		} finally {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		}
+	},
+);

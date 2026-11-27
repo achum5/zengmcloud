@@ -39,8 +39,10 @@ test.skipIf(!env.BS_LEAGUE)(
 			fs.writeFileSync(env.BS_OUT ?? "/dev/stdout", lines.join("\n") + "\n");
 		};
 		await loadLeagueFile(env.BS_LEAGUE!);
-		const { playerLine, rosterPoints, expectedRosterPoints } =
+		const { playerLine, rosterPoints, expectedRosterPoints, strengthSettings } =
 			await import("../../worker/core/realisticFrontOffice/strength.ts");
+		// BS_STRENGTH='{"positions":false}': the strength model's settings.
+		Object.assign(strengthSettings, JSON.parse(env.BS_STRENGTH ?? "{}"));
 		// BS_ABSENT: each man out of each game at this chance (the strength
 		// model's injuries, INJURY_SHARE) - the same men out both ways - and the
 		// model's points priced with the same chance (expectedRosterPoints).
@@ -162,6 +164,18 @@ test.skipIf(!env.BS_LEAGUE)(
 		);
 		log(`  before: ${own.map((p) => p.valueNoPot.toFixed(0)).join(" ")}`);
 		log(`  after:  ${changed.map((p) => p.valueNoPot.toFixed(0)).join(" ")}`);
+		// BS_MODEL_ONLY=1: the model's points both ways, no games.
+		if (env.BS_MODEL_ONLY === "1") {
+			log(`  model: ${(model(changed) - model(own)).toFixed(3)} points`);
+			const { rosterParts } =
+				await import("../../worker/core/realisticFrontOffice/strength.ts");
+			const a = rosterParts(own.map(lineOf) as any);
+			const b = rosterParts(changed.map(lineOf) as any);
+			log(
+				`  healthy parts: players ${(b.players - a.players).toFixed(3)}, synergy ${(b.synergy - a.synergy).toFixed(3)} (of ${a.synergy.toFixed(2)}), positions ${(a.positions - b.positions).toFixed(3)} (cost ${a.positions.toFixed(2)} -> ${b.positions.toFixed(2)})`,
+			);
+			return;
+		}
 		const a = await simulate(own);
 		const b = await simulate(changed);
 		const n = a.margins.length;

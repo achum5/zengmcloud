@@ -87,6 +87,7 @@ export const buildDeadlineView = ({
 	numGamesPlayoffSeries,
 	playIn,
 	byConference,
+	playoffScale,
 	uncertaintyNow,
 	uncertaintyAtDeadline,
 	measuredNow,
@@ -99,6 +100,7 @@ export const buildDeadlineView = ({
 	numGamesPlayoffSeries: readonly number[];
 	playIn: boolean;
 	byConference: boolean;
+	playoffScale?: number;
 	uncertaintyNow: number;
 	uncertaintyAtDeadline: number;
 	measuredNow?: number;
@@ -127,6 +129,7 @@ export const buildDeadlineView = ({
 			uncertainty: uncertaintyAtDeadline,
 			iterations: FIT_ITERATIONS,
 			seed: seed * 17 + rep,
+			playoffScale,
 		});
 		for (const t of shifted) {
 			points.push({

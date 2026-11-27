@@ -101,6 +101,7 @@ export const simulateSeason = ({
 	iterations,
 	seed,
 	shifts,
+	playoffScale = 1,
 }: {
 	teams: readonly SeasonSimTeam[];
 	// Best-of lengths, first round first.
@@ -113,6 +114,9 @@ export const simulateSeason = ({
 	seed: number;
 	// Strengths to add to each team in turn, for SeasonSimResult.shifted.
 	shifts?: readonly number[];
+	// What a point of strength, and home court, is worth in a game after the
+	// regular season against one in it (PLAYOFF_SCALE).
+	playoffScale?: number;
 }): Map<number, SeasonSimResult> => {
 	const random = makeSeededRandom(seed);
 	const gauss = () => {
@@ -153,9 +157,10 @@ export const simulateSeason = ({
 		// The better seed is at home for the larger half of the games.
 		const homeShare = needed / bestOf;
 		const p = winProbability(
-			better.playoffStrength -
-				other.playoffStrength +
-				HOME_COURT_POINTS * (2 * homeShare - 1),
+			playoffScale *
+				(better.playoffStrength -
+					other.playoffStrength +
+					HOME_COURT_POINTS * (2 * homeShare - 1)),
 		);
 		let a = 0;
 		let b = 0;
@@ -175,7 +180,8 @@ export const simulateSeason = ({
 	) =>
 		random() <
 		winProbability(
-			home.playoffStrength - away.playoffStrength + HOME_COURT_POINTS,
+			playoffScale *
+				(home.playoffStrength - away.playoffStrength + HOME_COURT_POINTS),
 		)
 			? home
 			: away;

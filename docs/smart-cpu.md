@@ -3067,3 +3067,74 @@ a game it comes to the density of the final margin at a tie, as it must).
 Nothing changed. Young prospects' worth to contenders (Bub Carrington, 20,
 47/68, 0.16 of a title to Milwaukee) is two to eight seasons on, as rotation
 players.
+
+### What the playoffs change (2026-11-27)
+
+Chasing the biggest miss in those swaps turned up something larger than any
+bench. Cleveland without Jaden Hardy (SG, 58.2, its only second guard of any
+worth): model -2.1; against the eight other best teams, -2.4 a game in
+regular season games, with or without injuries, and -3.6 in playoff games
+(`benchSwapLab`). The sim plays the playoffs differently - its players tire
+1.85 times slower and lineup synergy counts 2.5 times as much (`GameSim`,
+phase `PLAYOFFS`) - and `seasonSim` played them at regular-season odds.
+
+**Every team, both ways** (`playoffLab`): each team's healthy best 15 against
+every other, 40 games a pair each way, as regular season games and as playoff
+games on the same random numbers; the games won against the model's gap (home
+court in it) read as Φ(k × gap / 13.1), `seasonSim`'s game.
+
+| league                         | regular season k | playoff k | playoff margin per point of gap |
+| ------------------------------ | ---------------- | --------- | ------------------------------- |
+| the owner's DBA league, 2025   | 1.01             | 1.58      | 1.52                            |
+| League 40 (real players, 2010) | 1.05             | 1.59      | 1.55                            |
+| random players (arena)         | 1.10             | 1.48      | 1.55                            |
+
+34,800 games each way in each. The regular season holds; a playoff game is
+half again as decisive, the spread of its margin about the same (12.3-13.5).
+Most of what is left is synergy: fit on the 90 teams, a team's playoff
+strength is 1.53 × the model's points (sd 1.88 around it), or 0.94 × them +
+3.3 × its synergy part (sd 1.53); the regular season's is 0.99 × (sd 0.89).
+The sim's playoff minutes (starters a tenth more of the game's leverage)
+explain almost none of it (sd 1.88 to 1.85). Deep teams short of stars and
+fit drop furthest: in the owner's league Boston and Memphis, +2.8 and +2.6 in
+the regular season, are +0.7 and +0.4 in the playoffs.
+
+**Against whole seasons** (`calibration`, now also reading the odds the day
+before the deadline, `CAL_DEADLINE`, and as the playoffs begin,
+`CAL_PLAYOFFS`, at each of `CAL_SCALES`): random-players leagues played ten
+seasons by the game's own CPU, the outlook watching. Log-likelihood of the
+champions (higher is better) and the favourites' titles:
+
+| read at                 | titles | scale 1           | 1.3                | 1.55               |
+| ----------------------- | ------ | ----------------- | ------------------ | ------------------ |
+| preseason               | 220    | -332.0 (97 / 106) | -327.3 (111 / 105) | -331.0 (120 / 105) |
+| the day before deadline | 70     | -106.3 (30 / 34)  | -104.9 (34 / 34)   | -106.7 (37 / 34)   |
+
+(said / won, for the favourite.) The lab's full 1.55 overstates favourites:
+over a season injuries, trades and the read's own misses blur who is best,
+which the lab's healthy rosters read off the model directly leave out. A
+third of the way there fits best wherever the GMs decide.
+
+**What 1.3 moves** (`playoffScaleProbe`, the owner's league at the 2025
+preseason): Milwaukee 51.7% to win the title to 57.7%, Cleveland 33.5% to
+35.1%, Toronto 4.8% to 3.0%, Portland 3.5% to 1.5%, Orlando 2.4% to 1.1%. A
+point of strength this season is worth 0.104 to 0.111 of a season's value to
+Milwaukee, 0.101 to 0.121 to Cleveland, a little less to the teams behind
+them (Orlando 0.036 to 0.026).
+
+**And a bug they turned up.** Read as the playoffs began, the odds were worst
+at any scale above 1, and teams given under 5% won 20 titles in 100. In 900
+playoff series the higher seed read 6 points worse won 49% of its games
+(the model said 31%). With no regular season games left, the outlook counted
+a player out even one game as out for all of this season - so for all of its
+playoffs. Now an injury in the playoffs counts against about the games a
+team plays in them (`playoffGamesNow`, three quarters of the most a run
+could last). With that, 4,094 games of 750 series read k = 1.45 against
+the GMs' read of the two teams as the playoffs begin - the lab's, about - and
+the champions of 50 seasons read from there are called best at 1.3 and 1.55
+alike (log-likelihood -81.0 both, -82.2 at 1; the favourites said 24.1 and
+26.4 titles, won 22).
+
+`outlookSettings.playoffScale` (`seasonSim`'s `playoffScale`): a play-in or
+playoff game's gap and home court times it, each team's draw of its strength
+as before. Off (1) until the owner chooses; 1.3 is what the seasons support.

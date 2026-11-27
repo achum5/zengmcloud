@@ -154,3 +154,32 @@ test(
 		}
 	},
 );
+
+test(
+	"with playoff games more decisive, the best teams win more titles and who makes the playoffs barely moves",
+	{ timeout: 60_000 },
+	() => {
+		const teams = league();
+		const base = run(teams, 5);
+		const decisive = simulateSeason({
+			teams,
+			numGamesPlayoffSeries: [7, 7, 7, 7],
+			playIn: true,
+			byConference: true,
+			uncertainty: 2,
+			iterations: 2000,
+			seed: 5,
+			playoffScale: 1.58,
+		});
+		assert.isAbove(decisive.get(29)!.title, base.get(29)!.title + 0.03);
+		assert.isBelow(decisive.get(20)!.title, base.get(20)!.title);
+		assert.closeTo(sum(decisive, "title"), 1, 1e-9);
+		for (const tid of [29, 20, 10]) {
+			assert.closeTo(
+				decisive.get(tid)!.playoffs,
+				base.get(tid)!.playoffs,
+				0.03,
+			);
+		}
+	},
+);

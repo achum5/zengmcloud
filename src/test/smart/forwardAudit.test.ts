@@ -44,6 +44,12 @@ test.skipIf(!env.FA_LEAGUE)(
 				await import("../../worker/core/smartCpu/clearRoom.ts");
 			clearRoomSettings.atPrice = false;
 		}
+		// FA_OUTLOOK='{"playoffScale":1.3}': any outlook setting.
+		if (env.FA_OUTLOOK) {
+			const { outlookSettings } =
+				await import("../../worker/core/realisticFrontOffice/outlook.ts");
+			Object.assign(outlookSettings, JSON.parse(env.FA_OUTLOOK));
+		}
 		// FA_GAMES_BETWEEN=<n>: the market meets every n games a team on
 		// vanilla's rules, not marketSettings.vanillaGamesBetween's.
 		if (env.FA_GAMES_BETWEEN) {
