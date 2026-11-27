@@ -1644,6 +1644,9 @@ const Court3D = ({
 			typeof matchMedia !== "undefined" &&
 				matchMedia("(pointer: coarse)").matches,
 		);
+		// (Drawn on the card, a test: at 60 whatever, for the readout to say
+		// whether it keeps up.)
+		pacing.fixed = gpu !== undefined;
 		// The size the canvas is laid on the page at (CSS px).
 		const laid = { w: 0, h: 0 };
 		const lookOf = (pid: number) => looks.current.get(pid)!;
@@ -2113,16 +2116,32 @@ const Court3D = ({
 			if (card && !drawGpu(card, frame, fw, fh)) {
 				// (The card lost: today's drawing from the next frame.)
 				gpu = undefined;
+				pacing.fixed = false;
 			} else if (!card) {
 				drawFrame(frame);
 			}
 			if (meter) {
-				meterTick(meter, meterRef.current, now, performance.now() - began, {
-					gpu: drawn !== "test" || (gpu && !card) ? undefined : !!card,
-					fps: pacing.fps,
-					w: fw,
-					h: fh,
-				});
+				const done = performance.now();
+				const game = drawStart - began;
+				meterTick(
+					meter,
+					meterRef.current,
+					now,
+					done - began,
+					card
+						? {
+								game,
+								men: card.menMs,
+								gl: done - drawStart - card.menMs,
+							}
+						: { game, draw: done - drawStart },
+					{
+						gpu: drawn !== "test" || (gpu && !card) ? undefined : !!card,
+						fps: pacing.fps,
+						w: fw,
+						h: fh,
+					},
+				);
 			}
 			if (
 				!still &&

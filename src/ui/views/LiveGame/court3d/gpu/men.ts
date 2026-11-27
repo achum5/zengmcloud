@@ -129,8 +129,6 @@ export type MenGl = {
 	vao: WebGLVertexArrayObject;
 	count: number;
 	type: number;
-	q: Float32Array;
-	s: Float32Array;
 };
 
 const TYPICAL = bodyOf(undefined, undefined, MESH_BUILD);
@@ -261,8 +259,6 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 		vao,
 		count: index.length,
 		type: wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-		q: new Float32Array(B * 8),
-		s: new Float32Array(B * 2),
 	};
 };
 
@@ -291,32 +287,79 @@ export const menCamera = (
 	gl.uniformMatrix3fv(g.prog.u("uCam"), false, cam3);
 };
 
+// Each man's pieces, ready for the card: worked out for all of them before
+// any is drawn (so the readout can tell the two apart - see meter.ts).
+export type ManReady = {
+	st: PlayerState;
+	body: Body;
+	look: Look;
+	q: Float32Array;
+	s: Float32Array;
+	head: { f: number; s: number; u: number };
+};
+export const readyMan = (
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	into: ManReady | undefined,
+): ManReady => {
+	const { sk, bones } = posedMan(st, body);
+	const dq = meshTurns(bones, body.H);
+	const r = into ?? {
+		st,
+		body,
+		look,
+		q: new Float32Array(B * 8),
+		s: new Float32Array(B * 2),
+		head: sk.head,
+	};
+	r.st = st;
+	r.body = body;
+	r.look = look;
+	r.head = sk.head;
+	for (let i = 0; i < B * 8; i++) {
+		r.q[i] = dq[i]!;
+	}
+	for (let i = 0; i < B; i++) {
+		r.s[i * 2] = bones[i]!.ax;
+		r.s[i * 2 + 1] = bones[i]!.rad;
+	}
+	return r;
+};
+
+// His kit's colors as the card takes them (worked out once a look).
+type Paints = Record<"skin" | "jersey" | "shorts" | "shoe", Float32Array>;
+const paints = new WeakMap<Look, Paints>();
+export const paintsOf = (look: Look): Paints => {
+	let p = paints.get(look);
+	if (!p) {
+		p = {
+			skin: new Float32Array(rgb(look.skin, "#8d5a3b")),
+			jersey: new Float32Array(rgb(look.kit.jersey, "#ffffff")),
+			shorts: new Float32Array(rgb(look.kit.shorts, "#ffffff")),
+			shoe: new Float32Array(rgb(look.kit.shoe, "#202020")),
+		};
+		paints.set(look, p);
+	}
+	return p;
+};
+
 // One man.
 export const drawMan = (
 	gl: WebGL2RenderingContext,
 	g: MenGl,
-	st: PlayerState,
-	body: Body,
-	look: Look,
+	man: ManReady,
 ) => {
-	const { sk, bones } = posedMan(st, body);
-	const dq = meshTurns(bones, body.H);
-	for (let i = 0; i < B * 8; i++) {
-		g.q[i] = dq[i]!;
-	}
-	for (let i = 0; i < B; i++) {
-		g.s[i * 2] = bones[i]!.ax;
-		g.s[i * 2 + 1] = bones[i]!.rad;
-	}
+	const { st, body } = man;
+	const p = paintsOf(man.look);
 	const u = g.prog.u;
-	gl.uniform4fv(u("uQ"), g.q);
-	gl.uniform2fv(u("uS"), g.s);
+	gl.uniform4fv(u("uQ"), man.q);
+	gl.uniform2fv(u("uS"), man.s);
 	gl.uniform4f(u("uAt"), st.x, st.y, st.z, st.yaw);
 	gl.uniform1f(u("uH"), body.H);
-	gl.uniform3fv(u("uSkin"), rgb(look.skin, "#8d5a3b"));
-	gl.uniform3fv(u("uJersey"), rgb(look.kit.jersey, "#ffffff"));
-	gl.uniform3fv(u("uShorts"), rgb(look.kit.shorts, "#ffffff"));
-	gl.uniform3fv(u("uShoe"), rgb(look.kit.shoe, "#202020"));
+	gl.uniform3fv(u("uSkin"), p.skin);
+	gl.uniform3fv(u("uJersey"), p.jersey);
+	gl.uniform3fv(u("uShorts"), p.shorts);
+	gl.uniform3fv(u("uShoe"), p.shoe);
 	gl.drawElements(gl.TRIANGLES, g.count, g.type, 0);
-	return sk;
 };

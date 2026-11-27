@@ -62,6 +62,9 @@ export type Pace = {
 	// A phone (see Court3D): kept from running flat out, not just from
 	// falling behind.
 	phone: boolean;
+	// Held at FAST whatever happens (a test of how fast the device draws:
+	// see gpu/setting.ts).
+	fixed?: boolean;
 };
 
 export const makePace = (now: number, phone = false): Pace => ({
@@ -118,6 +121,9 @@ export const drawn = (
 	pace.from = now;
 	pace.gaps = [];
 	pace.work = [];
+	if (pace.fixed) {
+		return false;
+	}
 	let verdict = 0;
 	if (
 		pace.fps === FAST &&

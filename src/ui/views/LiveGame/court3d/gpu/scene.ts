@@ -6,7 +6,15 @@ import { MESH_LIGHTS } from "../meshBody.ts";
 import { bowlLookOf, type Frame } from "../scene.ts";
 import { glForced } from "../sculptGl.ts";
 import { attrib, buffer, compile, type Prog, rgb } from "./gl.ts";
-import { drawMan, menCamera, menOnto, type MenGl } from "./men.ts";
+import {
+	drawMan,
+	type ManReady,
+	menCamera,
+	menOnto,
+	type MenGl,
+	paintsOf,
+	readyMan,
+} from "./men.ts";
 
 // THE GAME DRAWN ON THE GRAPHICS CARD, ALL OF IT IN ONE PICTURE (Global
 // Settings, "3D Drawing": a test of how fast it is): the bowl (see
@@ -69,6 +77,9 @@ type Scene = {
 	court: WebGLTexture;
 	courtOf?: HTMLCanvasElement;
 	men?: MenGl;
+	ready: ManReady[];
+	// The time the last frame spent working out the men (ms).
+	menMs: number;
 	lost: boolean;
 };
 export type GpuScene = Scene;
@@ -141,6 +152,8 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 		roundVao,
 		roundCount: ball.index.length,
 		court,
+		ready: [],
+		menMs: 0,
 		lost: false,
 	};
 	canvas.addEventListener("webglcontextlost", () => {
@@ -270,23 +283,23 @@ export const drawGpu = (
 	gl.depthFunc(gl.LEQUAL);
 
 	// The men.
+	// The men: each one's pieces worked out (the page's own work), then
+	// drawn.
 	sc.men ??= menOnto(gl);
-	const heads: {
-		at: { x: number; y: number; z: number };
-		r: number;
-		c: [number, number, number];
-	}[] = [];
+	const ready = performance.now();
+	const men: ManReady[] = [];
+	if (sc.men) {
+		for (const [i, st] of f.moment.players.entries()) {
+			const r = readyMan(st, f.bodyFor(st.pid), f.lookFor(st.pid), sc.ready[i]);
+			sc.ready[i] = r;
+			men.push(r);
+		}
+	}
+	sc.menMs = performance.now() - ready;
 	if (sc.men) {
 		menCamera(gl, sc.men, m, cam3);
-		for (const st of f.moment.players) {
-			const body = f.bodyFor(st.pid);
-			const look = f.lookFor(st.pid);
-			const sk = drawMan(gl, sc.men, st, body, look);
-			heads.push({
-				at: bodyPoint(st, sk.head),
-				r: body.headR,
-				c: rgb(look.skin, "#8d5a3b"),
-			});
+		for (const man of men) {
+			drawMan(gl, sc.men, man);
 		}
 	}
 	// Their heads, and the ball.
@@ -296,10 +309,12 @@ export const drawGpu = (
 	gl.uniformMatrix4fv(round.u("uM"), false, m);
 	gl.uniformMatrix3fv(round.u("uCam"), false, cam3);
 	gl.uniform3fv(round.u("uLight"), MESH_LIGHTS.LIGHT);
-	for (const h of heads) {
-		gl.uniform3f(round.u("uAt"), h.at.x, h.at.y, h.at.z);
-		gl.uniform3f(round.u("uR"), h.r, h.r, h.r * 1.2);
-		gl.uniform3fv(round.u("uColor"), h.c);
+	for (const { st, body, look, head } of men) {
+		const at = bodyPoint(st, head);
+		const r = body.headR;
+		gl.uniform3f(round.u("uAt"), at.x, at.y, at.z);
+		gl.uniform3f(round.u("uR"), r, r, r * 1.2);
+		gl.uniform3fv(round.u("uColor"), paintsOf(look).skin);
 		gl.drawElements(gl.TRIANGLES, sc.roundCount, gl.UNSIGNED_SHORT, 0);
 	}
 	const ball = f.moment.ball;
