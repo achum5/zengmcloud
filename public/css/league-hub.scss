@@ -294,6 +294,39 @@
 	margin: 0 0 0.6rem;
 }
 
+// The trade deadline over its night's games (it comes first).
+.lh-deadline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem 1rem;
+	margin-bottom: 1rem;
+	padding: 0.85rem 1rem;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-left: 4px solid var(--bs-emphasis-color);
+	border-radius: var(--bs-border-radius);
+}
+.lh-deadline-text {
+	min-width: 0;
+}
+.lh-deadline-title {
+	font-size: 1.15rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	line-height: 1.2;
+}
+.lh-deadline-sub {
+	margin-top: 0.15rem;
+	color: var(--bs-secondary-color);
+}
+.lh-deadline-pass {
+	flex: 0 0 auto;
+	font-weight: 700;
+}
+
 // The night's story.
 .lh-headline {
 	font-size: 1.9rem;

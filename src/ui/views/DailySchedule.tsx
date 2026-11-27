@@ -6,6 +6,8 @@ import { useLocal } from "../util/local.ts";
 import { decideOwnGameSim } from "../../common/ownGameSim.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
+import { confirmPlayMenuAdvance } from "../util/confirmPlayMenuAdvance.tsx";
+import { runPlayMenuOption } from "../util/runPlayMenuOption.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { ForceWin } from "../components/ForceWin.tsx";
@@ -62,6 +64,7 @@ const DailySchedule = ({
 	day,
 	dayNote,
 	days,
+	deadline,
 	elam,
 	hub,
 	nights,
@@ -214,7 +217,8 @@ const DailySchedule = ({
 	}, [season, day]);
 
 	let simToDay = null;
-	if (playable.length > 0 && !isToday) {
+	// (At the deadline, the step is passing it: the banner's.)
+	if (playable.length > 0 && !isToday && !deadline?.today) {
 		const minGid = Math.min(...playable.map((game) => game.gid));
 		simToDay = (
 			<div className="mb-3">
@@ -278,6 +282,42 @@ const DailySchedule = ({
 			</button>
 		) : null;
 
+	// THE TRADE DEADLINE, OVER ITS NIGHT'S GAMES: the league stops at it before
+	// they're played, and passing it is the day's first step (as Play > One
+	// day, with the same check in a shared league).
+	const deadlineBanner = deadline ? (
+		<div className="lh-deadline">
+			<div className="lh-deadline-text">
+				<div className="lh-deadline-title">Trade deadline</div>
+				<div className="lh-deadline-sub">
+					Trades close before {deadline.today && date ? "tonight's" : "these"}{" "}
+					games.
+				</div>
+			</div>
+			{deadline.today ? (
+				<button
+					type="button"
+					className="btn btn-primary lh-deadline-pass"
+					disabled={gameSimInProgress || simAuthorityLocked}
+					title={simAuthorityLocked ? simAuthorityReason : undefined}
+					onClick={async () => {
+						if (
+							!(await confirmPlayMenuAdvance({
+								id: "day",
+								label: "Pass deadline",
+							}))
+						) {
+							return;
+						}
+						await runPlayMenuOption("day");
+					}}
+				>
+					Pass deadline
+				</button>
+			) : null}
+		</div>
+	) : null;
+
 	const dateHeading =
 		date !== undefined ? (
 			<h3 className="h5 mb-3">{formatGameDate(date, "full")}</h3>
@@ -336,6 +376,8 @@ const DailySchedule = ({
 				noGamesMessage
 			) : (
 				<>
+					{deadlineBanner}
+
 					{simToDay}
 
 					{tradeDeadline ? (
@@ -499,7 +541,7 @@ const DailySchedule = ({
 													game={game}
 													players={playersUpcoming}
 													when={
-														isToday
+														isToday || (deadline?.today && date)
 															? "Today"
 															: date
 																? formatGameDate(date, "monthDay")

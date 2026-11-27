@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 651,
+		date: "2026-11-27",
+		text: "Daily Schedule: trade deadline day now reads as one day. Instead of a bare Trade Deadline box and no games, it shows a Trade Deadline banner with a Pass deadline button on top of that night's games, and picking that date in the week strip shows the same thing. Once you pass the deadline, the games are ready to watch or sim.",
+	},
+	{
 		n: 650,
 		date: "2026-11-26",
 		text: "3D game, New sim: nobody stands around watching a shot anymore. Players getting back keep jogging back while the ball is in the air, the shooter heads back or a big follows his shot in, and defenders with nobody to box out drift in toward the rebound. Players also no longer freeze for two seconds on every bounce pass.",

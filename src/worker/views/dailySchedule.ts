@@ -129,8 +129,34 @@ export default defineView({
 				const liveRows = gate ? [...gate.games.values()] : [];
 
 				let schedule;
+				// THE TRADE DEADLINE, READ AS PART OF ITS NIGHT. It is a sim day of
+				// its own - the league stops at it before that night's games, and on
+				// the NBA calendar it shares their date - so its day shows those
+				// games under the deadline, and so does their own day until it has
+				// passed: one night, the deadline first.
+				let deadline: { day: number; gamesDay: number } | undefined;
 				if (inputs.season === currentSeason) {
 					schedule = await season.getSchedule();
+					const deadlineRow = schedule.find((game) =>
+						isTradeDeadline(game.homeTid, game.awayTid),
+					);
+					if (deadlineRow?.day !== undefined) {
+						let gamesRow: (typeof schedule)[number] | undefined;
+						for (const game of schedule) {
+							if (
+								game.day !== undefined &&
+								game.day > deadlineRow.day &&
+								!isNoGameDay(game.homeTid, game.awayTid) &&
+								(gamesRow === undefined || game.day < gamesRow.day!)
+							) {
+								gamesRow = game;
+							}
+						}
+						// (Its own night's - in a league without dates, the next day's.)
+						if (gamesRow && gamesRow.date === deadlineRow.date) {
+							deadline = { day: deadlineRow.day, gamesDay: gamesRow.day! };
+						}
+					}
 					const dayCutoff = gate?.dayCutoff;
 					if (dayCutoff !== undefined) {
 						schedule = schedule.filter(
@@ -206,6 +232,10 @@ export default defineView({
 						} else if (today !== undefined) {
 							day = Math.max(1, today - 1);
 						}
+					}
+
+					if (deadline && day === deadline.day) {
+						day = deadline.gamesDay;
 					}
 
 					const scheduleDay = schedule.filter((game) => game.day === day);
@@ -384,6 +414,8 @@ export default defineView({
 
 				const days = Array.from(daysAndPlayoffs.entries())
 					.map(([day, playoffs]) => ({ day, playoffs }))
+					// (The deadline is its night's, above.)
+					.filter(({ day }) => day !== deadline?.day)
 					.sort((a, b) => a.day - b.day)
 					.map(({ day, playoffs }) => {
 						const date = dateByDay.get(day);
@@ -551,9 +583,20 @@ export default defineView({
 							(game) =>
 								game.day === day && isOffDay(game.homeTid, game.awayTid),
 						) ?? false,
-					// The night the league is on, for the strip's "today".
+					// The night the league is on, for the strip's "today" (at the
+					// deadline, its night's).
 					todayDay:
-						inputs.season === currentSeason ? schedule?.[0]?.day : undefined,
+						inputs.season === currentSeason
+							? deadline && schedule?.[0]?.day === deadline.day
+								? deadline.gamesDay
+								: schedule?.[0]?.day
+							: undefined,
+					// The trade deadline still to come before this night's games, and
+					// whether it is the next thing the league does.
+					deadline:
+						deadline && day === deadline.gamesDay
+							? { today: schedule?.[0]?.day === deadline.day }
+							: undefined,
 					date: dateByDay.get(day),
 					day,
 					dayNote,
