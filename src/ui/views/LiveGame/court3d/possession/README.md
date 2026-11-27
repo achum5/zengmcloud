@@ -1254,6 +1254,46 @@ most of what is still seen: the play's own dribble runs (`playDribble`,
 holder following them as laid - the planner's (8c-2), with the drive
 taken late and by him.
 
+## Drives that go (the man with the ball, setting off)
+
+Still too many walk-ins after "By him, not into him". With the last 0.7 s
+before the ball leaves his hands left out (the jumper's drift, the
+floater's hop - real men do those at the man too), ours matched real within
+3 ft and was too high at 3-4 ft. Most of those were the play's own
+dribble runs, slow:
+
+- The handler, before a drive of the play's with something of his close
+  after it (a shot, a step-back), committed to that - the drive's END - and
+  dribbled on toward it; the drive then took him from where it starts,
+  behind him, and he crawled (about 5 ft/s) waiting for it to catch up. One
+  drive in five started with him a foot or more ahead. `loop.ts`: no
+  commit past a run of the play's that takes him before it.
+- Director passes shared with the old sim ease a drive down to fill the
+  time till what follows it: `keepComing` (up to twice as long, before a
+  pass he waits to throw), `dribbleThrough` (a quarter longer, into a turn
+  at a spot), and `carryThrough` here (about a fifth, into the throw). A
+  12-ft drive laid at 7 ft/s is a jog straight at his man. `through.ts`
+  `throughDrives` (last of the through passes): a run with the ball at the
+  rim from a stand (6 ft or more, ending within 30 ft of it, headed at it
+  within 60 deg), its legs one into the next taken together, is squeezed
+  toward its end to an 18 ft/s drive's time. He stands with it (his own
+  time: sizing his man up) and then goes; he is where it ends when it did.
+
+| Measure | Before | Now | Real |
+| --- | --- | --- | --- |
+| Walked into the man in front, not the last 0.7 s with it, within 3 / 4 ft, a minute with the ball (4 tapes) | 1.15 / 2.81 | 0.98 / 2.64 | 1.18 / 1.56 |
+| The same, all of it, within 4 / 5 ft (4 tapes) | 4.30 / 6.11 | 4.24 / 5.61 | 1.56 / |
+| Near shots, within 4 ft (real_11 whole game, raw sim) | 2.04 | 1.79 | |
+| Going at the rim over 11 ft/s with a man within 4 ft, share of time with it (4 tapes) | 1.5% | 1.9% | 3.9% |
+| Holder stood, share of held time (3 tapes) | 25.7% | 26.2% | 15.2% |
+| Tape flags, 4 games: lurch, sharp turns, teleport | 219, 21, 30 | 213, 21, 30 | |
+
+(Measures: `walkin2` - `walkin` without the last 0.7 s of each hold -
+`walkinP` near shots, `drives2`, `hstood`, in the session scratch.) What is
+left at 3-4 ft: post-ups backing in, the handler's own probing, and
+drives that are slow for other reasons (a slow man, a long drive laid
+across the floor rather than at the rim).
+
 ## Ball screens played from the matchup (8c-3)
 
 How the defense plays a ball screen - the screener's man sitting back in

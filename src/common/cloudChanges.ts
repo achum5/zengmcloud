@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 666,
+		date: "2026-11-27",
+		text: "3D game, New sim: drives look like drives. The man with the ball no longer jogs his drive straight at his defender to fill the time before his pass or shot: he sizes his man up where he is, then goes at full speed. And he no longer drifts ahead toward where a drive ends and then crawls, waiting for it to start.",
+	},
+	{
 		n: 665,
 		date: "2026-11-27",
 		text: "3D game, New sim: the man with the ball no longer walks his dribble straight into the defender in front of him. With a defender in his way he goes by his shoulder at a drive's pace, and a defender being driven at rides the driver on his hip instead of backpedaling square in front of him. Defenders also pick the ball up around half court instead of chasing it back to the far baseline.",

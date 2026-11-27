@@ -1097,7 +1097,11 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			// legs say he must.)
 			const end = r.b + STEP_MS;
 			const due = strict.get(pid)!.next(end);
-			const commit = due - end <= COMMIT_AFTER;
+			// (Not past a run of the play's that takes him on before it - a
+			// drive: it takes him from where it starts, not from wherever he
+			// got to on his way to its end.)
+			const commit =
+				due - end <= COMMIT_AFTER && handRunsOf.get(pid)!.next(r.b) >= due;
 			const f = commit ? due : end;
 			let handTo: Guarding["handTo"];
 			const A = mine.want(f);

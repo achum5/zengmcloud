@@ -149,6 +149,7 @@ import { signatureOf } from "./possession/signature.ts";
 import {
 	throughBoards,
 	throughContests,
+	throughDrives,
 	throughJumpers,
 	throughPasses,
 	throughPullUps,
@@ -32487,6 +32488,7 @@ class Director {
 				throughBoards(this.tracks, this.ball);
 				throughReaches(this.tracks, this.ball, this.spacing);
 				throughStands(this.tracks);
+				throughDrives(this.tracks);
 			}
 			stepTimeline(
 				{

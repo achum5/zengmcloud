@@ -29,7 +29,7 @@
 
 import type { Act, BallSeg, Move, Track } from "../director.ts";
 import { COURT_H, COURT_W, inPlay, rimX } from "../geometry.ts";
-import { alongShape, paceAlong, runShape } from "../motion.ts";
+import { alongShape, paceAlong, runMs, runShape } from "../motion.ts";
 import type { AnimName } from "../poses.ts";
 
 // A run into the catch: at least this far (feet), ended no more than this
@@ -2010,6 +2010,97 @@ export const throughStands = (tracks: ReadonlyMap<number, Track>): number => {
 			}
 			n++;
 			i = j - 1;
+		}
+	}
+	return n;
+};
+
+// A DRIVE GOES. A run of the play's with the ball at the rim, set off on
+// from a stand, laid slower than he drives - eased down to fill the time
+// till what comes after it: a pass he waits to throw, the turn into his
+// next, the throw on the way - is a jog straight at the man in front of
+// him, and real men don't drive like that: they size him up where they
+// are, then go. So he sets off on it later, at a drive's pace, and is
+// where it ends when it did. (Real, going at the rim with a man within 4
+// ft: 2-6 ft/s 2.7% of the time he has it, ours 7.9%; 11 ft/s and over
+// 3.9%, ours 1.1% - over 17 games of tracking.)
+// At least this far (feet), ending this near the rim (feet), headed at it
+// this squarely (cos) - and going for this pace (feet a second); set off
+// on later only by more than this (ms).
+const DRIVE_LEAST = 6;
+const DRIVE_NEAR = 30;
+const DRIVE_AT = 0.5;
+const DRIVE_PACE = 18;
+const DRIVE_SLACK = 150;
+
+// Every such drive set off on later - all of it, the legs of it one into
+// the next (round a screen, say) taken quicker together. How many.
+export const throughDrives = (tracks: ReadonlyMap<number, Track>): number => {
+	let n = 0;
+	for (const tr of tracks.values()) {
+		if (tr.pid < 0) {
+			continue;
+		}
+		const rim = { x: rimX(tr.team), y: COURT_H / 2 };
+		const moves = tr.moves;
+		for (let i = 0; i < moves.length; i++) {
+			const m = moves[i]!;
+			const prev = moves[i - 1];
+			if (
+				m.anim !== "dribble" ||
+				m.face !== undefined ||
+				(m.v0 ?? 0) > 0 ||
+				// (From a stand: not carried on into from a run before it.)
+				(prev && prev.t1 > m.t0 - 1 && len(prev) >= STOOD)
+			) {
+				continue;
+			}
+			// (Its legs, one straight into the next, up to the one that goes
+			// on into something at its end - the throw: that stays when it is.)
+			let j = i;
+			let L = len(m);
+			while (!(moves[j]!.v1 ?? 0)) {
+				const o = moves[j + 1];
+				if (
+					!o ||
+					o.anim !== "dribble" ||
+					o.face !== undefined ||
+					o.t0 > moves[j]!.t1 + 1
+				) {
+					break;
+				}
+				j++;
+				L += len(o);
+			}
+			const e = moves[j]!;
+			const t1 = e.t1;
+			const T = t1 - m.t0;
+			const D = Math.hypot(e.to.x - m.from.x, e.to.y - m.from.y);
+			const rl = Math.hypot(rim.x - m.from.x, rim.y - m.from.y);
+			const cos =
+				((e.to.x - m.from.x) * (rim.x - m.from.x) +
+					(e.to.y - m.from.y) * (rim.y - m.from.y)) /
+				(Math.max(D, 1e-6) * Math.max(rl, 1e-6));
+			const need = runMs(L, DRIVE_PACE, 0, 1, e.v1 ?? 0);
+			if (
+				L < DRIVE_LEAST ||
+				Math.hypot(e.to.x - rim.x, e.to.y - rim.y) > DRIVE_NEAR ||
+				cos < DRIVE_AT ||
+				T - need <= DRIVE_SLACK ||
+				// (Nothing of his on meanwhile that the run is laid round.)
+				tr.acts.some((a) => !a.flash && !a.quiet && a.t0 < t1 && a.t1 > m.t0)
+			) {
+				i = j;
+				continue;
+			}
+			const k = need / T;
+			for (let q = i; q <= j; q++) {
+				const o = moves[q]!;
+				o.t0 = t1 - (t1 - o.t0) * k;
+				o.t1 = t1 - (t1 - o.t1) * k;
+			}
+			n++;
+			i = j;
 		}
 	}
 	return n;
