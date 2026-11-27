@@ -12,7 +12,9 @@ export const SLATES: NationalSlate[] = [
 	"mlkDay",
 	"rivalsWeek",
 ];
-const MAX_NETWORKS = 12;
+// (Room for a network's looks over the years, each one an entry.)
+const MAX_NETWORKS = 120;
+const MAX_GAMES = 15;
 
 export const parseNationalBroadcasts = (
 	raw: unknown,
@@ -35,6 +37,10 @@ export const parseNationalBroadcasts = (
 					"nights",
 					"slate",
 					"finals",
+					"from",
+					"to",
+					"playoffs",
+					"games",
 					"logo",
 					"logoDark",
 					"scoreBug",
@@ -59,6 +65,22 @@ export const parseNationalBroadcasts = (
 		if (r.finals !== undefined && typeof r.finals !== "boolean") {
 			return `${label}: "finals" should be true or false.`;
 		}
+		for (const key of ["from", "to"] as const) {
+			if (r[key] !== undefined && !Number.isInteger(r[key])) {
+				return `${label}: "${key}" should be a season (2004 for 2003-04).`;
+			}
+		}
+		if (r.playoffs !== undefined && typeof r.playoffs !== "boolean") {
+			return `${label}: "playoffs" should be true or false.`;
+		}
+		if (
+			r.games !== undefined &&
+			(!Number.isInteger(r.games) ||
+				(r.games as number) < 1 ||
+				(r.games as number) > MAX_GAMES)
+		) {
+			return `${label}: "games" should be a number of games, 1 to ${MAX_GAMES}.`;
+		}
 		for (const key of ["logo", "logoDark"] as const) {
 			if (r[key] !== undefined && typeof r[key] !== "string") {
 				return `${label}: "${key}" should be a picture's link.`;
@@ -73,6 +95,10 @@ export const parseNationalBroadcasts = (
 			...(r.nights !== undefined ? { nights: r.nights as string[] } : {}),
 			...(r.slate !== undefined ? { slate: r.slate as NationalSlate } : {}),
 			...(r.finals !== undefined ? { finals: r.finals } : {}),
+			...(r.from !== undefined ? { from: r.from as number } : {}),
+			...(r.to !== undefined ? { to: r.to as number } : {}),
+			...(r.playoffs !== undefined ? { playoffs: r.playoffs } : {}),
+			...(r.games !== undefined ? { games: r.games as number } : {}),
 			...(r.logo !== undefined ? { logo: r.logo } : {}),
 			...(r.logoDark !== undefined ? { logoDark: r.logoDark } : {}),
 			scoreBug: bug,
@@ -80,6 +106,15 @@ export const parseNationalBroadcasts = (
 	}
 	return out;
 };
+
+// THE NETWORKS OF A SEASON: those on in it (see NationalBroadcast's `from`
+// and `to`).
+export const networksIn = (networks: NationalBroadcast[], season: number) =>
+	networks.filter(
+		(n) =>
+			(n.from === undefined || season >= n.from) &&
+			(n.to === undefined || season <= n.to),
+	);
 
 // The pictures a network keeps in the league: its bug's, and its logos.
 export const nationalPictureIds = (n: NationalBroadcast) => [
@@ -143,7 +178,8 @@ export const biggestGame = <T extends { gid: number; tids: [number, number] }>(
 // WHOSE GAME IT IS. A regular season game: the network of its night, if
 // it's the night's biggest (`biggest`) - the first listed with that night.
 // A playoff game: the Finals' network in the Finals; otherwise its
-// series', shared out among the networks with nights.
+// series', shared out among the networks with nights - each with its
+// playoffs bug if it has one. (`networks`: the season's, see networksIn.)
 export const networkFor = (
 	networks: NationalBroadcast[],
 	game: {
@@ -158,26 +194,32 @@ export const networkFor = (
 	if (game.playoffs) {
 		// (A slate's network has only its nights.)
 		const weekly = networks.filter((n) => n.slate === undefined);
+		const inPlayoffs = (n: NationalBroadcast) =>
+			n.playoffs
+				? n
+				: (weekly.find((m) => m.playoffs && m.network === n.network) ?? n);
 		if (game.finals) {
-			const finals = weekly.find((n) => n.finals);
+			const finals =
+				weekly.find((n) => n.finals && n.playoffs) ??
+				weekly.find((n) => n.finals);
 			if (finals) {
-				return finals;
+				return inPlayoffs(finals);
 			}
 		}
 		// (A network once, however many of its nights have their own bug.)
+		const has = (n: NationalBroadcast) =>
+			(n.nights?.length ?? 0) > 0 || n.playoffs === true;
 		const shared = weekly.filter(
 			(n, i) =>
-				(n.nights?.length ?? 0) > 0 &&
-				weekly.findIndex(
-					(m) => m.network === n.network && (m.nights?.length ?? 0) > 0,
-				) === i,
+				has(n) &&
+				weekly.findIndex((m) => m.network === n.network && has(m)) === i,
 		);
 		if (shared.length === 0) {
 			return undefined;
 		}
 		const [a, b] = [...game.tids].sort((x, y) => x - y) as [number, number];
 		const k = Math.abs(a * 31 + b * 17 + game.season) % shared.length;
-		return shared[k];
+		return inPlayoffs(shared[k]!);
 	}
 	if (!biggest || night === undefined) {
 		return undefined;
@@ -270,6 +312,8 @@ export const nightNetworks = (
 	night: number | undefined,
 	slate: NationalSlate | undefined,
 ): NationalBroadcast[] => {
+	// (A playoffs bug has no nights.)
+	networks = networks.filter((n) => !n.playoffs);
 	if (slate !== undefined) {
 		const own = networks.filter((n) => n.slate === slate);
 		if (own.length > 0) {
@@ -301,7 +345,9 @@ export const nightNetworks = (
 // A NIGHT'S NATIONAL GAMES, by gid: the biggest of its games (see
 // biggestGame; in Rivals Week, the biggest rivals' first, by `rivals`), as
 // many as the night has (nationalGamesOn), shared out among its networks
-// (nightNetworks) in their order - the first ones the bigger games.
+// (nightNetworks) in their order - the first ones the bigger games. Networks
+// that each say how many games they have (NationalBroadcast's `games`) have
+// that many. (`networks`: the season's, see networksIn.)
 export const nationalNight = <
 	T extends { gid: number; tids: [number, number] },
 >(
@@ -319,12 +365,13 @@ export const nationalNight = <
 	const slate =
 		when.date !== undefined ? slateOf(when.date, when.openingDate) : undefined;
 	const carriers = nightNetworks(networks, when.night, slate);
-	const count = nationalGamesOn(
-		when.date,
-		when.night,
-		when.openingDate,
-		games.length,
-	);
+	const own = carriers.every((n) => n.games !== undefined);
+	const count = own
+		? Math.min(
+				carriers.reduce((sum, n) => sum + n.games!, 0),
+				games.length,
+			)
+		: nationalGamesOn(when.date, when.night, when.openingDate, games.length);
 	if (carriers.length === 0 || count === 0) {
 		return out;
 	}
@@ -341,7 +388,9 @@ export const nationalNight = <
 	);
 	let i = 0;
 	for (const [k, n] of carriers.entries()) {
-		const share = Math.ceil((count - i) / (carriers.length - k));
+		const share = own
+			? n.games!
+			: Math.ceil((count - i) / (carriers.length - k));
 		for (let j = 0; j < share && i < count; j++) {
 			out.set(ranked[i]!.gid, n);
 			i += 1;

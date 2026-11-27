@@ -4,6 +4,7 @@ import {
 	nationalGamesOn,
 	nationalNight,
 	networkFor,
+	networksIn,
 	nightNetworks,
 	nightOf,
 	parseNationalBroadcasts,
@@ -52,6 +53,13 @@ describe("parseNationalBroadcasts", () => {
 		const christmas = { ...ESPN, nights: undefined, slate: "christmas" };
 		delete christmas.nights;
 		assert.deepStrictEqual(parseNationalBroadcasts([christmas]), [christmas]);
+		// A look of some seasons; a playoffs bug; a doubleheader.
+		const era = [
+			{ ...NBC, from: 2003, to: 2005, games: 2 },
+			{ ...NBC, nights: undefined, playoffs: true, from: 2003 },
+		];
+		delete era[1]!.nights;
+		assert.deepStrictEqual(parseNationalBroadcasts(era), era);
 		// (Ours, as a file could have it.)
 		assert.deepStrictEqual(parseNationalBroadcasts([GENERIC_NATIONAL]), [
 			GENERIC_NATIONAL,
@@ -69,6 +77,11 @@ describe("parseNationalBroadcasts", () => {
 			[{ ...NBC, channel: 4 }],
 			[{ ...NBC, scoreBug: { width: 10 } }],
 			[{ ...NBC, slate: "boxingDay" }],
+			[{ ...NBC, from: "2003" }],
+			[{ ...NBC, to: 2003.5 }],
+			[{ ...NBC, playoffs: 1 }],
+			[{ ...NBC, games: 0 }],
+			[{ ...NBC, games: 2.5 }],
 		]) {
 			assert.strictEqual(
 				typeof parseNationalBroadcasts(bad),
@@ -78,6 +91,104 @@ describe("parseNationalBroadcasts", () => {
 		}
 	});
 });
+
+describe("a network's looks over the years", () => {
+	const TNT = (from: number, to: number, text: string): NationalBroadcast => ({
+		network: "TNT",
+		nights: ["Thu"],
+		from,
+		to,
+		games: 2,
+		scoreBug: bug(text),
+	});
+	const T2000 = TNT(2000, 2000, "2000");
+	const T2000_PLAYOFFS: NationalBroadcast = {
+		network: "TNT",
+		from: 2000,
+		to: 2000,
+		playoffs: true,
+		scoreBug: bug("2000 PLAYOFFS"),
+	};
+	const T2004 = TNT(2004, 2005, "2003-05");
+	const networks = [T2000, T2000_PLAYOFFS, T2004, { ...NBC, from: 2026 }];
+
+	test("a season's own", () => {
+		assert.deepStrictEqual(networksIn(networks, 2000), [T2000, T2000_PLAYOFFS]);
+		assert.deepStrictEqual(networksIn(networks, 2005), [T2004]);
+		assert.deepStrictEqual(networksIn(networks, 2003), []);
+		assert.deepStrictEqual(networksIn(networks, 2030), [networks[3]]);
+		// Without seasons, every one.
+		assert.deepStrictEqual(networksIn([ESPN], 1950), [ESPN]);
+	});
+
+	test("a playoffs bug: every playoff game of its network, no night", () => {
+		const season = networksIn(networks, 2000);
+		assert.deepStrictEqual(nightNetworks(season, 4, undefined), [T2000]);
+		for (const finals of [false, true]) {
+			assert.strictEqual(
+				networkFor(
+					season,
+					{ season: 2000, playoffs: true, finals, tids: [1, 2] },
+					4,
+					false,
+				),
+				T2000_PLAYOFFS,
+			);
+		}
+		// The Finals' network's playoffs bug; one of its own for the Finals.
+		const ABC = { ...ESPN, network: "ABC", nights: ["Sun"] };
+		const ABC_PLAYOFFS = {
+			...ABC,
+			nights: undefined,
+			finals: undefined,
+			playoffs: true,
+		};
+		const ABC_FINALS = { ...ABC_PLAYOFFS, finals: true };
+		const finals = {
+			season: 2000,
+			playoffs: true,
+			finals: true,
+			tids: [1, 2] as [number, number],
+		};
+		assert.strictEqual(
+			networkFor([ABC, ABC_PLAYOFFS], finals, 0, false),
+			ABC_PLAYOFFS,
+		);
+		assert.strictEqual(
+			networkFor([ABC, ABC_PLAYOFFS, ABC_FINALS], finals, 0, false),
+			ABC_FINALS,
+		);
+	});
+
+	test("as many games as it has", () => {
+		const night = [1, 2, 3, 4].map((gid) => ({
+			gid,
+			tids: [gid, gid + 10] as [number, number],
+		}));
+		const picks = (date: string, networks: NationalBroadcast[]) => [
+			...nationalNight(
+				networks,
+				night,
+				{
+					date,
+					night: nightOf({ date }, undefined),
+					openingDate: "2004-11-02",
+				},
+				(tid) => tid / 20,
+			).keys(),
+		];
+		// A Thursday in November: TNT's doubleheader, the night's two biggest.
+		assert.deepStrictEqual(picks("2004-11-11", [T2004]), [4, 3]);
+		// The night's networks not all saying: as the NBA's deal has it.
+		assert.deepStrictEqual(picks("2004-11-11", [T2004, { ...PRIME_THU }]), []);
+	});
+});
+
+const PRIME_THU: NationalBroadcast = {
+	network: "Prime",
+	nights: ["Thu"],
+	scoreBug: bug("TNF"),
+};
 
 describe("nightOf", () => {
 	test("a date's own weekday", () => {

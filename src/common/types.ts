@@ -3805,6 +3805,17 @@ export type NationalBroadcast = {
 	// the weekdays or the playoffs.
 	slate?: NationalSlate;
 	finals?: boolean;
+	// The seasons it's on, `from` the first and `to` the last (each the year
+	// a season ends, 2004 for 2003-04): without them, every one - so a
+	// network's looks over the years are one each.
+	from?: number;
+	to?: number;
+	// Its playoffs bug: the network's in the playoffs (and the Finals), over
+	// its others - and none of the regular season.
+	playoffs?: boolean;
+	// How many of a night's games it has (2, a doubleheader): without it, as
+	// the NBA's TV deal from 2025-26 has them (see nationalGamesOn).
+	games?: number;
 	// The network's logo on its games' previews: a link, or a picture written
 	// in (without one, its name) - and `logoDark`, the one for a dark page
 	// (without one, the same).
@@ -3900,7 +3911,9 @@ export type ScoreBugPiece = {
 	// say ("TO: {n}") in place of a mark for each; `off`, a mark's color once
 	// taken (the default dim). For "text" and "series", {DAY} is the game's
 	// weekday ("TUESDAY"; {Day}, "Tuesday") - and `undated`, what it says
-	// instead when the game has no date (the NBA calendar off).
+	// instead when the game has no date (the NBA calendar off). For the
+	// period, what it says of a quarter, {n} its number and {th} the ending
+	// ("{n}{th} Qtr", 2nd Qtr), overtime as it is.
 	text?: string;
 	undated?: string;
 	// For a record: the size of what follows it - where the team stands -

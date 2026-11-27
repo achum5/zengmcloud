@@ -3,6 +3,7 @@ import { g } from "../util/index.ts";
 import {
 	nationalNight,
 	networkFor,
+	networksIn,
 	nightOf,
 	strengthOf,
 } from "../../common/nationalBroadcasts.ts";
@@ -16,12 +17,12 @@ import { PHASE } from "../../common/constants.ts";
 import { PIC, pictureById } from "../util/courtPictures.ts";
 import { GENERIC_NATIONAL } from "../../common/genericNational.ts";
 
-// The league's networks: its team looks file's, or without them, ours (see
-// GENERIC_NATIONAL).
-const nationalNetworks = (): NationalBroadcast[] => {
+// The league's networks on in a season: its team looks file's, or without
+// them, ours (see GENERIC_NATIONAL).
+const nationalNetworks = (season: number): NationalBroadcast[] => {
 	const networks = g.get("nationalBroadcasts");
 	if (Array.isArray(networks) && networks.length > 0) {
-		return networks;
+		return networksIn(networks, season);
 	}
 	return __SPORT === "basketball" ? [GENERIC_NATIONAL] : [];
 };
@@ -96,7 +97,7 @@ const regularSeasonPicks = async (
 	extra: NightGame[] = [],
 ): Promise<Map<number, NationalBroadcast>> => {
 	const out = new Map<number, NationalBroadcast>();
-	const networks = nationalNetworks();
+	const networks = nationalNetworks(season);
 	if (networks.length === 0) {
 		return out;
 	}
@@ -207,7 +208,7 @@ export const nationalBroadcastOf = async (
 		"gid" | "season" | "day" | "date" | "playoffs" | "finals" | "teams"
 	> & { exhibition?: boolean },
 ): Promise<NationalBroadcast | undefined> => {
-	const networks = nationalNetworks();
+	const networks = nationalNetworks(game.season);
 	const tids: [number, number] = [game.teams[0].tid, game.teams[1].tid];
 	if (networks.length === 0 || tids.some((tid) => tid < 0) || game.exhibition) {
 		return undefined;
@@ -245,12 +246,12 @@ export const nationalSchedule = async (
 	schedule: ScheduleGame[],
 ): Promise<Map<number, NationalBroadcast>> => {
 	const out = new Map<number, NationalBroadcast>();
-	const networks = nationalNetworks();
+	const season = g.get("season");
+	const networks = nationalNetworks(season);
 	if (networks.length === 0) {
 		return out;
 	}
 	try {
-		const season = g.get("season");
 		const games = schedule.filter((s) => s.homeTid >= 0 && s.awayTid >= 0);
 		if (g.get("phase") === PHASE.PLAYOFFS) {
 			for (const s of games) {
@@ -340,7 +341,7 @@ export const nationalTagsPlayed = async (
 	season = g.get("season"),
 ) => {
 	const out = new Map<number, NationalTag>();
-	const networks = nationalNetworks();
+	const networks = nationalNetworks(season);
 	if (gids.length === 0 || networks.length === 0) {
 		return out;
 	}

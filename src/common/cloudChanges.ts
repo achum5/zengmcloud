@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 663,
+		date: "2026-11-27",
+		text: "3D game: national TV score bugs can now change with the years. A team looks file can give each network's bug its seasons, so a 2005 game on TNT carries TNT's 2005 bug. The new score bugs file has TNT's looks from 1999-2000 to 2024-25, on its Thursday doubleheaders and in the playoffs, and today's networks from 2025-26 on.",
+	},
+	{
 		n: 662,
 		date: "2026-11-27",
 		text: 'Smart CPU: the Danger Zone\'s "Run it now" button (Smart CPU moves) now also works during the season, up to the trade deadline. On deadline day, press it after your own moves for one more round of trades between CPU teams.',

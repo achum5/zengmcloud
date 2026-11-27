@@ -438,6 +438,12 @@ export const CustomScoreBug = ({
 				break;
 			}
 			case "period": {
+				// (A quarter in words, "{n}{th} Qtr" - overtime as it is.)
+				const said = ordinal(quarter);
+				if (p.text !== undefined && said.suffix) {
+					inner = p.text.replace("{n}", said.n).replace("{th}", said.suffix);
+					break;
+				}
 				if (!p.ordinal) {
 					inner = quarter;
 					break;
