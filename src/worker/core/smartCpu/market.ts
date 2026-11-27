@@ -113,8 +113,15 @@ export const marketSettings = {
 	// to 48 and a second (OKC +0.0031 against a margin of 0.0005), Phoenix
 	// Robin Lopez for Isaiah Whitehead (+0.0048), Houston Devonte' Graham for
 	// Brandon Davies and a second (+0.0040). Half a percent of a title each
-	// way leaves those (2026-11-19).
-	minGain: 0.005,
+	// way left those (2026-11-19) - and the deal a real deadline makes most,
+	// a rotation player for a bench man and a second: in the owner's 2025
+	// season, opening night to the deadline, the CPU teams traded 5 and 6
+	// times (two runs), the NBA about 27. At a fifth of a percent, 12 and
+	// 12, across 15-16 teams, not 5-7 - Indiana Omer Yurtseven (55) for Tre
+	// Jones (42) and a second, Toronto Jarrett Allen for Josh Okogie - the
+	// summer the same (5 and 6), and no bench-for-bench swaps (2026-11-27,
+	// src/test/smart/gateProbe.test.ts).
+	minGain: 0.002,
 	// THE SELLER'S SHARE. A seller doesn't hand a team a real upgrade -
 	// more than shareAbove titles - while keeping less than this share of
 	// what the deal makes for both: it holds out, or the buyer pays more

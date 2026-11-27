@@ -3229,3 +3229,43 @@ worse, came in better than read by 0.3-0.4 a game over the rest of their
 seasons even by the reads then; and near the deadline the read missed the
 rest of a season by about 1.5 a game past the luck, where the outlook's
 uncertainty says 1.3.
+
+## The deals a real deadline makes most (2026-11-27)
+
+The owner: "It just feels like gms are not near as active as they should be
+and as they are irl." In his 2024-25 season the CPU teams made 5 trades with
+each other by the deadline (the NBA about 27). `gateProbe` played that
+season from the preseason export to the deadline, the same luck each way, and
+tallied where every player shopped stopped:
+
+| seed 77, to the deadline                   | trades | teams in them |
+| ------------------------------------------ | ------ | ------------- |
+| as shipped (`minGain` 0.005, margin `z` 1) | 5      | 7             |
+| margin `z` 0.5                             | 8      | 9             |
+| `offerBudget` 1200                         | 6      | 7             |
+| `minGain` 0.002                            | 12     | 16            |
+| `minGain` 0.002, `z` 0.5                   | 15     | 18            |
+| `minGain` 0.002, `vanillaAmbition` 0.5     | 13     | 16            |
+
+- Of about 10,500 players shopped, 62% had nobody wanting him past what his
+  own team needs for him, and a fifth more drew offers short of it (median
+  0.036 of a title short).
+- The trades 0.002 adds are the commonest real deadline deal: a rotation
+  player for a bench man and a second. Indiana got Omer Yurtseven (55) for
+  Tre Jones (42) and a second, New Orleans Bruno Fernando (54) for Rodions
+  Kurucs (49) and a second, and Toronto Jarrett Allen (56) for Josh Okogie
+  (55). Each side still clears its margin of error.
+- A smaller margin on top adds bigger bets on less sure gains: Orlando gave a
+  first and three players for Johnny O'Bryant (32, 63), and Milwaukee five
+  firsts by the deadline.
+- Seed 78, on to the next opening night: as shipped, 6 by the deadline (5
+  teams) and 5 after it. At 0.002, 12 by the deadline (15 teams) and 6
+  after it. Every trade after the deadline came at the preseason moment, and
+  none was a swap of bench men.
+- Two things keep the market short of the NBA's count either way. Money
+  means nothing to these GMs, so there are no tax or apron trades. And with
+  Milwaukee read at 61% to win the title, few teams gain much by buying.
+
+`minGain` is now 0.002 (owner's pick). Sim time to the deadline didn't change
+(22-25 min). All of this was measured on the code before a team's play this
+season counted in its read (657).

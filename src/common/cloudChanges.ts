@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 661,
+		date: "2026-11-27",
+		text: "Smart CPU: CPU teams now make the small trades real teams make most, like a rotation player for a bench player and a second-round pick. In tests they made about twice as many trades with each other by the deadline, spread over twice as many teams.",
+	},
+	{
 		n: 660,
 		date: "2026-11-27",
 		text: "3D game, New sim: players working their spot off the ball no longer pace back and forth. When the next spot they'd pick is back the way they came, they keep going or pull up and stand a couple of seconds, the way real players spot up.",
