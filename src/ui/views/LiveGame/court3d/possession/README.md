@@ -1162,6 +1162,46 @@ possession where they had not crossed before; how men turn at 8-13 ft/s
 is as it was (deg/s, median / p90 / p99: 3.7 / 39.2 / 89.9 before, 3.9 /
 39.5 / 89.1 now).
 
+## Pulling up, not pacing (stop-and-go, fifth piece)
+
+A man working his spot still went to and fro: back the way he came
+through a short stop 6 times a live minute (whole game, real_11), half of
+all such turn-backs off the ball. The cost on picking straight back
+(`BACK`) seldom bit:
+
+- it went by the way to where he was last going - and half his picks come
+  at the start of a stretch of his own (handed on from the play, the ball
+  just gone), with no such way yet: nothing held him back;
+- where it did bite, 5 ft of room was less than a teammate drifting
+  toward the spot ahead took off it.
+
+Now, the new sim only (`offense.ts` `best`): the way he came is the way he
+is going, going 2 ft/s or more; a pick straight back costs 10 ft of room;
+and when back is still his best, nothing of his there, he pulls up where
+he is instead - braking gently, no more than 6 ft on - and stands
+1.5-4 s, as long as standing there scores no worse. From there he goes on
+any way. Real men off the ball stand long and set off seldom; ours stood
+short and often.
+
+| Measure (off the ball) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Back through a short stop, a live minute: all / working his spot (real_11, whole game) | 12.3 / 6.0 | 10.1 / 3.8 | 6.4 |
+| Set-offs, a live minute (real_11, whole game) | 33.1 | 31.0 | 17.1 |
+| Stood (real_11, whole game) | 12.8% | 13.3% | 13.8% |
+| Stands of 0.2-0.5 s / 2-4 s, a live minute (real_11, whole game) | 22.0 / 1.0 | 17.1 / 1.3 | 16.2 / 2.5 |
+| Back through a short stop, a live minute (4 tapes, at real speed) | 21.6 | 20.7 | |
+| Set-offs, a live minute (4 tapes, at real speed) | 47.8 | 46.8 | |
+| Tape flags, 4 games: lurch, sharp turns, teleport | 199, 18, 32 | 205, 26, 31 | |
+
+(Real: 6 SportVU games, the same measure on both - `dips2`/`standlen`
+style: a set-off is under 1.5 ft/s to over 4 within 0.5 s; "short" is a
+dip under 1.5 of 0.2 s or less.) What is seen at real speed moved less
+than the whole game: there most of the off-ball time is the play's laid
+runs, and their dips (the dash and the stand, starting from a stand at a
+sprint's push) are the rest of the gap - the planner's to fix (8c-2).
+Five of the eight new sharp-turn flags are one transition possession,
+two laid runners crossing lanes where they had not before.
+
 ## Ball screens played from the matchup (8c-3)
 
 How the defense plays a ball screen - the screener's man sitting back in

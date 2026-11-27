@@ -204,8 +204,19 @@ const FRESH = 1.5;
 // along it costs this much room (feet), going round less, across it none
 // (a man stepped along the arc steps on, or back up it a while later - not
 // to and fro: real men off the ball go back through a stop a third as
-// often as ours did, tools/court3d-tape/nba).
-const BACK = 5;
+// often as ours did, tools/court3d-tape/nba). The way he came is the way
+// he is going, going this fast (feet a second) - or else the way he
+// walked to where he was going.
+const BACK = 10;
+const GOING = 2;
+// And back is still his best, nothing of his there: he pulls up where he
+// is instead (braking this gently, feet a second a second, no farther on
+// than this, feet) and stands a while (ms), if that is no worse a place
+// to be. Real men off the ball stand 0.2-0.5 s 16 times a live minute and
+// 2-4 s 2.5 times; ours, going straight back, 22 and 1.
+const PULL_UP = 5;
+const PULL_UP_MOST = 6;
+const SETTLE_HOLD: [number, number] = [1500, 4000];
 // Set there a moment once he gets there (ms), and at walking pace up to
 // this far (feet), jogging past it (feet a second) - and this often
 // jogging it anyway, past a few steps (real: on the arc with nothing
@@ -371,7 +382,8 @@ const sideOf = (p: Pt, rim: Pt): 1 | -1 => (p.y >= rim.y ? 1 : -1);
 // Where next, of `places`: the most room from his teammates, not in the
 // way the ball is going to the rim, where the ball can find him - and,
 // working his spot, near the set's spot (`home` per foot off it) with a
-// draw of his own.
+// draw of his own. Given where he would pull up (`stop`), that instead of
+// going back the way he is going, if it is no worse (see PULL_UP).
 const best = (
 	m: Mover,
 	f: Floor,
@@ -381,30 +393,44 @@ const best = (
 	home: number,
 	own: number,
 	back = 0,
+	stop?: Pt,
 ): Pt => {
 	const here = { x: m.x, y: m.y };
-	// (The way he came to where he was going, if he picked it here - not
-	// on his way out of the lane: that is where he is going.)
+	// (The way he came: the way he is going, or else the way to where he
+	// was going, if he picked it here - not on his way out of the lane:
+	// that is where he is going.)
+	const pace = Math.hypot(m.vx, m.vy);
 	const came =
-		back > 0 && Number.isNaN(mind.lane) && mind.at && mind.from?.at === mind.at
-			? (() => {
-					const dx = mind.at.x - mind.from.here.x;
-					const dy = mind.at.y - mind.from.here.y;
-					const d = Math.hypot(dx, dy);
-					return d > FRESH ? { x: dx / d, y: dy / d } : undefined;
-				})()
-			: undefined;
+		back <= 0 || !Number.isNaN(mind.lane)
+			? undefined
+			: pace >= GOING
+				? { x: m.vx / pace, y: m.vy / pace }
+				: mind.at && mind.from?.at === mind.at
+					? (() => {
+							const dx = mind.at.x - mind.from.here.x;
+							const dy = mind.at.y - mind.from.here.y;
+							const d = Math.hypot(dx, dy);
+							return d > FRESH ? { x: dx / d, y: dy / d } : undefined;
+						})()
+					: undefined;
+	// (How far back the way he came a place is: 1 straight back, 0 across.)
+	const backOf = (Q: Pt): number => {
+		const dx = Q.x - here.x;
+		const dy = Q.y - here.y;
+		const d = Math.hypot(dx, dy);
+		return came && d > 1e-6 ? Math.max(0, -(dx * came.x + dy * came.y) / d) : 0;
+	};
+	// (Back toward a job of his coming is on his way, not to and fro.)
+	const toJob = (Q: Pt): boolean =>
+		f.next !== undefined &&
+		Math.hypot(Q.x - f.next.at.x, Q.y - f.next.at.y) <
+			Math.hypot(here.x - f.next.at.x, here.y - f.next.at.y) - FRESH;
 	const laneLong =
 		!Number.isNaN(mind.lane) && f.t - mind.lane > LANE_MOST * 0.6;
 	const H = f.drive ?? f.holder;
 	const driveLine =
 		H && Math.hypot(H.x - f.rim.x, H.y - f.rim.y) < DRIVE_FROM ? H : undefined;
-	let out = f.set;
-	let score = -Infinity;
-	places.forEach((Q, k) => {
-		if (mind.at && Math.hypot(Q.x - mind.at.x, Q.y - mind.at.y) < FRESH) {
-			return;
-		}
+	const scoreOf = (Q: Pt, k: number): number => {
 		let room = ROOM_FULL;
 		for (const P of f.mates) {
 			room = Math.min(room, Math.hypot(Q.x - P.x, Q.y - P.y));
@@ -437,19 +463,17 @@ const best = (
 				s -= 2 * (PASS_BY - by.off);
 			}
 		}
-		s += own * own01(pid, mind.n * 31 + k);
-		// (Back toward a job of his coming is on his way, not to and fro.)
-		const toJob =
-			f.next !== undefined &&
-			Math.hypot(Q.x - f.next.at.x, Q.y - f.next.at.y) <
-				Math.hypot(here.x - f.next.at.x, here.y - f.next.at.y) - FRESH;
-		if (came && !toJob) {
-			const dx = Q.x - here.x;
-			const dy = Q.y - here.y;
-			const d = Math.hypot(dx, dy);
-			if (d > 1e-6) {
-				s -= back * Math.max(0, -(dx * came.x + dy * came.y) / d);
-			}
+		return s + own * own01(pid, mind.n * 31 + k);
+	};
+	let out = f.set;
+	let score = -Infinity;
+	places.forEach((Q, k) => {
+		if (mind.at && Math.hypot(Q.x - mind.at.x, Q.y - mind.at.y) < FRESH) {
+			return;
+		}
+		let s = scoreOf(Q, k);
+		if (!toJob(Q)) {
+			s -= back * backOf(Q);
 		}
 		// (Somewhere to go: not where he stands.)
 		if (Math.hypot(Q.x - here.x, Q.y - here.y) < FRESH) {
@@ -460,6 +484,15 @@ const best = (
 			out = Q;
 		}
 	});
+	if (
+		stop &&
+		pace >= GOING &&
+		backOf(out) > 0.5 &&
+		!toJob(out) &&
+		scoreOf(stop, places.length) >= score
+	) {
+		return stop;
+	}
 	return out;
 };
 
@@ -864,25 +897,37 @@ export const decide = (
 			(f.holder !== undefined && mind.holder !== f.holder.pid) ||
 			onward
 		) {
-			const Q = best(m, f, mind, pid, around(f, a), HOME, OWN, BACK);
+			// (Where he would pull up: braking gently, from the pace he has.)
+			const v = Math.hypot(m.vx, m.vy);
+			const pull =
+				v > 1e-6 ? Math.min(PULL_UP_MOST, (v * v) / (2 * PULL_UP)) / v : 0;
+			const stop = onFloor({ x: m.x + m.vx * pull, y: m.y + m.vy * pull });
+			const Q = best(m, f, mind, pid, around(f, a), HOME, OWN, BACK, stop);
+			const settle = Q === stop;
 			const far = Math.hypot(Q.x - m.x, Q.y - m.y);
 			mind.jog =
-				far > WALK_FAR ||
-				(far > STEP_FAR && own01(pid, mind.n * 29 + 11) < JOG_ANYWAY);
+				!settle &&
+				(far > WALK_FAR ||
+					(far > STEP_FAR && own01(pid, mind.n * 29 + 11) < JOG_ANYWAY));
 			// (Out of the lane at a walk.)
 			const pace = mind.jog
 				? JOG
 				: !Number.isNaN(mind.lane)
 					? WALK
 					: DRIFT + (WALK - DRIFT) * own01(pid, mind.n * 23 + 3);
-			mind.hold = far < SPOT_SETTLE || own01(pid, mind.n * 31 + 7) < HOLD_SHARE;
-			const hold = mind.hold
-				? HOLD[0] + (HOLD[1] - HOLD[0]) * own01(pid, mind.n * 17 + 5)
-				: 0;
+			mind.hold =
+				settle || far < SPOT_SETTLE || own01(pid, mind.n * 31 + 7) < HOLD_SHARE;
+			const hold = settle
+				? SETTLE_HOLD[0] +
+					(SETTLE_HOLD[1] - SETTLE_HOLD[0]) * own01(pid, mind.n * 13 + 1)
+				: mind.hold
+					? HOLD[0] + (HOLD[1] - HOLD[0]) * own01(pid, mind.n * 17 + 5)
+					: 0;
 			mind.at = Q;
 			mind.pace = pace;
 			mind.picked = f.t;
-			mind.from = { at: Q, here: { x: m.x, y: m.y } };
+			// (Pulled up, he has come nowhere: on from there any way.)
+			mind.from = settle ? undefined : { at: Q, here: { x: m.x, y: m.y } };
 			mind.until = f.t + (1000 * far) / pace + 400 + hold;
 			mind.set = { ...f.set };
 			mind.holder = f.holder?.pid;
