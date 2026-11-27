@@ -90,3 +90,32 @@ export const rgb = (
 		number,
 	];
 };
+
+// Any color the page takes as the shaders do (0 - 1 each, and how solid):
+// "#rgb", "#rrggbb", "rgb(...)", "rgba(...)" - black, if not one of those.
+const colors = new Map<string, [number, number, number, number]>();
+export const css = (c: string): readonly [number, number, number, number] => {
+	let out = colors.get(c);
+	if (!out) {
+		const s = c.trim();
+		const fn = /^rgba?\(([^)]*)\)$/i.exec(s);
+		if (fn) {
+			const v = fn[1]!
+				.split(/[\s,/]+/)
+				.filter(Boolean)
+				.map(Number);
+			out = [
+				(v[0] ?? 0) / 255,
+				(v[1] ?? 0) / 255,
+				(v[2] ?? 0) / 255,
+				v[3] ?? 1,
+			];
+		} else if (/^#(?:[\da-f]{3}){1,2}$/i.test(s)) {
+			out = [...rgb(s, "#000"), 1];
+		} else {
+			out = [0, 0, 0, 1];
+		}
+		colors.set(c, out);
+	}
+	return out;
+};

@@ -28,7 +28,12 @@ import {
 	type Courtside,
 	type HoopFx,
 } from "./arena.ts";
-import { drawJumbotron, ribbonScore, type Jumbotron } from "./jumbotron.ts";
+import {
+	drawJumbotron,
+	type Jumbotron,
+	jumbotronBox,
+	ribbonScore,
+} from "./jumbotron.ts";
 import type { CourtPicture } from "./courtTexture.ts";
 import type { Bowl } from "./bowlData.ts";
 import type { SeatedCrowd } from "./bowlFans.ts";
@@ -46,8 +51,9 @@ import {
 	type Shot,
 } from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
-import { callAt, rowSpot } from "./intro.ts";
+import { callAt, darkAt, rowSpot } from "./intro.ts";
 import { drawLights } from "./lights.ts";
+import { ctxPainter, type Painter } from "./painter.ts";
 import { atTable } from "./crew.ts";
 import {
 	drawTableBack,
@@ -2069,6 +2075,318 @@ export const bowlLookOf = (f: Frame): BowlLook | undefined => {
 	};
 };
 
+// WHAT IS ON THE FLOOR ROUND THE COURT, before anyone stands on it (see
+// painter.ts: told the same to the page and to the graphics card - see
+// gpu/floor.ts): the photographers' boxes, the lit boards' shine in the
+// floor, the scorer's table and the rows behind it, the seats on the floor,
+// the benches. `atTable`: the four of the game's own at the table, drawn
+// where they go (behind its top and its front).
+export const dressFloor = (
+	f: Frame,
+	p: Painter,
+	screen: BoardScreen,
+	atTable: () => void,
+) => {
+	const { cam, tl, arena } = f;
+	const { t } = f.moment;
+	drawPhotoBoxes(p, cam, f.apron ?? f.padColor);
+	// The lit boards along the far side - the front of the scorer's table,
+	// the wall behind the benches - shine back off the floor in front of
+	// them (under the table, the benches and everybody stood there): their
+	// light added to the floor's, so where a board is dark the floor is just
+	// the floor.
+	const table = shineOf(
+		TABLE_FRONT,
+		arena.boards.table?.[screen] ?? arena.tableFront,
+	);
+	p.plane(table.plane, table.img, 4, 1, BOARD_SHINE, true);
+	const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
+	p.plane(wall.plane, wall.img, 24, 1, BOARD_SHINE, true);
+	// Behind the scorer's table: its curtain, its second row.
+	if (arena.table) {
+		drawTableBack(p, cam, arena.table);
+	}
+	// The seats on the floor behind the baskets and in the far corners,
+	// stood on it in front of the boards.
+	if (arena.courtside) {
+		const standOf = (end: Side | undefined) => {
+			const own = end === undefined ? undefined : f.crowd.ends?.[end];
+			return own && own.up > f.crowd.up ? own : f.crowd;
+		};
+		drawCourtside(
+			p,
+			cam,
+			arena.courtside,
+			(end) => standOf(end).up,
+			(end) => standOf(end).wave,
+			f.now ?? t,
+			(home) => {
+				// (For a couple of seconds after a basket by their team.)
+				const c = recentFx(tl, t, ["cheer"], 2200);
+				return c?.team !== undefined && (c.team === 1) === home;
+			},
+		);
+	}
+	// The scorer's table, the people behind it hidden from the waist down,
+	// their monitors and laptops on it.
+	if (arena.table) {
+		drawTableRow(p, cam, arena.table);
+	}
+	atTable();
+	p.solid(true);
+	p.plane(TABLE_TOP, arena.tableTop, 4, 1);
+	if (arena.table) {
+		drawTableItems(p, cam, arena.table);
+	}
+	p.plane(TABLE_FRONT, arena.boards.table?.[screen] ?? arena.tableFront, 4, 1);
+	p.solid(false);
+	p.plane(benchPlane(0), arena.bench[0], 6, 1);
+	p.plane(benchPlane(1), arena.bench[1], 6, 1);
+};
+
+// THE BASKETS, AND THE BALL WHERE NOBODY HAS IT: each as far off as it is
+// put among the men, drawn onto a picture (the page's, or a sheet the
+// graphics card takes it from - see gpu/scene.ts), in the part of it the
+// box round it in the world comes out on.
+export type FrameItem = {
+	depth: number;
+	draw: (ctx: CanvasRenderingContext2D) => void;
+	// The part of the picture it takes up: a box round it in the world, or
+	// so much of the picture (px: x0, y0, x1, y1).
+	box?: Pt3[];
+	rect?: [number, number, number, number];
+};
+export const hoopsAndBalls = (f: Frame, screen: BoardScreen): FrameItem[] => {
+	const { cam, tl } = f;
+	const { t, players, ball } = f.moment;
+	const venue = f.venue;
+	const balls = [ball, ...(f.moment.balls ?? [])];
+	const items: FrameItem[] = [];
+	// In somebody's hands it is drawn with him (see drawSprite); at the rim,
+	// with the rim (in front of its back, behind its front).
+	const loose = balls.filter(
+		(b) =>
+			b.holder === undefined ||
+			!players.some((p) => p.pid === b.holder && p.holding),
+	);
+	const atRim = loose.map((b) => ballAtRim(b));
+	// (The period's clock run out: the lights round both boards on.)
+	const out = isFinal(tl, t) || isBreak(tl, t);
+	for (const side of venue ? [] : ([0, 1] as const)) {
+		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
+		const fx: HoopFx = {
+			swish: fxLevel(tl, t, "swish", 520, side),
+			clank: fxLevel(tl, t, "clank", 420, side),
+			dunk: fxLevel(tl, t, "dunk", 1100, side),
+			big: recentFx(tl, t, ["dunk"], 1100, side)?.big,
+			out,
+			...(atRim.includes(side) ? { ball: loose[atRim.indexOf(side)]! } : {}),
+			t,
+		};
+		const X = (d: number) => (side === 0 ? d : COURT_W - d);
+		items.push({
+			depth: depthOf(cam, { x: rx, y: 25, z: RIM_Z }),
+			// (The stanchion from its base back behind the baseline, the board,
+			// the clock on it, the net swinging under the rim.)
+			box: [-12, 6.6].flatMap((d) =>
+				[21.4, 28.6].flatMap((y) => [0, 15].map((z) => ({ x: X(d), y, z }))),
+			),
+			draw: (ctx) => {
+				drawHoop(
+					ctx,
+					cam,
+					side,
+					f.padColor,
+					f.shotClock,
+					fx,
+					atRim.includes(side)
+						? () => {
+								loose.forEach((b, i) => {
+									if (atRim[i] === side) {
+										drawBall(
+											ctx,
+											cam,
+											b,
+											b.roll ?? 0,
+											false,
+											b.rollWay,
+											b.face,
+										);
+									}
+								});
+							}
+						: undefined,
+					(screen.startsWith("ad")
+						? f.arena.stanchionAds?.[Number(screen.slice(2))]
+						: undefined) ?? f.arena.stanchion,
+					f.clock,
+				);
+			},
+		});
+	}
+	loose.forEach((b, i) => {
+		if (atRim[i] === undefined) {
+			// (And its reflection, as far under the floor as it is over it.)
+			const r = BALL_R * 1.6;
+			items.push({
+				depth: depthOf(cam, b) - 0.3,
+				box: [b.z, -b.z].flatMap((z) =>
+					[-r, r].flatMap((dx) =>
+						[-r, r].flatMap((dy) =>
+							[-r, r].map((dz) => ({ x: b.x + dx, y: b.y + dy, z: z + dz })),
+						),
+					),
+				),
+				draw: (ctx) => {
+					// (In the floor too, as far under it as it is over it -
+					// fainter the higher it is.)
+					const shine = SHINE * (1 - b.z / BALL_SHINE_Z);
+					if (shine > 0.01) {
+						ctx.globalAlpha = shine;
+						drawBall(
+							ctx,
+							cam,
+							{ ...b, z: -b.z },
+							b.roll ?? 0,
+							true,
+							b.rollWay,
+							b.face,
+						);
+						ctx.globalAlpha = 1;
+					}
+					// (Bounced off the floor - on his dribble, a bounce pass, loose
+					// - squashed as it hits: down there and going up again, not
+					// rolling along it or lying on it.)
+					const low = Math.max(0, 1 - (b.z - BALL_R) / BALL_HIT_Z);
+					const squash =
+						low <= 0
+							? 0
+							: b.holder !== undefined
+								? low
+								: b === f.moment.ball &&
+									  !f.moment.warm &&
+									  evalBall(f.tl, f.moment.t - 15, f.bodyFor).z > b.z + 0.02 &&
+									  evalBall(f.tl, f.moment.t + 15, f.bodyFor).z > b.z + 0.02
+									? low
+									: 0;
+					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay, b.face, squash);
+				},
+			});
+		}
+	});
+	return items;
+};
+
+// WHAT IS DRAWN OVER ALL OF IT, in order: the confetti still in the air,
+// the lights down for the starting lineups, the board over center court,
+// the photographers' flashes, the name under whoever has the ball - each
+// with the part of the picture it takes up, there only when it shows.
+export const overlays = (f: Frame, screen: BoardScreen): FrameItem[] => {
+	const { cam, tl, arena } = f;
+	const { t, players, ball } = f.moment;
+	const venue = f.venue;
+	const W = cam.viewW;
+	const H = cam.viewH;
+	const all: [number, number, number, number] = [0, 0, W, H];
+	const out: FrameItem[] = [];
+	const confetti = [
+		...(f.teamColors?.[1] ?? DEFAULT_TEAM_COLORS[1]!),
+		"#ffffff",
+		"#f5cf4a",
+	];
+	if (recentFx(tl, t, ["confetti"], 30 * 60_000)) {
+		out.push({
+			depth: 0,
+			rect: all,
+			draw: (ctx) => drawConfetti(ctx, cam, tl, t, confetti, true),
+		});
+	}
+	const over = venue?.over;
+	if (over) {
+		out.push({ depth: 0, rect: all, draw: (ctx) => over(ctx, cam, t) });
+	}
+	// The lights down for the starting lineups.
+	if (darkAt(tl.intro, t) > 0.002) {
+		out.push({
+			depth: 0,
+			rect: all,
+			draw: (ctx) =>
+				drawLights(
+					ctx,
+					cam,
+					tl.intro,
+					t,
+					players,
+					f.teamColors ?? DEFAULT_TEAM_COLORS,
+				),
+		});
+	}
+	// The board over center court, when the picture takes it in.
+	const jumbotron = arena.jumbotron;
+	if (jumbotron && !venue) {
+		out.push({
+			depth: 0,
+			box: jumbotronBox(jumbotron),
+			draw: (ctx) =>
+				drawJumbotron(
+					ctx,
+					cam,
+					jumbotron,
+					screen,
+					arena.boards.ribbon[screen],
+					{ score: f.score, clock: f.clock ?? "", period: f.period ?? "" },
+					t,
+				),
+		});
+	}
+	// A photographer's flash - not one behind the camera, or right at it (a
+	// camera in among the photographers).
+	for (const at of f.flashes ?? []) {
+		if (depthOf(cam, at) < FLASH_NEAR) {
+			continue;
+		}
+		const p = project(cam, at);
+		const r = Math.min(W * 0.08, Math.max(3, p.k * 1.1));
+		out.push({
+			depth: 0,
+			rect: [p.x - r, p.y - r, p.x + r, p.y + r],
+			draw: (ctx) => {
+				const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+				g.addColorStop(0, "rgba(255,255,255,1)");
+				g.addColorStop(0.3, "rgba(240,244,255,0.7)");
+				g.addColorStop(1, "rgba(220,230,255,0)");
+				ctx.fillStyle = g;
+				ctx.beginPath();
+				ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+				ctx.fill();
+			},
+		});
+	}
+	// Whoever has the ball, named under his feet - following the play, not
+	// looking round the building, in on a huddle or showing it again.
+	const holder =
+		ball.holder === undefined || f.moment.warm || f.away
+			? undefined
+			: players.find((p) => p.pid === ball.holder);
+	if (holder) {
+		const look = f.lookFor(holder.pid);
+		const tag = tagAt(cam, holder, look, f.textScale, f.tagClear);
+		if (tag) {
+			out.push({
+				depth: 0,
+				rect: [
+					tag.x,
+					Math.min(tag.y - 3 * f.textScale, tag.y),
+					tag.x + tag.total,
+					tag.y + tag.h,
+				],
+				draw: (ctx) => paintTag(ctx, tag, look, f.textScale),
+			});
+		}
+	}
+	return out;
+};
+
 export const drawFrame = (f: Frame) => {
 	const { ctx, cam, tl, arena } = f;
 	const { t, players, ball } = f.moment;
@@ -2270,77 +2588,21 @@ export const drawFrame = (f: Frame) => {
 		} else {
 			floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 		}
-		drawPhotoBoxes(ctx, cam, f.apron ?? f.padColor);
-		// The lit boards along the far side - the front of the scorer's table,
-		// the wall behind the benches - shine back off the floor in front of
-		// them (under the table, the benches and everybody stood there): their
-		// light added to the floor's, so where a board is dark the floor is just
-		// the floor.
-		ctx.globalCompositeOperation = "lighter";
-		const table = shineOf(
-			TABLE_FRONT,
-			arena.boards.table?.[screen] ?? arena.tableFront,
-		);
-		drawTexturedPlane(ctx, cam, table.plane, table.img, 4, 1, BOARD_SHINE);
-		const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
-		drawTexturedPlane(ctx, cam, wall.plane, wall.img, 24, 1, BOARD_SHINE);
-		ctx.globalCompositeOperation = "source-over";
-		// Behind the scorer's table: its curtain, its second row.
-		if (arena.table) {
-			drawTableBack(ctx, cam, arena.table);
-		}
-		// The seats on the floor behind the baskets and in the far corners,
-		// stood on it in front of the boards.
-		if (arena.courtside) {
-			const standOf = (end: Side | undefined) => {
-				const own = end === undefined ? undefined : f.crowd.ends?.[end];
-				return own && own.up > f.crowd.up ? own : f.crowd;
-			};
-			drawCourtside(
-				ctx,
-				cam,
-				arena.courtside,
-				(end) => standOf(end).up,
-				(end) => standOf(end).wave,
-				f.now ?? t,
-				(home) => {
-					// (For a couple of seconds after a basket by their team.)
-					const c = recentFx(tl, t, ["cheer"], 2200);
-					return c?.team !== undefined && (c.team === 1) === home;
-				},
-			);
-		}
-		// The scorer's table, the people behind it hidden from the waist down,
-		// their monitors and laptops on it.
-		if (arena.table) {
-			drawTableRow(ctx, cam, arena.table);
-		}
-		for (const c of crewAll) {
-			if (atTable(c.st.pid)) {
-				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+		const painter = ctxPainter(ctx, cam);
+		dressFloor(f, painter, screen, () => {
+			for (const c of crewAll) {
+				if (atTable(c.st.pid)) {
+					drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+				}
 			}
-		}
-		drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
-		if (arena.table) {
-			drawTableItems(ctx, cam, arena.table);
-		}
-		drawTexturedPlane(
-			ctx,
-			cam,
-			TABLE_FRONT,
-			arena.boards.table?.[screen] ?? arena.tableFront,
-			4,
-			1,
-		);
-		drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
-		drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
+		});
 		drawFlashes(ctx, cam, tl, t);
 		// (None when the floor picture has its own - see CourtStyle.floorLines.)
 		if (f.lineColor) {
 			drawCourtLines(ctx, cam, f.lineColor);
 		}
 		// The lights over the far stands, shining back off the floor.
-		drawGlints(ctx, cam);
+		drawGlints(painter, cam);
 	}
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);
 	const confetti = [
@@ -2471,103 +2733,10 @@ export const drawFrame = (f: Frame) => {
 			}
 		}
 	}
-	// In somebody's hands it is drawn with him (see drawSprite); at the rim,
-	// with the rim (in front of its back, behind its front).
-	const loose = balls.filter(
-		(b) =>
-			b.holder === undefined ||
-			!players.some((p) => p.pid === b.holder && p.holding),
-	);
-	const atRim = loose.map((b) => ballAtRim(b));
-	// (The period's clock run out: the lights round both boards on.)
-	const out = isFinal(tl, t) || isBreak(tl, t);
-	for (const side of venue ? [] : ([0, 1] as const)) {
-		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
-		const fx: HoopFx = {
-			swish: fxLevel(tl, t, "swish", 520, side),
-			clank: fxLevel(tl, t, "clank", 420, side),
-			dunk: fxLevel(tl, t, "dunk", 1100, side),
-			big: recentFx(tl, t, ["dunk"], 1100, side)?.big,
-			out,
-			...(atRim.includes(side) ? { ball: loose[atRim.indexOf(side)]! } : {}),
-			t,
-		};
-		items.push({
-			depth: depthOf(cam, { x: rx, y: 25, z: RIM_Z }),
-			draw: () => {
-				drawHoop(
-					ctx,
-					cam,
-					side,
-					f.padColor,
-					f.shotClock,
-					fx,
-					atRim.includes(side)
-						? () => {
-								loose.forEach((b, i) => {
-									if (atRim[i] === side) {
-										drawBall(
-											ctx,
-											cam,
-											b,
-											b.roll ?? 0,
-											false,
-											b.rollWay,
-											b.face,
-										);
-									}
-								});
-							}
-						: undefined,
-					(screen.startsWith("ad")
-						? f.arena.stanchionAds?.[Number(screen.slice(2))]
-						: undefined) ?? f.arena.stanchion,
-					f.clock,
-				);
-			},
-		});
+	// The baskets, and the ball where nobody has it (see hoopsAndBalls).
+	for (const it of hoopsAndBalls(f, screen)) {
+		items.push({ depth: it.depth, draw: () => it.draw(ctx) });
 	}
-	loose.forEach((b, i) => {
-		if (atRim[i] === undefined) {
-			items.push({
-				depth: depthOf(cam, b) - 0.3,
-				draw: () => {
-					// (In the floor too, as far under it as it is over it -
-					// fainter the higher it is.)
-					const shine = SHINE * (1 - b.z / BALL_SHINE_Z);
-					if (shine > 0.01) {
-						ctx.globalAlpha = shine;
-						drawBall(
-							ctx,
-							cam,
-							{ ...b, z: -b.z },
-							b.roll ?? 0,
-							true,
-							b.rollWay,
-							b.face,
-						);
-						ctx.globalAlpha = 1;
-					}
-					// (Bounced off the floor - on his dribble, a bounce pass, loose
-					// - squashed as it hits: down there and going up again, not
-					// rolling along it or lying on it.)
-					const low = Math.max(0, 1 - (b.z - BALL_R) / BALL_HIT_Z);
-					const squash =
-						low <= 0
-							? 0
-							: b.holder !== undefined
-								? low
-								: b === f.moment.ball &&
-									  !f.moment.warm &&
-									  evalBall(f.tl, f.moment.t - 15, f.bodyFor).z > b.z + 0.02 &&
-									  evalBall(f.tl, f.moment.t + 15, f.bodyFor).z > b.z + 0.02
-									? low
-									: 0;
-					drawBall(ctx, cam, b, b.roll ?? 0, false, b.rollWay, b.face, squash);
-				},
-			});
-		}
-	});
 	// Arms round someone nearer the camera than he is (see poses.ts HOLD):
 	// his own picture again over them, just where his arms are.
 	for (const hug of armsOver(cam, [...onCourt, ...crew], f.sprites)) {
@@ -2600,56 +2769,9 @@ export const drawFrame = (f: Frame) => {
 	for (const it of items) {
 		it.draw();
 	}
-	drawConfetti(ctx, cam, tl, t, confetti, true);
-	venue?.over?.(ctx, cam, t);
-	// The lights down for the starting lineups.
-	drawLights(
-		ctx,
-		cam,
-		tl.intro,
-		t,
-		players,
-		f.teamColors ?? DEFAULT_TEAM_COLORS,
-	);
-	// The board over center court, when the picture takes it in.
-	if (arena.jumbotron && !venue) {
-		drawJumbotron(
-			ctx,
-			cam,
-			arena.jumbotron,
-			screen,
-			arena.boards.ribbon[screen],
-			{ score: f.score, clock: f.clock ?? "", period: f.period ?? "" },
-			t,
-		);
-	}
-	// A photographer's flash - not one behind the camera, or right at it (a
-	// camera in among the photographers).
-	for (const at of f.flashes ?? []) {
-		if (depthOf(cam, at) < FLASH_NEAR) {
-			continue;
-		}
-		const p = project(cam, at);
-		const r = Math.min(ctx.canvas.width * 0.08, Math.max(3, p.k * 1.1));
-		const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-		g.addColorStop(0, "rgba(255,255,255,1)");
-		g.addColorStop(0.3, "rgba(240,244,255,0.7)");
-		g.addColorStop(1, "rgba(220,230,255,0)");
-		ctx.fillStyle = g;
-		ctx.beginPath();
-		ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	// Whoever has the ball, named under his feet - following the play, not
-	// looking round the building, in on a huddle or showing it again.
-	const holder =
-		ball.holder === undefined || f.moment.warm || f.away
-			? undefined
-			: players.find((p) => p.pid === ball.holder);
-	if (holder) {
-		const look = f.lookFor(holder.pid);
-		drawNameTag(ctx, cam, holder, look, f.textScale, f.tagClear);
+	// Over all of it (see overlays).
+	for (const o of overlays(f, screen)) {
+		o.draw(ctx);
 	}
 };
 
@@ -2659,17 +2781,27 @@ const FLASH_NEAR = 2.5;
 // Over his head: higher than the tallest man's (feet).
 const TAG_OVER = 7.6;
 
-const drawNameTag = (
-	ctx: CanvasRenderingContext2D,
+// Where his name goes (see overlays): undefined if he has none.
+type Tag = {
+	x: number;
+	y: number;
+	h: number;
+	total: number;
+	nw: number;
+	w: number;
+	pad: number;
+	feet: { x: number; y: number };
+};
+const tagAt = (
 	cam: Camera,
 	st: PlayerState,
 	look: Look,
 	scale: number,
 	clear: { x0: number; x1: number; y0: number }[] = [],
-) => {
+): Tag | undefined => {
 	const w = pixelTextWidth(look.name, scale);
 	if (w === 0) {
-		return;
+		return undefined;
 	}
 	// A broadcast's tag: his number in his team's colors, his name on a
 	// dark plate with the team's trim along its foot, and a notch up at him.
@@ -2702,6 +2834,16 @@ const drawNameTag = (
 				),
 			)
 		: under;
+	return { x, y, h, total, nw, w, pad, feet };
+};
+const paintTag = (
+	ctx: CanvasRenderingContext2D,
+	tag: Tag,
+	look: Look,
+	scale: number,
+) => {
+	const { x, y, h, total, nw, w, pad, feet } = tag;
+	const num = look.jerseyNumber;
 	ctx.fillStyle = "rgba(10, 10, 14, 0.82)";
 	// The notch, if there is room below him for it.
 	if (y - 3 * scale >= feet.y) {

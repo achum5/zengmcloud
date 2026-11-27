@@ -14,7 +14,8 @@ import { TABLE_SEAT_Y, TABLE_SEATS } from "./crew.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import { shade } from "./figure.ts";
 import type { Pt3 } from "./geometry.ts";
-import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
+import type { Painter } from "./painter.ts";
+import type { TexturedPlane } from "./planes.ts";
 
 // THE SCORER'S TABLE AS IT IS ON TV. Behind it the officials and the media
 // sit in two rows: the first at the table itself, its top covered in
@@ -281,24 +282,9 @@ export const scorersTableFor = (
 };
 
 // A flat four-cornered face, in one color.
-const quad = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	pts: Pt3[],
-	color: string,
-) => {
-	ctx.fillStyle = color;
-	ctx.beginPath();
-	for (const p of pts) {
-		const q = project(cam, p);
-		ctx.lineTo(q.x, q.y);
-	}
-	ctx.closePath();
-	ctx.fill();
-};
 // A box: the faces of it toward the camera.
 const box = (
-	ctx: CanvasRenderingContext2D,
+	p: Painter,
 	cam: Camera,
 	x0: number,
 	x1: number,
@@ -311,9 +297,7 @@ const box = (
 ) => {
 	const { pos } = cam;
 	if (pos.x < x0) {
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x0, y: y0, z: 0 },
 				{ x: x0, y: y1, z: 0 },
@@ -323,9 +307,7 @@ const box = (
 			ends,
 		);
 	} else if (pos.x > x1) {
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x1, y: y0, z: 0 },
 				{ x: x1, y: y1, z: 0 },
@@ -336,9 +318,7 @@ const box = (
 		);
 	}
 	if (pos.y > y0) {
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x0, y: y0, z: 0 },
 				{ x: x1, y: y0, z: 0 },
@@ -349,9 +329,7 @@ const box = (
 		);
 	}
 	if (pos.z > z) {
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x0, y: y0, z },
 				{ x: x1, y: y0, z },
@@ -364,7 +342,7 @@ const box = (
 };
 
 const drawPeople = (
-	ctx: CanvasRenderingContext2D,
+	pr: Painter,
 	cam: Camera,
 	t: ScorersTable,
 	back: boolean,
@@ -386,12 +364,10 @@ const drawPeople = (
 		placed.push({ d: q.depth, x: q.x, y: q.y, k: q.k, cell: p.cell });
 	}
 	placed.sort((a, b) => b.d - a.d);
-	const smoothing = ctx.imageSmoothingEnabled;
-	ctx.imageSmoothingEnabled = true;
 	for (const q of placed) {
 		const w = CELL_W * q.k;
 		const h = CELL_H * q.k;
-		ctx.drawImage(
+		pr.sprite(
 			t.atlas,
 			(q.cell % t.cols) * (cw + GAP),
 			Math.floor(q.cell / t.cols) * (ch + GAP),
@@ -401,17 +377,15 @@ const drawPeople = (
 			q.y - h,
 			w,
 			h,
+			q.d,
 		);
 	}
-	ctx.imageSmoothingEnabled = smoothing;
 };
 
-const drawItem = (ctx: CanvasRenderingContext2D, cam: Camera, it: Item) => {
+const drawItem = (p: Painter, it: Item) => {
 	const { x, y, z } = it.at;
 	const face = (x0: number, x1: number, z0: number, z1: number, c: string) =>
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x0, y, z: z0 },
 				{ x: x1, y, z: z0 },
@@ -428,9 +402,7 @@ const drawItem = (ctx: CanvasRenderingContext2D, cam: Camera, it: Item) => {
 	} else if (it.kind === "laptop") {
 		// Its lid up, leant back a little, toward whoever is at it.
 		const lid = it.color;
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x - 0.52, y, z },
 				{ x: x + 0.52, y, z },
@@ -439,9 +411,7 @@ const drawItem = (ctx: CanvasRenderingContext2D, cam: Camera, it: Item) => {
 			],
 			lid,
 		);
-		quad(
-			ctx,
-			cam,
+		p.poly(
 			[
 				{ x: x - 0.52, y, z },
 				{ x: x + 0.52, y, z },
@@ -459,17 +429,13 @@ const drawItem = (ctx: CanvasRenderingContext2D, cam: Camera, it: Item) => {
 // Behind the table: the curtain, the step the second row is up on, them,
 // their counter and what is on it. Before anything else at the table or
 // the benches (the furthest back of it all).
-export const drawTableBack = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	t: ScorersTable,
-) => {
+export const drawTableBack = (p: Painter, cam: Camera, t: ScorersTable) => {
 	if (depthOf(cam, { x: (TABLE_X0 + TABLE_X1) / 2, y: CURTAIN_Y, z: 0 }) < 0) {
 		return;
 	}
-	drawTexturedPlane(ctx, cam, CURTAIN, t.curtain, 6, 2);
+	p.plane(CURTAIN, t.curtain, 6, 2);
 	box(
-		ctx,
+		p,
 		cam,
 		TABLE_X0,
 		TABLE_X1,
@@ -480,9 +446,9 @@ export const drawTableBack = (
 		"#111216",
 		"#0b0b0e",
 	);
-	drawPeople(ctx, cam, t, true);
+	drawPeople(p, cam, t, true);
 	box(
-		ctx,
+		p,
 		cam,
 		TABLE_X0,
 		TABLE_X1,
@@ -495,29 +461,21 @@ export const drawTableBack = (
 	);
 	for (const it of t.items) {
 		if (it.at.z === COUNTER_Z) {
-			drawItem(ctx, cam, it);
+			drawItem(p, it);
 		}
 	}
 };
 // The first row, at the table (before the four of the game's own there).
-export const drawTableRow = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	t: ScorersTable,
-) => {
-	drawPeople(ctx, cam, t, false);
+export const drawTableRow = (p: Painter, cam: Camera, t: ScorersTable) => {
+	drawPeople(p, cam, t, false);
 };
 // What is on the table, after its top.
-export const drawTableItems = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	t: ScorersTable,
-) => {
+export const drawTableItems = (p: Painter, cam: Camera, t: ScorersTable) => {
 	const on = t.items
 		.filter((it) => it.at.z === TABLE_H && depthOf(cam, it.at) >= NEAREST)
 		.map((it) => ({ it, d: depthOf(cam, it.at) }))
 		.sort((a, b) => b.d - a.d);
 	for (const { it } of on) {
-		drawItem(ctx, cam, it);
+		drawItem(p, it);
 	}
 };

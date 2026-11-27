@@ -1049,7 +1049,7 @@ export const T_ZIP = 0.22;
 export const TONGUE_UP = 0.62;
 // Where his face is drawn, a little above the true middle of his head (see
 // figure.ts).
-const FACE_LIFT = 0.15;
+export const FACE_LIFT = 0.15;
 
 // THE GROUNDWORK OF A FIGURE, any sport's (see each sport's build).
 

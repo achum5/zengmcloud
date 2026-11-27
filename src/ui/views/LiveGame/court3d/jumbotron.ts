@@ -2,7 +2,7 @@ import { type ArenaAd, paintAd } from "./arenaAds.ts";
 import type { ArenaTeam, BoardScreen } from "./arena.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
 import { shade } from "./figure.ts";
-import { COURT_H, COURT_W } from "./geometry.ts";
+import { COURT_H, COURT_W, type Pt3 } from "./geometry.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 
 // THE BOARD OVER CENTER COURT, the way a building hangs one: big video
@@ -1271,6 +1271,19 @@ export const ribbonScore = (
 			return canvas;
 		},
 	);
+
+// A box round all of it in the world - the light off its screens round it,
+// the cables up from it into the dark - for the part of the picture it can
+// take up.
+export const jumbotronBox = (j: Jumbotron): Pt3[] => {
+	const s = j.shape;
+	const r = s.longW * 1.15;
+	const mid = (s.z0 + s.z1) / 2;
+	const xs = [Math.min(s.x0, CX - r), Math.max(s.x1, CX + r)];
+	const ys = [Math.min(s.y0, CY - r), Math.max(s.y1, CY + r)];
+	const zs = [Math.min(s.z0, mid - r), s.z1 + 70];
+	return xs.flatMap((x) => ys.flatMap((y) => zs.map((z) => ({ x, y, z }))));
+};
 
 export const drawJumbotron = (
 	ctx: CanvasRenderingContext2D,

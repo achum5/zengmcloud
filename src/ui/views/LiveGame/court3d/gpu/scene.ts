@@ -1,13 +1,32 @@
-import { FLOOR_EDGE } from "../arena.ts";
-import { project } from "../camera.ts";
+import { drawGlints, FLOOR_EDGE } from "../arena.ts";
+import { type Camera, depthOf, project } from "../camera.ts";
 import { bowlMatrix } from "../bowlData.ts";
 import { paintBowlOn } from "../bowlGl.ts";
-import { drawHeadAt } from "../figure.ts";
-import { bodyPoint } from "../evaluate.ts";
-import { MESH_LIGHTS } from "../meshBody.ts";
-import { bowlLookOf, type Frame, warmupLook } from "../scene.ts";
+import { drawHeadAt, headOf } from "../figure.ts";
+import { bodyPoint, type PlayerState } from "../evaluate.ts";
+import type { Body } from "../poses.ts";
+import { atTable } from "../crew.ts";
+import {
+	benchStates,
+	boardAt,
+	bowlLookOf,
+	dressFloor,
+	type Frame,
+	hoopsAndBalls,
+	overlays,
+	warmupLook,
+} from "../scene.ts";
+import { FACE_LIFT } from "../sculpt.ts";
 import { glForced } from "../sculptGl.ts";
 import { CAST_ALPHA, CASTS, OUTLINE, SOLID } from "../sprite.ts";
+import {
+	floorDraw,
+	type FloorGl,
+	floorOnto,
+	floorPainter,
+	itemsDraw,
+	linesDraw,
+} from "./floor.ts";
 import { attrib, buffer, compile, type Prog, rgb } from "./gl.ts";
 import {
 	drawHands,
@@ -16,6 +35,7 @@ import {
 	menCamera,
 	menOnto,
 	type MenGl,
+	MEN_ROWS,
 	menRows,
 	readyMan,
 } from "./men.ts";
@@ -54,29 +74,6 @@ void main() {
 		return;
 	}
 	o = uPicOn > 0.5 ? texture(uPic, vUv) : uColor;
-}`;
-
-// A round thing - his head, the ball: a sphere, so wide each way.
-const ROUND_VERT = `#version 300 es
-in vec3 aPos;
-uniform mat4 uM;
-uniform vec3 uAt;
-uniform vec3 uR;
-out vec3 vN;
-void main() {
-	vN = aPos;
-	gl_Position = uM * vec4(uAt + aPos * uR, 1.0);
-}`;
-const ROUND_FRAG = `#version 300 es
-precision highp float;
-in vec3 vN;
-uniform vec3 uColor;
-uniform mat3 uCam;
-uniform vec3 uLight;
-out vec4 o;
-void main() {
-	vec3 n = uCam * normalize(vN);
-	o = vec4(uColor * (0.45 + 0.65 * max(0.0, dot(n, uLight))), 1.0);
 }`;
 
 // A head: today's, drawn on a sheet of them (see heads), stood up where his
@@ -148,18 +145,19 @@ const MIRRORED_CULL = WebGL2RenderingContext.FRONT;
 // The floor is polished: everybody on it shows in it this faintly (see
 // scene.ts SHINE).
 const SHINE = 0.24;
+// (As many men as the card has rows for - see men.ts menRows.)
+const MEN_MAX = MEN_ROWS;
 
 type Scene = {
 	gl: WebGL2RenderingContext;
 	flat: Prog;
-	round: Prog;
 	flatVao: WebGLVertexArrayObject;
 	flatBuf: WebGLBuffer;
-	roundVao: WebGLVertexArrayObject;
-	roundCount: number;
 	court: WebGLTexture;
 	courtOf?: HTMLCanvasElement;
 	men?: MenGl;
+	// What is laid round the court (see floor.ts) - null if the card can't.
+	floor?: FloorGl | null;
 	head: Prog;
 	headVao: WebGLVertexArrayObject;
 	heads: CanvasRenderingContext2D;
@@ -172,30 +170,6 @@ type Scene = {
 	lost: boolean;
 };
 export type GpuScene = Scene;
-
-const sphere = (rings = 10, segs = 14) => {
-	const pos: number[] = [];
-	for (let r = 0; r <= rings; r++) {
-		const th = (r / rings) * Math.PI;
-		for (let s = 0; s <= segs; s++) {
-			const ph = (s / segs) * 2 * Math.PI;
-			pos.push(
-				Math.sin(th) * Math.cos(ph),
-				Math.sin(th) * Math.sin(ph),
-				Math.cos(th),
-			);
-		}
-	}
-	const index: number[] = [];
-	for (let r = 0; r < rings; r++) {
-		for (let s = 0; s < segs; s++) {
-			const a = r * (segs + 1) + s;
-			const b = a + segs + 1;
-			index.push(a, b, a + 1, a + 1, b, b + 1);
-		}
-	}
-	return { pos: new Float32Array(pos), index: new Uint16Array(index) };
-};
 
 // The card, on the canvas the game is shown on - undefined if there is
 // none to be had (today's drawing, then).
@@ -213,10 +187,9 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 		return undefined;
 	}
 	const flat = compile(gl, FLAT_VERT, FLAT_FRAG);
-	const round = compile(gl, ROUND_VERT, ROUND_FRAG);
 	const head = compile(gl, HEAD_VERT, HEAD_FRAG);
 	const heads = document.createElement("canvas").getContext("2d");
-	if (!flat || !round || !head || !heads) {
+	if (!flat || !head || !heads) {
 		return undefined;
 	}
 	const flatVao = gl.createVertexArray();
@@ -227,11 +200,6 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 	attrib(gl, flat, "aPos", flatBuf, 3, 20, 0);
 	attrib(gl, flat, "aUv", flatBuf, 2, 20, 12);
 	buffer(gl, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.ELEMENT_ARRAY_BUFFER);
-	const ball = sphere();
-	const roundVao = gl.createVertexArray();
-	gl.bindVertexArray(roundVao);
-	attrib(gl, round, "aPos", buffer(gl, ball.pos), 3, 12, 0);
-	buffer(gl, ball.index, gl.ELEMENT_ARRAY_BUFFER);
 	const headVao = gl.createVertexArray();
 	gl.bindVertexArray(headVao);
 	attrib(
@@ -255,11 +223,8 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 	const sc: Scene = {
 		gl,
 		flat,
-		round,
 		flatVao,
 		flatBuf,
-		roundVao,
-		roundCount: ball.index.length,
 		court,
 		head,
 		headVao,
@@ -362,19 +327,6 @@ export const drawGpu = (
 		return true;
 	}
 	const m = bowlMatrix(cam);
-	// The camera's right, down and toward it, for the light on what is
-	// round (as meshBody.ts lights him).
-	const cam3 = new Float32Array([
-		cam.right.x,
-		-cam.up.x,
-		-cam.fwd.x,
-		cam.right.y,
-		-cam.up.y,
-		-cam.fwd.y,
-		cam.right.z,
-		-cam.up.z,
-		-cam.fwd.z,
-	]);
 	gl.disable(gl.BLEND);
 	gl.disable(gl.CULL_FACE);
 	gl.enable(gl.DEPTH_TEST);
@@ -395,26 +347,82 @@ export const drawGpu = (
 		flatQuad(sc, court.x, court.y, court.x + court.w, court.y + court.h);
 	}
 	gl.depthFunc(gl.LEQUAL);
+	// (All of that behind everything on it, as the page lays it down first:
+	// what is in front of what is only among the men, the baskets and the
+	// table they stand in front of - not, say, the floor in front of the
+	// basket's stand, nearer than its rim, hiding the foot of it.)
+	gl.clear(gl.DEPTH_BUFFER_BIT);
+	// Round it: the table, the seats on the floor, the benches, the boards'
+	// shine (as the page's drawing has them - see scene.ts dressFloor); the
+	// court's lines; the lights' glints in the floor.
+	if (sc.floor === undefined) {
+		sc.floor = floorOnto(gl) ?? null;
+	}
+	const fl = sc.floor;
+	if (fl && !f.venue) {
+		const painter = floorPainter(gl, fl, cam);
+		dressFloor(f, painter, boardAt(f.tl, f.moment.t), () => {});
+		floorDraw(gl, fl, m);
+		if (f.lineColor) {
+			linesDraw(gl, fl, m, f.lineColor);
+		}
+		drawGlints(painter, cam);
+		floorDraw(gl, fl, m);
+	}
 
 	// The men: each one worked out (the page's own work), then drawn,
 	// nearest first.
 	sc.men ??= menOnto(gl);
 	const ready = performance.now();
 	const men: ManReady[] = [];
+	// Who shows in the floor (his shadows, his reflection) - not a man sat
+	// down, nor the four at the table - and who has a pool of shadow round
+	// his feet (not those four).
+	const shines = new Set<ManReady>();
+	const pooled = new Set<ManReady>();
 	if (sc.men) {
-		for (const [i, st] of f.moment.players.entries()) {
-			const look = f.lookFor(st.pid);
-			const r = readyMan(
-				cam,
-				st,
-				f.bodyFor(st.pid),
-				f.moment.warm ? warmupLook(look, f.warmups[st.team]) : look,
-				sc.ready[i],
-			);
+		const players = f.moment.players;
+		const onFloor = new Set(players.map((p) => p.pid));
+		const all = [
+			...players.map((st) => {
+				const look = f.lookFor(st.pid);
+				return {
+					st,
+					body: f.bodyFor(st.pid),
+					look: f.moment.warm ? warmupLook(look, f.warmups[st.team]) : look,
+					table: false,
+				};
+			}),
+			...(f.venue ? [] : benchStates(f, onFloor)).map(({ st, warm }) => {
+				const look = f.lookFor(st.pid);
+				return {
+					st,
+					body: f.bodyFor(st.pid),
+					look: warm ? warmupLook(look, f.warmups[st.team]) : look,
+					table: false,
+				};
+			}),
+			...(f.crew ?? []).map((c) => ({ ...c, table: atTable(c.st.pid) })),
+		];
+		let i = 0;
+		for (const one of all) {
+			if (!inSight(cam, one.st, one.body)) {
+				continue;
+			}
+			const r = readyMan(cam, one.st, one.body, one.look, sc.ready[i]);
 			sc.ready[i] = r;
+			i += 1;
 			men.push(r);
+			if (!one.table) {
+				pooled.add(r);
+				if (one.st.anim !== "sit") {
+					shines.add(r);
+				}
+			}
 		}
+		sc.ready.length = i;
 		men.sort((a, b) => a.depth - b.depth);
+		men.length = Math.min(men.length, MEN_MAX);
 	}
 	sc.menMs = performance.now() - ready;
 	if (sc.men) {
@@ -445,21 +453,21 @@ export const drawGpu = (
 		gl.cullFace(MIRRORED_CULL);
 		for (let i = men.length - 1; i >= 0; i--) {
 			const man = men[i]!;
+			if (!shines.has(man)) {
+				continue;
+			}
 			once();
-			drawMan(
-				gl,
-				g,
-				man,
-				i,
-				{ mode: 3, shine: man.st.anim === "sit" ? 0 : SHINE },
-				W,
-				H,
-			);
+			drawMan(gl, g, man, i, { mode: 3, shine: SHINE }, W, H);
 		}
 		gl.disable(gl.CULL_FACE);
 		gl.depthFunc(gl.LEQUAL);
 		gl.disable(gl.STENCIL_TEST);
-		pools(sc, f, men, m);
+		pools(
+			sc,
+			f,
+			men.filter((man) => pooled.has(man)),
+			m,
+		);
 		gl.useProgram(g.prog.p);
 		// (Drawn a third the size and laid over the floor drawn back up,
 		// soft-edged, as a shadow is - see softOf. Sharp, if that can't be.)
@@ -475,7 +483,7 @@ export const drawGpu = (
 		gl.enable(gl.STENCIL_TEST);
 		for (const [i, man] of men.entries()) {
 			const lift = Math.max(0, man.st.z) / (man.body.H * 1.05);
-			if (lift >= 1) {
+			if (lift >= 1 || !shines.has(man)) {
 				continue;
 			}
 			for (const [lean, run] of CASTS) {
@@ -527,21 +535,17 @@ export const drawGpu = (
 		men.forEach((man, i) => drawHands(gl, g, man, i, W, H));
 		gl.disable(gl.BLEND);
 	}
-	// The ball - unless it is in a man's hands (his, then: see drawHands).
-	const { round } = sc;
-	gl.useProgram(round.p);
-	gl.bindVertexArray(sc.roundVao);
-	gl.uniformMatrix4fv(round.u("uM"), false, m);
-	gl.uniformMatrix3fv(round.u("uCam"), false, cam3);
-	gl.uniform3fv(round.u("uLight"), MESH_LIGHTS.LIGHT);
-	const ball = f.moment.ball;
-	if (!men.some((man) => man.ball > 0)) {
-		gl.uniform3f(round.u("uAt"), ball.x, ball.y, ball.z);
-		gl.uniform3f(round.u("uR"), 0.39, 0.39, 0.39);
-		gl.uniform3f(round.u("uColor"), 0.78, 0.38, 0.14);
-		gl.drawElements(gl.TRIANGLES, sc.roundCount, gl.UNSIGNED_SHORT, 0);
+	// The baskets, and the ball where nobody has it (in a man's hands, his:
+	// see drawHands) - as the page draws them.
+	if (fl) {
+		itemsDraw(gl, fl, m, cam, hoopsAndBalls(f, boardAt(f.tl, f.moment.t)));
 	}
 	heads(sc, f, men, m, W, H);
+	// Over all of it: the board over center court, the name tag, the lights
+	// down for the lineups, the confetti...
+	if (fl) {
+		itemsDraw(gl, fl, m, cam, overlays(f, boardAt(f.tl, f.moment.t)));
+	}
 	gl.bindVertexArray(null);
 	return true;
 };
@@ -617,6 +621,30 @@ const softOf = (sc: Scene, W: number, H: number): Soft | undefined => {
 const WHOLE = new Float32Array([
 	1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
 ]);
+
+// Whether any of a man can be in the picture - all of him, arms out,
+// his reflection under him, his shadows either side - or he is right up
+// against the camera or behind it (as today's drawing skips him: see
+// sprite.ts NEAR_FT). Worked out before anything of him is.
+const inSight = (cam: Camera, st: PlayerState, body: Body): boolean => {
+	if (depthOf(cam, { x: st.x, y: st.y, z: 0 }) < 3) {
+		return false;
+	}
+	const foot = project(cam, { x: st.x, y: st.y, z: 0 });
+	const top = project(cam, {
+		x: st.x,
+		y: st.y,
+		z: Math.max(0, st.z) + body.H + 1,
+	});
+	const up = foot.y - top.y;
+	const half = 4 * foot.k + up;
+	return (
+		foot.x + half > 0 &&
+		foot.x - half < cam.viewW &&
+		foot.y + up > 0 &&
+		top.y < cam.viewH
+	);
+};
 
 // A shadow cast by the lights (see sprite.ts CASTS): today laid on the
 // picture from his feet - for each pixel he is up, `lean` across it and
@@ -699,11 +727,24 @@ const heads = (
 	const ctx = sc.heads;
 	const { cam } = f;
 	const cells = men.map((man) => {
-		const { x, y, r } = man.b.head;
+		const { st, body } = man;
+		// (Where today's drawing has his head - see figure.ts headOf - and
+		// the middle of his face on the picture, as the sculptor has it.)
+		const head = headOf(st, body);
+		const mid = bodyPoint(st, head);
+		const p = project(cam, mid);
+		const r = body.headR * p.k;
+		const x = p.x;
+		const y = p.y - r * FACE_LIFT;
 		const x0 = Math.floor(x - r * 1.9) - 2;
 		const y0 = Math.floor(y - r * 2) - 2;
 		return {
 			man,
+			head,
+			mid,
+			x,
+			y,
+			r,
 			x0,
 			y0,
 			w: Math.ceil(x + r * 1.9) + 2 - x0,
@@ -726,10 +767,10 @@ const heads = (
 	let left = GAP;
 	for (const c of cells) {
 		c.at = left;
-		const { st, body, look, b } = c.man;
+		const { st, body, look } = c.man;
 		ctx.save();
 		ctx.setTransform(1, 0, 0, 1, left - c.x0, GAP - c.y0);
-		drawHeadAt(ctx, cam, st, body, look, b.sk.head);
+		drawHeadAt(ctx, cam, st, body, look, c.head);
 		ctx.restore();
 		left += c.w + GAP;
 	}
@@ -759,10 +800,9 @@ const heads = (
 	};
 	for (let i = cells.length - 1; i >= 0; i--) {
 		const c = cells[i]!;
-		const { st, body, b } = c.man;
-		const mid = bodyPoint(st, b.sk.head);
+		const { mid } = c;
 		const zc = clip(m, mid).z;
-		const zf = clip(m, toCam(mid, body.headR)).z;
+		const zf = clip(m, toCam(mid, c.man.body.headR)).z;
 		gl.uniform4f(head.u("uBox"), c.x0, c.y0, c.x0 + c.w, c.y0 + c.h);
 		gl.uniform4f(
 			head.u("uUv"),
@@ -771,7 +811,7 @@ const heads = (
 			(c.at + c.w) / cv.width,
 			(GAP + c.h) / cv.height,
 		);
-		gl.uniform3f(head.u("uC"), b.head.x, b.head.y, b.head.r);
+		gl.uniform3f(head.u("uC"), c.x, c.y, c.r);
 		gl.uniform2f(head.u("uZ"), zc, zf);
 		gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
 	}

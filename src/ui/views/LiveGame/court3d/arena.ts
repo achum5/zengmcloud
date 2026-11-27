@@ -3,6 +3,7 @@ import { makeCourtRng } from "../courtRng.ts";
 import type { CrowdFace } from "./crowdFaces.ts";
 import { arenaSpecFor, type ArenaSpec } from "./arenaSpec.ts";
 import { depthOf, project, type Camera } from "./camera.ts";
+import type { Painter } from "./painter.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { anchorOf, drawModel, type ModelPlace } from "./arenaModel.ts";
 import { STANCHION } from "./stanchionModel.ts";
@@ -1473,23 +1474,15 @@ const COOLER_H = 1.55;
 const STAND_H = 1.0;
 const TOWELS_W = 1.6;
 const TOWELS_H = 0.6;
-const drawProp = (
+const paintProp = (
 	ctx: CanvasRenderingContext2D,
-	cam: Camera,
 	c: Courtside,
-	p: Courtside["props"][number],
+	kind: Courtside["props"][number]["kind"],
+	// Its foot on the picture, and px to the foot there.
+	q: { x: number; y: number },
+	k: number,
 ) => {
-	const q = project(cam, p.at);
-	const k = q.k;
-	if (
-		q.x < -4 * k ||
-		q.x > cam.viewW + 4 * k ||
-		q.y < 0 ||
-		q.y > cam.viewH + 6 * k
-	) {
-		return;
-	}
-	if (p.kind === "towels") {
+	if (kind === "towels") {
 		ctx.fillStyle = shade(c.towels, -0.12);
 		ctx.beginPath();
 		ctx.roundRect(
@@ -1547,12 +1540,47 @@ const drawProp = (
 	ctx.fillStyle = "#1c1d22";
 	ctx.fillRect(q.x - 0.06 * k, top + (COOLER_H - 0.38) * k, 0.12 * k, 0.16 * k);
 };
+// Each, painted once for each bench's colors at so many px to the foot - the
+// next power of 2 up from what it is drawn at, so never blown up: as wide and
+// tall as this round its foot (feet).
+const PROP_W = 2;
+const PROP_H = 3.4;
+const propPics = new WeakMap<Courtside, Map<string, HTMLCanvasElement>>();
+const propPicture = (
+	c: Courtside,
+	kind: Courtside["props"][number]["kind"],
+	k: number,
+): HTMLCanvasElement | undefined => {
+	const px = 2 ** Math.min(9, Math.max(3, Math.ceil(Math.log2(k))));
+	let m = propPics.get(c);
+	if (!m) {
+		m = new Map();
+		propPics.set(c, m);
+	}
+	const key = `${kind} ${px}`;
+	let cv = m.get(key);
+	if (!cv) {
+		if (typeof document === "undefined") {
+			return undefined;
+		}
+		cv = document.createElement("canvas");
+		cv.width = Math.ceil(PROP_W * px);
+		cv.height = Math.ceil(PROP_H * px);
+		const g = cv.getContext("2d");
+		if (!g) {
+			return undefined;
+		}
+		paintProp(g, c, kind, { x: cv.width / 2, y: cv.height }, px);
+		m.set(key, cv);
+	}
+	return cv;
+};
 // Each frame: the steps, then the people - the furthest first.
 // (`up`: how far up the building is - this end of it, or the side - 0 to
 // 1: the home fans up first, most of them by the time it is all the way;
 // the rest, some.)
 export const drawCourtside = (
-	ctx: CanvasRenderingContext2D,
+	pr: Painter,
 	cam: Camera,
 	c: Courtside,
 	up: (end: Side | undefined) => number = () => 0,
@@ -1608,7 +1636,6 @@ export const drawCourtside = (
 	}
 	placed.sort((a, b) => b.d - a.d);
 	// (Each step a box: its top and its sides, dark.)
-	ctx.fillStyle = "#121317";
 	for (const s of c.steps) {
 		if (
 			[s.x0, s.x1].some((x) =>
@@ -1617,53 +1644,60 @@ export const drawCourtside = (
 		) {
 			continue;
 		}
-		const corner = (x: number, y: number, z: number) =>
-			project(cam, { x, y, z });
-		const faces: [number, number][][] = [
-			[
-				[s.x0, s.y0],
-				[s.x1, s.y0],
-				[s.x1, s.y1],
-				[s.x0, s.y1],
-			],
+		const top: [number, number][] = [
+			[s.x0, s.y0],
+			[s.x1, s.y0],
+			[s.x1, s.y1],
+			[s.x0, s.y1],
 		];
-		for (const [a, b] of [
-			[faces[0]![0]!, faces[0]![1]!],
-			[faces[0]![1]!, faces[0]![2]!],
-			[faces[0]![2]!, faces[0]![3]!],
-			[faces[0]![3]!, faces[0]![0]!],
-		] as const) {
-			const q = [
-				corner(a[0], a[1], 0),
-				corner(b[0], b[1], 0),
-				corner(b[0], b[1], s.z),
-				corner(a[0], a[1], s.z),
-			];
-			ctx.beginPath();
-			q.forEach((v, i) => (i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)));
-			ctx.fill();
+		for (let i = 0; i < 4; i++) {
+			const a = top[i]!;
+			const b = top[(i + 1) % 4]!;
+			pr.poly(
+				[
+					{ x: a[0], y: a[1], z: 0 },
+					{ x: b[0], y: b[1], z: 0 },
+					{ x: b[0], y: b[1], z: s.z },
+					{ x: a[0], y: a[1], z: s.z },
+				],
+				STEP,
+			);
 		}
-		ctx.beginPath();
-		faces[0]!.forEach(([x, y], i) => {
-			const v = corner(x, y, s.z);
-			if (i) {
-				ctx.lineTo(v.x, v.y);
-			} else {
-				ctx.moveTo(v.x, v.y);
-			}
-		});
-		ctx.fill();
+		pr.poly(
+			top.map(([x, y]) => ({ x, y, z: s.z })),
+			STEP,
+		);
 	}
-	const smoothing = ctx.imageSmoothingEnabled;
-	ctx.imageSmoothingEnabled = true;
 	for (const q of placed) {
 		if (q.prop) {
-			drawProp(ctx, cam, c, q.prop);
+			const k = q.k;
+			const pic = propPicture(c, q.prop.kind, k);
+			if (
+				!pic ||
+				q.x < -4 * k ||
+				q.x > cam.viewW + 4 * k ||
+				q.y < 0 ||
+				q.y > cam.viewH + 6 * k
+			) {
+				continue;
+			}
+			pr.sprite(
+				pic,
+				0,
+				0,
+				pic.width,
+				pic.height,
+				q.x - (PROP_W / 2) * k,
+				q.y - PROP_H * k,
+				PROP_W * k,
+				PROP_H * k,
+				q.d,
+			);
 			continue;
 		}
 		const w = CS_CELL_W * q.k;
 		const h = CS_CELL_H * q.k;
-		ctx.drawImage(
+		pr.sprite(
 			q.stood
 				? q.waving
 					? c.atlasWave
@@ -1679,10 +1713,11 @@ export const drawCourtside = (
 			q.y - h,
 			w,
 			h,
+			q.d,
 		);
 	}
-	ctx.imageSmoothingEnabled = smoothing;
 };
+const STEP = "#121317";
 // Courtside, dressed for a night out.
 const COURTSIDE_DRESS = [
 	"#16171b",
@@ -1741,29 +1776,21 @@ const PHOTO_BOXES: [number, number][] = [
 const BOX_FRONT = 1.2;
 const BOX_BACK = 6.8;
 const BOX_LINE = 2 / 12;
-export const drawPhotoBoxes = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	floor: string,
-) => {
-	ctx.fillStyle =
+export const drawPhotoBoxes = (p: Painter, cam: Camera, floor: string) => {
+	const color =
 		luminance(floor) > 0.22
 			? "rgba(12, 12, 14, 0.85)"
 			: "rgba(236, 236, 232, 0.6)";
-	const quad = (x0: number, y0: number, x1: number, y1: number) => {
-		ctx.beginPath();
-		for (const [x, y] of [
-			[x0, y0],
-			[x1, y0],
-			[x1, y1],
-			[x0, y1],
-		] as const) {
-			const q = project(cam, { x, y, z: 0 });
-			ctx.lineTo(q.x, q.y);
-		}
-		ctx.closePath();
-		ctx.fill();
-	};
+	const quad = (x0: number, y0: number, x1: number, y1: number) =>
+		p.poly(
+			[
+				{ x: x0, y: y0, z: 0 },
+				{ x: x1, y: y0, z: 0 },
+				{ x: x1, y: y1, z: 0 },
+				{ x: x0, y: y1, z: 0 },
+			],
+			color,
+		);
 	for (const end of [0, 1]) {
 		const at = (d: number) => (end === 0 ? -d : COURT_W + d);
 		for (const [y0, y1] of PHOTO_BOXES) {
@@ -3414,21 +3441,27 @@ export const glintsAt = (
 	}
 	return out;
 };
-export const drawGlints = (ctx: CanvasRenderingContext2D, cam: Camera) => {
+export const drawGlints = (p: Painter, cam: Camera) => {
 	const glints = glintsAt(cam);
 	if (glints.length === 0) {
 		return;
 	}
 	const sprite = glintSprite();
-	const alpha = ctx.globalAlpha;
-	const smoothing = ctx.imageSmoothingEnabled;
-	ctx.imageSmoothingEnabled = true;
-	ctx.globalAlpha = alpha * GLINT_ALPHA;
 	for (const g of glints) {
-		ctx.drawImage(sprite, g.x - g.rx, g.y - g.ry, 2 * g.rx, 2 * g.ry);
+		p.sprite(
+			sprite,
+			0,
+			0,
+			sprite.width,
+			sprite.height,
+			g.x - g.rx,
+			g.y - g.ry,
+			2 * g.rx,
+			2 * g.ry,
+			undefined,
+			GLINT_ALPHA,
+		);
 	}
-	ctx.globalAlpha = alpha;
-	ctx.imageSmoothingEnabled = smoothing;
 };
 
 // A soft dark patch on the floor under something: a player's feet, the ball.

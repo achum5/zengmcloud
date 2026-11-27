@@ -7,7 +7,6 @@ import type { PrintLevel } from "../gameBall.ts";
 import { ART_W, type KitArt } from "../kitArt.ts";
 import {
 	MESH_KINDS,
-	MESH_LIGHTS,
 	MESH_REST,
 	meshData,
 	meshLocals,
@@ -49,6 +48,7 @@ const B = BODY_META.bones.length;
 const BONE = 6;
 // (Men drawn at most in a frame: rows of numbers on the card.)
 const ROWS = 64;
+export const MEN_ROWS = ROWS;
 
 const VERT = `#version 300 es
 precision highp float;
@@ -916,6 +916,3 @@ export const drawHands = (
 	gl.uniform1i(u("uN"), man.masses);
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
 };
-
-// (The light, as meshBody.ts lights him - for what else is round.)
-export const LIGHT = MESH_LIGHTS.LIGHT;

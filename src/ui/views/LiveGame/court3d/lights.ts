@@ -212,8 +212,8 @@ export const drawLights = (
 	if (!intro || dark <= 0.002) {
 		return;
 	}
-	const W = ctx.canvas.width;
-	const H = ctx.canvas.height;
+	const W = cam.viewW;
+	const H = cam.viewH;
 	const lc = layerFor(W, H).getContext("2d");
 	if (!lc) {
 		return;
@@ -256,7 +256,10 @@ export const drawLights = (
 	}
 	cutBoards(lc, cam, 0.82);
 	ctx.save();
-	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	// (Where the picture is on what it is drawn on: a sheet of such things,
+	// on the graphics card's - see gpu/floor.ts itemsDraw.)
+	const { e, f } = ctx.getTransform();
+	ctx.setTransform(1, 0, 0, 1, e, f);
 	ctx.drawImage(layerFor(W, H), 0, 0);
 
 	// And the light itself, added: the beam and the warm pool on the floor

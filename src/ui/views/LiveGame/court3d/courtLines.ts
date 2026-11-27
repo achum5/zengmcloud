@@ -299,3 +299,10 @@ export const drawCourtLines = (
 
 // For tests: every line's centerline, in feet.
 export const courtLineStrips = (): readonly Strip[] => STRIPS;
+// Every line's paint, its two edges point for point, and its centerline
+// (for the graphics card's: see gpu/floor.ts).
+export const courtLineOutlines = (): readonly {
+	strip: Strip;
+	left: Pt[];
+	right: Pt[];
+}[] => OUTLINES;
