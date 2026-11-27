@@ -3898,6 +3898,9 @@ export type ScoreBugPiece = {
 	clip?: string;
 	shadow?: string;
 	blend?: string;
+	// For a team's name, region or abbreviation: how many letters fit at its
+	// size - a longer one set smaller to fit ("TIMBERWOLVES").
+	letters?: number;
 	// What's in it turned (degrees - BONUS standing on end), and made bigger
 	// within its box (a logo bigger than its row, cut off by it).
 	rotate?: number;

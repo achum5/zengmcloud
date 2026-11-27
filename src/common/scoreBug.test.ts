@@ -69,6 +69,9 @@ describe("parseScoreBug", () => {
 					italic: true,
 					color: "home0",
 				},
+				// (A name in room for 9 letters; the quarter in words.)
+				{ show: "homeName", x: 10, y: 0, w: 40, h: 10, letters: 9 },
+				{ show: "period", x: 50, y: 0, w: 40, h: 10, text: "{n}{th} QUARTER" },
 			],
 		};
 		assert.deepStrictEqual(parseScoreBug(bug), bug as unknown);

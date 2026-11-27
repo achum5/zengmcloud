@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 668,
+		date: "2026-11-27",
+		text: "3D game: the score bugs file now also has CBS's late-80s look (1987-88 to 1989-90: Sundays, the playoffs and the Finals) and TBS NBA Thursday's (1989-90 to 1994-95). A team name too long for a bug's room is now set smaller to fit.",
+	},
+	{
 		n: 667,
 		date: "2026-11-27",
 		text: "Daily Schedule: the trade deadline box is now just a Trade Deadline Day header over that night's games. The Pass deadline button and the extra line are gone; Play > One day passes the deadline as before.",

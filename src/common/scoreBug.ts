@@ -49,6 +49,7 @@ const PIECE_NUMBERS = new Set([
 	"bonusShift",
 	"sub",
 	"lowAt",
+	"letters",
 ]);
 const PIECE_STRINGS = new Set([
 	"color",
