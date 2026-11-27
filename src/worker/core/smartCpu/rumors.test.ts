@@ -212,3 +212,22 @@ test("an offer of many players is told as a package built around its best two", 
 		"a package built around Player 1 and Player 5, with a first-round pick",
 	);
 });
+
+test("the same kind of story is told a different way each time", async () => {
+	const told: string[] = [];
+	for (const i of [0, 1, 2, 3, 4, 5]) {
+		const p = players[i]!;
+		const rumors = await moment([
+			{
+				stage: "shopped",
+				seller: p.tid,
+				p,
+				buyers: [(p.tid + 1) % 4, (p.tid + 2) % 4],
+			},
+		]);
+		told.push(rumors.at(-1)!.text!);
+	}
+	// The wording alone, its names left out.
+	const wording = told.map((text) => text.replace(/<a [^>]*>[^<]*<\/a>/g, "_"));
+	assert.strictEqual(new Set(wording).size, 6);
+});

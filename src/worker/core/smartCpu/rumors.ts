@@ -157,11 +157,51 @@ const kindOf = (
 	return undefined;
 };
 
-// One of a few ways to say it, in turn: the stories of its kind told so far
-// this season pick it (three alike in a row at the owner's deadline, when a
-// player's id did) - not Math.random, which would move the sim's own stream.
-const variant = <T>(xs: readonly T[], seed: number) =>
-	xs[Math.abs(seed) % xs.length]!;
+// How a story is told: an opening, who says so, then an ending. Openings go
+// in turn through their kind's (seed.kind, the stories of that kind told so
+// far this season), endings in turn against them, so the same pair comes
+// back only after every opening has been used with others; who says so goes
+// down its own list story by story (seed.all), so two in a row never source
+// the same way. Not Math.random, which would move the sim's own stream (the
+// owner, 2026-11-27: "build out the rumors wording so it's never too
+// repetitive").
+type Seed = { kind: number; all: number };
+
+const SOURCES = [
+	"league sources say",
+	"per league sources",
+	"sources say",
+	"a source familiar with the talks said",
+	"according to league sources",
+	"people around the league say",
+	"a league source said",
+	"per sources",
+] as const;
+
+// An opening, with the endings only it can take (ones that finish what it
+// starts), or the kind's own.
+type Line = string | { lead: string; ends: readonly string[] };
+
+const tell = (lines: readonly Line[], ends: readonly string[], seed: Seed) => {
+	const k = Math.abs(seed.kind);
+	const line = lines[k % lines.length]!;
+	const lead = typeof line === "string" ? line : line.lead;
+	const own = typeof line === "string" ? ends : line.ends;
+	const round = Math.floor(k / lines.length);
+	const end = own.length > 0 ? own[(k + round) % own.length]! : "";
+	return `${lead}, ${SOURCES[Math.abs(seed.all) % SOURCES.length]}.${end}`;
+};
+
+// Every pairing of two lists of endings, each list moving on each time.
+const mixed = (firsts: readonly string[], thens: readonly string[]) =>
+	Array.from(
+		{ length: firsts.length * thens.length },
+		(_, i) =>
+			firsts[i % firsts.length]! +
+			thens[(i + Math.floor(i / firsts.length)) % thens.length]!,
+	);
+
+const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const teamInfo = (tid: number) => g.get("teamInfoCache")[tid];
 
@@ -233,90 +273,197 @@ const offerPhrase = (offer: Holdings) => {
 	return listOf([...players.map(playerLink), ...picks]);
 };
 
-const story = (talk: Talk, kind: Kind, seed: number) => {
+const story = (talk: Talk, kind: Kind, seed: Seed) => {
 	const p = playerLink(talk.p);
 	const S = team(talk.seller, true);
 	const s = team(talk.seller);
-	const named = talk.bidders.slice(0, 2).map((tid) => team(tid));
+	const k = talk.bidders.length;
+	const N = numberWord(k);
+	const [first, second] = talk.bidders;
+	// The first two teams after him: "the Bucks and the Magic".
+	const two =
+		first !== undefined && second !== undefined
+			? {
+					start: `${team(first, true)} and ${team(second)}`,
+					mid: `${team(first)} and ${team(second)}`,
+				}
+			: undefined;
+
 	if (kind === "available") {
 		const callers =
-			talk.bidders.length >= 2
-				? ` ${listOf(named)} are among the teams that have called.`
-				: talk.bidders.length === 1
-					? ` ${team(talk.bidders[0]!, true)} have called.`
-					: "";
-		return variant(
+			first === undefined
+				? []
+				: two === undefined
+					? [
+							` ${team(first, true)} have called.`,
+							` ${team(first, true)} have shown interest.`,
+							` ${team(first, true)} have checked in.`,
+						]
+					: k === 2
+						? [
+								` ${two.start} have both called.`,
+								` ${two.start} have both shown interest.`,
+								` ${two.start} have both checked in.`,
+							]
+						: [
+								` ${two.start} are among the teams that have called.`,
+								` ${two.start} are among the teams interested.`,
+								` ${cap(N)} teams have checked in, ${two.mid} among them.`,
+							];
+		return tell(
 			[
-				`${S} are open to moving ${p}, whose contract is up after the season, league sources say.${callers}`,
-				`With his deal running out, ${p} could be on the move. ${S} are listening to offers, per sources.${callers}`,
-				`${S} aren't expected to re-sign ${p}, and are taking calls on him before the deadline, a league source said.${callers}`,
+				`${S} are open to moving ${p}, whose contract is up after the season`,
+				`${S} are listening to offers for ${p}, with his deal running out`,
+				`${S} aren't expected to re-sign ${p}, and are taking calls on him`,
+				`${p} is available, with ${s} not expected to keep him past this season`,
+				`${S} are shopping ${p} before his contract runs out`,
 			],
+			callers,
 			seed,
 		);
 	}
-	if (kind === "interest") {
-		const k = talk.bidders.length;
-		return variant(
+
+	if (kind === "interest" && two) {
+		return tell(
 			k === 2
 				? [
-						`${p} is drawing interest from ${listOf(named)}, league sources say.`,
-						`${team(talk.bidders[0]!, true)} and ${named[1]} have both called ${s} about ${p}, per sources.`,
-						`${S} have heard from ${listOf(named)} on ${p}, a league source said.`,
+						`${p} is drawing interest from ${two.mid}`,
+						`${two.start} have both called ${s} about ${p}`,
+						`${S} have heard from ${two.mid} on ${p}`,
+						`${two.start} have both asked about ${p}`,
+						`${p} has caught the eye of ${two.mid}`,
+						`${two.start} are both interested in ${p}`,
 					]
 				: [
-						`${p} is drawing interest from ${numberWord(k)} teams, ${listOf(named)} among them, league sources say.`,
-						`At least ${numberWord(k)} teams have called ${s} about ${p}, per sources, including ${listOf(named)}.`,
-						`${S} have heard from ${numberWord(k)} teams on ${p}, ${listOf(named)} among them, a league source said.`,
+						`${p} is drawing interest from ${N} teams, ${two.mid} among them`,
+						`At least ${N} teams have called ${s} about ${p}, including ${two.mid}`,
+						`${S} have heard from ${N} teams on ${p}, ${two.mid} among them`,
+						`${p} has become one of the more popular names on the market, with ${team(first!)}, ${team(second!)} and others calling`,
+						`${cap(N)} teams have asked ${s} about ${p}, ${two.mid} among them`,
+						`${two.start} are among ${N} teams that have checked in on ${p}`,
 					],
+			[],
 			seed,
 		);
 	}
-	const B = team(talk.buyer!, true);
-	const b = team(talk.buyer!);
+
+	const buyer = talk.buyer!;
+	const B = team(buyer, true);
+	const b = team(buyer);
 	const offer = talk.offer ? offerPhrase(talk.offer) : "";
-	if (kind === "apart") {
-		return variant(
+
+	if (kind === "apart" || kind === "interest") {
+		return tell(
 			[
-				`${B} have asked ${s} about ${p}, sources say, but the two sides are far apart.`,
-				`${B} checked in with ${s} on ${p}, per league sources. ${S} want a lot more than what's been offered.`,
+				`${B} have asked ${s} about ${p}, but the two sides are far apart`,
+				{
+					lead: `${B} checked in with ${s} on ${p}`,
+					ends: [` ${S} want a lot more than what's been offered.`],
+				},
+				`${B} have shown interest in ${p}, but ${s} aren't close to moving him`,
+				{
+					lead: `${B} made an offer for ${p}`,
+					ends: [` It wasn't close to what ${s} want.`],
+				},
+				{
+					lead: `${B} asked about ${p}`,
+					ends: [` ${S} weren't interested at the price.`],
+				},
+				`${B} have called ${s} about ${p}, without much luck`,
 			],
+			[],
 			seed,
 		);
 	}
+
 	if (kind === "near") {
-		return variant(
+		return tell(
 			[
-				`${S} turned down an offer of ${offer} from ${b} for ${p}, league sources say. The two sides aren't far apart.`,
-				`${B} offered ${offer} for ${p}, per sources. ${S} said no for now, but talks could pick back up.`,
-				`${S} passed on ${teamsOwn(talk.buyer!)} offer of ${offer} for ${p}, a source familiar with the talks said, but the gap is small.`,
+				`${S} turned down an offer of ${offer} from ${b} for ${p}`,
+				`${B} offered ${offer} for ${p}, but ${s} said no`,
+				`${S} passed on ${teamsOwn(buyer)} offer of ${offer} for ${p}`,
+				`${S} said no when ${b} offered ${offer} for ${p}`,
+				`${B} came up just short in a bid for ${p}, offering ${offer}`,
+				`${B} put ${offer} on the table for ${p}, and ${s} said no`,
+			],
+			[
+				" The two sides aren't far apart.",
+				" The gap between them is small.",
+				` ${B} could come back with more.`,
+				" Talks could pick back up.",
+				" The door isn't closed.",
+				"",
 			],
 			seed,
 		);
 	}
+
+	const offerEnds = (lines: readonly string[]) => (offer ? lines : [""]);
+
 	if (talk.stage === "unfair") {
-		return variant(
+		return tell(
 			[
-				`${S} are holding out for more from ${b} for ${p}, according to a source familiar with the talks.${offer ? ` ${B} have offered ${offer}.` : ""}`,
-				`${B} have made a run at ${p}${offer ? `, offering ${offer}` : ""}, league sources say, but ${s} want more.`,
+				`${S} are holding out for more from ${b} for ${p}`,
+				`${B} have made a run at ${p}, but ${s} want more`,
+				`${S} are pushing ${b} to raise their offer for ${p}`,
+				`${B} and ${s} are close on ${p}, but the price isn't settled`,
+				`${S} want a little more from ${b} before they move ${p}`,
 			],
+			offerEnds([
+				` ${B} have offered ${offer}.`,
+				` The offer on the table is ${offer}.`,
+				` So far ${b} have offered ${offer}.`,
+			]),
 			seed,
 		);
 	}
+
 	if (talk.stage === "waits") {
-		return variant(
+		return tell(
 			[
-				`${B} and ${s} have talked about ${p}, sources say, but both sides want to see who else comes available in the coming weeks.`,
-				`${p} has come up in talks between ${b} and ${s}, per league sources. Neither side is in a hurry.`,
+				`${B} and ${s} have talked about ${p}, but both sides want to see who else comes available in the coming weeks`,
+				{
+					lead: `${p} has come up in talks between ${b} and ${s}`,
+					ends: [" Neither side is in a hurry."],
+				},
+				{
+					lead: `${B} and ${s} have kept talks on ${p} going`,
+					ends: [" Neither side is in a rush."],
+				},
+				`${B} and ${s} have the outline of a deal for ${p}, but are waiting to see what else the market brings`,
+				`Talks between ${b} and ${s} on ${p} have slowed, with both sides keeping their options open`,
 			],
+			[],
 			seed,
 		);
 	}
-	return variant(
+
+	const closers = [
+		" Neither side is ready to pull the trigger yet.",
+		" Nothing is done.",
+		" Nothing is final.",
+		"",
+	];
+	return tell(
 		[
-			`${B} and ${s} have discussed a deal for ${p}, league sources say.${offer ? ` The framework has ${offer} going to ${s}.` : ""} Neither side is ready to pull the trigger yet.`,
-			`${B} are in talks with ${s} on ${p}, per sources${offer ? `, with ${offer} on the table` : ""}. Nothing is done.`,
-			`${p} has been the subject of trade talks between ${s} and ${b}, a source familiar with the talks said.${offer ? ` ${B} have put ${offer} on the table.` : ""}`,
+			`${B} and ${s} have discussed a deal for ${p}`,
+			`${B} are in talks with ${s} on ${p}`,
+			`${p} has been the subject of trade talks between ${s} and ${b}`,
+			`${B} and ${s} are deep in talks on ${p}`,
+			`${B} came close to a deal with ${s} for ${p}`,
+			`${S} and ${b} have made progress on a deal for ${p}`,
 		],
+		offer
+			? mixed(
+					[
+						` The framework has ${offer} going to ${s}.`,
+						` ${B} have put ${offer} on the table.`,
+						` ${S} would get ${offer}.`,
+						` The deal being discussed sends ${offer} to ${s}.`,
+					],
+					closers,
+				)
+			: closers,
 		seed,
 	);
 };
@@ -327,21 +474,29 @@ const teamStory = (
 	tid: number,
 	n: number,
 	targets: readonly Player[],
-	seed: number,
+	seed: Seed,
 ) => {
 	const B = team(tid, true);
 	const b = team(tid);
 	const names = listOf(targets.map(playerLink));
+	const H = howMany(n);
 	const when =
 		g.get("phase") === PHASE.REGULAR_SEASON
 			? "ahead of the deadline"
 			: "this offseason";
-	return variant(
+	return tell(
 		[
-			`${B} have been one of the league's most active teams ${when}, checking in on ${howMany(n)} players, ${names} among them, league sources say.`,
-			`${B} are working the phones ${when}, per sources, with calls in on ${howMany(n)} players, including ${names}.`,
-			`${names} ${targets.length > 1 ? "are" : "is"} among the players ${b} have asked about ${when}, a league source said. They have called on ${howMany(n)} players in all.`,
+			`${B} have been one of the league's most active teams ${when}, checking in on ${H} players, ${names} among them`,
+			`${B} are working the phones ${when}, with calls in on ${H} players, including ${names}`,
+			{
+				lead: `${names} ${targets.length > 1 ? "are" : "is"} among the players ${b} have asked about ${when}`,
+				ends: [` They have called on ${H} players in all.`],
+			},
+			`${B} have checked in on ${H} players ${when}, ${names} among them`,
+			`Few teams have been busier than ${b} ${when}. They have asked about ${H} players, including ${names}`,
+			`${B} have cast a wide net ${when}, asking about ${H} players, ${names} among them`,
 		],
+		[],
 		seed,
 	);
 };
@@ -429,7 +584,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		pids: number[];
 		weight: number;
 		rumor: NonNullable<EventBBGM["rumor"]> & { kind: Kind | "team" };
-		text: (seed: number) => string;
+		text: (seed: Seed) => string;
 	};
 	const stories: Story[] = [...now.values()]
 		.filter((talk) => still(talk.p, talk.seller))
@@ -532,11 +687,11 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		for (const tid of tids) {
 			teamsTold.add(tid);
 		}
-		const seed = toldOfKind.get(rumor.kind) ?? 0;
-		toldOfKind.set(rumor.kind, seed + 1);
+		const ofKind = toldOfKind.get(rumor.kind) ?? 0;
+		toldOfKind.set(rumor.kind, ofKind + 1);
 		await logEvent({
 			type: "rumor",
-			text: text(seed),
+			text: text({ kind: ofKind, all: told.length + n }),
 			pids,
 			tids,
 			score:
