@@ -8,7 +8,6 @@ import {
 	holdOf,
 	poseOf,
 	cameraCuts,
-	evalPlayer,
 	floorSpotOf,
 	lastCut,
 	offenseAt,
@@ -16,6 +15,7 @@ import {
 	tensionAt,
 	type Blend,
 	type PlayerState,
+	whereIs,
 } from "./evaluate.ts";
 import { shade, type Look } from "./figure.ts";
 import {
@@ -508,7 +508,7 @@ const wipesOf = (tl: CourtTimeline): [Wipe[], Wipe[]] => {
 	for (const tr of tl.tracks.values()) {
 		for (const a of tr.acts) {
 			if (FELL.has(a.anim)) {
-				const p = evalPlayer(tl, tr.pid, (a.t0 + a.t1) / 2);
+				const p = whereIs(tl, tr.pid, (a.t0 + a.t1) / 2);
 				if (p.x > 0 && p.x < COURT_W && p.y > 0 && p.y < COURT_H) {
 					downs.push({ t: a.t0, at: { x: p.x, y: p.y } });
 				}
@@ -896,16 +896,13 @@ const ballSpot = (tl: CourtTimeline, t: number): Pt => {
 	}
 	const end = (e: BallEnd, at: number): Pt => {
 		if ("pid" in e) {
-			const p = evalPlayer(tl, e.pid, at);
-			return { x: p.x, y: p.y };
+			return whereIs(tl, e.pid, at);
 		}
 		return { x: e.x, y: e.y };
 	};
 	switch (seg.kind) {
-		case "hold": {
-			const p = evalPlayer(tl, seg.pid, t);
-			return { x: p.x, y: p.y };
-		}
+		case "hold":
+			return whereIs(tl, seg.pid, t);
 		case "rest":
 			return { x: seg.at.x, y: seg.at.y };
 		case "fly":
@@ -939,10 +936,7 @@ const shotFrom = (tl: CourtTimeline, t: number): Pt | undefined => {
 			(tl.ball[i + 1]?.kind === "path" || Math.abs(seg.to.z - RIM_Z) < 1.6)
 		) {
 			return "pid" in seg.from
-				? (() => {
-						const p = evalPlayer(tl, seg.from.pid, seg.t0);
-						return { x: p.x, y: p.y };
-					})()
+				? whereIs(tl, seg.from.pid, seg.t0)
 				: { x: seg.from.x, y: seg.from.y };
 		}
 	}

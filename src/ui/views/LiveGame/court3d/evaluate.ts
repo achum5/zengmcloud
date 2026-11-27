@@ -1166,6 +1166,21 @@ const spotAt = (tr: Track, t: number, heading = true): Spot => {
 	}
 	return out;
 };
+// Where he is on the floor at t, as evalPlayer has him - only that, not
+// the rest of him: for whoever only follows where he goes (the officials
+// watching the ball, a step at a time - see crew.ts).
+export const whereIs = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+): { x: number; y: number } => {
+	const tr = tl.tracks.get(pid);
+	if (!tr) {
+		return { x: 0, y: 0 };
+	}
+	const here = spotAt(tr, t);
+	return { x: here.x, y: here.y };
+};
 // A FRAME'S SPOTS. Where each man is at each moment asked, kept while one
 // frame is worked out (see momentAt): asked the same of the same man again
 // and again in one frame - his lean, his drive, his gait, which way the
@@ -9718,6 +9733,13 @@ type Faces = { segs: BallSeg[]; inn: number[]; off: number[] };
 const facesMemo = new WeakMap<CourtTimeline, Faces>();
 // Before anybody has had it.
 const FIRST_FACE = 0.6;
+// The way he faces then, as playerAt has it - only that, not the rest of
+// him (his arms drawn in off the men near him, his legs, where he looks):
+// worked out for each time the ball changes hands since the opening tip.
+const facingAt = (tl: CourtTimeline, pid: number, t: number): number => {
+	const tr = tl.tracks.get(pid);
+	return tr ? (spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t)) : 0;
+};
 const facesTo = (tl: CourtTimeline, i: number): Faces => {
 	let f = facesMemo.get(tl);
 	if (!f) {
@@ -9738,16 +9760,29 @@ const facesTo = (tl: CourtTimeline, i: number): Faces => {
 		const inn = !prev
 			? FIRST_FACE
 			: prev.kind === "hold"
-				? f.off[j - 1]! + playerAt(tl, prev.pid, seg.t0).yaw
+				? f.off[j - 1]! + facingAt(tl, prev.pid, seg.t0)
 				: f.inn[j - 1]!;
 		f.segs[j] = seg;
 		f.inn[j] = inn;
 		f.off[j] =
-			seg.kind === "hold"
-				? wrapAngle(inn - playerAt(tl, seg.pid, seg.t0).yaw)
-				: 0;
+			seg.kind === "hold" ? wrapAngle(inn - facingAt(tl, seg.pid, seg.t0)) : 0;
 	}
 	return f;
+};
+
+// A LITTLE MORE OF IT EACH FRAME: on through the pieces after those worked
+// out, for about `ms` - so a jump far on (onto the next of the key plays)
+// finds them worked out already, not all of them since the last in one
+// frame.
+const WARM_FACES = 4;
+export const warmFaces = (tl: CourtTimeline, ms: number): void => {
+	const until = performance.now() + ms;
+	const n = tl.ball.length;
+	let i = facesMemo.get(tl)?.segs.length ?? 0;
+	while (i < n && performance.now() < until) {
+		i = Math.min(n, i + WARM_FACES);
+		facesTo(tl, i - 1);
+	}
 };
 
 // THE SAME GAME, FURTHER ON (see parts.ts): the way the ball faced through

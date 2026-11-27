@@ -163,7 +163,7 @@ import { physiqueOf } from "./ratings.ts";
 import { glReport } from "./sculptGl.ts";
 import { getCamera } from "./cameraSetting.ts";
 import { registerCaptureExtra } from "../../../util/syncDebugStore.ts";
-import { carryFaces, offenseAt, showWhole } from "./evaluate.ts";
+import { carryFaces, offenseAt, showWhole, warmFaces } from "./evaluate.ts";
 import { usePacing } from "./pacing.ts";
 import { shotSpots } from "./shotSpots.ts";
 import type { ShotSpot } from "../gamecast/shots.ts";
@@ -2030,6 +2030,11 @@ const Court3D = ({
 							: formatGameClock(game);
 				shotText = shot === undefined ? "" : String(Math.ceil(shot - 1e-6));
 				bugShot = shot === undefined ? "" : shotClockText(shot);
+			}
+			// (The way the ball faces worked out a little ahead, each frame -
+			// see warmFaces.)
+			if (!staging) {
+				warmFaces(tl, 1);
 			}
 			const pt = paintRef.current;
 			const cr = crewRef.current;
