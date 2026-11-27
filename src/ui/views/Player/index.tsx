@@ -199,21 +199,6 @@ const Player2 = ({
 				willingToSign={willingToSign}
 			/>
 
-			{rumors.length > 0 ? (
-				<HideableSection title="Rumors">
-					{rumors.map((e) => (
-						<p key={e.eid}>
-							{e.date !== undefined ? (
-								<>
-									<b>{formatGameDate(e.date, "monthDay")}</b>:{" "}
-								</>
-							) : null}
-							<SafeHtml dirty={e.text} />
-						</p>
-					))}
-				</HideableSection>
-			) : null}
-
 			{statTables.map(({ key, name, onlyShowIf, stats, superCols }, i) => (
 				<StatsTable
 					awardsBySeason={awardsBySeason}
@@ -477,6 +462,20 @@ const Player2 = ({
 						})}
 						{events.length === 0 ? <p>None</p> : null}
 					</HideableSection>
+					{rumors.length > 0 ? (
+						<HideableSection title="Rumors">
+							{rumors.map((e) => (
+								<p key={e.eid}>
+									{e.date !== undefined ? (
+										<>
+											<b>{formatGameDate(e.date, "withYear")}</b>:{" "}
+										</>
+									) : null}
+									<SafeHtml dirty={e.text} />
+								</p>
+							))}
+						</HideableSection>
+					) : null}
 				</div>
 			</div>
 
