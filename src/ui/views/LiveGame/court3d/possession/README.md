@@ -1212,6 +1212,32 @@ went 10 to 23, none of it at a ball screen - two men holding a double
 pin-down, a holder waiting on his screen - which come and go with which
 plays the game happens to run (5 a game on earlier tapes).
 
+### A blitz that looks like one
+
+Called, a blitz was hardly to be seen: the two of them were sent to where
+the handler would finish the step, and got there when he did, a second or
+two after the screen - two on him only 1 time in 4 as he came off it, the
+screener's man sat back in half of them like a drop. Now (`trapLegs`,
+`trapRide`, the new sim only) they are on him as soon after he is by the
+screen as each can get there - the screener's man up in front of him on
+the rim side, the man on the ball on his back hip - and ride with him, a
+spot every quarter second, without pulling up at each one, till he gets
+rid of it or 0.8 s is up; then back to their men.
+
+| Blitz, 8 real-sim games | Before | Now |
+| --- | --- | --- |
+| Both within 5.5 ft of him as he comes by the screen | 15% | 48% |
+| ... 0.3 s on / 0.7 s on | 22 / 27% | 53 / 40% |
+| Screener's man 4 ft or more deeper than the screen | 49% | 26% |
+| Two on him at all in the 1.5 s after (4 games) | 62% | 94% |
+| ... for how long, median (4 games) | 0.6 s | 0.9 s |
+
+Tape, the same 4 games: on the four men in a blitz, through it, 2 flags
+in 35 blitzes (two quick turns riding him) against 1 in 37. Over the
+games, all flags 291 against 258 - jerky speed-ups 199 against 166, as
+master had them before 658 (199): the count swings that much with which
+plays the games run, none of it near a blitz.
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it

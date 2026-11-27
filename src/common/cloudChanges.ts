@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 659,
+		date: "2026-11-27",
+		text: "3D game, New sim: when the defense traps a pick-and-roll, both defenders now jump the ball handler as he comes off the screen and stay on him for a beat. Before, they drifted over late and the trap was hard to see.",
+	},
+	{
 		n: 658,
 		date: "2026-11-27",
 		text: "3D game, New sim: how the defense plays a pick-and-roll now comes from the players in it. A slow center drops back, players of a size switch, and star ball handlers get trapped now and then. Before, the coverage gave away who was about to take the shot.",

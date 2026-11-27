@@ -2901,6 +2901,26 @@ const COVER_ODDS: Record<Coverage, number> = {
 	chase: 0.45,
 };
 const COVER_ALIKE = 0.55;
+// A blitz under the new sim (see trapLegs): the screen he comes by within
+// TRAP_NEAR feet of, looked for TRAP_LOOK ms into the step; the two on him
+// from TRAP_MEET ms after he is by it - later, up to TRAP_WAIT ms more, if
+// they cannot be there by then, getting going in TRAP_SET ms and coming at
+// TRAP_PACE feet a second - and with him TRAP_HOLD ms more at most, a spot
+// every TRAP_LEG ms: the screener's man TRAP_FRONT ahead of him and
+// TRAP_SIDE to the rim side, the man on the ball TRAP_BACK behind and
+// TRAP_HIP the other way (feet).
+const TRAP_NEAR = 7;
+const TRAP_LOOK = 2500;
+const TRAP_MEET = 100;
+const TRAP_WAIT = 600;
+const TRAP_SET = 150;
+const TRAP_PACE = 12;
+const TRAP_HOLD = 800;
+const TRAP_LEG = 250;
+const TRAP_FRONT = 1.6;
+const TRAP_SIDE = 2.2;
+const TRAP_BACK = 2.2;
+const TRAP_HIP = 1;
 // The screener's own man, as the screen comes: in a drop, back this far
 // short of the screen (feet, toward the rim) - at the level of the foul
 // line out at the top, no deeper than DROP_DEEP from the rim nor closer
@@ -11001,6 +11021,137 @@ class Director {
 		return "drop";
 	}
 
+	// Under the new sim, a blitz: the two of them on the handler as he comes
+	// off the screen - the screener's man up in front of him on the rim side,
+	// the man on the ball on his back hip - and with him for a beat, till he
+	// gets rid of it or is past them; then back to their men. (Sent to where
+	// he finishes the step instead, they got there as he did, a second or two
+	// after the screen: a quarter of the time two on him at all.) Their spots
+	// through it, in order, or nothing if he never comes by the screen with
+	// it in this step.
+	private trapLegs(
+		sc: NonNullable<Running["screen"]>,
+		sd: number,
+		ud: number,
+		t0: number,
+		t1: number,
+		rim: Pt,
+	): Map<number, { at: Pt; by: number }[]> | undefined {
+		const user = sc.user;
+		const scr = sc.screeners[0]!;
+		const at = (pid: number, t: number) => this.posAt(pid, t, false, true);
+		let off: number | undefined;
+		let near = TRAP_NEAR;
+		const end = Math.min(t1, t0 + TRAP_LOOK);
+		for (let t = Math.max(t0, sc.set - 200); t <= end; t += 50) {
+			const g = dist(at(user, t), at(scr, t));
+			if (g < near) {
+				near = g;
+				off = t;
+			}
+		}
+		const has = (t: number) => {
+			const seg = this.ball.findLast((b) => b.t0 <= t);
+			return seg?.kind === "hold" && seg.pid === user;
+		};
+		if (off === undefined || sd === ud || !has(off)) {
+			return undefined;
+		}
+		// Where the two of them want to be on him at a moment.
+		const spots = (t: number): [Pt, Pt] => {
+			const H = at(user, t);
+			const N = at(user, t + TRAP_LEG);
+			// The way he is going (stood, away from the screen), and the side
+			// of it the rim is on.
+			const h = dist(H, N) > 0.4 ? unitVec(H, N) : unitVec(at(scr, t), H);
+			const ur = unitVec(H, rim);
+			const along = ur.x * h.x + ur.y * h.y;
+			let n = { x: ur.x - along * h.x, y: ur.y - along * h.y };
+			const nl = Math.hypot(n.x, n.y);
+			n = nl > 0.2 ? { x: n.x / nl, y: n.y / nl } : { x: -h.y, y: h.x };
+			return [
+				clampPt({
+					x: H.x + h.x * TRAP_FRONT + n.x * TRAP_SIDE,
+					y: H.y + h.y * TRAP_FRONT + n.y * TRAP_SIDE,
+				}),
+				clampPt({
+					x: H.x - h.x * TRAP_BACK - n.x * TRAP_HIP,
+					y: H.y - h.y * TRAP_BACK - n.y * TRAP_HIP,
+				}),
+			];
+		};
+		const gone = this.ball.find(
+			(b) => b.t0 > off && !(b.kind === "hold" && b.pid === user),
+		);
+		const legs = new Map<number, { at: Pt; by: number }[]>();
+		for (const [j, d] of [sd, ud].entries()) {
+			// On him as soon after he is by it as he can be there, from where
+			// he is when he is free to go.
+			const from = Math.max(t0 + 80, this.free.get(d) ?? 0) + TRAP_SET;
+			const can = (t: number) =>
+				from + (1000 * dist(this.posOf(d), spots(t)[j]!)) / TRAP_PACE <= t;
+			let meet = off + TRAP_MEET + TRAP_WAIT;
+			for (let t = off + TRAP_MEET; t < meet; t += 50) {
+				if (can(t)) {
+					meet = t;
+				}
+			}
+			// (A beat at least, got there late - unless it has gone.)
+			const last = Math.max(
+				meet,
+				Math.min(
+					Math.max(off + TRAP_MEET + TRAP_HOLD, meet + 2 * TRAP_LEG),
+					gone ? gone.t0 + 100 : Infinity,
+				),
+			);
+			const L: { at: Pt; by: number }[] = [];
+			for (let t = meet; ; t = Math.min(t + TRAP_LEG, last)) {
+				L.push({ at: spots(t)[j]!, by: t });
+				if (t >= last) {
+					break;
+				}
+			}
+			legs.set(d, L);
+		}
+		return legs;
+	}
+
+	// A defender through his spots in a trap (see trapLegs), each by its time
+	// as near as he can - going straight on from one into the next, not
+	// pulled up at every one of them.
+	private trapRide(
+		d: number,
+		legs: { at: Pt; by: number }[],
+		from: number,
+		team: Side,
+	) {
+		for (const [i, leg] of legs.entries()) {
+			const start = Math.max(from, this.free.get(d) ?? 0);
+			const dd = dist(this.posOf(d), leg.at);
+			if (dd < 0.3) {
+				continue;
+			}
+			const speed = Math.min(
+				SPRINT,
+				Math.max(4, dd / Math.max(0.2, (leg.by - start) / 1000)),
+			);
+			const next = legs[i + 1];
+			const onto = next
+				? Math.min(speed, (1000 * dist(leg.at, next.at)) / TRAP_LEG)
+				: 0;
+			const slide = dd < 14 && speed <= 17;
+			this.go(
+				d,
+				leg.at,
+				start,
+				speed,
+				slide ? "slide" : "run",
+				slide ? (-attackDir(team) as 1 | -1) : undefined,
+				{ onto },
+			);
+		}
+	}
+
 	// Where a defender wants to be, by the numbers from player tracking: on the
 	// ball, between his man and the rim, tighter the nearer the rim; off it,
 	// sagged toward the rim and shaded toward the ball, more the farther his
@@ -11268,6 +11419,8 @@ class Director {
 			}
 		}
 		const via = new Map<number, { at: Pt; by: number }>();
+		// (And on from there, spot by spot: a blitz riding the handler.)
+		const ride = new Map<number, { at: Pt; by: number }[]>();
 		const late = new Map<number, number>();
 		const chase = new Map<number, { man: number; at: Pt; from: number }>();
 		if (sc) {
@@ -11288,21 +11441,32 @@ class Director {
 						by: t0 + 450,
 					});
 				} else if (sc.coverage === "blitz" && ud !== undefined) {
-					const ur = unitVec(U, rim);
-					special(
-						sd,
-						clampPt({
-							x: U.x + ur.x * 2 - ur.y * 2,
-							y: U.y + ur.y * 2 + ur.x * 2,
-						}),
-					);
-					special(
-						ud,
-						clampPt({
-							x: U.x + ur.x * 2 + ur.y * 2,
-							y: U.y + ur.y * 2 - ur.x * 2,
-						}),
-					);
+					// (Under the new sim, on him as he comes off it.)
+					const trap = this.possession
+						? this.trapLegs(sc, sd, ud, t0, t1, rim)
+						: undefined;
+					if (trap) {
+						for (const [d, legs] of trap) {
+							via.set(d, legs[0]!);
+							ride.set(d, legs);
+						}
+					} else {
+						const ur = unitVec(U, rim);
+						special(
+							sd,
+							clampPt({
+								x: U.x + ur.x * 2 - ur.y * 2,
+								y: U.y + ur.y * 2 + ur.x * 2,
+							}),
+						);
+						special(
+							ud,
+							clampPt({
+								x: U.x + ur.x * 2 + ur.y * 2,
+								y: U.y + ur.y * 2 - ur.x * 2,
+							}),
+						);
+					}
 				}
 			}
 			if (sc.coverage === "chase" && ud !== undefined && sc.user !== holder) {
@@ -11656,7 +11820,10 @@ class Director {
 		}
 		for (const [d, P] of targets) {
 			const v = via.get(d);
-			if (v) {
+			const rd = ride.get(d);
+			if (rd) {
+				this.trapRide(d, rd, t0 + 80, team);
+			} else if (v) {
 				this.shadow(d, v.at, t0 + 80, v.by, team);
 			}
 			const st = stunts.get(d);
