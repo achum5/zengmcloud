@@ -2,11 +2,12 @@ import type { CourtTimeline } from "../director.ts";
 import type { Bank, BedLevel, Slot } from "./bank.ts";
 import { cuesOf, firstCueAt, squeaksIn, type Cue } from "./cues.ts";
 import { crowdOf, levelAt, type CrowdNight, type Reaction } from "./crowd.ts";
+import { MUSIC_KINDS, musicAt, type MusicLevels } from "./music.ts";
 
 // THE GAME'S SOUND, PLAYED: each sound on the floor and each roar of the
 // crowd put on the device's own sound clock just ahead of the picture (see
-// cues.ts and crowd.ts for what and when), and the crowd's level set every
-// frame. It runs on the device's audio thread; the page only looks up the
+// cues.ts and crowd.ts for what and when), and the crowd's level and the
+// building's music (music.ts) set every frame. It runs on the device's audio thread; the page only looks up the
 // next tenth of a second of the timeline each frame.
 
 // How far ahead of the picture each sound is put down (ms of real time).
@@ -45,6 +46,9 @@ const MIX: Partial<Record<Slot, number>> = {
 	ooh: 0.55,
 	boo: 0.55,
 	applause: 0.55,
+	musicBreak: 0.45,
+	musicDead: 0.35,
+	musicDefense: 0.3,
 };
 // The road fans: a few of them, off in a corner.
 const ROAD_GAIN = 0.35;
@@ -100,7 +104,9 @@ export class GameSound {
 	private readonly floor: GainNode;
 	private readonly crowd: GainNode;
 	private readonly bedGains: GainNode[];
-	private bedSources: AudioBufferSourceNode[] = [];
+	private readonly music: GainNode;
+	private readonly musicGains: GainNode[];
+	private loops: AudioBufferSourceNode[] = [];
 	private bank: Bank | undefined;
 	private readonly night: CrowdNight;
 	private tl: CourtTimeline | undefined;
@@ -113,6 +119,8 @@ export class GameSound {
 	private camX = 47;
 	private level = -1;
 	private levelSet = -Infinity;
+	private tune: MusicLevels | undefined;
+	private tuneSet = -Infinity;
 	private dead = false;
 
 	constructor(ctx: BaseAudioContext, dest: AudioNode, night: CrowdNight) {
@@ -131,26 +139,40 @@ export class GameSound {
 			g.connect(this.crowd);
 			return g;
 		});
+		this.music = ctx.createGain();
+		this.music.connect(this.out);
+		this.musicGains = MUSIC_KINDS.map(() => {
+			const g = ctx.createGain();
+			g.gain.value = 0;
+			g.connect(this.music);
+			return g;
+		});
 	}
 
-	// The sounds, once they are here: the crowd's layers going from now on,
-	// each from its own point in its loop.
+	// The sounds, once they are here: the crowd's layers and the building's
+	// music going from now on (silent till wanted), each from its own point
+	// in its loop.
 	setBank(bank: Bank) {
 		if (this.dead) {
 			return;
 		}
 		this.bank = bank;
-		for (const [j, level] of BEDS.entries()) {
-			const buf = bank.get(`bed${level}`)?.[0];
+		const loop = (buf: AudioBuffer | undefined, into: GainNode, k: number) => {
 			if (!buf) {
-				continue;
+				return;
 			}
 			const src = this.ctx.createBufferSource();
 			src.buffer = buf;
 			src.loop = true;
-			src.connect(this.bedGains[j]!);
-			src.start(0, (j * 0.37 * buf.duration) % buf.duration);
-			this.bedSources.push(src);
+			src.connect(into);
+			src.start(0, (k * 0.37 * buf.duration) % buf.duration);
+			this.loops.push(src);
+		};
+		for (const [j, level] of BEDS.entries()) {
+			loop(bank.get(`bed${level}`)?.[0], this.bedGains[j]!, j);
+		}
+		for (const [j, kind] of MUSIC_KINDS.entries()) {
+			loop(bank.get(kind)?.[0], this.musicGains[j]!, j);
 		}
 	}
 
@@ -308,6 +330,29 @@ export class GameSound {
 		}
 	}
 
+	private musicTo(tune: MusicLevels, when: number, ease: boolean) {
+		const was = this.tune;
+		if (
+			ease &&
+			was &&
+			MUSIC_KINDS.every((k) => Math.abs(tune[k] - was[k]) < 0.01) &&
+			when - this.tuneSet < 0.25
+		) {
+			return;
+		}
+		this.tune = tune;
+		this.tuneSet = when;
+		for (const [j, kind] of MUSIC_KINDS.entries()) {
+			const g = this.musicGains[j]!.gain;
+			const to = (MIX[kind] ?? 0.4) * tune[kind];
+			if (ease) {
+				g.setTargetAtTime(to, when, CROWD_EASE);
+			} else {
+				g.linearRampToValueAtTime(to, when);
+			}
+		}
+	}
+
 	// ONE FRAME, as the picture is drawn.
 	tick(f: SoundFrame) {
 		if (this.dead || !this.bank) {
@@ -320,8 +365,9 @@ export class GameSound {
 			this.tl = tl;
 			this.jumpTo(tl, t);
 		}
-		// The crowd as the moment has it, whatever else.
+		// The crowd and the music as the moment has them, whatever else.
 		this.crowdTo(tl.warmup ? 0.12 : levelAt(tl, t, this.night), now, true);
+		this.musicTo(musicAt(tl, t), now, true);
 		if (!f.on || rate <= 0) {
 			this.out.gain.setTargetAtTime(f.on ? 1 : 0, now, 0.1);
 			this.jumpTo(tl, t);
@@ -368,6 +414,7 @@ export class GameSound {
 				(t - t0) / 1000,
 				false,
 			);
+			this.musicTo(musicAt(tl, t), (t - t0) / 1000, false);
 		}
 		this.putDown(tl, t0, t1, t0, 0, 1, camAt);
 	}
@@ -378,7 +425,7 @@ export class GameSound {
 		this.out.gain.cancelScheduledValues(now);
 		this.out.gain.setTargetAtTime(0, now, 0.05);
 		const out = this.out;
-		const sources = this.bedSources;
+		const sources = this.loops;
 		setTimeout(() => {
 			for (const s of sources) {
 				try {

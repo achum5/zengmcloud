@@ -1,5 +1,6 @@
 import type { CueKind } from "./cues.ts";
 import type { ReactionKind } from "./crowd.ts";
+import type { MusicKind } from "./music.ts";
 
 // THE SOUNDS THEMSELVES: real recordings (free to use - CC0 - and kept in
 // public/audio/game), a few takes of each so nothing repeats exactly; and,
@@ -13,7 +14,9 @@ export type Slot =
 	// The crowd's sound at four levels: a murmur, into it, loud, the
 	// building shaking (see engine.ts).
 	| `bed${BedLevel}`
-	| ReactionKind;
+	| ReactionKind
+	// The building's music (see music.ts).
+	| MusicKind;
 
 export type Bank = Map<Slot, AudioBuffer[]>;
 
@@ -43,6 +46,9 @@ const SLOTS: Slot[] = [
 	"ooh",
 	"boo",
 	"applause",
+	"musicBreak",
+	"musicDead",
+	"musicDefense",
 ];
 
 // STAND-INS: noise and tones shaped roughly like the real thing.
@@ -354,6 +360,83 @@ const made = (sr: number, slot: Slot, take: number): Float32Array => {
 				shape(band(pink(n(1.8), seed), sr, 300, 1.5), sr, 0.2, 0.8, 0.4),
 				0.6,
 			);
+		case "musicBreak":
+		case "musicDead":
+		case "musicDefense": {
+			// (A drum loop: kick, clap, hats - stomp, stomp, clap for the
+			// defense - with a bass line under the break's.)
+			const bpm = slot === "musicDefense" ? 84 : 100;
+			const beat = 60 / bpm;
+			const len = beat * 16;
+			const x = new Float32Array(n(len));
+			const hit = (at: number, part: Float32Array, k: number) => {
+				const o = Math.floor(at * sr);
+				for (let i = 0; i < part.length && o + i < x.length; i++) {
+					x[o + i]! += part[i]! * k;
+				}
+			};
+			const kick = new Float32Array(n(0.25));
+			let ph = 0;
+			for (let i = 0; i < kick.length; i++) {
+				const s = i / sr;
+				ph += (2 * Math.PI * (48 + 90 * Math.exp(-s / 0.03))) / sr;
+				kick[i] = Math.sin(ph) * Math.exp(-s / 0.12);
+			}
+			const clap = shape(
+				band(white(n(0.2), seed), sr, 1500, 0.9),
+				sr,
+				0.001,
+				0.01,
+				0.06,
+			);
+			const hat = shape(
+				band(white(n(0.05), seed + 3), sr, 8000, 1.2),
+				sr,
+				0.0005,
+				0,
+				0.012,
+			);
+			for (let b = 0; b < 16; b++) {
+				const at = b * beat;
+				if (slot === "musicDefense") {
+					if (b % 4 !== 3) {
+						hit(at, kick, 1);
+					} else {
+						hit(at, clap, 0.9);
+					}
+					continue;
+				}
+				if (b % 2 === 0) {
+					hit(at, kick, 1);
+				} else {
+					hit(at, clap, 0.7);
+				}
+				hit(at, hat, 0.3);
+				hit(at + beat / 2, hat, 0.25);
+			}
+			if (slot === "musicBreak") {
+				const roots = [55, 55, 65.4, 49];
+				for (let i = 0; i < x.length; i++) {
+					const s = i / sr;
+					const bar = Math.floor(s / (beat * 4)) % 4;
+					const u = (s % (beat / 2)) / (beat / 2);
+					x[i]! +=
+						0.35 * Math.sin(2 * Math.PI * roots[bar]! * s) * Math.exp(-u * 3);
+				}
+			} else if (slot === "musicDead") {
+				const chord = [261.6, 329.6, 392];
+				for (let i = 0; i < x.length; i++) {
+					const s = i / sr;
+					for (const f of chord) {
+						x[i]! +=
+							0.08 *
+							Math.sin(2 * Math.PI * f * s) *
+							(0.6 + 0.4 * Math.sin(2 * Math.PI * 5 * s));
+					}
+				}
+			}
+			return normal(x, 0.6);
+		}
 		case "applause": {
 			const x = new Float32Array(n(3));
 			const r = rngOf(seed);
@@ -383,7 +466,10 @@ const standIns = async (ctx: BaseAudioContext, bank: Bank, slots: Slot[]) => {
 	const sr = ctx.sampleRate;
 	for (const slot of slots) {
 		await new Promise((go) => setTimeout(go, 0));
-		const takes = slot.startsWith("bed") || slot === "horn" ? 1 : TAKES;
+		const takes =
+			slot.startsWith("bed") || slot.startsWith("music") || slot === "horn"
+				? 1
+				: TAKES;
 		const bufs: AudioBuffer[] = [];
 		for (let k = 0; k < takes; k++) {
 			const data = made(sr, slot, k);
