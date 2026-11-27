@@ -122,6 +122,23 @@ const CUSHION: readonly (readonly [number, number])[] = [
 	[40, 8.5],
 	[55, 11],
 ];
+// BRINGING IT UP. The man with it is picked up about half court, not
+// chased back to the far baseline - and the rest wait back there too, not
+// stood on their men all the way up the floor: by how far from their rim
+// the ball is (feet, along the floor), how far from it any of them goes at
+// the most. (Real NBA tracking, medians: the ball's nearest defender 28 ft up
+// with it 35-40 ft up, 37 with it 60-65, 40 past that; off the ball, with
+// it 60-80 ft up, a man near it is given 29-37 ft, his defender back at
+// 37-39. Ours were 6-9 ft off every man all the way back.)
+const PICK_UP: readonly (readonly [number, number])[] = [
+	[37.5, 28.2],
+	[42.5, 29.7],
+	[47.5, 31.6],
+	[52.5, 33.5],
+	[57.5, 35.3],
+	[62.5, 37],
+	[67.5, 40.2],
+];
 // Tighter on a shooter at the range he is at, looser on a man who can get by
 // him, tighter the quicker the defender: each this much either way of the
 // middle man's, at the most.
@@ -186,9 +203,23 @@ export const guardSpot = (
 	}
 	const ux = rx / out;
 	const uy = ry / out;
+	// (Up the floor, back off him to where they pick it up.)
+	const B = ball ?? man;
+	const line = along(PICK_UP, Math.abs(B.x - rim.x));
+	const back = (p: Pt): Pt => {
+		const over = Math.abs(p.x - rim.x) - line;
+		if (Math.abs(B.x - rim.x) <= PICK_UP[0]![0] || over <= 0) {
+			return inside(p);
+		}
+		const k = Math.min(
+			over / Math.max(0.3, Math.abs(ux)),
+			Math.max(0, Math.hypot(rim.x - p.x, rim.y - p.y) - 1),
+		);
+		return inside({ x: p.x + ux * k, y: p.y + uy * k });
+	};
 	if (on || !ball) {
 		const c = Math.min(out - 1, cushionOf(out, threat, d));
-		return inside({ x: man.x + ux * c, y: man.y + uy * c });
+		return back({ x: man.x + ux * c, y: man.y + uy * c });
 	}
 	const far = Math.hypot(ball.x - man.x, ball.y - man.y);
 	const sag = Math.min(
@@ -202,7 +233,7 @@ export const guardSpot = (
 	const py = ux;
 	const side = (ball.x - man.x) * px + (ball.y - man.y) * py >= 0 ? 1 : -1;
 	const shade = along(SHADE, far) * side;
-	return inside({
+	return back({
 		x: man.x + ux * sag + px * shade,
 		y: man.y + uy * sag + py * shade,
 	});
@@ -223,6 +254,19 @@ export const seenOf = (s: Seen, d: Defender): Seen => {
 	return { x: s.x + s.vx * k, y: s.y + s.vy * k, vx: s.vx, vy: s.vy };
 };
 
+// DRIVEN AT: his man with it going at the rim at a drive's pace, he does not
+// stay square in front of him - he rides him on the hip, beside him, the
+// side he is on. (Real, 17 games: a man with it going at the rim over 6
+// ft/s, his nearest man within 4 ft - square in front of him, within 30 deg
+// of his way, 7% of the time; beside 48%, behind 27%. Ours: 21% in front,
+// 36% beside, 15% behind - walked into.) Beside him this far, middle to
+// middle, and this far ahead (feet); from this pace on, all of it from
+// that (feet a second); going at the rim within this (cos), all of it
+// within that.
+const HIP = 2.5;
+const HIP_LEAD = 1;
+const HIP_PACE: [number, number] = [6, 10];
+const HIP_AT: [number, number] = [0.5, 0.8];
 // BEATEN: his man with the ball level with him or by him on the way to the
 // rim, and going: he turns and runs to get back in front, not slides along
 // behind. (Level within this much, feet; going at least this fast, feet a
@@ -474,6 +518,34 @@ export const decide = (
 				x: spot.x + (L.x - spot.x) * Math.min(1, k),
 				y: spot.y + (L.y - spot.y) * Math.min(1, k),
 			};
+		}
+	}
+	if (g.on && !g.help) {
+		// Driven at: on his hip, not square in front of him.
+		const pace = Math.hypot(g.man.vx, g.man.vy);
+		const rl = Math.hypot(g.rim.x - g.man.x, g.rim.y - g.man.y);
+		if (pace > HIP_PACE[0] && rl > 1e-6) {
+			const hx = g.man.vx / pace;
+			const hy = g.man.vy / pace;
+			const at = ((g.rim.x - g.man.x) * hx + (g.rim.y - g.man.y) * hy) / rl;
+			const k =
+				smooth01((pace - HIP_PACE[0]) / (HIP_PACE[1] - HIP_PACE[0])) *
+				smooth01((at - HIP_AT[0]) / (HIP_AT[1] - HIP_AT[0]));
+			if (k > 0) {
+				const side = (m.x - g.man.x) * -hy + (m.y - g.man.y) * hx >= 0 ? 1 : -1;
+				const hip = {
+					x: g.man.x + hx * HIP_LEAD - hy * side * HIP,
+					y: g.man.y + hy * HIP_LEAD + hx * side * HIP,
+				};
+				spot = {
+					x: spot.x + (hip.x - spot.x) * k,
+					y: spot.y + (hip.y - spot.y) * k,
+				};
+				toV = {
+					x: toV.x + (g.man.vx - toV.x) * k,
+					y: toV.y + (g.man.vy - toV.y) * k,
+				};
+			}
 		}
 	}
 	let to = spot;

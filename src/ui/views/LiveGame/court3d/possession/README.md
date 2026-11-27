@@ -1202,6 +1202,58 @@ sprint's push) are the rest of the gap - the planner's to fix (8c-2).
 Five of the eight new sharp-turn flags are one transition possession,
 two laid runners crossing lanes where they had not before.
 
+## By him, not into him (the man with the ball; picking it up)
+
+Alex (2026-11-27): men with the ball "walk-dribble straight into
+defenders". Measured (the man with it in the half court, moving 1.5-8
+ft/s, the defender nearest him within 4 ft between him and the rim, his
+way within 30 deg of that man, 0.3 s or more): real 1.6 times a minute
+with the ball, ours 4.9. How fast he goes at him is the same as real
+(median about 4 ft/s): the excess is how often. With a man that near in
+front, real men move across or away from him; ours at him a third of the
+time. Near shots, about half of ours was his own working of it (back to
+the play's spot for his pick-up, at 3 ft/s, through his man), most of the
+rest the play's laid dribble runs, at a jog straight at him.
+
+Now, the new sim only:
+
+- `handler.ts` `byHim`: going somewhere with a man of theirs in the way
+  (within 6 ft, the line passing within 2.2 ft of his middle - his own
+  man or whoever is there, `Handling.them`), he makes for 3 ft off that
+  man's shoulder, the short way round, at a drive's pace (10-14 ft/s by
+  his handle and quickness). With the way to the play's spot for his
+  pick-up blocked, he goes for it late at that pace, sizing his man up
+  till then - not early, walked in.
+- `defense.ts` driven at: his man with it going at the rim at 6-10 ft/s
+  and up, the on-ball man rides him on the hip (2.5 ft beside, 1 ft
+  ahead) instead of backpedaling square in front. (Real, a man with it
+  going at the rim, his nearest man within 4 ft: square in front 46% at
+  2-4 ft/s, 19% at 6-8, 9% at 8-11, 4% faster.)
+- `defense.ts` `PICK_UP`: bringing it up, nobody goes farther up the floor
+  than where real defenses pick it up, by how far up it the ball is (28
+  ft off their rim with it 35-40 ft up, 40 with it 65-70; 17 games).
+  Before, every man stood 6-9 ft off his man all the way back, and sprinted
+  back the other way once the ball came over.
+
+| Measure | Before | Now | Real |
+| --- | --- | --- | --- |
+| Walked into the man in front, within 4 / 3 ft, a minute with the ball (4 tapes) | 4.94 / 1.73 | 4.30 / 1.37 | 1.56 / 1.16 |
+| Moving at the man in front within 3-4 ft, share of moving (4 tapes) | 27% | 21% | 9% |
+| Going at the rim with a man within 4 ft: square in front at 6-8 / 8-11 / 11+ ft/s (4 tapes) | 29 / 17 / 12% | 21 / 8 / 10% | 19 / 9 / 4% |
+| Going at the rim over 11 ft/s with a man within 4 ft, share of time with it (4 tapes) | 1.1% | 1.5% | 3.9% |
+| Defenders reversing at speed, a live minute (real_11, whole game) | 4.2 | 2.6 | |
+| Defenders reversing at speed, a live minute (4 tapes, at real speed) | 2.67 | 2.72 | 0.91 |
+| Tape flags, 4 games: lurch, sharp turns, teleport | 205, 26, 31 | 219, 21, 30 | |
+
+(Measures: `walkin`, `drives2`, `revrole` in the session scratch, real =
+the 17 SportVU games; the defender reversal is over 9 ft/s, then over 9
+ft/s 150-180 deg back within 1.5 s.) The pick-up shows in the whole game,
+hardly at real speed: bringing it up is mostly fast-forwarded. Left, and
+most of what is still seen: the play's own dribble runs (`playDribble`,
+`driveTo` legs), laid at a jog straight at where his man stands, the
+holder following them as laid - the planner's (8c-2), with the drive
+taken late and by him.
+
 ## Ball screens played from the matchup (8c-3)
 
 How the defense plays a ball screen - the screener's man sitting back in

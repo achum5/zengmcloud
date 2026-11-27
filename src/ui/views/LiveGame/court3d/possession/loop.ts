@@ -1143,6 +1143,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 			// still going - see through.ts.)
 			const H1 = H && mine.want(up! + STEP_MS);
 			const mates: Pt[] = [];
+			const them: Pt[] = [];
 			let man: Seen | undefined;
 			for (const o of x.men) {
 				if (o.pid === pid) {
@@ -1156,6 +1157,8 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 					mates.push(q);
 				} else if (guardAt(o.pid, see) === pid) {
 					man = q;
+				} else {
+					them.push(q);
 				}
 			}
 			const dribbling = dribblingAt(pid, t);
@@ -1168,6 +1171,7 @@ export const defendTogether = <M extends Man>(x: Together<M>) => {
 					dribbling,
 					man,
 					mates,
+					them,
 					handTo,
 					caught: caughtAgo(pid, t),
 					// (Or, nothing of his coming before the play takes him back,

@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 665,
+		date: "2026-11-27",
+		text: "3D game, New sim: the man with the ball no longer walks his dribble straight into the defender in front of him. With a defender in his way he goes by his shoulder at a drive's pace, and a defender being driven at rides the driver on his hip instead of backpedaling square in front of him. Defenders also pick the ball up around half court instead of chasing it back to the far baseline.",
+	},
+	{
 		n: 664,
 		date: "2026-11-27",
 		text: "Smart CPU: GMs now read the playoffs the way the game plays them. Playoff games are more decisive than regular season ones (starters tire less and lineup fit counts more), so real contenders' title chances go up and long shots' go down. Contenders pay a bit more for upgrades, and teams with little chance keep their picks.",

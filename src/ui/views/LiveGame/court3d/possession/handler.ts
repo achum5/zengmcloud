@@ -35,8 +35,9 @@ export type Handling = {
 	dribbling: boolean;
 	// The man guarding him, as he sees him.
 	man?: Seen;
-	// His four teammates, as he sees them.
+	// His four teammates, as he sees them - and the five of theirs.
 	mates: readonly Pt[];
+	them?: readonly Pt[];
 	// Handing over to the play by `until` (ms from now): where it has him
 	// then (see offense.ts Floor).
 	handTo?: { at: Pt; v: Pt; until: number; lead: number; commit?: boolean };
@@ -161,6 +162,20 @@ const GATHER_LAG = 0.15;
 // Facing the way he goes from this fast (feet a second); slower, square to
 // the rim.
 const FACE_GOING = 8;
+// HIS MAN IN THE WAY. Going somewhere past his man, stood in front of him
+// in the way, he goes by his shoulder - late, at a drive's pace - not
+// walked straight into him. (Real, 17 games: with his man within 4 ft in
+// front, a man moving with the ball heads at him - within 30 deg - 9-13%
+// of the time, across 42-46%, away 41-49%; ours 27-32% at him, and walked
+// into the man in front 4.9 times a minute with the ball to their 1.6.)
+// In the way: this near (feet), in front, and the line to where he goes
+// passing this near his middle (feet).
+const BY_NEAR = 6;
+const BY_WIDE = 2.2;
+// By him this far off his middle (feet), this fast (feet a second; the
+// quicker and better a handler, the harder).
+const BY_FT = 3;
+const BY_PACE: [number, number] = [10, 14];
 
 const smooth01 = (u: number) => {
 	const x = u < 0 ? 0 : u > 1 ? 1 : u;
@@ -220,6 +235,39 @@ const manOf = (
 	const L = Math.hypot(ux, uy) || 1;
 	const along = ((M.x - here.x) * ux + (M.y - here.y) * uy) / L;
 	return { gap, front: along > 0.5 * gap };
+};
+
+// Going to Q with a man of theirs in the way (his own, or whoever is
+// there): by his shoulder - the short way round him, level with him - or
+// nothing, nobody in the way.
+const byHim = (here: Pt, Q: Pt, f: Handling): Pt | undefined => {
+	const L = dist(here, Q);
+	if (L < 1e-6) {
+		return undefined;
+	}
+	const ux = (Q.x - here.x) / L;
+	const uy = (Q.y - here.y) / L;
+	let W: Pt | undefined;
+	let first = Infinity;
+	for (const M of f.man ? [f.man, ...(f.them ?? [])] : (f.them ?? [])) {
+		if (dist(here, M) > BY_NEAR) {
+			continue;
+		}
+		const along = (M.x - here.x) * ux + (M.y - here.y) * uy;
+		const off = (M.x - here.x) * -uy + (M.y - here.y) * ux;
+		if (
+			along <= 0.5 ||
+			along >= L + 1.5 ||
+			Math.abs(off) >= BY_WIDE ||
+			along >= first
+		) {
+			continue;
+		}
+		first = along;
+		const s = off >= 0 ? -1 : 1;
+		W = kept({ x: M.x - uy * s * BY_FT, y: M.y + ux * s * BY_FT }, f);
+	}
+	return W;
 };
 
 // What next, on the dribble.
@@ -406,16 +454,31 @@ export const decide = (
 	mind.pivot = undefined;
 	mind.gather = undefined;
 	const moved = !mind.set || dist(f.set, mind.set) > SET_MOVED;
-	const homing =
-		f.home !== undefined && f.home.in <= (f.home.end ? END_LEAD : HOME_LEAD);
+	// (With his man in the way of it, he goes for it later, by him at a
+	// drive's pace - not early, walked into him.)
+	const skill = 0.6 * a.handle + 0.4 * a.quick;
+	const byPace = lerp(BY_PACE[0], BY_PACE[1], skill);
+	const blocked =
+		f.home !== undefined && byHim(here, f.home.at, f) !== undefined;
+	const homeLead = !f.home
+		? 0
+		: blocked
+			? Math.min(
+					f.home.end ? END_LEAD : HOME_LEAD,
+					HOME_SURE + (1000 * (dist(here, f.home.at) + BY_FT)) / byPace,
+				)
+			: f.home.end
+				? END_LEAD
+				: HOME_LEAD;
+	const homing = f.home !== undefined && f.home.in <= homeLead;
 	const homeFrom = () => {
 		mind.kind = "back";
 		mind.at = f.home!.at;
 		// (There about as he must be - not early and stood waiting there.)
 		mind.pace = Math.min(
-			BACK_PACE[1],
+			blocked ? BY_PACE[1] : BACK_PACE[1],
 			Math.max(
-				HOME_LEAST_PACE,
+				blocked ? byPace : HOME_LEAST_PACE,
 				(1000 * dist(here, f.home!.at)) / Math.max(1, f.home!.in - HOME_SURE),
 			),
 		);
@@ -465,7 +528,16 @@ export const decide = (
 					!fits() ||
 					(mind.kind !== "size" && dist(here, mind.at) < SHRINK_LEAST)
 				) {
-					homeFrom();
+					if (blocked) {
+						// (His man in the way: he sizes him up till it is time to
+						// go by him.)
+						mind.kind = "size";
+						mind.at = here;
+						mind.pace = 0;
+						mind.until = f.t + Math.max(100, f.home!.in - homeLead);
+					} else {
+						homeFrom();
+					}
 				}
 			}
 		}
@@ -498,7 +570,6 @@ export const decide = (
 				u: smooth01(1 - f.handTo.until / f.handTo.lead),
 			});
 		}
-		const homeLead = f.home?.end ? END_LEAD : HOME_LEAD;
 		if (f.home && f.home.in <= homeLead) {
 			homes.push({
 				at: homeNow(f.home),
@@ -518,6 +589,15 @@ export const decide = (
 				effort = Math.max(effort, 0.7);
 			}
 		}
+	}
+	// (His man in the way of it: by his shoulder, still going.)
+	const W = byHim(here, to, f);
+	if (W) {
+		to = W;
+		toV = { x: 0, y: 0 };
+		arrive = FLOW * byPace;
+		most = most === undefined ? undefined : Math.max(most, byPace);
+		effort = Math.max(effort, 0.85);
 	}
 	const goal: Goal = {
 		to,
