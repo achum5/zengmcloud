@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 662,
+		date: "2026-11-27",
+		text: 'Smart CPU: the Danger Zone\'s "Run it now" button (Smart CPU moves) now also works during the season, up to the trade deadline. On deadline day, press it after your own moves for one more round of trades between CPU teams.',
+	},
+	{
 		n: 661,
 		date: "2026-11-27",
 		text: "Smart CPU: CPU teams now make the small trades real teams make most, like a rotation player for a bench player and a second-round pick. In tests they made about twice as many trades with each other by the deadline, spread over twice as many teams.",

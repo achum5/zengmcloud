@@ -3269,3 +3269,14 @@ tallied where every player shopped stopped:
 `minGain` is now 0.002 (owner's pick). Sim time to the deadline didn't change
 (22-25 min). All of this was measured on the code before a team's play this
 season counted in its read (657).
+
+### One more market on deadline day (2026-11-27)
+
+The season's last CPU market runs after the last night of games before the
+deadline, so a league stopped at the deadline has had it, and crossing the
+deadline holds none. The owner, at his deadline the day `minGain` changed,
+asked for it in the Danger Zone's existing button: "Run it now" (Smart CPU
+moves) now also runs a market in the regular season, up to the deadline
+(`smartTradeOnDemand`). On deadline day, after the humans' own moves, it
+gives the CPU teams one more round with each other. A random league's
+2026 opening night: 5 trades.

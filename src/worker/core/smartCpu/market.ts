@@ -1109,3 +1109,16 @@ export const smartTradeWindow = async () => {
 	}
 	return marketMoment();
 };
+
+// A moment on demand (the Danger Zone's "Run it now"): as an offseason
+// window opens, or in season up to the deadline - a last round of CPU deals
+// on deadline day, after the humans' own (owner, 2026-11-27).
+export const smartOnDemandPhase = () =>
+	smartWindowPhase() || g.get("phase") === PHASE.REGULAR_SEASON;
+
+export const smartTradeOnDemand = async () => {
+	if (!smartOnDemandPhase() || !smartDecidesHere()) {
+		return [];
+	}
+	return marketMoment();
+};

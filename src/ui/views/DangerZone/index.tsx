@@ -43,7 +43,9 @@ export const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 	const [backfillingRanks, setBackfillingRanks] = useState(false);
 	const [marketRunning, setMarketRunning] = useState(false);
 	const marketPhase =
-		phase === PHASE.RESIGN_PLAYERS || phase === PHASE.PRESEASON;
+		phase === PHASE.RESIGN_PLAYERS ||
+		phase === PHASE.PRESEASON ||
+		phase === PHASE.REGULAR_SEASON;
 
 	return (
 		<>
@@ -214,7 +216,8 @@ export const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 
 							{!marketPhase ? (
 								<p className="text-warning">
-									This only works while re-signing players or in the preseason.
+									This only works before the trade deadline, while re-signing
+									players, or in the preseason.
 								</p>
 							) : notSimming ? (
 								<p className="text-warning d-flex flex-wrap align-items-center gap-2">
@@ -232,7 +235,9 @@ export const DangerZone = ({ autoSave, smartCpu }: View<"dangerZone">) => {
 								title={
 									phase === PHASE.PRESEASON
 										? "CPU teams sign free agents and trade with each other, as they do when the preseason opens"
-										: "CPU teams trade with each other, as they do when this phase opens"
+										: phase === PHASE.REGULAR_SEASON
+											? "CPU teams trade with each other, as they do during the season"
+											: "CPU teams trade with each other, as they do when this phase opens"
 								}
 								onClick={async () => {
 									setMarketRunning(true);

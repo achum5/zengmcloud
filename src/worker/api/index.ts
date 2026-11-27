@@ -376,7 +376,10 @@ import {
 } from "../core/realisticFrontOffice/isOn.ts";
 import { tradeValueCalculator } from "../core/vanillaPlus/index.ts";
 import { smartTradingBlock } from "../core/smartCpu/screens.ts";
-import { smartTradeWindow, smartWindowPhase } from "../core/smartCpu/market.ts";
+import {
+	smartOnDemandPhase,
+	smartTradeOnDemand,
+} from "../core/smartCpu/market.ts";
 import {
 	ownReadValuer,
 	smartGuardOffer,
@@ -8086,9 +8089,11 @@ const setTradesAfterDeadline = async (tradesAfterDeadline: boolean) => {
 // God Mode (Danger Zone): what the smart CPU does as re-signing or the
 // preseason opens, run now - for a league that switched Smart CPU on after
 // that: as the preseason opens, a last day of signings (every team looks),
-// then the trade market. The signings and trades made.
+// then the trade market. In season, up to the deadline, the trade market
+// alone - one more on deadline day, say (owner, 2026-11-27). The signings
+// and trades made.
 const smartMarketNow = async () => {
-	if (!smartBrainOn() || !smartWindowPhase()) {
+	if (!smartBrainOn() || !smartOnDemandPhase()) {
 		return undefined;
 	}
 	let signed = 0;
@@ -8100,7 +8105,7 @@ const smartMarketNow = async () => {
 		await freeAgents.autoSign({ everyTeam: true });
 		signed = Math.max(0, before - (await pool()));
 	}
-	const made = await smartTradeWindow();
+	const made = await smartTradeOnDemand();
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 	return { signed, trades: made.length };
 };
