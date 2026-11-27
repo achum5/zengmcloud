@@ -3137,7 +3137,24 @@ there do best at 1.3-1.55 (the table's last row).
 
 `outlookSettings.playoffScale` (`seasonSim`'s `playoffScale`): a play-in or
 playoff game's gap and home court times it, each team's draw of its strength
-as before. Off (1) until the owner chooses; 1.3 is what the seasons support.
+as before. 1.3, what the seasons support - on since the owner chose it
+(2026-11-27).
+
+**What turning it on turned up in the market.** With 1.3 on, the layer 1
+test that every sale the market finds passes the seller's verdict failed
+once: an arena league's 21-year-old 41/60 went to one team for 0.006 of a
+title, and the verdict found another that would give 0.016 - a team the
+market never asked, its want for him only 0.0005 past his team's need. The
+market asks the keenest first and stops where no team left could beat the
+second best offer, by want past need; but a team can send back what the
+seller makes more of than it does, so that bound is only about so. The
+verdict asks with the winner out of the running, so in effect down to the
+third best. Now the market does too (`bestRealOffer`: the three best in
+hand, the offer judged among them when there is one, asked down to the
+third), and the verdict asks just as before. On the owner's league (minGain
+0.005, before 661) at opening night and 60 nights on, the same 13 and 14
+deals at the same prices, 5% more offers asked (238 to 250, 198 to 210); to
+the deadline, 7,527 offers to 7,579 and the same time (22.5 and 21.7 min).
 
 ## How teams have played, in the read (2026-11-27)
 

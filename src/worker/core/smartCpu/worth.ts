@@ -2083,7 +2083,14 @@ export class SmartView {
 	// gain from it once it has sent back its salary) - for as long as one
 	// could still beat the offers in hand: a team can give the seller no more
 	// than its want for it past what the seller needs for it (his use to it,
-	// and his price past that as far as it can still get it).
+	// and his price past that as far as it can still get it). That is only
+	// about so - a team can send back what the seller makes more of than it
+	// does - so the teams are asked down to the third best offer in hand, not
+	// the second: as far as the seller would ask with the winner out of the
+	// running (verdict, `beat` an offer in hand), so a buyer the market picks
+	// is never turned down for an offer it passed over (an arena league with
+	// the playoff scale on: a prospect sold for 0.006 of a title when a team
+	// it never asked, its want 0.0005 past his need, offered 0.016).
 	async bestRealOffer(
 		seller: number,
 		out: Holdings,
@@ -2124,9 +2131,17 @@ export class SmartView {
 		// The next best offer's worth to the seller: what the winner must
 		// beat (the market trims its offer to about that).
 		let second = Number.NEGATIVE_INFINITY;
+		// The three best worths in hand, `beat` among them: asked down to the
+		// third.
+		const top: number[] = beat !== undefined ? [beat] : [];
+		const inHand = (worth: number) => {
+			top.push(worth);
+			top.sort((a, b) => b - a);
+			top.length = Math.min(top.length, 3);
+		};
 		for (const { tid: buyer, want } of bidders) {
 			if (
-				want - needs <= Math.max(0, second) ||
+				want - needs <= Math.max(0, top[2] ?? Number.NEGATIVE_INFINITY) ||
 				(beat !== undefined && best && best.worth > beat)
 			) {
 				break;
@@ -2147,6 +2162,7 @@ export class SmartView {
 			const m3 = mark();
 			const worth = await this.dealWorth(seller, buyer, out, inn);
 			lap("offer: checks", m3);
+			inHand(worth);
 			if (!best || worth > best.worth) {
 				if (best) {
 					second = Math.max(second, best.worth);

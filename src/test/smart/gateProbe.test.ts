@@ -46,6 +46,7 @@ test.skipIf(!env.GP_LEAGUE)(
 		const { smartHumans } =
 			await import("../../worker/core/smartCpu/signing.ts");
 		const market = await import("../../worker/core/smartCpu/market.ts");
+		const { offerStats } = await import("../../worker/core/smartCpu/worth.ts");
 		const { marginSettings } =
 			await import("../../worker/core/realisticFrontOffice/margin.ts");
 		smartHumans.tids = [...g.get("userTids")];
@@ -109,7 +110,7 @@ test.skipIf(!env.GP_LEAGUE)(
 			await game.play(1, {});
 		}
 		log(
-			`to the deadline: ${moments} moments, ${found} deals found, ${made.length} made, ${((performance.now() - start) / 60000).toFixed(1)} min`,
+			`to the deadline: ${moments} moments, ${found} deals found, ${made.length} made, ${offerStats.tried} offers asked, ${((performance.now() - start) / 60000).toFixed(1)} min`,
 		);
 		log(
 			`players shopped, by where each got to: ${[...stages]

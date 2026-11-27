@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 664,
+		date: "2026-11-27",
+		text: "Smart CPU: GMs now read the playoffs the way the game plays them. Playoff games are more decisive than regular season ones (starters tire less and lineup fit counts more), so real contenders' title chances go up and long shots' go down. Contenders pay a bit more for upgrades, and teams with little chance keep their picks.",
+	},
+	{
 		n: 663,
 		date: "2026-11-27",
 		text: "3D game: national TV score bugs can now change with the years. A team looks file can give each network's bug its seasons, so a 2005 game on TNT carries TNT's 2005 bug. The new score bugs file has TNT's looks from 1999-2000 to 2024-25, on its Thursday doubleheaders and in the playoffs, and today's networks from 2025-26 on.",

@@ -970,8 +970,12 @@ export const outlookSettings = {
 	// can win, contenders push and the rest wait.
 	measuredUncertainty: true,
 	// What a point of strength is worth in a playoff game against one in the
-	// regular season (seasonSim's playoffScale). 1: the same.
-	playoffScale: 1,
+	// regular season (seasonSim's playoffScale). The sim's playoff games are
+	// about 1.5 times as decisive (its starters tire less, lineup synergy
+	// counts 2.5 times); over whole test seasons, where injuries, trades and
+	// the read's own error blur that, 1.3 calls the champions best
+	// (docs/smart-cpu.md, "What the playoffs change"). 1: the same.
+	playoffScale: 1.3,
 	// THE TEAM'S OWN CURVES. What a point of strength is worth in title
 	// chances to a team, read off its own seasons (ownCurve) - not off one
 	// curve fit across every team. The league's curve gave the favourite in
