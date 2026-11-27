@@ -45,9 +45,9 @@ export const rumorSettings = {
 	starRank: 30,
 	// A team after at least this many players at a moment is a story of its
 	// own, named with its two best targets among the league's this many best:
-	// one such story a while (quietDays), the same team for twice as long (in
-	// the owner's league, some team was after six or more at every moment,
-	// and a third of the stories had been that, about bench men).
+	// one such story a while (quietDays), a team once a season (in the
+	// owner's league, some team was after six or more at every moment, and a
+	// third of the stories had been that, about bench men).
 	busyTeam: 6,
 	busyTargets: 150,
 };
@@ -389,12 +389,11 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		)
 		.sort((a, b) => a.eid - b.eid);
 	const today = await eventDate();
-	// Whether a story told then is still recent (or, for a team's own story,
-	// recent by its longer quiet).
-	const recent = (e: EventBBGM, i: number, times = 1) =>
+	// Whether a story told then is still recent.
+	const recent = (e: EventBBGM, i: number) =>
 		today !== undefined && e.date !== undefined
-			? daysBetween(e.date, today) < times * rumorSettings.quietDays
-			: told.length - 1 - i < times * rumorSettings.quietStories;
+			? daysBetween(e.date, today) < rumorSettings.quietDays
+			: told.length - 1 - i < rumorSettings.quietStories;
 	// A player again only once his talks go further than lately, never the
 	// same story twice: a talk with the same team, or teams after him, far
 	// apart or his team open to moving him, once a season each.
@@ -482,7 +481,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 				.filter(
 					([tid, ps]) =>
 						ps.length >= rumorSettings.busyTeam &&
-						!told.some((e, i) => e.rumor.team === tid && recent(e, i, 2)),
+						!told.some((e) => e.rumor.team === tid),
 				)
 				.sort((a, b) => b[1].length - a[1].length || a[0] - b[0])[0];
 	if (busiest) {
