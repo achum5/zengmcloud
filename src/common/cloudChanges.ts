@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 667,
+		date: "2026-11-27",
+		text: "Daily Schedule: the trade deadline box is now just a Trade Deadline Day header over that night's games. The Pass deadline button and the extra line are gone; Play > One day passes the deadline as before.",
+	},
+	{
 		n: 666,
 		date: "2026-11-27",
 		text: "3D game, New sim: drives look like drives. The man with the ball no longer jogs his drive straight at his defender to fill the time before his pass or shot: he sizes his man up where he is, then goes at full speed. And he no longer drifts ahead toward where a drive ends and then crawls, waiting for it to start.",
@@ -89,7 +94,7 @@ export const CLOUD_CHANGES: CloudChange[] = [
 	{
 		n: 651,
 		date: "2026-11-27",
-		text: "Daily Schedule: trade deadline day now reads as one day. Instead of a bare Trade Deadline box and no games, it shows a Trade Deadline banner with a Pass deadline button on top of that night's games, and picking that date in the week strip shows the same thing. Once you pass the deadline, the games are ready to watch or sim.",
+		text: "Daily Schedule: trade deadline day now reads as one day. Instead of a bare Trade Deadline box and no games, it shows a Trade Deadline Day header on top of that night's games, and picking that date in the week strip shows the same thing. Once you pass the deadline, the games are ready to watch or sim.",
 	},
 	{
 		n: 650,

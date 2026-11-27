@@ -6,8 +6,6 @@ import { useLocal } from "../util/local.ts";
 import { decideOwnGameSim } from "../../common/ownGameSim.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
-import { confirmPlayMenuAdvance } from "../util/confirmPlayMenuAdvance.tsx";
-import { runPlayMenuOption } from "../util/runPlayMenuOption.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { ForceWin } from "../components/ForceWin.tsx";
@@ -217,7 +215,7 @@ const DailySchedule = ({
 	}, [season, day]);
 
 	let simToDay = null;
-	// (At the deadline, the step is passing it: the banner's.)
+	// (At the deadline, the step is passing it, from the Play menu.)
 	if (playable.length > 0 && !isToday && !deadline?.today) {
 		const minGid = Math.min(...playable.map((game) => game.gid));
 		simToDay = (
@@ -283,39 +281,9 @@ const DailySchedule = ({
 		) : null;
 
 	// THE TRADE DEADLINE, OVER ITS NIGHT'S GAMES: the league stops at it before
-	// they're played, and passing it is the day's first step (as Play > One
-	// day, with the same check in a shared league).
+	// they're played (Play > One day passes it). Just the header (Alex).
 	const deadlineBanner = deadline ? (
-		<div className="lh-deadline">
-			<div className="lh-deadline-text">
-				<div className="lh-deadline-title">Trade deadline</div>
-				<div className="lh-deadline-sub">
-					Trades close before {deadline.today && date ? "tonight's" : "these"}{" "}
-					games.
-				</div>
-			</div>
-			{deadline.today ? (
-				<button
-					type="button"
-					className="btn btn-primary lh-deadline-pass"
-					disabled={gameSimInProgress || simAuthorityLocked}
-					title={simAuthorityLocked ? simAuthorityReason : undefined}
-					onClick={async () => {
-						if (
-							!(await confirmPlayMenuAdvance({
-								id: "day",
-								label: "Pass deadline",
-							}))
-						) {
-							return;
-						}
-						await runPlayMenuOption("day");
-					}}
-				>
-					Pass deadline
-				</button>
-			) : null}
-		</div>
+		<div className="lh-deadline">Trade deadline day</div>
 	) : null;
 
 	const dateHeading =
