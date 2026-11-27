@@ -149,6 +149,7 @@ import { signatureOf } from "./possession/signature.ts";
 import {
 	throughBoards,
 	throughContests,
+	throughJumpers,
 	throughPasses,
 	throughPullUps,
 	throughReaches,
@@ -32246,6 +32247,7 @@ class Director {
 			if (this.possession) {
 				throughPasses(this.tracks, this.ball, this.spacing);
 				throughPullUps(this.tracks, this.ball, this.spacing);
+				throughJumpers(this.tracks, this.ball);
 				throughContests(this.tracks, this.ball);
 				throughBoards(this.tracks, this.ball);
 				throughReaches(this.tracks, this.ball, this.spacing);

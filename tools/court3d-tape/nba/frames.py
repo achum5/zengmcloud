@@ -144,10 +144,18 @@ def from_tape(path):
     team_of = {p["pid"]: p["team"] for p in T["players"]}
     keys = ("t", "seg", "live", "ball", "xy", "team", "pid", "hold", "off", "hoop")
     out = {k: [] for k in keys}
+    # (The clock as the frame before had it - the possession before's last,
+    # at the first of one.)
+    was = None
     for s, P in enumerate(T["possessions"]):
         beats = P["beats"]
         side = P["side"]
         for fr in P["frames"]:
+            # (The game clock running, where the tape has it: stopped - a
+            # whistle, the ball out, a free throw - is not live, as in the
+            # real games' tracking.)
+            running = "c" not in fr or (was is not None and fr["c"] < was - 0.01)
+            was = fr.get("c")
             ps = [p for p in fr["p"] if p[5]]
             if len(ps) != 10:
                 continue
@@ -156,7 +164,12 @@ def from_tape(path):
             before = [b for b in beats if b["t"] <= t]
             beat = before[-1]["type"].lower() if before else ""
             # (Live: shown at real speed, the ball in play.)
-            live = fr["f"] < 1.2 and beat.startswith(SHOT_PLAYS) and not beat.endswith("ft")
+            live = (
+                running
+                and fr["f"] < 1.2
+                and beat.startswith(SHOT_PLAYS)
+                and not beat.endswith("ft")
+            )
             slots = [p[0] for p in ps]
             h = fr["b"][3]
             out["t"].append(t / 1000.0)

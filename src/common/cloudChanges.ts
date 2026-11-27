@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 654,
+		date: "2026-11-27",
+		text: "3D game, New sim: rebounders no longer come down and stand still holding the ball. They land still moving, turn up the floor and throw the outlet on the way. Jump shooters drift through the air the way they came into the shot and land a step on, instead of going straight up and down.",
+	},
+	{
 		n: 653,
 		date: "2026-11-27",
 		text: "3D game: a floor picture can now take in more of the floor around the court, so lettering behind the baselines and along the sidelines shows in full instead of getting cut off. A floor picture made 118 x 66 ft (12 ft past each baseline and 8 past each sideline, 2360 x 1320 at 20 px a foot) is laid down that wide; pictures made on the usual template work as before.",
