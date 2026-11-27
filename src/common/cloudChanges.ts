@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 658,
+		date: "2026-11-27",
+		text: "3D game, New sim: how the defense plays a pick-and-roll now comes from the players in it. A slow center drops back, players of a size switch, and star ball handlers get trapped now and then. Before, the coverage gave away who was about to take the shot.",
+	},
+	{
 		n: 657,
 		date: "2026-11-27",
 		text: "Smart CPU: GMs now count how teams have actually played this season, not just their ratings. A team beating the margin its roster and schedule say it should gets credit for the part of that which isn't luck (about a sixth of it by the trade deadline), so its title chances and trade plans move a little with how it plays.",

@@ -2890,6 +2890,17 @@ type Entry = "inbound" | "break" | "flow";
 // defenders swap men, the big jumps out and recovers, or both go at the ball.
 // Off the ball the man coming off the screen is chased, or switched onto.
 export type Coverage = "drop" | "switch" | "hedge" | "blitz" | "chase";
+// Under the new sim, from the men in it (see coverageFrom): how much each
+// is played, before what they are like - and two men this far apart in
+// size (0 to 1, by their ratings) are too far apart to switch.
+const COVER_ODDS: Record<Coverage, number> = {
+	switch: 1.8,
+	drop: 1.6,
+	hedge: 1.1,
+	blitz: 0.6,
+	chase: 0.45,
+};
+const COVER_ALIKE = 0.55;
 // The screener's own man, as the screen comes: in a drop, back this far
 // short of the screen (feet, toward the rim) - at the level of the foul
 // line out at the top, no deeper than DROP_DEEP from the rim nor closer
@@ -10892,6 +10903,9 @@ class Director {
 		if (!onBall) {
 			return Math.abs(rs - ru) <= 2 && r < 0.3 ? "switch" : "chase";
 		}
+		if (this.possession) {
+			return this.coverageFrom(screener, user, run.team, r);
+		}
 		// Mostly, the way it was played is what the shot that came off it
 		// reads: the handler pulls up because the big sat back, the roller
 		// is open because the big came up to the ball, two on the ball leave
@@ -10936,6 +10950,55 @@ class Director {
 				: r < 0.88
 					? "switch"
 					: "drop";
+	}
+
+	// Under the new sim, a ball screen is played the way the men in it say -
+	// never the way the shot that follows reads, which would give the result
+	// away: a slow big sits back in a drop, men of a size switch, a quick big
+	// shows at the ball, a star with it gets two on him now and then, a small
+	// man screening is gone over the top of. Each defense leans a little its
+	// own way (more switching, more dropping). `r` draws it, 0 to 1.
+	private coverageFrom(
+		screener: number,
+		user: number,
+		team: Side,
+		r: number,
+	): Coverage {
+		const ds = this.defenderOf(screener);
+		const du = this.defenderOf(user);
+		// (By position, for a man the game has no ratings for.)
+		const size = (p: number | undefined) =>
+			p === undefined
+				? 0.5
+				: (this.level(p, "hgt") ?? (this.rank.get(p) ?? 4) / 8);
+		const quick = (p: number | undefined) =>
+			p === undefined
+				? 0.5
+				: (this.level(p, "spd") ?? 0.8 - (0.6 * (this.rank.get(p) ?? 4)) / 8);
+		const big = size(ds);
+		const fast = quick(ds);
+		const alike = Math.max(0, 1 - Math.abs(big - size(du)) / COVER_ALIKE);
+		const star = this.level(user, "drb", "tp", "oiq") ?? 0.5;
+		const lean = 2 * hash01(this.gid ?? 0, 4100 + other(team)) - 1;
+		const odds: [Coverage, number][] = [
+			[
+				"switch",
+				COVER_ODDS.switch * alike * (0.4 + 0.6 * fast) * (1 + 0.5 * lean),
+			],
+			["drop", COVER_ODDS.drop * big * (1.2 - fast) * (1 - 0.4 * lean)],
+			["hedge", COVER_ODDS.hedge * big * fast * (0.6 + star)],
+			["blitz", COVER_ODDS.blitz * star * star * (0.3 + fast)],
+			["chase", COVER_ODDS.chase * (1 - big)],
+		];
+		const all = odds.reduce((a, [, w]) => a + Math.max(0, w), 0);
+		let left = r * all;
+		for (const [c, w] of odds) {
+			left -= Math.max(0, w);
+			if (left < 0) {
+				return c;
+			}
+		}
+		return "drop";
 	}
 
 	// Where a defender wants to be, by the numbers from player tracking: on the
@@ -29046,7 +29109,7 @@ class Director {
 				}
 				return soft;
 			};
-			for (let k = 0; k < at.length;) {
+			for (let k = 0; k < at.length; ) {
 				let e = k;
 				while (e + 1 < at.length && at[e + 1]! - at[e]! <= 2 * (AHEAD + R)) {
 					e++;
@@ -30356,7 +30419,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length;) {
+		for (let i = 0; i < starts.length; ) {
 			let n = 1;
 			while (
 				i + n < starts.length &&

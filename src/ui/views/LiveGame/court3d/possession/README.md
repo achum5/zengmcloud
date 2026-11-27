@@ -1162,6 +1162,56 @@ possession where they had not crossed before; how men turn at 8-13 ft/s
 is as it was (deg/s, median / p90 / p99: 3.7 / 39.2 / 89.9 before, 3.9 /
 39.5 / 89.1 now).
 
+## Ball screens played from the matchup (8c-3)
+
+How the defense plays a ball screen - the screener's man sitting back in
+a drop, the two switching, the big out at the ball in a hedge, two on the
+ball in a blitz, the man on the ball going over the top - was, 8 times in
+10, picked from the shot that came after it: the handler pulls up because
+the big sat back, the kick-out man is open because two went at the ball.
+That gave the result away. After a blitz the handler never took the shot
+(0 of 188); after a drop he took it 82% of the time.
+
+Now, the new sim only (`director.ts` `coverageFrom`), it comes from the
+men in it, by their ratings: the screener's man and the man on the ball.
+
+- A big, slow screener's man drops (size times slowness).
+- Two of a size switch (none past 0.55 apart in size, 0 to 1), more
+  readily the quicker the screener's man is.
+- A big who is quick shows at the ball in a hedge, more against a good
+  handler (handle, three, IQ).
+- A star handler gets two on him now and then (a blitz, by his rating
+  squared).
+- A small screener is gone over the top of.
+
+Each defense leans a little its own way, drawn for the game: up to half
+as much switching again, or less, with dropping the other way. Nothing of
+the shot that follows goes into it.
+
+| Measure (8 real-sim games, 1,320 ball screens) | Before | Now |
+| --- | --- | --- |
+| After a drop, the handler takes the shot | 82% | 36% |
+| ... after a blitz | 0% | 47% |
+| ... after a hedge / a switch / over the top | 15 / 52 / 55% | 41 / 48 / 49% |
+| Made, by coverage: drop, switch, hedge, blitz, over the top | .38 .47 .49 .48 .68 | .42 .50 .51 .48 .46 |
+| A big on the screener, a smaller man on the ball: drop / switch | 46 / 21% | 64 / 6% |
+| Blitzed: star handlers (65+) / the rest | 16 / 14% | 15 / 6% |
+| All: drop, switch, hedge, blitz, over the top | 41 22 17 14 6% | 40 24 11 7 19% |
+
+The defenders already play what is called (the play lays the screener's
+man's runs for it): 4 ft or more deeper than the screen as the handler
+comes off it in 94-96% of drops, out within 5 ft of the ball in about half
+of hedges - both before and now, measured on where they are. Tried and
+taken back out: the defenders' own agents playing the coverage themselves
+(`defense.ts` with a cover spot) - over a game it had them for 42 s in all,
+the play has the rest, and nothing measured moved.
+
+Tape, 4 real-sim games against master: all flags 254 against 277, jerky
+speed-ups 166 against 199, teleports 27 against 28. Men stock still 3 s
+went 10 to 23, none of it at a ball screen - two men holding a double
+pin-down, a holder waiting on his screen - which come and go with which
+plays the game happens to run (5 a game on earlier tapes).
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it
