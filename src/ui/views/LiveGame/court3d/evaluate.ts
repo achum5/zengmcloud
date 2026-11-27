@@ -9750,6 +9750,33 @@ const facesTo = (tl: CourtTimeline, i: number): Faces => {
 	return f;
 };
 
+// THE SAME GAME, FURTHER ON (see parts.ts): the way the ball faced through
+// all the two have alike - up to `until` - kept for the new picture of it,
+// not worked out all over again from the opening tip, in one frame.
+export const carryFaces = (
+	from: CourtTimeline,
+	to: CourtTimeline,
+	until: number,
+): void => {
+	const f = facesMemo.get(from);
+	if (!f || facesMemo.has(to)) {
+		return;
+	}
+	let n = 0;
+	while (
+		n < f.segs.length &&
+		f.segs[n] === to.ball[n] &&
+		f.segs[n]!.t0 < until
+	) {
+		n++;
+	}
+	facesMemo.set(to, {
+		segs: f.segs.slice(0, n),
+		inn: f.inn.slice(0, n),
+		off: f.off.slice(0, n),
+	});
+};
+
 // A PASS GOES BY A MAN IN THE WAY, NOT THROUGH HIM. Thrown past a man
 // between the passer and his man - or out of bounds past one, or dropping
 // out of the net past a man under it - it bows out to the side round his

@@ -121,6 +121,7 @@ import {
 	useViewSize,
 } from "./broadcast.ts";
 import { spawnCourtWorker, stageCourt } from "./stageCourt.ts";
+import { goesOn, type Staged } from "./parts.ts";
 import {
 	stageWarmup,
 	WARMUP_MS,
@@ -159,7 +160,7 @@ import { physiqueOf } from "./ratings.ts";
 import { glReport } from "./sculptGl.ts";
 import { getCamera } from "./cameraSetting.ts";
 import { registerCaptureExtra } from "../../../util/syncDebugStore.ts";
-import { offenseAt, showWhole } from "./evaluate.ts";
+import { carryFaces, offenseAt, showWhole } from "./evaluate.ts";
 import { usePacing } from "./pacing.ts";
 import { shotSpots } from "./shotSpots.ts";
 import type { ShotSpot } from "../gamecast/shots.ts";
@@ -285,6 +286,13 @@ const lastNameOf = (name: string | undefined): string => {
 	const i = n.indexOf(" ");
 	return i < 0 ? n : n.slice(i + 1);
 };
+
+// How many of the page's events the picture has staged: the rest still to
+// come in (see parts.ts), the page held at the last of them meanwhile.
+const stagedLength = (
+	events: unknown[] | undefined,
+	tl: Staged | undefined,
+): number => Math.min(events?.length ?? 0, tl?.upTo ?? Infinity);
 
 type Props = {
 	// The game's full play-by-play, never consumed.
@@ -412,31 +420,68 @@ const Court3D = ({
 	// (Whether the starting lineups are called out first - see intro.ts.)
 	const introKind = introKindOf(boxScore?.playoffs);
 	// The game staged, off the page's thread (see stageCourt.ts and the
-	// engine's useStaged) - the court on the warm-ups until it is.
-	const { timeline: stagedTl } = useStaged(
+	// engine's useStaged) - the court on the warm-ups until it is. A part at
+	// a time (see parts.ts): the first played as soon as it is in, each after
+	// it as it comes (see `onTl`).
+	const shotsOf = (tl: Staged) => {
+		try {
+			onShotsRef.current?.(shotSpots(tl));
+		} catch {
+			// The chart just doesn't show.
+		}
+	};
+	const { timeline: latestTl } = useStaged<Staged>(
 		events,
 		roster,
 		`${gid}|${gender}|${introKind}|${JSON.stringify(stakes ?? null)}`,
-		() =>
-			stageCourt({
-				events: events!,
-				players: roster,
-				gid,
-				gender,
-				intro: introKind,
-				stakes,
-			}),
+		(w) =>
+			stageCourt(
+				{
+					events: events!,
+					players: roster,
+					gid,
+					gender,
+					intro: introKind,
+					stakes,
+				},
+				w,
+			),
 		"court",
 		onFail,
 		(tl) => {
-			try {
-				onShotsRef.current?.(shotSpots(tl));
-			} catch {
-				// The chart just doesn't show.
-			}
+			shotsOf(tl);
 			onStagedRef.current?.(gid);
 		},
+		shotsOf,
 	);
+	// Key plays, and a clip to a line, are cut from the whole game: not
+	// started till all of it is in.
+	const wholeWanted = !!keyPlays?.settings.on || until !== undefined;
+	const stagedTl =
+		latestTl && (!wholeWanted || latestTl.upTo === undefined)
+			? latestTl
+			: undefined;
+	// THE GAME SO FAR, AND THE NEXT PART OF IT. A part comes in while the one
+	// before plays - and a new picture of the game is new to everything the
+	// court works out off it and keeps (each man's runs and steps, the cuts,
+	// the replays): worked out afresh, all at once, the picture stopped dead
+	// a moment in the middle of a play. So the game goes on as it was till it
+	// is played up to where it is staged to - the end of a break between
+	// periods - and on into the next part from there (see the frame loop).
+	const [onTl, setOnTl] = useState<Staged>();
+	const nextTl = useRef<Staged | undefined>(undefined);
+	// (The game last drawn - see the frame loop.)
+	const drawnTl = useRef<CourtTimeline | undefined>(undefined);
+	useEffect(() => {
+		setOnTl((was) => {
+			if (stagedTl && was && goesOn(was, stagedTl) && drawnTl.current === was) {
+				nextTl.current = stagedTl;
+				return was;
+			}
+			nextTl.current = undefined;
+			return stagedTl;
+		});
+	}, [stagedTl]);
 
 	// THE PREGAME SHOW (see pregameShow.ts), in place of the warm-ups while
 	// the game is staged: for a game watched from its start - not a clip, not
@@ -497,7 +542,7 @@ const Court3D = ({
 	}, [gid, roster, showWanted, hasEvents]);
 	const showOn = showWanted && !showOver;
 	// The game, once the show is over: till then, as if still staging.
-	const timeline = showOn ? undefined : stagedTl;
+	const timeline = showOn ? undefined : onTl;
 	const readyRef = useRef(false);
 	readyRef.current = !!stagedTl;
 	const showScene = useMemo((): Authored | undefined => {
@@ -1344,10 +1389,14 @@ const Court3D = ({
 	// game's own (see finalStretchAt).
 	const [late, setLate] = useState(false);
 	// Onto the game from the warm-ups (see pregame): a cut, up out of black
-	// (see tick).
+	// (see tick). (Not on into the next part of it: the same game.)
+	const snappedTo = useRef<Staged | undefined>(undefined);
 	useEffect(() => {
 		if (timeline) {
-			play.current.snapCam = true;
+			if (!snappedTo.current || !goesOn(snappedTo.current, timeline)) {
+				play.current.snapCam = true;
+			}
+			snappedTo.current = timeline;
 		}
 	}, [timeline]);
 
@@ -1479,7 +1528,7 @@ const Court3D = ({
 			number,
 			number,
 		],
-		eventsLength: events?.length ?? 0,
+		eventsLength: stagedLength(events, timeline),
 		preview,
 		authored,
 	});
@@ -1519,7 +1568,7 @@ const Court3D = ({
 			number,
 			number,
 		],
-		eventsLength: events?.length ?? 0,
+		eventsLength: stagedLength(events, timeline),
 		preview,
 		authored,
 	};
@@ -1596,12 +1645,48 @@ const Court3D = ({
 				return;
 			}
 			const s = play.current;
+			// On into the next part of the game, played up to where the part
+			// before ends (see onTl) - or, gone on past it, from the moment
+			// it is in. (Cut to where the page is, if that is further on: see
+			// onCursor.)
+			const more = nextTl.current;
+			const seam =
+				more && p.timeline
+					? more.seams?.find((x) => x.at >= p.timeline!.end - 1)
+					: undefined;
+			if (
+				more &&
+				!staging &&
+				p.timeline &&
+				goesOn(p.timeline, more) &&
+				(s.t >= (seam?.since ?? p.timeline.end - 1) ||
+					p.cursor > (p.timeline.upTo ?? Infinity))
+			) {
+				nextTl.current = undefined;
+				carryFaces(p.timeline, more, seam?.since ?? p.timeline.end);
+				s.prevCursor = Math.min(s.prevCursor, p.timeline.upTo ?? Infinity);
+				p.timeline = more;
+				p.eventsLength = stagedLength(eventsRef.current, more);
+				onCursor(s, more, {
+					cursor: p.cursor,
+					paused: p.paused,
+					skips: s.prevSkips,
+					follower: p.follower,
+				});
+				setOnTl(more);
+				return;
+			}
 			// Up out of black onto the first picture, and onto the game from
 			// the warm-ups - from this frame, before anybody in it is drawn.
+			// (Not on into the next part of it.)
 			if (s.shown !== tl) {
+				const same = !!s.shown && goesOn(s.shown, tl);
 				s.shown = tl;
-				s.keyDip = now;
-				s.keyHold = -Infinity;
+				drawnTl.current = tl;
+				if (!same) {
+					s.keyDip = now;
+					s.keyHold = -Infinity;
+				}
 			}
 			// A scene of its own (see authored.ts): from the top each run of
 			// it, and held where it is while paused.
