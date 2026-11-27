@@ -1920,3 +1920,97 @@ export const throughReaches = (
 	}
 	return n;
 };
+
+// STOOD BETWEEN TWO RUNS. The play lays a man's runs to spots one after
+// another, each from a stand and to one, timed on its own ticks: he runs
+// there, stands a beat, and runs on - the dash and the stand. Real men
+// time their way to where they are next sent: there as they are, not
+// early and stood waiting. (Real men off the ball, stands of 0.2-0.5 s,
+// 0.5-1 and 1-2 a live minute: 22, 13, 7 - over the 17 games; ours 40, 21,
+// 11.) A stand between two runs of his no longer than this (ms), with
+// nothing of his in it or in the run in, he takes the run in slower, to be
+// there as he goes on - on into the next at a run going much the same way
+// (at the least this cosine), or planted a moment (ms) before one going
+// off the other way. No slower over the run in, though, than this (feet a
+// second, its length over its time).
+const STAND_MOST = 1200;
+const STAND_ON = 0.5;
+const STAND_PLANT = 200;
+const STAND_PACE_LEAST = 3;
+
+// Every such stand taken up by the run in. How many it took up.
+export const throughStands = (tracks: ReadonlyMap<number, Track>): number => {
+	let n = 0;
+	for (const tr of tracks.values()) {
+		if (tr.pid < 0) {
+			continue;
+		}
+		const moves = tr.moves;
+		for (let i = 0; i + 1 < moves.length; i++) {
+			const A = moves[i]!;
+			const LA = len(A);
+			if (LA < RUN_LEAST || (A.v1 ?? 0) > 0) {
+				continue;
+			}
+			let j = i + 1;
+			while (j < moves.length && len(moves[j]!) < STOOD) {
+				j++;
+			}
+			const B = moves[j];
+			if (!B) {
+				continue;
+			}
+			const LB = len(B);
+			const gap = B.t0 - A.t1;
+			if (
+				LB < RUN_LEAST ||
+				(B.v0 ?? 0) > 0 ||
+				gap <= STAND_PLANT ||
+				gap > STAND_MOST ||
+				Math.hypot(A.to.x - B.from.x, A.to.y - B.from.y) > 0.3 ||
+				tr.acts.some(
+					(a) => !a.flash && !a.quiet && a.t1 > A.t0 && a.t0 < B.t0 + 100,
+				)
+			) {
+				continue;
+			}
+			const cos =
+				((A.to.x - A.from.x) * (B.to.x - B.from.x) +
+					(A.to.y - A.from.y) * (B.to.y - B.from.y)) /
+				(LA * LB);
+			const on = cos >= STAND_ON;
+			const t1 = Math.min(
+				B.t0 - (on ? 0 : STAND_PLANT),
+				A.t0 + (1000 * LA) / STAND_PACE_LEAST,
+			);
+			if (t1 <= A.t1 + 50) {
+				continue;
+			}
+			if (on && t1 >= B.t0) {
+				const p = Math.min(
+					runShape(LA, (t1 - A.t0) / 1000, A.v0 ?? 0, 0).vc,
+					runShape(LB, (B.t1 - B.t0) / 1000, 0, B.v1 ?? 0).vc,
+					cos > 0.999 ? Infinity : TURN_MOST / Math.sqrt(2 - 2 * cos),
+				);
+				if (p >= CATCH_LEAST) {
+					A.v1 = p;
+					B.v0 = p;
+				}
+			}
+			A.t1 = t1;
+			// (Stood there from then, as long as he still is.)
+			for (let k = j - 1; k > i; k--) {
+				const o = moves[k]!;
+				if (o.t1 <= t1) {
+					moves.splice(k, 1);
+					j--;
+				} else if (o.t0 < t1) {
+					o.t0 = t1;
+				}
+			}
+			n++;
+			i = j - 1;
+		}
+	}
+	return n;
+};

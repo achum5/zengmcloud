@@ -153,6 +153,7 @@ import {
 	throughPasses,
 	throughPullUps,
 	throughReaches,
+	throughStands,
 } from "./possession/through.ts";
 import { sameEverywhere } from "./sameMath.ts";
 import {
@@ -32255,6 +32256,7 @@ class Director {
 				throughContests(this.tracks, this.ball);
 				throughBoards(this.tracks, this.ball);
 				throughReaches(this.tracks, this.ball, this.spacing);
+				throughStands(this.tracks);
 			}
 			stepTimeline(
 				{

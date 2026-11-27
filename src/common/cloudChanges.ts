@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 656,
+		date: "2026-11-27",
+		text: "3D game, New sim: players off the ball no longer stop dead on every spot and step straight back to where they came from. They keep walking from one spot into the next, and players running the play's routes carry on into their next run instead of stopping for half a second in between. Far fewer players stand around in a set.",
+	},
+	{
 		n: 655,
 		date: "2026-11-27",
 		text: "3D game: games start much sooner and no longer crash phones. The game is now worked out a quarter at a time, so it starts as soon as the first quarter is ready, the rest comes in while you watch, and it takes about half the memory it did.",

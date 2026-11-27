@@ -77,8 +77,10 @@ export const attackerOf = (
 
 // What he keeps between picks of where next on his spot.
 export type Mind = {
-	// Where he is walking to, and from when he picks again.
+	// Where he is walking to, and from when he picks again - and where he
+	// was when he picked it.
 	at?: Pt;
+	from?: { at: Pt; here: Pt };
 	until: number;
 	// The set's spot that was picked round, and who had the ball.
 	set?: Pt;
@@ -96,8 +98,13 @@ export type Mind = {
 	drove: boolean;
 	passKey?: number;
 	read: number;
-	// Jogging to where he is going (not walking it).
+	// Jogging to where he is going (not walking it) - how fast, and whether
+	// he stands a moment there once he gets there.
 	jog: boolean;
+	pace?: number;
+	hold?: boolean;
+	// When he picked where he is going (ms).
+	picked?: number;
 };
 export const mindOf = (): Mind => ({
 	until: -Infinity,
@@ -193,11 +200,36 @@ const PASS_BY = 6;
 const OWN = 3;
 // Not where he is going already: somewhere at least this far (feet).
 const FRESH = 1.5;
+// Not straight back the way he just came, working his spot: going back
+// along it costs this much room (feet), going round less, across it none
+// (a man stepped along the arc steps on, or back up it a while later - not
+// to and fro: real men off the ball go back through a stop a third as
+// often as ours did, tools/court3d-tape/nba).
+const BACK = 5;
 // Set there a moment once he gets there (ms), and at walking pace up to
 // this far (feet), jogging past it (feet a second) - and this often
 // jogging it anyway, past a few steps (real: on the arc with nothing
 // going on, a man walks 45% of the time and jogs 25%).
 const HOLD: [number, number] = [200, 1100];
+// (Only this share of the spots he gets to: at the rest he goes on into
+// the next, still going as he gets there - this share of his pace. Real
+// men off the ball in the half court stand 17% of the time; ours, stood on
+// every spot they got to, 20%.)
+const HOLD_SHARE = 0.15;
+const SPOT_FLOW = 0.6;
+// (Going on into the next once this near where he was going (feet), and no
+// sooner than this after picking it (ms); a step or two to a spot no
+// farther than this (feet) he stands on - not dithering round his spot.
+// Not in the lane: out of it first.)
+const SPOT_THERE = 2;
+const ONWARD_AFTER = 800;
+const SPOT_SETTLE = 2;
+// (Walking it, as fast as this at the least - a drift, not a stride.)
+const DRIFT = 4;
+// Square to the ball and stepping off away from it (its cosine under this),
+// no quicker than this (feet a second): a backpedal, not running backwards.
+const AWAY = -0.3;
+const BACKPEDAL = 3.5;
 const WALK = 5;
 const WALK_FAR = 7;
 const JOG = 10;
@@ -348,8 +380,20 @@ const best = (
 	places: readonly Pt[],
 	home: number,
 	own: number,
+	back = 0,
 ): Pt => {
 	const here = { x: m.x, y: m.y };
+	// (The way he came to where he was going, if he picked it here - not
+	// on his way out of the lane: that is where he is going.)
+	const came =
+		back > 0 && Number.isNaN(mind.lane) && mind.at && mind.from?.at === mind.at
+			? (() => {
+					const dx = mind.at.x - mind.from.here.x;
+					const dy = mind.at.y - mind.from.here.y;
+					const d = Math.hypot(dx, dy);
+					return d > FRESH ? { x: dx / d, y: dy / d } : undefined;
+				})()
+			: undefined;
 	const laneLong =
 		!Number.isNaN(mind.lane) && f.t - mind.lane > LANE_MOST * 0.6;
 	const H = f.drive ?? f.holder;
@@ -394,6 +438,19 @@ const best = (
 			}
 		}
 		s += own * own01(pid, mind.n * 31 + k);
+		// (Back toward a job of his coming is on his way, not to and fro.)
+		const toJob =
+			f.next !== undefined &&
+			Math.hypot(Q.x - f.next.at.x, Q.y - f.next.at.y) <
+				Math.hypot(here.x - f.next.at.x, here.y - f.next.at.y) - FRESH;
+		if (came && !toJob) {
+			const dx = Q.x - here.x;
+			const dy = Q.y - here.y;
+			const d = Math.hypot(dx, dy);
+			if (d > 1e-6) {
+				s -= back * Math.max(0, -(dx * came.x + dy * came.y) / d);
+			}
+		}
 		// (Somewhere to go: not where he stands.)
 		if (Math.hypot(Q.x - here.x, Q.y - here.y) < FRESH) {
 			s -= 1;
@@ -643,6 +700,7 @@ const clearOut = (m: Mover, f: Floor, a: Attacker, mind: Mind, pid: number) => {
 	const Q = best(m, f, mind, pid, ok, 0, 1);
 	mind.intent = "move";
 	mind.at = Q;
+	mind.from = { at: Q, here: { x: m.x, y: m.y } };
 	mind.until =
 		f.t + (1000 * Math.hypot(Q.x - m.x, Q.y - m.y)) / JOG + 600 + HOLD[1];
 	mind.n += 1;
@@ -729,6 +787,7 @@ export const decide = (
 			if (Q) {
 				mind.intent = "move";
 				mind.at = Q;
+				mind.from = { at: Q, here: { x: m.x, y: m.y } };
 				mind.until =
 					f.t + (1000 * Math.hypot(Q.x - m.x, Q.y - m.y)) / JOG + 400 + HOLD[0];
 				mind.set = { ...f.set };
@@ -791,21 +850,39 @@ export const decide = (
 			f.t - mind.lane > LANE_MOST * 0.6 &&
 			mind.at !== undefined &&
 			inLane(mind.at, f.rim);
+		const onward =
+			mind.at !== undefined &&
+			!mind.hold &&
+			Number.isNaN(mind.lane) &&
+			f.t - (mind.picked ?? -Infinity) >= ONWARD_AFTER &&
+			Math.hypot(mind.at.x - m.x, mind.at.y - m.y) < SPOT_THERE;
 		if (
 			!mind.at ||
 			f.t >= mind.until ||
 			moved ||
 			laneDue ||
-			(f.holder !== undefined && mind.holder !== f.holder.pid)
+			(f.holder !== undefined && mind.holder !== f.holder.pid) ||
+			onward
 		) {
-			const Q = best(m, f, mind, pid, around(f, a), HOME, OWN);
+			const Q = best(m, f, mind, pid, around(f, a), HOME, OWN, BACK);
 			const far = Math.hypot(Q.x - m.x, Q.y - m.y);
 			mind.jog =
 				far > WALK_FAR ||
 				(far > STEP_FAR && own01(pid, mind.n * 29 + 11) < JOG_ANYWAY);
-			const pace = mind.jog ? JOG : WALK;
-			const hold = HOLD[0] + (HOLD[1] - HOLD[0]) * own01(pid, mind.n * 17 + 5);
+			// (Out of the lane at a walk.)
+			const pace = mind.jog
+				? JOG
+				: !Number.isNaN(mind.lane)
+					? WALK
+					: DRIFT + (WALK - DRIFT) * own01(pid, mind.n * 23 + 3);
+			mind.hold = far < SPOT_SETTLE || own01(pid, mind.n * 31 + 7) < HOLD_SHARE;
+			const hold = mind.hold
+				? HOLD[0] + (HOLD[1] - HOLD[0]) * own01(pid, mind.n * 17 + 5)
+				: 0;
 			mind.at = Q;
+			mind.pace = pace;
+			mind.picked = f.t;
+			mind.from = { at: Q, here: { x: m.x, y: m.y } };
 			mind.until = f.t + (1000 * far) / pace + 400 + hold;
 			mind.set = { ...f.set };
 			mind.holder = f.holder?.pid;
@@ -818,14 +895,18 @@ export const decide = (
 	// (Cutting, or answering a drive: quick, a man with somewhere to be.)
 	const hard = mind.intent === "cut" || mind.intent === "drive";
 	const jog = mind.intent === "move" || mind.jog || far > WALK_FAR;
-	let most = hard ? Infinity : jog ? JOG : WALK;
+	const walk =
+		mind.intent === "spot" && mind.pace !== undefined ? mind.pace : WALK;
+	let most = hard ? Infinity : jog ? JOG : walk;
 	let effort = mind.intent === "cut" ? 0.85 : hard ? 0.75 : jog ? 0.6 : 0.35;
+	let arrive = mind.intent === "spot" && !mind.hold ? SPOT_FLOW * most : 0;
 	if (f.handTo?.commit) {
 		// Something of his coming that pins him: straight there.
 		to = f.handTo.at;
 		toV = f.handTo.v;
 		most = Infinity;
 		effort = 1;
+		arrive = 0;
 	} else if (f.handTo) {
 		const u = smooth01(1 - f.handTo.until / f.handTo.lead);
 		to = {
@@ -836,16 +917,32 @@ export const decide = (
 		if (u > 0.5) {
 			most = Infinity;
 			effort = Math.max(effort, 0.7);
+			arrive = 0;
 		}
 	}
 	const v = Math.hypot(m.vx, m.vy);
 	const ball = f.ball;
 	const going = v > FACE_GOING || most > JOG + 1;
 	const walking = !going && far > STEP_FAR;
+	// (Square to the ball, stepping off away from it: a backpedal, no
+	// quicker than this.)
+	if (ball && !going && !walking) {
+		const tx = to.x - m.x;
+		const ty = to.y - m.y;
+		const bx = ball.x - m.x;
+		const by = ball.y - m.y;
+		const tl = Math.hypot(tx, ty);
+		const bl = Math.hypot(bx, by);
+		if (tl > 0.5 && bl > 1e-6 && (tx * bx + ty * by) / (tl * bl) < AWAY) {
+			most = Math.min(most, BACKPEDAL);
+			arrive = Math.min(arrive, most);
+		}
+	}
 	const goal: Goal = {
 		to,
 		toV,
 		effort,
+		arrive,
 		...(Number.isFinite(most) ? { most } : {}),
 		...(ball && !going && !walking
 			? { face: Math.atan2(ball.y - m.y, ball.x - m.x) }

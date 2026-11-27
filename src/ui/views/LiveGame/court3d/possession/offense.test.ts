@@ -73,6 +73,50 @@ describe("3D possession sim: a man off the ball", () => {
 		}
 	});
 
+	test("working his spot, he walks on from one place on it into the next - not stood on each, nor stepping to and fro", () => {
+		const set = {
+			x: 5.25 + 24.5 * Math.cos(0.8),
+			y: 25 + 24.5 * Math.sin(0.8),
+		};
+		const ball = { x: 32, y: 26 };
+		let stood = 0;
+		let n = 0;
+		let back = 0;
+		for (const pid of [3, 14, 27, 51, 8, 33]) {
+			const steps = run(shooter(pid), pid, set, 12000, () => ({
+				set,
+				ball,
+				holder: { ...still(ball), pid: 99 },
+				mates: [ball, { x: 6, y: 2 }, { x: 6, y: 48 }, { x: 22, y: 8 }],
+			}));
+			const pace = steps.map((q) => Math.hypot(q.vx, q.vy));
+			stood += pace.filter((v) => v < 1.5).length;
+			n += pace.length;
+			// (Back the way he came through a stop: going, under 1.5 ft/s,
+			// going again the other way.)
+			for (let i = 1; i < pace.length - 1; i++) {
+				if (pace[i]! > 3 && pace[i + 1]! <= 3) {
+					for (let k = i + 1; k < Math.min(pace.length, i + 30); k++) {
+						if (pace[k]! > 3) {
+							const c =
+								(steps[i]!.vx * steps[k]!.vx + steps[i]!.vy * steps[k]!.vy) /
+								(pace[i]! * pace[k]!);
+							if (c < -0.5 && Math.min(...pace.slice(i, k + 1)) < 1.5) {
+								back += 1;
+							}
+							i = k - 1;
+							break;
+						}
+					}
+				}
+			}
+		}
+		// (Real: stood about 30% of the time with nothing going on. Before:
+		// 42%, and back the way he came 23 times in these 72 s.)
+		assert.isBelow(stood / n, 0.35);
+		assert.isAtMost(back, 8);
+	});
+
 	test("never on top of a teammate: with one stood on his spot, he works it well off him", () => {
 		const set = { x: 30, y: 25 };
 		const mate = { x: 30, y: 26 };

@@ -9,6 +9,7 @@ import {
 	throughPasses,
 	throughPullUps,
 	throughReaches,
+	throughStands,
 } from "./through.ts";
 
 const track = (moves: Move[], acts: Act[] = []): Track => ({
@@ -728,5 +729,68 @@ describe("in time for it", () => {
 		assert.isBelow(Math.abs(P.x - 50), 2);
 		// (Stopped on the play's spot after it.)
 		assert.strictEqual(spotAt(tr, 2500).x, 50);
+	});
+});
+
+describe("stood between two runs", () => {
+	const inOrder = (tr: Track) => {
+		for (let i = 1; i < tr.moves.length; i++) {
+			assert.isAtMost(tr.moves[i - 1]!.t1, tr.moves[i]!.t0 + 1e-6);
+		}
+	};
+
+	test("a beat stood between two runs the same way: the run in taken slower, on into the next without stopping", () => {
+		const tr = track([
+			run(0, 1000, 20, 30),
+			stand(1000, 1600, 30),
+			run(1600, 2600, 30, 40),
+			stand(2600, 4000, 40),
+		]);
+		assert.strictEqual(throughStands(new Map([[1, tr]])), 1);
+		inOrder(tr);
+		const [a, b] = tr.moves;
+		assert.strictEqual(a!.t1, 1600);
+		assert.isAtLeast(a!.v1!, 1.5);
+		assert.strictEqual(b!.t0, 1600);
+		assert.strictEqual(b!.v0, a!.v1);
+		// (Where the play has him, when it has him there.)
+		assert.deepEqual(spotAt(tr, 1600), { x: 30, y: 20 });
+		assert.strictEqual(spotAt(tr, 3000).x, 40);
+	});
+
+	test("back the way he came: in slower, planted a moment before he goes back", () => {
+		const tr = track([
+			run(0, 1000, 20, 30),
+			stand(1000, 1700, 30),
+			run(1700, 2700, 30, 20),
+		]);
+		assert.strictEqual(throughStands(new Map([[1, tr]])), 1);
+		inOrder(tr);
+		const a = tr.moves[0]!;
+		assert.strictEqual(a.t1, 1500);
+		assert.strictEqual(a.v1 ?? 0, 0);
+		assert.strictEqual(tr.moves.find((m) => m.t0 === 1700)!.v0 ?? 0, 0);
+	});
+
+	test("stood a long while, or something of his in the stand: as it was", () => {
+		const long = [
+			run(0, 1000, 20, 30),
+			stand(1000, 3000, 30),
+			run(3000, 4000, 30, 40),
+		];
+		const t1 = track(long.map((m) => ({ ...m })));
+		assert.strictEqual(throughStands(new Map([[1, t1]])), 0);
+		assert.deepEqual(t1.moves, long);
+		const busy = [
+			run(0, 1000, 20, 30),
+			stand(1000, 1600, 30),
+			run(1600, 2600, 30, 40),
+		];
+		const t2 = track(
+			busy.map((m) => ({ ...m })),
+			[act(1100, 1400, "catch")],
+		);
+		assert.strictEqual(throughStands(new Map([[1, t2]])), 0);
+		assert.deepEqual(t2.moves, busy);
 	});
 });

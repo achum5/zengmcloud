@@ -1111,6 +1111,57 @@ stood than we were. Both columns are on the new count.
 (The lurches more are men off the ball and defenders whose own picks
 came out a little different, not a board or a jumper.)
 
+## On between spots (stop-and-go, fourth piece)
+
+Two more places our men stood and set off far more than real men:
+
+- The play's laid runs: run to a spot, stand there half a second, run on
+  to the next - the dash and the stand. (Stands off the ball of 0.2-0.5 s,
+  0.5-1 s and 1-2 s, a live minute: real 22, 13, 7; ours 40, 21, 11.)
+- A man working his spot (`offense.ts`) walked to a place on it, stood
+  there a moment, then picked the next - and the next was, two times in
+  three, straight back where he had come from: to and fro along the arc,
+  through a stop each way. Real men go back the way they came through a
+  stop 1.1 times a minute each; ours 3.2.
+
+Now, the new sim only:
+
+- `throughStands` (`through.ts`): a stand of his of up to 1.2 s between
+  two laid runs, with nothing of his in it, is taken up by the run in -
+  slower, there as he goes on: on into the next without stopping when it
+  goes much the same way, planted a moment (0.2 s) before one going back
+  the other way. Never slower over the run in than 3 ft/s.
+- Working his spot, he stands on only some of the places he gets to (15%)
+  and walks on into the next from the rest while still going, at a drift
+  (4-5 ft/s); a pick straight back the way he came costs as much as 5 ft
+  of room (none going back toward a job of his coming, or out of the
+  lane); square to the ball and stepping away from it, no quicker than a
+  backpedal (3.5 ft/s).
+
+| Measure (real_11 + real_22, whole games) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Everybody, live: stood | 18.9% | 16.0% | 13.1% |
+| Half court, stood: off the ball | 20.2% | 15.7% | 17.0% |
+| ... the man with the ball | 22.5% | 22.6% | 15.2% |
+| ... defense | 22.3% | 19.5% | 16.6% |
+| Set-offs (stood to 4 ft/s within 0.5 s), a live minute | 98.6 | 94.2 | 41.5 |
+| ... with another man's in the same 0.1 s (lockstep) | 44% | 42% | 26% |
+| Back the way he came through a stop, a man-minute | 3.24 | 3.29 | 1.14 |
+| Laid runs shoved apart over 3 ft (keepOff), real_11 / real_22 | 22 / 12 | 20 / 8 | |
+| Tape flags: lurch, sharp turns, teleport, moonwalk | 128, 6, 20, 4 | 128, 16, 25, 5 | |
+
+Standing is where it moved: the off-ball men now stand about as much as
+real ones, and the defense with them. Set-offs and back-the-way-he-came
+barely moved - what is left of those is the defense going with its men
+(over half of its set-offs come out of a dip under 1.5 ft/s of under
+0.3 s: a man of theirs stopping or turning back) and the play's laid runs.
+The sharp-turn flags are rare single turns, chance where they fall: four
+of the new ones are two laid runners in transition crossing lanes
+(`fillLanes` takes his lane's side from the spot he is going to) in a
+possession where they had not crossed before; how men turn at 8-13 ft/s
+is as it was (deg/s, median / p90 / p99: 3.7 / 39.2 / 89.9 before, 3.9 /
+39.5 / 89.1 now).
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it
