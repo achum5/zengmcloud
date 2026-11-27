@@ -56,6 +56,7 @@ const Player2 = ({
 	randomDebutsForeverPids,
 	ratings,
 	retired,
+	rumors,
 	statTables,
 	statSummary,
 	teamColors,
@@ -461,6 +462,20 @@ const Player2 = ({
 						})}
 						{events.length === 0 ? <p>None</p> : null}
 					</HideableSection>
+					{rumors.length > 0 ? (
+						<HideableSection title="Rumors">
+							{rumors.map((e) => (
+								<p key={e.eid}>
+									{e.date !== undefined ? (
+										<>
+											<b>{formatGameDate(e.date, "withYear")}</b>:{" "}
+										</>
+									) : null}
+									<SafeHtml dirty={e.text} />
+								</p>
+							))}
+						</HideableSection>
+					) : null}
 				</div>
 			</div>
 

@@ -33,6 +33,7 @@ import {
 	type SmartView,
 } from "./worth.ts";
 import { marginShare, mustMove, plansOf, type Plan } from "./plans.ts";
+import { beginTalks, endTalks, noteTalk, tellRumors } from "./rumors.ts";
 
 // THE GM'S MARKET (docs/smart-cpu.md, layer 2). At each market moment every
 // team reads where it stands (plans.ts), and every CPU team reads every
@@ -527,7 +528,16 @@ export const dealsNow = async (
 		marketStats.candidates += 1;
 		const bidders = await timed("market: bidders", () => biddersFor(view, c));
 		const buyers = bidders.map((b) => b.tid);
-		trace({ stage: "shopped", seller: c.seller, p: c.p, buyers }, view);
+		trace(
+			{
+				stage: "shopped",
+				seller: c.seller,
+				p: c.p,
+				buyers,
+				mustMove: c.mustMove,
+			},
+			view,
+		);
 		const tried = offerStats.tried;
 		const real = await timed("market: offers", () =>
 			view.bestRealOffer(
@@ -658,6 +668,8 @@ export type MarketTrace = {
 	buyer?: number;
 	p: Player;
 	buyers?: readonly number[];
+	// Shopped: his team must move him before the deadline (plans.ts).
+	mustMove?: boolean;
 	why?: string;
 	sellerGain?: number;
 	buyerGain?: number;
@@ -671,6 +683,8 @@ const trace = (t: MarketTrace, view: SmartView) => {
 	if (!tracing) {
 		return;
 	}
+	// The moment's talks, for the rumor mill.
+	noteTalk(t);
 	for (const watch of smartTraceWatchers) {
 		watch(t, view);
 	}
@@ -769,6 +783,17 @@ const laterGains = async (
 export const marketMoment = () => timed("market", marketMomentNow);
 
 const marketMomentNow = async () => {
+	beginTalks();
+	try {
+		const made = await marketMomentDeals();
+		await tellRumors(made);
+		return made;
+	} finally {
+		endTalks();
+	}
+};
+
+const marketMomentDeals = async () => {
 	// A moment can hold the worker for minutes: the room's busy mark renewed
 	// first (sync/advanceLease.ts).
 	await holdRoomForAdvance();

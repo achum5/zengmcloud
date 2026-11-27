@@ -138,6 +138,17 @@ test.skipIf(!env.GP_LEAGUE)(
 		for (const m of nearMisses) {
 			log(`  ${m}`);
 		}
+		// The rumor mill's stories (smartCpu/rumors.ts), as the News Feed has
+		// them.
+		const rumors = (await idb.cache.events.getAll()).filter(
+			(e) => e.type === "rumor" && e.season === season,
+		);
+		log(`\nrumors (${rumors.length}):`);
+		for (const e of rumors) {
+			log(
+				`  ${e.date ?? ""} [${e.rumor?.tier}] ${(e.text ?? "").replace(/<[^>]+>/g, "")}`,
+			);
+		}
 		if (!env.GP_SUMMER) {
 			return;
 		}

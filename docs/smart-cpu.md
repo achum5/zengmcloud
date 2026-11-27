@@ -3298,3 +3298,49 @@ moves) now also runs a market in the regular season, up to the deadline
 (`smartTradeOnDemand`). On deadline day, after the humans' own moves, it
 gives the CPU teams one more round with each other. A random league's
 2026 opening night: 5 trades.
+
+## The rumor mill (2026-11-27)
+
+The owner asked for the market on the front end "in some fun immersive way"
+and picked a rumor mill. It tells only what the market really did, so it
+changes no decision and asks nothing of anyone (`smartCpu/rumors.ts`).
+
+- Each market moment, the market's own trace (`noteTalk`) records how far
+  each CPU player's talks went: a team wanting him past what his own team
+  needs (1), an offer his team turned down (2), or a deal both sides came
+  close to (3: within margin, waits, unfair, changed, dealt already). Talks
+  between CPU teams only, and nothing about a player traded that moment.
+- `tellRumors(made)` picks the stories after the moment. Kinds, hottest
+  first:
+  - close
+  - offer made (turned down, the seller short by under 0.01)
+  - open to moving (expiring, his team out of the race and not keeping him)
+  - interest (two teams or more)
+  - far apart (top 40 players only, and only when none of its teams was in
+    the news lately)
+  - a busy team (after six players or more), once a season, 14 days apart
+- A story's weight is the player's value plus how far his talks went, less
+  how much its teams were in the news lately.
+- Limits: 3 a night in the last 10 days before the deadline, 1 at other
+  in-season moments, 2 in the offseason. One story per team per moment, and
+  a player again only when his talks go further.
+- A team's best offer for a player his team won't move is never printed.
+- Words come from templates only, and never from `Math.random` (it would
+  move the sim's stream). Openings are taken in turn by how many of that
+  kind were told, endings rotate against them, and eight ways of citing the
+  sources rotate by all stories told. Offers of four players or more read
+  as "a package built around" the best two.
+- Shown as "rumor" events:
+  - the News Feed (Rumors filter, on by default), with the teams after him,
+    an arrow and his team in the card's header and an outlined badge
+  - the ticker
+  - the player page below Transactions (this season, since his last move)
+
+  Heat words over each story were tried and left off (owner: "the wording
+  should be enough").
+- The owner's league to its 2025 deadline: 29 stories.
+- The owner asked whether it gives humans too much of an edge, and kept it
+  as is. The trade screen already tells a human what any team would take,
+  every league mate sees the same stories, and a close story is a deal that
+  didn't happen that night: it may come back at the next moment, so a human
+  can still get there first.

@@ -3123,6 +3123,12 @@ $score-box-player-width: 200px;
 .bg-orange {
 	background-color: lighten(#fd7e14, 10);
 }
+// A rumor isn't news yet: its badge outlined, not filled like the rest.
+.bg-rumor {
+	background-color: transparent;
+	color: var(--bs-body-color) !important;
+	box-shadow: inset 0 0 0 1px var(--bs-secondary-color);
+}
 
 .bg-warning,
 .bg-orange,

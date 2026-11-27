@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 675,
+		date: "2026-11-27",
+		text: "Trade rumors: when CPU teams talk trades with each other, the News Feed and the scores ticker now pass it on, from teams calling about a player to offers turned down and deals that came close. Each card's header shows the teams after him and his team, and a player's page lists this season's talk about him below Transactions.",
+	},
+	{
 		n: 674,
 		date: "2026-11-27",
 		text: 'Shared leagues: when your phone\'s connection drops right as a sim is uploading (switching towers, for example), the app now makes itself a fresh connection and finishes the upload within about half a minute, instead of sitting on "Uploading to the cloud" until you close and reopen it. Sync activity on the Multiplayer Sync page shows real times again instead of "20785d ago".',

@@ -417,6 +417,18 @@ export type EventBBGMWithoutKey = (
 
 			// Releases and draft picks only.
 			revert?: TransactionRevert;
+
+			// Rumors only (smartCpu/rumors.ts): how far the talk got - someone
+			// wanting him (1), an offer turned down (2), close to a deal (3);
+			// kind, how it was told (smartCpu/rumors.ts); seller, the player's
+			// team; team, a story about one team's calls.
+			rumor?: {
+				tier: number;
+				kind?: string;
+				seller?: number;
+				buyer?: number;
+				team?: number;
+			};
 	  }
 	| {
 			type: "sisyphus";
@@ -1506,6 +1518,7 @@ export type LogEventType =
 	| "retired"
 	| "retiredList"
 	| "retiredJersey"
+	| "rumor"
 	| "screenshot"
 	| "sisyphus"
 	| "sisyphusTeam"
@@ -2878,8 +2891,9 @@ type PlayerFormatOptionValue<
 	Key extends keyof PlayerFormatOptions,
 	Default,
 > = Key extends keyof Options
-	? | Exclude<Options[Key], undefined>
-		| (undefined extends Options[Key] ? Default : never)
+	?
+			| Exclude<Options[Key], undefined>
+			| (undefined extends Options[Key] ? Default : never)
 	: Default;
 
 type PlayerFilteredWithSeasonType<

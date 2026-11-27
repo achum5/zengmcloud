@@ -33,6 +33,7 @@ const News = ({
 		rare: true,
 		transaction: true,
 		frontOffice: true,
+		rumor: true,
 		team: true,
 	});
 
