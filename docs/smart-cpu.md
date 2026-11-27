@@ -3267,8 +3267,9 @@ tallied where every player shopped stopped:
   Milwaukee read at 61% to win the title, few teams gain much by buying.
 
 `minGain` is now 0.002 (owner's pick). Sim time to the deadline didn't change
-(22-25 min). All of this was measured on the code before a team's play this
-season counted in its read (657).
+(22-25 min). The runs above came before a team's play this season counted in
+its read (657); with it in, seed 77 again: 5 trades (7 teams) as before
+against 12 (15 teams).
 
 ### One more market on deadline day (2026-11-27)
 
