@@ -1024,6 +1024,43 @@ them a tenth or two of a second, nothing in the numbers. And men set off
 from standing no less often: most of that is the play's own runs, a dash
 and a stand each (the players timing the play's actions, next).
 
+## Kept off each other (sharp turns)
+
+The tapes flag a man turning more than 40 degrees in a tenth of a second
+at a run - more than any body turns. Of the 12 over two whole games, 11
+were the last thing the director does to everybody's runs (`keepOff`,
+`director.ts`): two whose runs go through each other kept apart by
+pushing one aside, at up to 14 ft/s, over a third of a second. Two coming
+together running the same way - a trailer on the break merging onto the
+line of the man bringing it up - were pushed 5 ft to one side of him, then
+as his run came out the other side of the dribbler's, swung 8 ft over to
+that side, through him.
+
+Now, the new sim only:
+
+- The further over a man has to go, the sooner he starts over and the
+  longer he takes about it: never pushed aside harder than 12 ft/s each
+  second (`SEP_ACCEL`) - he bends his run round the man, not knocked off
+  it. (No wider than up to anything he does, either side: a screen, a
+  charge taken, is where it was.)
+- Two going the same way stay on the sides of each other they came
+  together on (`SIDE_SAME`): the one on the move goes on behind the
+  other, not over through him. Not when his way goes right across the
+  other's (more than `SIDE_PAST`, 3 ft, through him): kept on his side
+  that long, he would go 12 ft out of his way.
+
+| Measure (real_11 + real_22, whole games) | Before | Now |
+| --- | --- | --- |
+| Tape flags: sharp turns at a run | 12 | 6 |
+| Tape flags: lurch, teleport | 126, 20 | 124, 20 |
+| Kept off a man at over 10 ft/s, times | 28 | 24 |
+
+Five of the 6 left are runs laid right across each other - a lane runner
+on the break through the man bringing it up, two lanes crossing, five
+coming on for five off the scorer's table together - which no push aside
+fixes: those runs are the play's to lay apart (next). The sixth is a man
+backing off turning to contest a shot.
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it

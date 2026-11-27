@@ -28715,6 +28715,11 @@ class Director {
 		const DT = SEP_MS;
 		// (Pushed over no faster than this, feet a sample.)
 		const SEP_STEP = 0.7;
+		// (The new sim's, see softFor: pushed aside no harder than this, feet
+		// a second, a second. A step eased in over a bell this wide is pushed
+		// at most this much of its height over its width squared.)
+		const SEP_ACCEL = 12;
+		const BELL_BEND = 0.242;
 		// Center to center (feet): up against each other, no nearer - and in
 		// it together (a screen, a box-out, the post), chest to chest.
 		const APART = 1.45;
@@ -28745,6 +28750,15 @@ class Director {
 		// asked every few samples.
 		const EDGE = 6;
 		const EVERY = 4;
+		// (The new sim's: two out of each other no longer than this, samples,
+		// come back together on the same sides of each other as before.)
+		const SIDE_GAP = 2 * (AHEAD + 3 * SOFT);
+		// (Going within this of the same way, cosine: the one coming up
+		// alongside the other, or across in front of him, not by him.)
+		const SIDE_SAME = 0.7;
+		// (Kept on his side of him no further than this (feet) past him on
+		// the other: see sides.)
+		const SIDE_PAST = 3;
 		// The picture only gets up to speed gently, and is back down a moment
 		// before it is over (see fastAt): kept off each other on into it, and
 		// from before the end of it, this far (ms) - eased back over it, so
@@ -28958,11 +28972,32 @@ class Director {
 				.get(pid)
 				?.some(([a, b]) => a - BACKING_EASE <= t && t <= b + BACKING_EASE) ??
 			false;
-		const K: number[] = [];
-		for (let d = -R; d <= R; d++) {
-			K.push(Math.exp(-(d * d) / (2 * SOFT * SOFT)));
-		}
-		const kSum = K.reduce((a, b) => a + b, 0);
+		// (The new sim's: the further over he has to go, the sooner he sees
+		// it coming and starts over - and the longer he takes about it: never
+		// pushed aside harder than this (feet a second, a second) - bending
+		// his run round the man, not knocked off it.)
+		const softFor = (most: number) =>
+			this.possession
+				? Math.max(
+						SOFT,
+						(1000 / DT) * Math.sqrt((most * BELL_BEND) / SEP_ACCEL),
+					)
+				: SOFT;
+		const bells = new Map<number, { K: number[]; sum: number; r: number }>();
+		const bellOf = (soft: number) => {
+			const key = Math.round(soft * 4) / 4;
+			let b = bells.get(key);
+			if (!b) {
+				const r = Math.ceil(3 * key);
+				const K: number[] = [];
+				for (let d = -r; d <= r; d++) {
+					K.push(Math.exp(-(d * d) / (2 * key * key)));
+				}
+				b = { K, sum: K.reduce((x, y) => x + y, 0), r };
+				bells.set(key, b);
+			}
+			return b;
+		};
 		// Added into (ex, ey) round each bunch of samples he was in somebody
 		// at (in order).
 		const spread = (
@@ -28973,23 +29008,74 @@ class Director {
 			ey: Float64Array,
 			// (How much of it he takes, sample by sample: see held.)
 			pin?: Float64Array,
+			// (Whether he is doing something at a sample: see softFor.)
+			busy?: (s: number) => boolean,
 		) => {
 			const n = cx.length;
-			let k = 0;
-			while (k < at.length) {
+			// (Each bunch eased over as wide as the most it has him over needs
+			// - two near enough that the one's easing runs into the other's
+			// taken as one.)
+			const bunches: { k: number; e: number; most: number }[] = [];
+			const reach = (soft: number) =>
+				Math.max(AHEAD, Math.ceil(2 * soft)) + bellOf(soft).r;
+			// (No wider, though, than to the edge of anything he does either
+			// side - not slid over through a screen, or down on the floor
+			// - nor less wide than ever.)
+			const softOf = (k: number, e: number, most: number) => {
+				let soft = softFor(most);
+				if (soft <= SOFT || !busy) {
+					return soft;
+				}
+				let room = reach(soft);
+				for (let q = 1; q <= room; q++) {
+					const l = at[k]! - q;
+					const r = at[e]! + q;
+					if ((l >= 0 && busy(l)) || (r < n && busy(r))) {
+						room = q - 1;
+						break;
+					}
+				}
+				while (soft > SOFT && reach(soft) > room) {
+					soft = Math.max(SOFT, soft - 0.25);
+				}
+				return soft;
+			};
+			for (let k = 0; k < at.length; ) {
 				let e = k;
 				while (e + 1 < at.length && at[e + 1]! - at[e]! <= 2 * (AHEAD + R)) {
 					e++;
 				}
-				const a = Math.max(0, at[k]! - AHEAD - R);
-				const b = Math.min(n - 1, at[e]! + AHEAD + R);
+				let most = 0;
+				for (let q = k; q <= e; q++) {
+					const s = at[q]!;
+					most = Math.max(most, Math.hypot(cx[s]!, cy[s]!));
+				}
+				const last = bunches.at(-1);
+				if (
+					last &&
+					at[k]! - at[last.e]! <=
+						reach(softOf(last.k, last.e, last.most)) + reach(softOf(k, e, most))
+				) {
+					last.e = e;
+					last.most = Math.max(last.most, most);
+				} else {
+					bunches.push({ k, e, most });
+				}
+				k = e + 1;
+			}
+			for (const { k, e, most } of bunches) {
+				const soft = softOf(k, e, most);
+				const { K, sum: kSum, r } = bellOf(soft);
+				const ahead = Math.max(AHEAD, Math.ceil(2 * soft));
+				const a = Math.max(0, at[k]! - ahead - r);
+				const b = Math.min(n - 1, at[e]! + ahead + r);
 				const m = b - a + 1;
 				const wx = new Float64Array(m);
 				const wy = new Float64Array(m);
 				for (let s = a; s <= b; s++) {
 					let best = 0;
-					const q1 = Math.min(b, s + AHEAD);
-					for (let q = Math.max(a, s - AHEAD); q <= q1; q++) {
+					const q1 = Math.min(b, s + ahead);
+					for (let q = Math.max(a, s - ahead); q <= q1; q++) {
 						const v = cx[q]! * cx[q]! + cy[q]! * cy[q]!;
 						if (v > best) {
 							best = v;
@@ -29001,18 +29087,17 @@ class Director {
 				for (let s = a; s <= b; s++) {
 					let sx = 0;
 					let sy = 0;
-					for (let d = -R; d <= R; d++) {
+					for (let d = -r; d <= r; d++) {
 						const q = s + d - a;
 						if (q >= 0 && q < m) {
-							sx += wx[q]! * K[d + R]!;
-							sy += wy[q]! * K[d + R]!;
+							sx += wx[q]! * K[d + r]!;
+							sy += wy[q]! * K[d + r]!;
 						}
 					}
 					const w = pin ? pin[s]! : 1;
 					ex[s]! += (sx / kSum) * w;
 					ey[s]! += (sy / kSum) * w;
 				}
-				k = e + 1;
 			}
 		};
 		// Where the schedule has him, if he is out there (see mark): near
@@ -29389,6 +29474,24 @@ class Director {
 				const w = Math.hypot(wx, wy) || 1;
 				return Math.abs(ddx * wx + ddy * wy) / (w * (d || 1)) < 0.7;
 			};
+			// (Both going faster than MOVING, about the same way: see sides.)
+			const bothGoing = (i: number, j: number, s: number) => {
+				const p0 = Math.max(0, s - 1);
+				const p1 = Math.min(n - 1, s + 1);
+				if (!on[i]![p0] || !on[i]![p1] || !on[j]![p0] || !on[j]![p1]) {
+					return false;
+				}
+				const ax = xs[i]![p1]! - xs[i]![p0]!;
+				const ay = ys[i]![p1]! - ys[i]![p0]!;
+				const bx = xs[j]![p1]! - xs[j]![p0]!;
+				const by = ys[j]![p1]! - ys[j]![p0]!;
+				const va = Math.hypot(ax, ay);
+				const vb = Math.hypot(bx, by);
+				const most = (MOVING * (p1 - p0) * DT) / 1000;
+				return (
+					va > most && vb > most && (ax * bx + ay * by) / (va * vb) > SIDE_SAME
+				);
+			};
 			const ox = tracks.map(() => new Float64Array(n));
 			const oy = tracks.map(() => new Float64Array(n));
 			const moved = new Set<number>();
@@ -29420,6 +29523,9 @@ class Director {
 			// alone: kept off him in the end, whoever else he was kept off.)
 			for (let round = 0; round <= ROUNDS; round++) {
 				const walls = round === ROUNDS;
+				// (Which side of each other two in each other came together
+				// on, and when they last were: see SIDE_GAP.)
+				const sides = new Map<number, { s: number; ux: number; uy: number }>();
 				const cx = new Map<number, Float64Array>();
 				const cy = new Map<number, Float64Array>();
 				const cat = new Map<number, number[]>();
@@ -29701,7 +29807,43 @@ class Director {
 								ux = r > 0.01 ? (-ry / r) * sg : 0;
 								uy = r > 0.01 ? (rx / r) * sg : sg;
 							}
-							const short = lim - d + 0.05;
+							let short = lim - d + 0.05;
+							// (The new sim's: two whose ways cross while they are in
+							// each other kept on the sides of each other they came
+							// together on, the one going behind the other as he
+							// goes on - not swung over from the one side of him to
+							// the other, through him. Not two up against each other
+							// in something they do: a charge, a box-out - nor any
+							// not both on the move, the one only stepping by.)
+							if (
+								this.possession &&
+								aa === undefined &&
+								ab === undefined &&
+								bothGoing(i, j, s)
+							) {
+								const key = i * N + j;
+								const was = sides.get(key);
+								if (was && s - was.s <= SIDE_GAP) {
+									was.s = s;
+									const p = ddx * was.ux + ddy * was.uy;
+									if (ux * was.ux + uy * was.uy >= 0 || -p > SIDE_PAST) {
+										// (Still on that side of him - or through him by
+										// more than a little, his way right across the
+										// other's, not alongside it: on the side he is on
+										// now.)
+										was.ux = ux;
+										was.uy = uy;
+									} else {
+										const q = -ddx * was.uy + ddy * was.ux;
+										short =
+											Math.sqrt(Math.max(0, lim * lim - q * q)) - p + 0.05;
+										ux = was.ux;
+										uy = was.uy;
+									}
+								} else {
+									sides.set(key, { s, ux, uy });
+								}
+							}
 							const fa = ga / (ga + gb);
 							if (fa > 0) {
 								push(i, s, ux * short * fa, uy * short * fa);
@@ -29716,7 +29858,15 @@ class Director {
 					break;
 				}
 				for (const [i, ax] of cx) {
-					spread(ax, cy.get(i)!, cat.get(i)!, ox[i]!, oy[i]!, held[i]);
+					spread(
+						ax,
+						cy.get(i)!,
+						cat.get(i)!,
+						ox[i]!,
+						oy[i]!,
+						held[i],
+						(s) => actOf(i, s) !== undefined,
+					);
 					moved.add(i);
 				}
 			}

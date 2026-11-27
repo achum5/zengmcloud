@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 652,
+		date: "2026-11-27",
+		text: "3D game, New sim: players no longer jerk sideways when they get too close to a teammate or an opponent. They see each other coming and bend their run around smoothly, staying on one side instead of swerving one way and then cutting back the other.",
+	},
+	{
 		n: 651,
 		date: "2026-11-27",
 		text: "Daily Schedule: trade deadline day now reads as one day. Instead of a bare Trade Deadline box and no games, it shows a Trade Deadline banner with a Pass deadline button on top of that night's games, and picking that date in the week strip shows the same thing. Once you pass the deadline, the games are ready to watch or sim.",
