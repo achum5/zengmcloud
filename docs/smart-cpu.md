@@ -3011,3 +3011,59 @@ One test changed with it (`proposals.test.ts`, Realistic Front Offices): on
 the trading block a team that wouldn't take the player for any one of its
 picks - it wants him only to send players out - now bids, with five
 players, as vanilla's rule allows ("picks first, if it would give any").
+
+## Bench players by real minutes, measured (2026-11-27)
+
+The owner picked this from the list of next steps: contenders put real title
+worth on fringe players (the owner's league, 2026-11-17: CLE's 7.8% for
+Moussa Diabaté, "who would never play for it"), so value each player by the
+minutes he would really get. Measured on the owner's DBA league at the 2025
+preseason, it doesn't hold: the GM's worth for a contender's 11th man is about
+what he does for its title chances in the game's own sim.
+
+**The case.** Milwaukee (51.7% to win the title) puts 0.040 of a title on
+Spencer Dinwiddie (32, 49/49) as its 11th man (`fringeProbe`), 0.028 of it
+this season: his strength is +0.27 a game with injuries yet to come (8%,
+`injuryRisk`), +0.09 with everyone healthy.
+
+**Played out** (`benchSwapLab`): Milwaukee's best 15 with and without him,
+against the other teams on the same random numbers, each man out of each game
+at 8% (the same men both ways):
+
+| games                                    | each way | model | margin       | games won, as points |
+| ---------------------------------------- | -------- | ----- | ------------ | -------------------- |
+| regular season, every team, healthy      | 43,500   | +0.09 | +0.14 ± 0.05 | -0.10 ± 0.13         |
+| regular season, every team               | 43,500   | +0.27 | +0.18 ± 0.07 | -0.14 ± 0.16         |
+| four 49-51 free agents for his last four | 43,500   | +0.18 | +0.23 ± 0.08 | -0.10 ± 0.18         |
+| playoff games, the eight other best      | 40,000   | +0.27 | +0.37 ± 0.06 | +0.27 ± 0.15         |
+
+Games won, as points: the change in games won over the chance a game comes
+down to a point. Against the league in the regular season his minutes come
+mostly in games already decided; in playoff games against the other
+contenders - what a title turns on - he moves Milwaukee by what the model
+says. The bench does play in this sim: Milwaukee's 11th-15th men 5.7, 3.7,
+1.7, 1.5 and 1.1 minutes a game with injuries.
+
+**Minutes that decide games** (`leverageLab`): every second a man is on the
+floor weighed by how much a point then moves his team's chance of winning (a
+normal model of the margin still to come, fit on the same games; averaged over
+a game it comes to the density of the final margin at a tie, as it must).
+
+- How much a bench man plays turns on how far he stands behind the rotation,
+  not on his place alone: an 11th man within 1.5 of the team's 8th man has 16%
+  of the game's leverage, one 9 or more behind it 2-5%. The owner's league
+  plays its deep bench about twice what `SLOT_MINUTES` says; League 40 (real
+  players, 2010) less than it.
+- In playoff games among the nine best teams, 8% out, the 11th-14th men's
+  share of the leverage is 0.127, 0.045, 0.030 and 0.032, against the
+  model's 0.117, 0.067, 0.038 and 0.022: about right.
+- What is off there is the top of the rotation: the starters' share is about a
+  tenth more than the model's (0.766 and 0.700 for the first two, against
+  0.699 and 0.644) and the 8th-10th men's a tenth to a fifth less (0.281,
+  0.240, 0.172 against 0.341, 0.267, 0.188) - the sim's players tire 1.85
+  times slower in the playoffs. Milwaukee without its 8th man in those games:
+  model -0.83, margin -0.45 ± 0.09, games won -0.23 ± 0.19 as points.
+
+Nothing changed. Young prospects' worth to contenders (Bub Carrington, 20,
+47/68, 0.16 of a title to Milwaukee) is two to eight seasons on, as rotation
+players.
