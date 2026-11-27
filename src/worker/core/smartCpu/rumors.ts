@@ -619,6 +619,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 					rumor: {
 						tier: kind.tier,
 						kind: kind.kind,
+						seller: talk.seller,
 						...(kind.buyer === undefined ? {} : { buyer: kind.buyer }),
 					},
 					text: (seed) => story(talk, kind.kind, seed),

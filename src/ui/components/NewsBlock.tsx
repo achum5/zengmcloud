@@ -8,6 +8,7 @@ import type { View, LogEventType } from "../../common/types.ts";
 import { categories, types } from "../../common/transactionInfo.ts";
 import { SocialThread, type TeamLike } from "../views/SocialPost.tsx";
 import type { AccountPicture } from "../../common/socialMetrics.ts";
+import { RumorHeat, RumorTeams } from "./Rumor.tsx";
 
 const Badge = ({ type }: { type: LogEventType }) => {
 	let text;
@@ -106,6 +107,23 @@ export const NewsBlock = ({
 		});
 	}
 
+	// A rumor's header says who is after whom (a busy team's story: that team).
+	const rumor = event.type === "rumor" ? event.rumor : undefined;
+	if (
+		rumor &&
+		(rumor.seller !== undefined || rumor.team !== undefined) &&
+		event.tids
+	) {
+		teamName = (
+			<RumorTeams
+				tids={event.tids}
+				rumor={rumor}
+				teams={teams}
+				season={season}
+			/>
+		);
+	}
+
 	return (
 		<div className="card">
 			<div
@@ -152,6 +170,7 @@ export const NewsBlock = ({
 					</div>
 				) : null}
 				<div className="p-2">
+					{rumor ? <RumorHeat rumor={rumor} className="d-block" /> : null}
 					<SafeHtml dirty={event.text} />
 				</div>
 			</div>

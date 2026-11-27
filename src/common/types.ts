@@ -420,9 +420,15 @@ export type EventBBGMWithoutKey = (
 
 			// Rumors only (smartCpu/rumors.ts): how far the talk got - someone
 			// wanting him (1), an offer turned down (2), close to a deal (3);
-			// kind, how it was told (smartCpu/rumors.ts); team, a story about one
-			// team's calls.
-			rumor?: { tier: number; kind?: string; buyer?: number; team?: number };
+			// kind, how it was told (smartCpu/rumors.ts); seller, the player's
+			// team; team, a story about one team's calls.
+			rumor?: {
+				tier: number;
+				kind?: string;
+				seller?: number;
+				buyer?: number;
+				team?: number;
+			};
 	  }
 	| {
 			type: "sisyphus";

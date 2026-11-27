@@ -143,6 +143,8 @@ export const processEvents = async (
 			season: event.season,
 			date: event.date,
 			score: event.score,
+			// (A rumor's heat and who is after whom - see smartCpu/rumors.ts.)
+			rumor: event.rumor,
 			// (The teams that held a press conference for it - see
 			// pressConference.ts.)
 			pressTids: await pressTidsOf(event),
