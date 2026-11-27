@@ -7,8 +7,10 @@ import { loadLeagueFile } from "./loadLeague.ts";
 // each got to (market.ts MarketTrace), with how far short the sellers who
 // said no were, and the trades made - to try the market's settings on
 // (MARKET_SET, MARGIN_SET, SMART_SET: loadLeague.ts).
-//   GP_LEAGUE=<league.json> GP_OUT=<file> [GP_SEED=77] npx vitest --run \
-//     --project basketball src/test/smart/gateProbe.test.ts
+// GP_SUMMER=1 plays on through the playoffs, the draft and free agency to
+// the next opening night, and lists the trades made on the way.
+//   GP_LEAGUE=<league.json> GP_OUT=<file> [GP_SEED=77] [GP_SUMMER=1] \
+//     npx vitest --run --project basketball src/test/smart/gateProbe.test.ts
 const env: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
 const importNode = (name: string) => import(/* @vite-ignore */ name);
@@ -38,8 +40,9 @@ test.skipIf(!env.GP_LEAGUE)(
 		Math.random = makeSeededRandom(Number(env.GP_SEED ?? 77));
 		const { g } = await import("../../worker/util/index.ts");
 		const { idb } = await import("../../worker/db/index.ts");
-		const { phase, league, game } = await import("../../worker/core/index.ts");
-		const { PHASE } = await import("../../common/constants.ts");
+		const { phase, league, game, draft, freeAgents } =
+			await import("../../worker/core/index.ts");
+		const { PHASE, PHASE_TEXT } = await import("../../common/constants.ts");
 		const { smartHumans } =
 			await import("../../worker/core/smartCpu/signing.ts");
 		const market = await import("../../worker/core/smartCpu/market.ts");
@@ -89,7 +92,7 @@ test.skipIf(!env.GP_LEAGUE)(
 				buyersMade.set(a, (buyersMade.get(a) ?? 0) + 1);
 			}
 			made.push(
-				`${abbrev.get(d.buyer)} gets ${d.out.players.map(name).join("; ")} from ${abbrev.get(d.seller)} for [${[...d.offer.players.map(name), ...d.offer.picks.map((dp: any) => `${dp.season} R${dp.round} ${abbrev.get(dp.originalTid)}`)].join("; ")}]: seller ${d.sellerGain.toFixed(4)}, buyer ${d.buyerGain.toFixed(4)}`,
+				`${env.GP_SUMMER ? `[${(PHASE_TEXT as any)[g.get("phase")]}] ` : ""}${abbrev.get(d.buyer)} gets ${d.out.players.map(name).join("; ")} from ${abbrev.get(d.seller)} for [${[...d.offer.players.map(name), ...d.offer.picks.map((dp: any) => `${dp.season} R${dp.round} ${abbrev.get(dp.originalTid)}`)].join("; ")}]: seller ${d.sellerGain.toFixed(4)}, buyer ${d.buyerGain.toFixed(4)}`,
 			);
 		});
 		let moments = 0;
@@ -132,6 +135,42 @@ test.skipIf(!env.GP_LEAGUE)(
 		}
 		log(`\nnear misses (${nearMisses.length}):`);
 		for (const m of nearMisses) {
+			log(`  ${m}`);
+		}
+		if (!env.GP_SUMMER) {
+			return;
+		}
+		const toDeadline = made.length;
+		let guard = 0;
+		while (
+			!(g.get("season") > season && g.get("phase") === PHASE.REGULAR_SEASON) &&
+			guard++ < 1000
+		) {
+			const ph = g.get("phase");
+			if (
+				ph === PHASE.PLAYOFFS ||
+				ph === PHASE.REGULAR_SEASON ||
+				ph === PHASE.AFTER_TRADE_DEADLINE
+			) {
+				await game.play(ph === PHASE.PLAYOFFS ? 100 : 7, {});
+			} else if (ph === PHASE.DRAFT) {
+				await draft.runPicks({ type: "untilEnd" }, {});
+				if (g.get("phase") === PHASE.DRAFT) {
+					await phase.newPhase(PHASE.AFTER_DRAFT, {});
+				}
+			} else if (ph === PHASE.FREE_AGENCY) {
+				await freeAgents.play(g.get("daysLeft"), {});
+				if (g.get("phase") === PHASE.FREE_AGENCY) {
+					await phase.newPhase(PHASE.PRESEASON, {});
+				}
+			} else {
+				await phase.newPhase((ph + 1) as any, {});
+			}
+		}
+		log(
+			`\nafter the deadline to ${g.get("season")}'s opening night: ${made.length - toDeadline} made, ${((performance.now() - start) / 60000).toFixed(1)} min in all`,
+		);
+		for (const m of made.slice(toDeadline)) {
 			log(`  ${m}`);
 		}
 	},
