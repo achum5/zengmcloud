@@ -206,32 +206,30 @@ const howMany = (k: number) =>
 			: "dozens of";
 
 const count = (k: number, word: string) =>
-	`${["", "a", "two", "three", "four", "five"][k] ?? k} ${word}${k > 1 ? "s" : ""}`;
+	`${k === 1 ? "a" : numberWord(k)} ${word}${k > 1 ? "s" : ""}`;
 
 const listOf = (parts: string[]) =>
 	parts.length <= 1
 		? (parts[0] ?? "")
 		: `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
 
-// An offer in words: its players by name (the two best, then how many
-// more), its picks counted by round.
+// An offer in words: its players by name, its picks counted by round. One of
+// many players is "a package built around" its two best ("Kostas
+// Antetokounmpo, Kyle Kuzma, four other players and two first-round picks"
+// read like a list, the same list three times in a month).
 const offerPhrase = (offer: Holdings) => {
 	const players = [...offer.players].sort((a, b) => b.value - a.value);
-	const parts = players.slice(0, 2).map(playerLink);
-	if (players.length === 3) {
-		parts.push("another player");
-	} else if (players.length > 3) {
-		parts.push(count(players.length - 2, "other player"));
-	}
 	const firsts = offer.picks.filter((dp) => dp.round === 1).length;
 	const seconds = offer.picks.length - firsts;
-	if (firsts > 0) {
-		parts.push(count(firsts, "first-round pick"));
+	const picks = [
+		...(firsts > 0 ? [count(firsts, "first-round pick")] : []),
+		...(seconds > 0 ? [count(seconds, "second-round pick")] : []),
+	];
+	if (players.length > 3) {
+		const core = `a package built around ${listOf(players.slice(0, 2).map(playerLink))}`;
+		return picks.length > 0 ? `${core}, with ${listOf(picks)}` : core;
 	}
-	if (seconds > 0) {
-		parts.push(count(seconds, "second-round pick"));
-	}
-	return listOf(parts);
+	return listOf([...players.map(playerLink), ...picks]);
 };
 
 const story = (talk: Talk, kind: Kind, seed: number) => {
@@ -422,7 +420,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 	}
 	const still = (p: Player, tid: number) => !traded.has(p.pid) && p.tid === tid;
 	const penalty = (tids: readonly number[]) =>
-		4 * tids.reduce((sum, tid) => sum + (lately.get(tid) ?? 0), 0);
+		8 * tids.reduce((sum, tid) => sum + (lately.get(tid) ?? 0), 0);
 	type Story = {
 		tids: number[];
 		pids: number[];
@@ -448,6 +446,11 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 					: kind.kind === "available"
 						? [talk.seller, ...talk.bidders.slice(0, 2)]
 						: [...talk.bidders.slice(0, 2), talk.seller];
+			// Far apart is news only about teams not in the news lately (the
+			// owner's league's busiest buyer had four in a row at the deadline).
+			if (kind.kind === "apart" && tids.some((tid) => lately.has(tid))) {
+				return [];
+			}
 			return [
 				{
 					tids,

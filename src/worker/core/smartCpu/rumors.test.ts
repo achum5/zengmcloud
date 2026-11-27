@@ -190,3 +190,25 @@ test("a team after many players is a story of its own, then quiet a while", asyn
 	assert.include(strip(r.text), "six players");
 	assert.strictEqual((await moment(busy)).length, 1);
 });
+
+test("an offer of many players is told as a package built around its best two", async () => {
+	const p = players[0]!;
+	const rumors = await moment([
+		{
+			stage: "seller says no",
+			seller: 0,
+			buyer: 1,
+			p,
+			sellerGain: -0.003,
+			offer: {
+				players: [players[7]!, players[5]!, players[1]!, players[6]!],
+				picks: [pick(1)],
+			},
+		},
+	]);
+	assert.strictEqual(rumors.length, 1);
+	assert.include(
+		strip(rumors[0]!.text),
+		"a package built around Player 1 and Player 5, with a first-round pick",
+	);
+});
