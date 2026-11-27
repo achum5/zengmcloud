@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 671,
+		date: "2026-11-27",
+		text: "3D game: the score bugs file now has ESPN's looks from its first season (2002-03) on, with ABC's Sundays, playoffs and Finals in ESPN's look from 2006-07, NBC's from 1996-97 to 2001-02, TNT's from 1989-90 to 1998-99, and TNT's playoff series lines. A playoff series line too long for its bug's room is now set smaller to fit. Import the file again to get them.",
+	},
+	{
 		n: 670,
 		date: "2026-11-27",
 		text: "3D game, a faster way to draw it, to try: Global Settings > 3D Drawing > GPU (in progress) draws the whole game on your device's graphics chip in one picture, in plain kit colors for now, with its frame rate shown over it. Current + frame rate shows today's drawing with the same readout, to compare.",

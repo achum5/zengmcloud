@@ -171,15 +171,21 @@ export const CustomScoreBug = ({
 	// A length in the bug's units, as a share of its width.
 	const u = (n: number) => `${(n / W) * 100}cqw`;
 	const team = (side: "away" | "home") => (side === "away" ? away : home);
-	// (A name longer than the letters its piece has room for, smaller to fit.)
+	// (A name, or a playoff series, longer than the letters its piece has
+	// room for, smaller to fit.)
 	const fitted = (p: ScoreBugPiece) => {
 		const m = /^(away|home)(Name|Region|Abbrev)$/.exec(p.show);
-		if (p.letters === undefined || !m) {
+		if (p.letters === undefined || (!m && p.show !== "series")) {
 			return 1;
 		}
-		const t = team(m[1] as "away" | "home");
-		const said =
-			m[2] === "Name" ? t?.name : m[2] === "Region" ? t?.region : t?.abbrev;
+		const t = m ? team(m[1] as "away" | "home") : undefined;
+		const said = !m
+			? series
+			: m[2] === "Name"
+				? t?.name
+				: m[2] === "Region"
+					? t?.region
+					: t?.abbrev;
 		return said !== undefined && said.length > p.letters
 			? p.letters / said.length
 			: 1;
