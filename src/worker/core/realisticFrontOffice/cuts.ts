@@ -16,12 +16,15 @@ import {
 	viewFor,
 } from "../smartCpu/signing.ts";
 import { timed } from "../smartCpu/clock.ts";
+import { CUT_POOL, cheapestToCut } from "../smartCpu/worth.ts";
+import { dumpBeforeCut, dumpNow } from "../smartCpu/dumpBeforeCut.ts";
 
 // CUTS. A CPU team over the roster limit releases whoever it can best do
 // without: the player whose release leaves its franchise worth the most - his
 // salary still owed unless he was just drafted, his upside gone with him, and
-// the floor's positions as they are left. Stock cuts the lowest value, salary
-// and fit aside.
+// the floor's positions as they are left - with the smart CPU, of those it
+// would owe least after this season (smartCpu/worth.ts cheapestToCut). Stock
+// cuts the lowest value, salary and fit aside.
 
 // What the team is worth without him.
 const worthWithout = (
@@ -99,10 +102,23 @@ const smartCutNow = async (
 	outlook: LeagueOutlook,
 	tid: number,
 	keep: readonly number[],
-) => {
+): Promise<{ p: Player; free: boolean } | "traded" | undefined> => {
 	const view = viewFor(outlook);
-	const best = smartCutOf(view, tid, await view.holdingsOf(tid), keep);
-	return best && { p: best.p, free: view.owedIfReleased(best.p).length === 0 };
+	const h = await view.holdingsOf(tid);
+	const best = smartCutOf(view, tid, h, keep);
+	if (!best) {
+		return undefined;
+	}
+	// The player it would rather lose, what it owes aside: one it owes more
+	// after this season it tries to trade first (smartCpu/dumpBeforeCut.ts).
+	const rather = smartCutOf(view, tid, h, keep, false);
+	if (rather && rather.p !== best.p) {
+		const plan = await dumpBeforeCut(view, tid, rather.p, best.value);
+		if (plan && (await dumpNow(view, tid, plan))) {
+			return "traded";
+		}
+	}
+	return { p: best.p, free: view.owedIfReleased(best.p).length === 0 };
 };
 
 // The cut a team makes from these holdings, and its franchise value after
@@ -112,13 +128,18 @@ const smartCutOf = (
 	tid: number,
 	h: { players: Player[]; picks: DraftPick[] },
 	keep: readonly number[] = [],
+	// Only of those it would owe least after this season (cheapestToCut).
+	cheapest = true,
 ) => {
 	let best: { p: Player; value: number } | undefined;
-	for (const p of h.players
+	const pool = h.players
 		.filter((x) => !keep.includes(x.pid))
 		.sort((a, b) => a.value - b.value || a.pid - b.pid)
-		.slice(0, CUT_CANDIDATES)
-		.sort((a, b) => a.pid - b.pid)) {
+		.slice(0, CUT_POOL);
+	for (const p of (cheapest
+		? cheapestToCut(pool, (x) => view.owedIfReleased(x))
+		: pool
+	).sort((a, b) => a.pid - b.pid)) {
 		const value = view.value(
 			tid,
 			{ players: h.players.filter((x) => x !== p), picks: h.picks },
@@ -159,6 +180,9 @@ export const frontOfficeCuts = async (
 			const best = await smartCut(outlook, tid, keep);
 			if (!best) {
 				break;
+			}
+			if (best === "traded") {
+				continue;
 			}
 			// Released as the league has him now, not the copy the GM's view
 			// read earlier (its injury or ratings may have changed since).

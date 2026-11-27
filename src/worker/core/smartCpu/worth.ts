@@ -72,8 +72,9 @@ export const smartSettings = {
 	// leaves it best off (SmartView.fillSalary) - not only its players it
 	// would miss least, first.
 	fillByDollar: true,
-	// A roster over the limit cuts one of its lowest-valued players, the one
-	// whose release costs it least.
+	// A roster over the limit cuts one of its lowest-valued players it would
+	// owe least after the season (cheapestToCut), the one whose release costs
+	// it least.
 	// Two: each tried costs a franchise value, on every roster over the limit
 	// (in the preseason, nearly every deal's), and the two lowest valued
 	// hold the cut nearly always (try 1 cut the lowest outright).
@@ -305,6 +306,35 @@ export const tradedAwayCount = (players: readonly Player[]) => {
 
 // Money a team would owe players it released, on top of what it owes now.
 export type Dead = readonly { amount: number; exp: number }[];
+
+// WHOM A TEAM CUTS (owner, 2026-11-27, after Dallas, one over the limit in
+// the 2025 preseason, released Tyreke Evans, 36, with three seasons left at
+// $24M, rather than a player at the minimum): of the players it can spare,
+// one of those it would owe least after this season. A player released
+// still counts against the cap as he did on the roster, so the cap reads the
+// same either way, and the GM cut him because the sim would have played him;
+// but a contract kept can still be traded - dumped, matched against a better
+// player's salary, run out as an expiring deal - and one released is owed
+// for nothing for good. Which of them goes is the GM's choice as before.
+// Those owed within a season at the minimum of the least count as owed
+// alike.
+export const cheapestToCut = <T>(
+	candidates: readonly T[],
+	owedIfReleased: (x: T) => Dead,
+): T[] => {
+	const first = g.get("season") + (g.get("phase") > PHASE.PLAYOFFS ? 1 : 0);
+	const later = candidates.map((x) =>
+		owedIfReleased(x).reduce(
+			(sum, d) => sum + d.amount * Math.max(0, d.exp - first),
+			0,
+		),
+	);
+	const least = Math.min(...later);
+	return candidates.filter((_, i) => later[i]! <= least + g.get("minContract"));
+};
+
+// The least valuable players a team picks its cuts from.
+export const CUT_POOL = 8;
 
 const salaryOf = (players: readonly Player[]) =>
 	players.reduce((sum, p) => sum + contractOf(p).amount, 0);
@@ -797,9 +827,12 @@ export class SmartView {
 		let signed = signedNow(now);
 		while (signed.length > g.get("maxRosterSize")) {
 			let best: { v: number; h: Holdings; dead: Dead } | undefined;
-			for (const p of [...signed]
-				.sort((a, b) => a.value - b.value || a.pid - b.pid)
-				.slice(0, smartSettings.cutCandidates)) {
+			for (const p of cheapestToCut(
+				[...signed]
+					.sort((a, b) => a.value - b.value || a.pid - b.pid)
+					.slice(0, CUT_POOL),
+				(x) => this.owedIfReleased(x),
+			).slice(0, smartSettings.cutCandidates)) {
 				const next = {
 					players: now.players.filter((x) => x !== p),
 					picks: now.picks,

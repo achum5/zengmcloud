@@ -3344,3 +3344,61 @@ changes no decision and asks nothing of anyone (`smartCpu/rumors.ts`).
   every league mate sees the same stories, and a close story is a deal that
   didn't happen that night: it may come back at the next moment, so a human
   can still get there first.
+
+## Cuts: a trade first, then whoever is owed least (2026-11-27)
+
+A league mate saw Dallas (CPU, at the cap) release Tyreke Evans in the 2025
+preseason, 36 with three seasons left at $24M. Dallas had 19 players with a
+limit of 18 (it signs past the limit in the summer, `worthSigningOverLimit`),
+and the cut was the one that left it worth most (`smartCutOf`):
+
+- A released player counts against the cap as he did on the roster, so the
+  cap read the same either way.
+- The sim plays by `valueNoPot` (substitutions: `valueNoPot` x fatigue x
+  `ptModifier`). Evans, 10th on the team by it with the weakest lines of the
+  ten, would have played about ten minutes a night, so losing him read as
+  +0.18 of strength this season (0.3159 against 0.3142 for cutting the
+  15th man, James Bouknight).
+
+What that misses: a contract kept can still be traded (dumped, matched
+against a better player's salary, run out as an expiring deal), and one
+released is owed for nothing for good.
+
+The owner's call ("Try a trade. If they have to attach something then
+that's fine"):
+
+- **A trade first** (`smartCpu/dumpBeforeCut.ts`). When the player the GM
+  would rather cut is owed more after this season than the cut below, the
+  team offers him for nothing to CPU teams with the room for his salary and
+  a place on their rosters, its cheapest picks added fewest first (up to
+  `clearRoomSettings.sweeteners`). A deal is made when it leaves the team
+  better off than the cut below, with what it gives counted at its market
+  price (`sureWorthNow`), and the taker gains past its margin as in any
+  trade (`takerGains`).
+- **Then whoever it owes least** (`worth.ts` `cheapestToCut`). With no
+  deal, the team cuts from the players it would owe least after this
+  season, of its eight least valuable; those within a season at the minimum
+  of the least count as owed alike, and among them the GM's choice stands.
+  The GM's forecast of its own cuts (`SmartView.afterCuts`) uses the same
+  rule.
+
+Dallas, from the league just before the cut: no team would take Evans for
+nothing at a gain to Dallas, because his market price is positive (Milwaukee
+and Portland would gain 0.03 and 0.02 titles from him). Dallas now cuts
+Bonzie Colson ($4.5M, expiring) and keeps Evans to trade. Every CPU team's
+cut that night: owed $153M before, $71M now.
+
+The owner's 2025 league played on from mid-season to the next opening night
+(two seeds each way):
+
+| | releases | owed in all | owed after their season | $5M+ after their season |
+| --- | --- | --- | --- | --- |
+| before | 19, 19 | $73M, $130M | $28M, $34M | 1, 2 |
+| now | 27, 17 | $94M, $63M | $8M, $5M | 0, 0 |
+
+No trade-first deals were made in those runs: the rule does the work. Sim
+time to the opening night was the same (5-7 minutes).
+
+People can't dump such a contract on CPU teams either: offered Evans for
+nothing by a person's team, all 27 CPU teams said no (vanilla's value at
+difficulty 3, -0.03 to -0.19, before the team's own read is asked).

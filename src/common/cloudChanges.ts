@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 676,
+		date: "2026-11-27",
+		text: "CPU teams over the roster limit no longer release a player with years left on a big contract while they could cut a cheaper spare. They first try to trade him away, with a pick attached if that's what it takes, and if nobody takes him they keep him and cut the player they owe least after this season.",
+	},
+	{
 		n: 675,
 		date: "2026-11-27",
 		text: "Trade rumors: when CPU teams talk trades with each other, the News Feed and the scores ticker now pass it on, from teams calling about a player to offers turned down and deals that came close. Each card's header shows the teams after him and his team, and a player's page lists this season's talk about him below Transactions.",
