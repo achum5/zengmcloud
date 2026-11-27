@@ -157,8 +157,9 @@ const kindOf = (
 	return undefined;
 };
 
-// One of a few ways to say it, the same for the same player and day - not
-// Math.random, which would move the sim's own stream.
+// One of a few ways to say it, in turn: the stories of its kind told so far
+// this season pick it (three alike in a row at the owner's deadline, when a
+// player's id did) - not Math.random, which would move the sim's own stream.
 const variant = <T>(xs: readonly T[], seed: number) =>
 	xs[Math.abs(seed) % xs.length]!;
 
@@ -260,10 +261,12 @@ const story = (talk: Talk, kind: Kind, seed: number) => {
 				? [
 						`${p} is drawing interest from ${listOf(named)}, league sources say.`,
 						`${team(talk.bidders[0]!, true)} and ${named[1]} have both called ${s} about ${p}, per sources.`,
+						`${S} have heard from ${listOf(named)} on ${p}, a league source said.`,
 					]
 				: [
 						`${p} is drawing interest from ${numberWord(k)} teams, ${listOf(named)} among them, league sources say.`,
 						`At least ${numberWord(k)} teams have called ${s} about ${p}, per sources, including ${listOf(named)}.`,
+						`${S} have heard from ${numberWord(k)} teams on ${p}, ${listOf(named)} among them, a league source said.`,
 					],
 			seed,
 		);
@@ -425,7 +428,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		tids: number[];
 		pids: number[];
 		weight: number;
-		rumor: NonNullable<EventBBGM["rumor"]>;
+		rumor: NonNullable<EventBBGM["rumor"]> & { kind: Kind | "team" };
 		text: (seed: number) => string;
 	};
 	const stories: Story[] = [...now.values()]
@@ -463,7 +466,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 						kind: kind.kind,
 						...(kind.buyer === undefined ? {} : { buyer: kind.buyer }),
 					},
-					text: (seed) => story(talk, kind.kind, talk.p.pid + seed),
+					text: (seed) => story(talk, kind.kind, seed),
 				},
 			];
 		});
@@ -505,12 +508,17 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 				tids: [tid],
 				pids: targets.map((p) => p.pid),
 				weight: targets[0]!.value + 6 * RANK_OF.team - penalty([tid]),
-				rumor: { tier: 1, team: tid },
-				text: (seed) => teamStory(tid, ps.length, targets, tid + seed),
+				rumor: { tier: 1, kind: "team", team: tid },
+				text: (seed) => teamStory(tid, ps.length, targets, seed),
 			});
 		}
 	}
 	stories.sort((a, b) => b.weight - a.weight || a.pids[0]! - b.pids[0]!);
+	const toldOfKind = new Map<string, number>();
+	for (const e of told) {
+		const kind = e.rumor.kind ?? "";
+		toldOfKind.set(kind, (toldOfKind.get(kind) ?? 0) + 1);
+	}
 	const teamsTold = new Set<number>();
 	let n = 0;
 	for (const { tids, pids, rumor, text } of stories) {
@@ -524,9 +532,11 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		for (const tid of tids) {
 			teamsTold.add(tid);
 		}
+		const seed = toldOfKind.get(rumor.kind) ?? 0;
+		toldOfKind.set(rumor.kind, seed + 1);
 		await logEvent({
 			type: "rumor",
-			text: text(season + told.length + n),
+			text: text(seed),
 			pids,
 			tids,
 			score:
