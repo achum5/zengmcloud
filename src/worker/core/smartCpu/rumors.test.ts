@@ -175,14 +175,12 @@ test("a player his team must move is told as open for offers, with who called", 
 });
 
 test("a team after many players is a story of its own, then quiet a while", async () => {
-	const busy = [0, 1, 2, 4, 5, 6].map(
-		(i): MarketTrace => ({
-			stage: "shopped",
-			seller: players[i]!.tid,
-			p: players[i]!,
-			buyers: [3],
-		}),
-	);
+	const busy = [0, 1, 2, 4, 5, 6].map((i): MarketTrace => ({
+		stage: "shopped",
+		seller: players[i]!.tid,
+		p: players[i]!,
+		buyers: [3],
+	}));
 	const rumors = await moment(busy);
 	assert.strictEqual(rumors.length, 1);
 	const r = rumors[0]!;

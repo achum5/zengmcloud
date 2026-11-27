@@ -44,8 +44,12 @@ export const rumorSettings = {
 	// Scored for the News Feed: a top player's story is bigger news.
 	starRank: 30,
 	// A team after at least this many players at a moment is a story of its
-	// own, then quiet for twice as long as a player.
+	// own, named with its two best targets among the league's this many best:
+	// one such story a while (quietDays), the same team for twice as long (in
+	// the owner's league, some team was after six or more at every moment,
+	// and a third of the stories had been that, about bench men).
 	busyTeam: 6,
+	busyTargets: 150,
 };
 
 // How far a talk got: someone wanting him (1), an offer his team turned
@@ -188,7 +192,18 @@ const numberWord = (k: number) =>
 		"seven",
 		"eight",
 		"nine",
+		"ten",
+		"eleven",
 	][k] ?? String(k);
+
+// A team's calls counted loosely, as the insiders do: "at least eight",
+// "more than a dozen", "dozens of".
+const howMany = (k: number) =>
+	k < 12
+		? `at least ${numberWord(k)}`
+		: k < 24
+			? "more than a dozen"
+			: "dozens of";
 
 const count = (k: number, word: string) =>
 	`${["", "a", "two", "three", "four", "five"][k] ?? k} ${word}${k > 1 ? "s" : ""}`;
@@ -241,11 +256,17 @@ const story = (talk: Talk, kind: Kind, seed: number) => {
 		);
 	}
 	if (kind === "interest") {
+		const k = talk.bidders.length;
 		return variant(
-			[
-				`${p} is drawing interest from ${numberWord(talk.bidders.length)} teams, ${listOf(named)} among them, league sources say.`,
-				`At least ${numberWord(talk.bidders.length)} teams have called ${s} about ${p}, per sources, including ${listOf(named)}.`,
-			],
+			k === 2
+				? [
+						`${p} is drawing interest from ${listOf(named)}, league sources say.`,
+						`${team(talk.bidders[0]!, true)} and ${named[1]} have both called ${s} about ${p}, per sources.`,
+					]
+				: [
+						`${p} is drawing interest from ${numberWord(k)} teams, ${listOf(named)} among them, league sources say.`,
+						`At least ${numberWord(k)} teams have called ${s} about ${p}, per sources, including ${listOf(named)}.`,
+					],
 			seed,
 		);
 	}
@@ -316,9 +337,9 @@ const teamStory = (
 			: "this offseason";
 	return variant(
 		[
-			`${B} have been one of the league's most active teams ${when}, checking in on at least ${numberWord(n)} players, ${names} among them, league sources say.`,
-			`${B} are working the phones ${when}, per sources, with calls in on ${numberWord(n)} players, including ${names}.`,
-			`${names} are among the ${numberWord(n)} players ${b} have asked about ${when}, a league source said.`,
+			`${B} have been one of the league's most active teams ${when}, checking in on ${howMany(n)} players, ${names} among them, league sources say.`,
+			`${B} are working the phones ${when}, per sources, with calls in on ${howMany(n)} players, including ${names}.`,
+			`${names} ${targets.length > 1 ? "are" : "is"} among the players ${b} have asked about ${when}, a league source said. They have called on ${howMany(n)} players in all.`,
 		],
 		seed,
 	);
@@ -374,16 +395,23 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		today !== undefined && e.date !== undefined
 			? daysBetween(e.date, today) < times * rumorSettings.quietDays
 			: told.length - 1 - i < times * rumorSettings.quietStories;
-	// A player again only once his talks go further, or with another team
-	// once the last story about him is old; never the same story twice.
-	const quiet = (pid: number, tier: number, buyer: number | undefined) =>
-		told.some(
-			(e, i) =>
-				e.rumor.team === undefined &&
-				e.pids?.[0] === pid &&
-				tier <= e.rumor.tier &&
-				(e.rumor.buyer === buyer || recent(e, i)),
-		);
+	// A player again only once his talks go further than lately, never the
+	// same story twice: a talk with the same team, or teams after him, far
+	// apart or his team open to moving him, once a season each.
+	const quiet = (pid: number, kind: Kind, tier: number, buyer?: number) =>
+		told.some((e, i) => {
+			if (!e.pids?.includes(pid)) {
+				return false;
+			}
+			if (e.rumor.team !== undefined || e.rumor.tier > tier) {
+				return recent(e, i);
+			}
+			return (
+				e.rumor.tier === tier &&
+				(recent(e, i) ||
+					(tier === 1 ? e.rumor.kind === kind : e.rumor.buyer === buyer))
+			);
+		});
 	// Teams in the news lately, so the same busy team isn't every story.
 	const lately = new Map<number, number>();
 	for (const [i, e] of told.entries()) {
@@ -411,7 +439,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 				!kind ||
 				(rank.get(talk.p.pid) ?? Infinity) >
 					rumorSettings.topPlayers[kind.kind] ||
-				quiet(talk.p.pid, kind.tier, kind.buyer)
+				quiet(talk.p.pid, kind.kind, kind.tier, kind.buyer)
 			) {
 				return [];
 			}
@@ -430,6 +458,7 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 					weight: talk.p.value + 6 * RANK_OF[kind.kind] - penalty(tids),
 					rumor: {
 						tier: kind.tier,
+						kind: kind.kind,
 						...(kind.buyer === undefined ? {} : { buyer: kind.buyer }),
 					},
 					text: (seed) => story(talk, kind.kind, talk.p.pid + seed),
@@ -444,20 +473,32 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 			after.set(tid, [...(after.get(tid) ?? []), talk.p]);
 		}
 	}
-	const busiest = [...after]
-		.filter(
-			([tid, ps]) =>
-				ps.length >= rumorSettings.busyTeam &&
-				!told.some((e, i) => e.rumor.team === tid && recent(e, i, 2)),
-		)
-		.sort((a, b) => b[1].length - a[1].length || a[0] - b[0])[0];
+	const teamLately = told.some(
+		(e, i) => e.rumor.team !== undefined && recent(e, i),
+	);
+	const busiest = teamLately
+		? undefined
+		: [...after]
+				.filter(
+					([tid, ps]) =>
+						ps.length >= rumorSettings.busyTeam &&
+						!told.some((e, i) => e.rumor.team === tid && recent(e, i, 2)),
+				)
+				.sort((a, b) => b[1].length - a[1].length || a[0] - b[0])[0];
 	if (busiest) {
 		const [tid, ps] = busiest;
+		// Its best targets the news would know, not told about lately.
 		const targets = ps
-			.filter((p) => p.tid >= 0 && !traded.has(p.pid))
+			.filter(
+				(p) =>
+					p.tid >= 0 &&
+					!traded.has(p.pid) &&
+					(rank.get(p.pid) ?? Infinity) <= rumorSettings.busyTargets &&
+					!told.some((e, i) => e.pids?.includes(p.pid) && recent(e, i)),
+			)
 			.sort((a, b) => b.value - a.value || a.pid - b.pid)
 			.slice(0, 2);
-		if (targets.length === 2) {
+		if (targets.length > 0) {
 			stories.push({
 				tids: [tid],
 				pids: targets.map((p) => p.pid),
