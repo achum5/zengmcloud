@@ -123,6 +123,7 @@ const PINNED_EVENTS = new Set([
 	"v2:listener-missed",
 	"v2:slot-taken",
 	"v2:network-cycled",
+	"v2:cycle-stuck",
 	"v2:hard-restart",
 	"page:reloaded",
 	"v2:hard-restart-failed",

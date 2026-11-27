@@ -1875,6 +1875,86 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Field capture (2026-11-27): a sim's upload hung on a connection that died
+	// a second after the tap, the probe cycled the network ten seconds later,
+	// and the cycle never finished - its second half waits in the SDK's queue
+	// behind the hung upload. An untimed cycle held the probe open for good, so
+	// no probe ran again and the hard restart never came: three results sat
+	// queued until the app was swiped away. A cycle that cannot finish means a
+	// jammed client, and the fresh one goes in at once.
+	test("a cycle that never finishes restarts the client and frees the probe", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		const calls: string[] = [];
+		(transport as any).cycleNetwork = () => {
+			calls.push("cycle");
+			return new Promise<void>(() => {});
+		};
+		(transport as any).hardRestart = async () => {
+			calls.push("restart");
+		};
+		let probes = 0;
+		transport.fetchRoomV2State = () => {
+			probes += 1;
+			return Promise.reject(new Error("channel wedged"));
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).remedyTimeoutMs = 20;
+		engine.start();
+
+		await engine.probeHead();
+		await engine.probeHead();
+		assert.deepStrictEqual(
+			calls,
+			["cycle", "restart"],
+			"the stuck cycle is followed straight away by a fresh client",
+		);
+		assert.strictEqual(
+			(engine as any).probing,
+			false,
+			"the probe is not left waiting on the cycle",
+		);
+
+		// Past the settle, the next tick's probe really runs.
+		(engine as any).readsResumeAt = 0;
+		const before = probes;
+		await engine.probeHead();
+		assert.strictEqual(probes, before + 1);
+		engine.stop();
+	});
+
+	// The same jam reached from a catch-up pass: the pass must end, or every
+	// later pass queues behind it and the probe (which skips while one runs)
+	// never runs again either.
+	test("a cycle that never finishes does not hold the catch-up pass open", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		const calls: string[] = [];
+		(transport as any).cycleNetwork = () => {
+			calls.push("cycle");
+			return new Promise<void>(() => {});
+		};
+		(transport as any).hardRestart = async () => {
+			calls.push("restart");
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).remedyTimeoutMs = 20;
+		(engine as any).catchupFailureStreak = 5;
+		(engine as any).lastCatchupFailureWasTimeout = true;
+		(engine as any).lastNetworkCycleAt = 0;
+
+		assert.strictEqual(
+			await (engine as any).maybeCycleNetwork("catchup"),
+			true,
+		);
+		assert.deepStrictEqual(calls, ["cycle", "restart"]);
+		engine.stop();
+	});
+
 	// A transport too old to offer hardRestart must still get the cycle, rather
 	// than falling off the ladder and applying no remedy at all.
 	test("a transport without hardRestart keeps cycling", async () => {
@@ -2885,6 +2965,9 @@ describe("SyncEngineV2", () => {
 		assert.strictEqual(recent[0]!.authorId, "A");
 		assert.strictEqual(recent[0]!.records, 2);
 		assert.deepStrictEqual(recent[0]!.attrs, ["phase"]);
+		// When it was made, for the page's "5m ago". seq is the version number,
+		// and shown as a time it read "20785d ago".
+		assert.strictEqual(recent[0]!.at, 1);
 	});
 
 	// An idle room and a dead listener both leave the room's `at` stamp old.

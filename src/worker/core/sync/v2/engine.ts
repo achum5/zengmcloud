@@ -186,6 +186,14 @@ const FAST_READ_MS = 1_500;
 // turned into "client is offline" on the very next request.
 const NETWORK_CYCLE_SETTLE_MS = 2_000;
 
+// The longest a remedy may take before the engine stops waiting on it. A cycle
+// is two steps on the SDK's one-at-a-time queue plus a short gap (the
+// transport times each step at 3s), so a healthy one is well inside this.
+// Anything longer is a client whose queue is jammed: the remedy itself is
+// stuck in the same line, and every caller awaiting it (the probe, a catch-up
+// pass) was stuck with it.
+const NETWORK_REMEDY_TIMEOUT_MS = 8_000;
+
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 	new Promise((resolve, reject) => {
 		const id = setTimeout(
@@ -315,6 +323,8 @@ export class SyncEngineV2 {
 	// had been torn down - and that read hung for the full 8s too. The settle
 	// timer's own pass, two seconds later, is the one meant to go through.
 	private readsResumeAt = 0;
+	// (A field so tests can shorten it, like the rescue timings below.)
+	private remedyTimeoutMs = NETWORK_REMEDY_TIMEOUT_MS;
 	private readRescueAfterMs = READ_RESCUE_AFTER_MS;
 	private readRescueQuickMs = READ_RESCUE_QUICK_MS;
 	// The last delta read came around the channel instead of through it.
@@ -748,25 +758,50 @@ export class SyncEngineV2 {
 				? this.readyRemedyCount > 1
 				: this.wedgeRemedyCount > 1;
 		const hardRestart = this.hardRestartFn();
-		if (escalate && hardRestart) {
-			syncDebugLog("v2:hard-restart", {
-				source,
-				attempt: this.wedgeRemedyCount,
-			});
+		const restart = async (attempt: number) => {
+			syncDebugLog("v2:hard-restart", { source, attempt });
 			try {
-				await hardRestart();
+				await withTimeout(hardRestart!(), this.remedyTimeoutMs);
 			} catch (error) {
 				syncDebugLog("v2:hard-restart-failed", { error: String(error) });
 			}
 			// hardRestart re-establishes the transport's own listeners, but the
 			// engine's two are held here and were bound to the dead client.
 			this.subscribeAuthority();
+		};
+		if (escalate && hardRestart) {
+			await restart(this.wedgeRemedyCount);
 		} else {
 			syncDebugLog("v2:network-cycled", { source });
+			let stuck: unknown;
 			try {
-				await this.transport.cycleNetwork?.();
-			} catch {
-				// Even a failed cycle is followed by a fresh listener + catch-up.
+				// TIMED, like every other wait on the SDK. Untimed, a cycle that
+				// never finished held this method open for good - and with it the
+				// probe (`probing`) or the catch-up pass (`catchingUp`) that called
+				// it, which are the only two things that ever call it again. So the
+				// first remedy on a jam was also the last: no further probe, no
+				// hard restart, nothing until the app was closed (field capture,
+				// 2026-11-27: one cycle, then a minute of silence with three
+				// results waiting to upload).
+				await withTimeout(
+					this.transport.cycleNetwork?.() ?? Promise.resolve(),
+					this.remedyTimeoutMs,
+				);
+			} catch (error) {
+				stuck = error ?? new Error("cycle failed");
+			}
+			// A cycle that could not finish proves the client's queue is jammed
+			// (see FirebaseTransport.cycleNetwork): nothing on that client moves
+			// until the jam clears, however long that takes. Waiting for the
+			// probe to fail twice more and come back here would cost another
+			// half minute for the same verdict, so the fresh client goes in now.
+			if (stuck !== undefined && hardRestart) {
+				syncDebugLog("v2:cycle-stuck", { source, error: String(stuck) });
+				this.wedgeRemedyCount += 1;
+				if (source === "ready") {
+					this.readyRemedyCount += 1;
+				}
+				await restart(this.wedgeRemedyCount);
 			}
 		}
 		this.readsResumeAt = Date.now() + NETWORK_CYCLE_SETTLE_MS;
@@ -1396,6 +1431,7 @@ export class SyncEngineV2 {
 			changeset: { changes: [] },
 			records: entry.records,
 			attrs: entry.attrs ?? [],
+			at: entry.at,
 		});
 		if (this.recentVersions.length > SyncEngineV2.RECENT_VERSIONS_LIMIT) {
 			this.recentVersions.splice(

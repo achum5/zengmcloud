@@ -43,6 +43,7 @@ type SyncActivityItem = {
 	key: string;
 	action: string;
 	ts: number;
+	at?: number;
 	records: number;
 	mine: boolean;
 	caughtUp: boolean;
@@ -1124,9 +1125,11 @@ const MultiplayerSync = () => {
 													you
 												</span>
 											) : null}
-											<span className="text-body-secondary d-block small">
-												{relativeTime(item.ts)}
-											</span>
+											{item.at ? (
+												<span className="text-body-secondary d-block small">
+													{relativeTime(item.at)}
+												</span>
+											) : null}
 										</span>
 									</li>
 								))}

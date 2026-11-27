@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 674,
+		date: "2026-11-27",
+		text: 'Shared leagues: when your phone\'s connection drops right as a sim is uploading (switching towers, for example), the app now makes itself a fresh connection and finishes the upload within about half a minute, instead of sitting on "Uploading to the cloud" until you close and reopen it. Sync activity on the Multiplayer Sync page shows real times again instead of "20785d ago".',
+	},
+	{
 		n: 673,
 		date: "2026-11-27",
 		text: "3D game, New sim: players run like runners now, not like a quick walk. They push off a nearly straight back leg, bend less over the planted foot, and spring up between steps, measured against NBA players running the floor in game film. Ball handlers bringing it up ride higher in their legs too.",

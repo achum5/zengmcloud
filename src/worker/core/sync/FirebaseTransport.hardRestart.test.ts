@@ -143,3 +143,59 @@ describe("hardRestart", () => {
 		assert.strictEqual(seen[1]!.terminated, false);
 	});
 });
+
+// enableNetwork waits in the SDK's one-at-a-time queue, behind whatever has
+// jammed it - a commit hung on a dead socket. Awaited with no deadline, it
+// never came back, and the engine's whole recovery waited on it (field
+// capture, 2026-11-27).
+const firestore = await import("firebase/firestore");
+
+describe("cycleNetwork", () => {
+	beforeEach(() => {
+		registered = undefined;
+		vi.mocked(firestore.disableNetwork).mockReset();
+		vi.mocked(firestore.enableNetwork).mockReset();
+	});
+
+	test("gives up on a client that will not come back on", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.mocked(firestore.disableNetwork).mockReturnValue(
+				new Promise<void>(() => {}),
+			);
+			vi.mocked(firestore.enableNetwork).mockReturnValue(
+				new Promise<void>(() => {}),
+			);
+			const transport = new FirebaseTransport("room", "client-A");
+			const outcome = transport.cycleNetwork().then(
+				() => "finished",
+				() => "gave up",
+			);
+			await vi.advanceTimersByTimeAsync(10_000);
+			assert.strictEqual(await outcome, "gave up");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test("a client that comes back on finishes the cycle", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.mocked(firestore.disableNetwork).mockResolvedValue(undefined);
+			vi.mocked(firestore.enableNetwork).mockResolvedValue(undefined);
+			const transport = new FirebaseTransport("room", "client-A");
+			const outcome = transport.cycleNetwork().then(
+				() => "finished",
+				() => "gave up",
+			);
+			await vi.advanceTimersByTimeAsync(10_000);
+			assert.strictEqual(await outcome, "finished");
+			assert.strictEqual(
+				vi.mocked(firestore.enableNetwork).mock.calls.length,
+				1,
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});

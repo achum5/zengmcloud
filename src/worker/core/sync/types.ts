@@ -61,6 +61,9 @@ export type ChangesetEntry = {
 	// records the whole batch touches, and which gameAttributes keys it carries.
 	records?: number;
 	attrs?: string[];
+	// When the change was made (the author's clock, ms), for the same page. On
+	// a v2 entry `seq` is the version number, not a time.
+	at?: number;
 };
 
 // A live-sim broadcast in progress. Whoever live-sims a game - the person in

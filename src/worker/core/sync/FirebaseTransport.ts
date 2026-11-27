@@ -271,6 +271,9 @@ const CONNECTION_PROBE_TIMEOUT_MS = 6000;
 // disableNetwork is queued behind whatever is wedging the client, so it gets a
 // deadline of its own rather than being allowed to hold up re-enabling.
 const NETWORK_DISABLE_TIMEOUT_MS = 3000;
+// And enableNetwork waits in the very same line (see cycleNetwork), so it gets
+// one too.
+const NETWORK_ENABLE_TIMEOUT_MS = 3000;
 // How long to stay offline mid-cycle before switching back on.
 const NETWORK_CYCLE_GAP_MS = 750;
 
@@ -1606,6 +1609,20 @@ export class FirebaseTransport implements SyncTransport {
 	// remedy for a wedged WebChannel (Safari is fond of killing the stream in a
 	// way the SDK doesn't notice): listeners go quiet and server reads hang
 	// until the connection is cycled.
+	//
+	// REJECTS when the client would not come back on in time, and the caller
+	// must take that as "this client is jammed", not as a cycle that ran.
+	// enableNetwork runs on the SDK's async queue - one job at a time, in order
+	// - exactly like disableNetwork, and so does every transaction commit. A
+	// commit sent just as the phone's connection died (a 5G handoff) sits on a
+	// dead socket holding that queue, and everything on the client lines up
+	// behind it: reads, listeners, and both halves of this cycle. Field capture
+	// (2026-11-27): a sim's upload hung that way, the probe cycled ten seconds
+	// later, and enableNetwork - awaited here with no deadline - never came
+	// back. The cycle sat "in progress" for good, which kept the head probe
+	// switched off, which kept the hard restart that would have cleared it
+	// from ever running. The upload went up only when the app was swiped away
+	// and reopened, a minute and a half later.
 	async cycleNetwork(): Promise<void> {
 		try {
 			// disableNetwork runs on Firestore's async queue, which is exactly what
@@ -1614,14 +1631,13 @@ export class FirebaseTransport implements SyncTransport {
 			await withTimeout(disableNetwork(this.db), NETWORK_DISABLE_TIMEOUT_MS);
 		} catch {
 			// Fall through: enabling is the half that matters.
-		} finally {
-			// A beat with the SDK offline before switching back on. Going straight
-			// from disable to enable in the same tick let it re-attach to the same
-			// dead stream, which is a fair part of why cycling so often changed
-			// nothing where turning the radio off did.
-			await new Promise((resolve) => setTimeout(resolve, NETWORK_CYCLE_GAP_MS));
-			await enableNetwork(this.db);
 		}
+		// A beat with the SDK offline before switching back on. Going straight
+		// from disable to enable in the same tick let it re-attach to the same
+		// dead stream, which is a fair part of why cycling so often changed
+		// nothing where turning the radio off did.
+		await new Promise((resolve) => setTimeout(resolve, NETWORK_CYCLE_GAP_MS));
+		await withTimeout(enableNetwork(this.db), NETWORK_ENABLE_TIMEOUT_MS);
 	}
 
 	// The stronger remedy, for when cycling the network has already failed to

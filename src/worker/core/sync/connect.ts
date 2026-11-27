@@ -2305,8 +2305,11 @@ export const claimSyncAuthority = async () => {
 export type SyncActivityItem = {
 	key: string;
 	action: string;
-	// Server-timestamp millis (0 for a not-yet-confirmed write).
+	// The order key: the version number (the chain's position, compared with
+	// the watermark below). Not a time.
 	ts: number;
+	// When it was made (ms), when known - what the page shows as "5m ago".
+	at?: number;
 	// How many records this change touched (summed across a bulk batch).
 	records: number;
 	// Did this device produce it?
@@ -2359,6 +2362,9 @@ export const getSyncActivity = async (): Promise<{
 					? Math.max(existing.records, records)
 					: existing.records + records;
 			existing.ts = Math.max(existing.ts, entry.seq);
+			if (entry.at !== undefined) {
+				existing.at = Math.max(existing.at ?? 0, entry.at);
+			}
 			existing.caughtUp = mine || existing.ts <= watermark;
 			for (const attr of attrsOf(entry)) {
 				if (!existing.attrs.includes(attr)) {
@@ -2370,6 +2376,7 @@ export const getSyncActivity = async (): Promise<{
 				key,
 				action: entry.action,
 				ts: entry.seq,
+				at: entry.at,
 				records,
 				mine,
 				caughtUp: mine || entry.seq <= watermark,
