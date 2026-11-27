@@ -28,7 +28,7 @@
 // (The new sim only: called on the play's runs before they are stepped.)
 
 import type { Act, BallSeg, Move, Track } from "../director.ts";
-import { COURT_H, COURT_W } from "../geometry.ts";
+import { COURT_H, COURT_W, inPlay, rimX } from "../geometry.ts";
 import { alongShape, paceAlong, runShape } from "../motion.ts";
 import type { AnimName } from "../poses.ts";
 
@@ -1196,6 +1196,140 @@ const BOARD_DEF = [1.5, 2.5, 4.5, 6.7, 8.9];
 const BOARD_OFF = [1.9, 3.1, 5.8, 9.5, 12.8];
 const BOARD_BACK = 2500;
 
+// Down with it, he does not stop dead where he lands and stand there with
+// it till he gets rid of it: he comes off it still going, easing off a step
+// at a time as he turns the way the play's next run of his takes him (up
+// the floor, after his outlet), no slower than this (feet a second, braking
+// this hard, a second) till it does - and throws it on the way. Come down
+// stood, he takes the landing (ms) and then steps off that way, getting
+// going this hard. (Real, a board held and passed on: 4.4 ft/s as it comes
+// to his hands, 2.9 as it leaves them a second later, median, over 17
+// games, stood 16% of it at his own end and 31% at the other; ours came
+// down, stopped in a stride and stood 76% and 72% of it.)
+const OUT_PACE = 2.5;
+const OUT_EASE = 2;
+const OUT_SETTLE = 150;
+const OUT_GO = 4;
+// (His next run no later than this (ms) after he is down; turned into its
+// way no quicker than this (radians a second), in pieces this long, ms.)
+const OUT_MOST = 2500;
+const OUT_TURN = 3;
+const OUT_STEP = 100;
+
+// (Past where a man in play stands, along the lines: see inPlay.)
+const offFloor = (q: { x: number; y: number }): boolean => {
+	const p = inPlay(q);
+	return Math.abs(p.x - q.x) > 1e-6 || Math.abs(p.y - q.y) > 1e-6;
+};
+
+// Down from his board `c` - going, as `upThrough` laid it, and stopped on
+// the floor in a stride or two, or stood all along: on round into his next
+// run instead, if it comes soon enough, nothing of his has him stood till
+// then, and the ball is in his hands. Whether it did.
+const offTheBoard = (tr: Track, c: Act, ball: readonly BallSeg[]): boolean => {
+	if (!c.jump) {
+		return false;
+	}
+	const down = c.t0 + c.jump[1] * (c.t1 - c.t0);
+	// (His, as he comes down with it.)
+	const seg = ball.findLast((b) => b.t0 <= down);
+	if (seg?.kind !== "hold" || seg.pid !== tr.pid) {
+		return false;
+	}
+	const moves = tr.moves;
+	// (Come down going: his landing. Or stood: from the first of his after.)
+	let i = moves.findIndex(
+		(m) => Math.abs(m.t0 - down) <= 1 && (m.v0 ?? 0) > 0 && !(m.v1 ?? 0),
+	);
+	const land = i >= 0 ? moves[i] : undefined;
+	if (!land) {
+		i = moves.findIndex((m) => m.t1 > down);
+		if (i < 0 || (moves[i]!.t0 < down - 1 && len(moves[i]!) >= STOOD)) {
+			return false;
+		}
+	}
+	let j = -1;
+	for (let k = i + (land ? 1 : 0); k < moves.length; k++) {
+		if (len(moves[k]!) >= STOOD) {
+			j = k;
+			break;
+		}
+	}
+	const n = j >= 0 ? moves[j]! : undefined;
+	const from = land ? down : down + OUT_SETTLE;
+	if (
+		!n ||
+		n.t0 - down > OUT_MOST ||
+		n.t0 - from < OUT_STEP ||
+		pinned(tr.acts, c, down, n.t0) ||
+		standBy(tr.acts, down) < n.t0 ||
+		// (Nobody of theirs right up on him, that he turns his back on
+		// first: see the outlet in director.ts.)
+		tr.acts.some((a) => a.turnFrom && a.t1 > down && a.t0 < n.t0)
+	) {
+		return false;
+	}
+	let P = land ? { ...land.from } : spotAt(tr, down);
+	let s = land ? land.v0! : 0;
+	const L = land ? len(land) : 0;
+	let wx = L > 1e-6 ? (land!.to.x - land!.from.x) / L : n.to.x - P.x;
+	let wy = L > 1e-6 ? (land!.to.y - land!.from.y) / L : n.to.y - P.y;
+	const W = Math.hypot(wx, wy);
+	if (W < 1e-6) {
+		return false;
+	}
+	wx /= W;
+	wy /= W;
+	const out: Move[] = [];
+	if (!land && moves[i]!.t0 < from) {
+		out.push({ ...moves[i]!, t1: from, from: { ...P }, to: { ...P } });
+	}
+	for (let t = from; t < n.t0 - 1; ) {
+		const t1 = Math.min(n.t0, t + OUT_STEP);
+		const dt = (t1 - t) / 1000;
+		const s1 =
+			s > OUT_PACE
+				? Math.max(OUT_PACE, s - OUT_EASE * dt)
+				: Math.min(OUT_PACE, s + OUT_GO * dt);
+		// (Turned toward where his next run goes, from where he is.)
+		const nx = n.to.x - P.x;
+		const ny = n.to.y - P.y;
+		if (Math.hypot(nx, ny) > 1e-6) {
+			let d = Math.atan2(ny, nx) - Math.atan2(wy, wx);
+			d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+			const th =
+				Math.atan2(wy, wx) +
+				Math.max(-OUT_TURN * dt, Math.min(OUT_TURN * dt, d));
+			wx = Math.cos(th);
+			wy = Math.sin(th);
+		}
+		const go = ((s + s1) / 2) * dt;
+		const Q = { x: P.x + wx * go, y: P.y + wy * go };
+		if (offFloor(Q)) {
+			return false;
+		}
+		out.push({
+			t0: t,
+			t1,
+			from: { ...P },
+			to: Q,
+			anim: s1 < OUT_PACE + 1.5 || !land ? "walk" : land.anim,
+			v0: s,
+			v1: s1,
+		});
+		P = Q;
+		s = s1;
+		t = t1;
+	}
+	if (out.length === 0) {
+		return false;
+	}
+	moves.splice(i, j - i, ...out);
+	n.from = { ...P };
+	n.v0 = Math.max(n.v0 ?? 0, s);
+	return true;
+};
+
 // Every rebound laid on through it, where the play has the man stood for
 // it. How many it laid.
 export const throughBoards = (
@@ -1236,9 +1370,253 @@ export const throughBoards = (
 			) {
 				n++;
 			}
+			offTheBoard(tr, a, ball);
 		}
 	}
 	return n;
+};
+
+// UP IN THE AIR, STILL GOING. Real shooters drift through a jumper, on the
+// way they came into it (its cosine with the way they were going 0.4 s
+// before it left their hands 0.9, median) at a pace - its tenth, quarter,
+// half, three quarters and nine tenths (feet a second) over the 17 games -
+// of these off a catch they held and these off the dribble, landing a foot
+// or two on from where they went up. The play had him stood on its spot a
+// moment before he went up, and straight up and down off it. Laid instead
+// going up off the play's spot (where he goes up from is the shot: a 2 or
+// a 3), on at his drift through the air, braking once he is down; stood
+// there a while first, a step into it, toward the rim, as he dips. (Not one
+// the play has him going somewhere through already - a fade, a step-back -
+// nor one inside this far of the rim, feet.)
+const DRIFT_HELD = [0.6, 1, 1.5, 2.4, 3.8];
+const DRIFT_DRIB = [0.9, 1.5, 2.6, 3.8, 4.5];
+const DRIFT_FROM = 10;
+// Coming into it this soon (ms) before he goes up - from further back than
+// this (feet) this long (ms) before - he goes up on the way he came (his
+// last step's, if it is this long, feet) and no faster than he came; stood
+// longer, he steps into it over this long (ms).
+const DRIFT_CAME = 300;
+const DRIFT_CAME_LEAST = 0.5;
+const DRIFT_BACK = 400;
+const DRIFT_OWN = 0.2;
+const DRIFT_STEP = 250;
+// Going up this far (feet) at the least off the three-point line, on the
+// side of it the play has him.
+const ARC_CLEAR = 0.5;
+
+// How far past the three-point line (feet) at the end `team` attacks.
+const pastArc = (team: number, p: { x: number; y: number }): number => {
+	const depth = team === 0 ? p.x : COURT_W - p.x;
+	return depth < 14
+		? Math.abs(p.y - COURT_H / 2) - 22
+		: Math.hypot(depth - rimX(0), p.y - COURT_H / 2) - 23.75;
+};
+
+// Every jumper laid on through the air, where the play has the man go up
+// stood. How many it laid.
+export const throughJumpers = (
+	tracks: ReadonlyMap<number, Track>,
+	ball: readonly BallSeg[],
+): number => {
+	let count = 0;
+	for (let k = 1; k < ball.length; k++) {
+		const f = ball[k]!;
+		if (f.kind !== "fly" || f.dead || !("pid" in f.from) || "pid" in f.to) {
+			continue;
+		}
+		const tr = tracks.get(f.from.pid);
+		const c = tr?.acts.find(
+			(a) =>
+				a.jump !== undefined &&
+				a.anim.startsWith("shoot") &&
+				a.t0 <= f.t0 &&
+				a.t1 >= f.t0,
+		);
+		if (!tr || !c?.jump) {
+			continue;
+		}
+		const D = c.t1 - c.t0;
+		const off = c.t0 + c.jump[0] * D;
+		const down = c.t0 + c.jump[1] * D;
+		if (f.t0 < off || f.t0 > down) {
+			continue;
+		}
+		const moves = tr.moves;
+		const S = spotAt(tr, off);
+		const rim = { x: rimX(tr.team), y: COURT_H / 2 };
+		const toRim = Math.hypot(rim.x - S.x, rim.y - S.y);
+		// (His run in, and his next.)
+		let a = -1;
+		let nx = -1;
+		for (let i = 0; i < moves.length; i++) {
+			const m = moves[i]!;
+			if (len(m) < STOOD) {
+				continue;
+			}
+			if (m.t0 < off) {
+				a = i;
+			} else if (nx < 0) {
+				nx = i;
+			}
+		}
+		const A = a >= 0 ? moves[a]! : undefined;
+		if (toRim < DRIFT_FROM || (A && A.t1 > off + 1)) {
+			continue;
+		}
+		// (Off the dribble: it on the floor in his hands before he went up.)
+		let b = k - 1;
+		for (;;) {
+			const h = ball[b];
+			if (
+				b <= 0 ||
+				h?.kind !== "hold" ||
+				h.pid !== tr.pid ||
+				h.style !== "hold"
+			) {
+				break;
+			}
+			b--;
+		}
+		const was = ball[b]!;
+		const drib =
+			was.kind === "hold" && was.pid === tr.pid && was.style !== "hold";
+		let vd = quantileAt(
+			drib ? DRIFT_DRIB : DRIFT_HELD,
+			hash01(tr.pid * 61 + 5, off),
+		);
+		const B = spotAt(tr, off - DRIFT_BACK);
+		const came =
+			A !== undefined &&
+			A.t1 >= off - DRIFT_CAME &&
+			Math.hypot(S.x - B.x, S.y - B.y) >= DRIFT_CAME_LEAST &&
+			!(A.v1 ?? 0);
+		let ux: number;
+		let uy: number;
+		if (came) {
+			const L = len(A);
+			const own = L >= DRIFT_OWN;
+			const dx = own ? A.to.x - A.from.x : S.x - B.x;
+			const dy = own ? A.to.y - A.from.y : S.y - B.y;
+			const Lu = Math.hypot(dx, dy);
+			ux = dx / Lu;
+			uy = dy / Lu;
+			vd = Math.min(vd, Math.max(A.v0 ?? 0, (L * 1000) / (A.t1 - A.t0)));
+		} else {
+			ux = (rim.x - S.x) / toRim;
+			uy = (rim.y - S.y) / toRim;
+		}
+		const from = came ? A.t0 : off - DRIFT_STEP;
+		if (vd < CATCH_LEAST * 0.4 || (!came && A && A.t1 > from)) {
+			continue;
+		}
+		const T = came
+			? { ...S }
+			: {
+					x: S.x + (ux * vd * DRIFT_STEP) / 2000,
+					y: S.y + (uy * vd * DRIFT_STEP) / 2000,
+				};
+		const past = pastArc(tr.team, S);
+		const pastT = pastArc(tr.team, T);
+		if (!came && (past >= 0 ? pastT < ARC_CLEAR : pastT > -ARC_CLEAR)) {
+			continue;
+		}
+		const air = (down - off) / 1000;
+		const Y = { x: T.x + ux * vd * air, y: T.y + uy * vd * air };
+		// Down, he brakes to a stop - or, off on his next run first, on into it.
+		const N = nx >= 0 ? moves[nx]! : undefined;
+		let end = down + (1000 * vd) / LAND_BRAKE;
+		let p = 0;
+		if (N && N.t0 < end) {
+			if (N.t0 < down + 50) {
+				continue;
+			}
+			end = N.t0;
+			p = vd - (LAND_BRAKE * (end - down)) / 1000;
+			const nxx = N.to.x - Y.x;
+			const nyy = N.to.y - Y.y;
+			const Ln = Math.hypot(nxx, nyy) || 1;
+			const cos = (ux * nxx + uy * nyy) / Ln;
+			if (p * Math.sqrt(Math.max(0, 2 - 2 * cos)) > TURN_MOST) {
+				continue;
+			}
+		}
+		if (pinned(tr.acts, c, from, end)) {
+			continue;
+		}
+		const s = ((vd + p) / 2) * ((end - down) / 1000);
+		const E = { x: Y.x + ux * s, y: Y.y + uy * s };
+		if ([Y, E].some((q) => offFloor(q))) {
+			continue;
+		}
+		const laid: Move[] = [];
+		if (came) {
+			A.t1 = off;
+			A.v1 = vd;
+		} else {
+			laid.push({
+				t0: from,
+				t1: off,
+				from: { ...S },
+				to: { ...T },
+				anim: "walk",
+				v0: 0,
+				v1: vd,
+			});
+		}
+		laid.push(
+			{
+				t0: off,
+				t1: down,
+				from: { ...T },
+				to: { ...Y },
+				anim: "walk",
+				v0: vd,
+				v1: vd,
+			},
+			{
+				t0: down,
+				t1: end,
+				from: { ...Y },
+				to: { ...E },
+				anim: "walk",
+				v0: vd,
+				v1: p,
+			},
+		);
+		// (Stood before it where he was, after it where he came to.)
+		const kept: Move[] = [];
+		for (let i = a + 1; i < (nx >= 0 ? nx : moves.length); i++) {
+			const o = moves[i]!;
+			if (o.t0 < from) {
+				kept.push({ ...o, t1: Math.min(o.t1, from) });
+			}
+			if (o.t1 > end) {
+				kept.push({
+					...o,
+					t0: Math.max(o.t0, end),
+					from: { ...E },
+					to: { ...E },
+				});
+			}
+		}
+		const before = kept.filter((o) => o.t0 < from);
+		const after = kept.filter((o) => o.t0 >= from);
+		moves.splice(
+			a + 1,
+			(nx >= 0 ? nx : moves.length) - a - 1,
+			...before,
+			...laid,
+			...after,
+		);
+		if (N) {
+			N.from = { ...E };
+			if (p > 0) {
+				N.v0 = Math.max(N.v0 ?? 0, p);
+			}
+		}
+		count++;
+	}
+	return count;
 };
 
 // IN TIME FOR IT. A man going at the ball, or at the man with it - a reach

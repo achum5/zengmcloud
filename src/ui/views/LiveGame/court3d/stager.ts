@@ -201,11 +201,15 @@ export const makeStager = <I, T>({
 		}
 	};
 
+	// No worker to be had: staged here, on the page's own thread.
+	stage.onPage = () => unavailable || typeof Worker === "undefined";
+
 	return stage;
 };
 
 export type Stager<I, T> = ((input: I) => Promise<T>) & {
 	abandon: (promise: Promise<T>) => void;
+	onPage: () => boolean;
 };
 
 // THE WORKER'S SIDE: up and running, then each game it is asked for staged

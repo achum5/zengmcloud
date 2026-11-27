@@ -75,22 +75,30 @@ export type Shown = { w: number; t: number; rp: number; fp?: string };
 // same few seconds over and over. So a court says what it staged - this, its
 // plays' moments to a tenth of a second - and one that staged something else
 // is stepped line by line instead of playing along (see Court3D).
-export const stagedAs = (tl: CourtTimeline): string => {
+//
+// A game staged a part at a time (see parts.ts) says its first part's: what
+// every court staging it has had since it started, however far on each is
+// now.
+export const stagedAs = (tl: CourtTimeline & { opening?: number }): string => {
 	let h = 0x811c9dc5;
 	const add = (x: number) => {
 		h ^= Math.round(x) | 0;
 		h = Math.imul(h, 0x01000193);
 	};
-	add(tl.beats.length);
-	add(tl.end / 100);
-	for (const b of tl.beats) {
+	const to = tl.opening ?? Infinity;
+	const beats = tl.beats.filter((b) => b.preStart < to);
+	add(beats.length);
+	add(Math.min(tl.end, to) / 100);
+	for (const b of beats) {
 		add(b.i);
 		add(b.actionStart / 100);
 		add(b.end / 100);
 	}
 	for (const [a, b] of tl.fast) {
-		add(a / 100);
-		add(b / 100);
+		if (a < to) {
+			add(a / 100);
+			add(Math.min(b, to) / 100);
+		}
 	}
 	return (h >>> 0).toString(36);
 };

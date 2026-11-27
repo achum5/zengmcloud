@@ -49,16 +49,24 @@ export const useStakes = (
 // events, the roster or `key` (whatever else it is staged from) change; a
 // staging that breaks gives the game back to the page too, rather than
 // leaving it waiting on a picture that will never play. `onStaged`: the
-// moment it is.
+// moment it is. A game staged a part at a time (see stageCourt.ts) comes as
+// far as it is staged, and again, further on, each time a part is in
+// (`onMore` then) - told through `w` (and no longer once the page lets go).
 const ROSTER_WAIT = 5000;
+export type StagedWatch<T> = {
+	more: (tl: T) => void;
+	fail: (error: unknown) => void;
+	signal: AbortSignal;
+};
 export const useStaged = <T>(
 	events: any[] | undefined,
 	roster: { pid: number }[],
 	key: string,
-	stage: () => Promise<T>,
+	stage: (w: StagedWatch<T>) => Promise<T>,
 	what: string,
 	onFail: (() => void) | undefined,
 	onStaged?: (tl: T) => void,
+	onMore?: (tl: T) => void,
 ): { timeline: T | undefined; matched: boolean } => {
 	const [timeline, setTimeline] = useState<T>();
 	const [matched, setMatched] = useState(false);
@@ -68,6 +76,8 @@ export const useStaged = <T>(
 	stageRef.current = stage;
 	const onStagedRef = useRef(onStaged);
 	onStagedRef.current = onStaged;
+	const onMoreRef = useRef(onMore);
+	onMoreRef.current = onMore;
 	useEffect(() => {
 		setTimeline(undefined);
 		setMatched(false);
@@ -80,22 +90,33 @@ export const useStaged = <T>(
 		}
 		setMatched(true);
 		let alive = true;
-		stageRef.current().then(
-			(tl) => {
+		const off = new AbortController();
+		const failed = (error: unknown) => {
+			console.error(`3D ${what} failed to compile`, error);
+			if (alive) {
+				onFailRef.current?.();
+			}
+		};
+		stageRef
+			.current({
+				more: (tl) => {
+					if (alive) {
+						setTimeline(tl);
+						onMoreRef.current?.(tl);
+					}
+				},
+				fail: failed,
+				signal: off.signal,
+			})
+			.then((tl) => {
 				if (alive) {
 					setTimeline(tl);
 					onStagedRef.current?.(tl);
 				}
-			},
-			(error: unknown) => {
-				console.error(`3D ${what} failed to compile`, error);
-				if (alive) {
-					onFailRef.current?.();
-				}
-			},
-		);
+			}, failed);
 		return () => {
 			alive = false;
+			off.abort();
 		};
 	}, [events, roster, key, what]);
 	return { timeline, matched };

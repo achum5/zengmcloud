@@ -22,6 +22,8 @@ import {
 	TRANSITION_OFFENSE_SPOTS,
 } from "./courtSpots.ts";
 import { useLocal } from "../../util/local.ts";
+import { WIDE_END, WIDE_SIDE } from "../courtTemplate.ts";
+import { useWideFloor } from "./useWideFloor.ts";
 import type {
 	CourtImageAdjust,
 	CourtImageSlot,
@@ -1767,6 +1769,11 @@ const LiveCourt = ({
 	const court = home?.court;
 	// A picture of the whole floor, laid down as it is (see CourtStyle).
 	const floorImageURL = court?.floorImageURL || undefined;
+	// (A wide one holds more of the apron: laid out past the frame, which
+	// shows what of it fits - see isWideFloor.)
+	const floorWide = useWideFloor(floorImageURL);
+	const floorEnd = floorWide ? WIDE_END : RAIL_W;
+	const floorSide = floorWide ? WIDE_SIDE : APRON;
 	const linesFromPicture = !!floorImageURL && court?.floorLines === "picture";
 	const lineColor = court?.lines || "#f8f5f0";
 	const woodFill = court?.floor || "#c9a165";
@@ -2321,7 +2328,8 @@ const LiveCourt = ({
 				{floorImageURL ? (
 					// The whole floor as pictured, apron and all. (Marked, so the 3D
 					// court lays it down first, under everything else - see
-					// courtTexture.)
+					// courtTexture. Out of sight until its shape is known, not
+					// shown squeezed.)
 					<image
 						data-floor="1"
 						{...(finals
@@ -2336,13 +2344,14 @@ const LiveCourt = ({
 							: {})}
 						href={floorImageURL}
 						{...placed("floor", {
-							x: -RAIL_W,
-							y: -APRON,
-							width: COURT_W + 2 * RAIL_W,
-							height: COURT_H + 2 * APRON,
+							x: -floorEnd,
+							y: -floorSide,
+							width: COURT_W + 2 * floorEnd,
+							height: COURT_H + 2 * floorSide,
 							opacity: 1,
 							fit: "fill",
 						})}
+						{...(floorWide === undefined ? { visibility: "hidden" } : {})}
 					/>
 				) : (
 					<>
@@ -2704,6 +2713,7 @@ const LiveCourt = ({
 			benchImageURL,
 			railImageURL,
 			floorImageURL,
+			floorWide,
 			linesFromPicture,
 			adjustKey,
 			decals,

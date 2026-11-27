@@ -21,6 +21,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { test } from "vitest";
+import {
+	buildClocks,
+	gameClockAt,
+} from "../../src/ui/views/LiveGame/court3d/clock.ts";
 import { compileCourt } from "../../src/ui/views/LiveGame/court3d/director.ts";
 import {
 	evalBall,
@@ -59,15 +63,16 @@ const load = (game: string) => {
 		const { events, players } = JSON.parse(readFileSync(game, "utf8"));
 		// (Stepped, as every game the court plays is - see stageCourt. With
 		// TAPE_POSSESSION, by the new possession sim: see possession/.)
-		return compileCourt({
+		const tl = compileCourt({
 			events,
 			players,
 			gid: 1,
 			step: true,
 			possession: !!process.env.TAPE_POSSESSION,
 		});
+		return { tl, clocks: buildClocks(tl, events) };
 	}
-	return compileFake(game, 90).tl;
+	return { tl: compileFake(game, 90).tl, clocks: undefined };
 };
 
 test.skipIf(!process.env.TAPE_GAMES)(
@@ -75,7 +80,7 @@ test.skipIf(!process.env.TAPE_GAMES)(
 	() => {
 		showWhole(!!process.env.TAPE_WHOLE);
 		for (const game of process.env.TAPE_GAMES!.split(",")) {
-			const tl = load(game);
+			const { tl, clocks } = load(game);
 			const tracks = [...tl.tracks.values()].filter((t) => t.pid >= 0);
 			const name = game
 				.split("/")
@@ -173,9 +178,13 @@ test.skipIf(!process.env.TAPE_GAMES)(
 						!!beat &&
 						SHOT_PLAYS.test(beat.type) &&
 						!/ft$/i.test(beat.type);
+					// (The game clock as the screen has it: running or stopped,
+					// as the real games' tracking has it - see nba/frames.py.)
+					const clock = clocks && gameClockAt(clocks, t);
 					frames.push({
 						t: Math.round(t),
 						f: +fastAt(tl, t).toFixed(1),
+						...(clock !== undefined ? { c: +clock.toFixed(2) } : {}),
 						b: [
 							+ballP.x.toFixed(2),
 							+ballP.y.toFixed(2),

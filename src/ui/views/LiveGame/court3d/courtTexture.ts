@@ -53,18 +53,30 @@ type Pic = {
 	cover?: [number, number, number, number];
 };
 
+// The picture, and where it lies: the SVG's own units (the court's feet), its
+// top left corner and size. The 2D court's frame - or, for a floor picture
+// with more of the apron than that frame holds (see isWideFloor), all of it.
+export type CourtPicture = {
+	canvas: HTMLCanvasElement;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+};
+
+// (Never further out than a wide floor picture goes, however a team has
+// sized its floor picture up.)
+const OUT_X = 7;
+const OUT_Y = 5.5;
+
 export const courtTexture = async (
 	svg: SVGSVGElement,
 	pxPerUnit: number,
-): Promise<HTMLCanvasElement | undefined> => {
+): Promise<CourtPicture | undefined> => {
 	const vb = svg.viewBox.baseVal;
 	if (!vb || vb.width <= 0 || vb.height <= 0) {
 		return undefined;
 	}
-	const canvas = document.createElement("canvas");
-	canvas.width = Math.round(vb.width * pxPerUnit);
-	canvas.height = Math.round(vb.height * pxPerUnit);
-	const ctx = canvas.getContext("2d")!;
 
 	// Where each picture sits, in the SVG's own units.
 	const root = svg.getScreenCTM();
@@ -99,6 +111,37 @@ export const courtTexture = async (
 		}
 	}
 
+	// The frame, and anything of the floor picture out past it.
+	let x0 = vb.x;
+	let y0 = vb.y;
+	let x1 = vb.x + vb.width;
+	let y1 = vb.y + vb.height;
+	for (const pic of pics) {
+		if (!pic.floor) {
+			continue;
+		}
+		for (const [cx, cy] of [
+			[pic.x, pic.y],
+			[pic.x + pic.w, pic.y],
+			[pic.x, pic.y + pic.h],
+			[pic.x + pic.w, pic.y + pic.h],
+		] as const) {
+			const at = new DOMPoint(cx, cy).matrixTransform(pic.m);
+			x0 = Math.min(x0, at.x);
+			y0 = Math.min(y0, at.y);
+			x1 = Math.max(x1, at.x);
+			y1 = Math.max(y1, at.y);
+		}
+	}
+	x0 = Math.max(x0, vb.x - OUT_X);
+	y0 = Math.max(y0, vb.y - OUT_Y);
+	x1 = Math.min(x1, vb.x + vb.width + OUT_X);
+	y1 = Math.min(y1, vb.y + vb.height + OUT_Y);
+	const canvas = document.createElement("canvas");
+	canvas.width = Math.round((x1 - x0) * pxPerUnit);
+	canvas.height = Math.round((y1 - y0) * pxPerUnit);
+	const ctx = canvas.getContext("2d")!;
+
 	const clone = svg.cloneNode(true) as SVGSVGElement;
 	for (const g of clone.querySelectorAll('g[stroke-width="0.25"]')) {
 		g.remove();
@@ -106,8 +149,10 @@ export const courtTexture = async (
 	for (const img of clone.querySelectorAll("image")) {
 		img.remove();
 	}
-	clone.setAttribute("width", String(canvas.width));
-	clone.setAttribute("height", String(canvas.height));
+	const svgW = Math.round(vb.width * pxPerUnit);
+	const svgH = Math.round(vb.height * pxPerUnit);
+	clone.setAttribute("width", String(svgW));
+	clone.setAttribute("height", String(svgH));
 	clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
 	const xml = new XMLSerializer().serializeToString(clone);
 	const url = URL.createObjectURL(
@@ -140,8 +185,8 @@ export const courtTexture = async (
 			m.b * pxPerUnit,
 			m.c * pxPerUnit,
 			m.d * pxPerUnit,
-			(m.e - vb.x) * pxPerUnit,
-			(m.f - vb.y) * pxPerUnit,
+			(m.e - x0) * pxPerUnit,
+			(m.f - y0) * pxPerUnit,
 		);
 		ctx.drawImage(img, x, y, w, h);
 		ctx.restore();
@@ -151,16 +196,22 @@ export const courtTexture = async (
 			await drawPic(pic);
 			if (pic.cover) {
 				coverCenter(ctx, pic.cover, {
-					x: (u) => (u - vb.x) * pxPerUnit,
-					y: (v) => (v - vb.y) * pxPerUnit,
-					v: (y) => y / pxPerUnit + vb.y,
+					x: (u) => (u - x0) * pxPerUnit,
+					y: (v) => (v - y0) * pxPerUnit,
+					v: (y) => y / pxPerUnit + y0,
 					ppf: pxPerUnit,
 				});
 			}
 		}
 	}
 	try {
-		ctx.drawImage(await load(url), 0, 0, canvas.width, canvas.height);
+		ctx.drawImage(
+			await load(url),
+			Math.round((vb.x - x0) * pxPerUnit),
+			Math.round((vb.y - y0) * pxPerUnit),
+			svgW,
+			svgH,
+		);
 	} catch {
 		return undefined;
 	} finally {
@@ -173,7 +224,7 @@ export const courtTexture = async (
 			await drawPic(pic);
 		}
 	}
-	return canvas;
+	return { canvas, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 };
 
 // The color round the edge of the floor's picture - the middle of what's

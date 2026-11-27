@@ -1,5 +1,7 @@
 import { afterEach, assert, beforeEach, describe, test, vi } from "vitest";
 import { fakeGame } from "./testGame.ts";
+import { compileStaged, type StageInput } from "./director.ts";
+import { goesOn, type Staged } from "./parts.ts";
 import { dropStagedCourt, stageCourt } from "./stageCourt.ts";
 import { makeStager } from "./stager.ts";
 
@@ -13,7 +15,7 @@ describe("3D: a staged game kept", () => {
 		const b = stageCourt({ ...input, events: [...events] });
 		assert.strictEqual(a, b);
 		await a;
-	});
+	}, 60_000);
 
 	test("another game, or the same one let go, is staged afresh", async () => {
 		const a = stageCourt(input);
@@ -25,7 +27,89 @@ describe("3D: a staged game kept", () => {
 		assert.notStrictEqual(a, c);
 		dropStagedCourt(7);
 		assert.notStrictEqual(c, stageCourt(input));
+	}, 60_000);
+});
+
+// A stand-in for the court's worker: stages what it is asked for, a moment
+// later.
+class StagingWorker {
+	onmessage?: (event: { data: unknown }) => void;
+	onerror?: unknown;
+	static asked: StageInput[] = [];
+	constructor() {
+		setTimeout(() => this.onmessage?.({ data: { ready: true } }), 0);
+	}
+	postMessage(msg: { id: number; input?: StageInput }) {
+		const input = msg.input;
+		if (!input) {
+			return;
+		}
+		StagingWorker.asked.push(input);
+		setTimeout(() => {
+			this.onmessage?.({
+				data: { id: msg.id, timeline: compileStaged(input) },
+			});
+		}, 0);
+	}
+	terminate() {}
+}
+
+describe("3D: a game staged a period at a time", () => {
+	beforeEach(() => {
+		StagingWorker.asked = [];
+		vi.stubGlobal("Worker", StagingWorker);
 	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+	const { events, players } = fakeGame("kept-parts", 50);
+	const input = { events, players, gid: 21, step: false };
+
+	test("the first part to play, then the game so far as each part comes", async () => {
+		const seen: Staged[] = [];
+		let done!: () => void;
+		const all = new Promise<void>((resolve) => {
+			done = resolve;
+		});
+		const first = await stageCourt(input, {
+			more: (tl) => {
+				seen.push(tl);
+				if (tl.upTo === undefined) {
+					done();
+				}
+			},
+		});
+		assert.isDefined(first.upTo);
+		await all;
+		assert.strictEqual(seen.length, 2);
+		assert.isTrue(goesOn(first, seen[0]!));
+		assert.isAbove(seen[0]!.upTo!, first.upTo!);
+		// (One part asked for at a time, each once the one before is in.)
+		assert.deepEqual(
+			StagingWorker.asked.map((a) => a.part?.from),
+			[0, first.upTo, seen[0]!.upTo],
+		);
+		const whole = compileStaged(input);
+		assert.deepEqual(seen.at(-1)!.beats, whole.beats);
+		// (Asked for again, the game as far as it is staged.)
+		assert.strictEqual(await stageCourt(input), seen.at(-1));
+	}, 60_000);
+
+	test("let go: no more of it staged", async () => {
+		const off = new AbortController();
+		let more = 0;
+		await stageCourt(
+			{ ...input, gid: 22 },
+			{ more: () => (more += 1), signal: off.signal },
+		);
+		// (Another game asked for, and this one's page gone.)
+		void stageCourt({ ...input, gid: 23 }).catch(() => {});
+		off.abort();
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		// (The part it was on put down, and none asked for after it.)
+		assert.strictEqual(more, 0);
+		assert.isAtMost(StagingWorker.asked.filter((a) => a.gid === 22).length, 2);
+	}, 60_000);
 });
 
 // A stand-in worker: answers the jobs it is sent, in order, when told to.

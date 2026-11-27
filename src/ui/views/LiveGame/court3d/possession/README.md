@@ -1061,6 +1061,56 @@ coming on for five off the scorer's table together - which no push aside
 fixes: those runs are the play's to lay apart (next). The sixth is a man
 backing off turning to contest a shot.
 
+## Off the board, up in the air (stop-and-go, third piece)
+
+The man with the ball, split by the kind of touch, against the 17 real
+games: two of the places he stood far more than a real man were a board he
+held and passed on, and a jumper.
+
+- Off a defensive board, real men come down with it still going - 4.4 ft/s
+  as it comes to their hands, 2.9 as it leaves them on the outlet about a
+  second later (medians) - stood 16% of the time they have it. Ours came
+  down, stopped in a stride and stood holding it till the man coming for
+  the outlet got there: 78%.
+- Real shooters drift through the air on the way they came into it (its
+  cosine with the way they were going 0.4 s before, 0.9): 1.5 ft/s off a
+  catch, 2.6 off the dribble (medians), landing a foot or two on. Ours went
+  straight up and down, stood as it left their hands about half the time.
+
+Now, the new sim only (`through.ts`):
+
+- `offTheBoard`: down with it, he eases off to a walk (`OUT_PACE`, 2.5
+  ft/s) as he turns the way his next run goes - up the floor, after his
+  outlet - and throws it on the way, on into that run. Come down stood, he
+  takes the landing and steps off that way. Not with a man of theirs right
+  up on him (he turns his back on him first), nor with his next run more
+  than 2.5 s off, nor out past where a man in play stands.
+- `throughJumpers`: a jumper goes up off the play's spot - where he goes
+  up from is the shot, a 2 or a 3 - still going the way he came, his drift
+  drawn from the real spread, on through the air and braking once he is
+  down. Stood there first, a step into it toward the rim as he dips, never
+  taking him within half a foot of the three-point line. Not a fade or a
+  step-back the play moves him through already, nor inside 10 ft.
+
+The tapes now carry the game clock (`gameTape.test.ts`), and
+`nba/frames.py` counts a moment live only while it runs, as the real
+games' tracking does: the dead ball after a whistle - 8.5% of what was
+counted, everybody stood 56% of it - had made us look 3 to 4 points more
+stood than we were. Both columns are on the new count.
+
+| Measure (real_11 + real_22, whole games) | Before | Now | Real |
+| --- | --- | --- | --- |
+| Off a defensive board, held and passed: stood | 78% | 29% | 16% |
+| ... going as it leaves his hands (ft/s, median) | 0 | 2.5 | 2.9 |
+| Jumper off a catch, stood as it leaves his hands | 47% | 10% | 3% |
+| Jumper off the dribble, stood as it leaves his hands | 53% | 4% | 1% |
+| Man with the ball, half court, stood | 26.0% | 22.5% | 15.2% |
+| Off the ball, defense, stood | 20.6%, 22.3% | 20.2%, 22.3% | 17.0%, 16.6% |
+| Tape flags: lurch, sharp turns, teleport | 124, 6, 20 | 128, 6, 20 | |
+
+(The lurches more are men off the ball and defenders whose own picks
+came out a little different, not a board or a jumper.)
+
 ## Natural and smooth (before step 8)
 
 Alex, on film of step 7: slightly choppy; men who should be easy about it

@@ -149,6 +149,7 @@ import { signatureOf } from "./possession/signature.ts";
 import {
 	throughBoards,
 	throughContests,
+	throughJumpers,
 	throughPasses,
 	throughPullUps,
 	throughReaches,
@@ -176,6 +177,7 @@ import {
 	type Finish,
 } from "../../../util/liveGameWording.basketball.ts";
 import { stagingBeat } from "./stagingTick.ts";
+import { trimBefore, type CourtPart, type Staged } from "./parts.ts";
 
 // How far a point is from the segment a-b (feet).
 const toSegment = (p: Pt, a: Pt, b: Pt): number => {
@@ -26990,6 +26992,9 @@ class Director {
 			if (s.kind !== "fly" || !("pid" in s.from) || !live(s.t0)) {
 				continue;
 			}
+			// (Long at it, a whole game's passes: still at it - see
+			// stagingTick.ts.)
+			stagingBeat();
 			// (A bounce pass: to the floor, and up off it to him.)
 			const after = this.ball[i + 1];
 			const last =
@@ -29040,7 +29045,7 @@ class Director {
 				}
 				return soft;
 			};
-			for (let k = 0; k < at.length; ) {
+			for (let k = 0; k < at.length;) {
 				let e = k;
 				while (e + 1 < at.length && at[e + 1]! - at[e]! <= 2 * (AHEAD + R)) {
 					e++;
@@ -30350,7 +30355,7 @@ class Director {
 		}
 		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
 		starts.sort((a, b) => t0Of(a) - t0Of(b));
-		for (let i = 0; i < starts.length; ) {
+		for (let i = 0; i < starts.length;) {
 			let n = 1;
 			while (
 				i + n < starts.length &&
@@ -32246,6 +32251,7 @@ class Director {
 			if (this.possession) {
 				throughPasses(this.tracks, this.ball, this.spacing);
 				throughPullUps(this.tracks, this.ball, this.spacing);
+				throughJumpers(this.tracks, this.ball);
 				throughContests(this.tracks, this.ball);
 				throughBoards(this.tracks, this.ball);
 				throughReaches(this.tracks, this.ball, this.spacing);
@@ -32537,16 +32543,33 @@ export type CourtInput = {
 // (Staged to the bit the same on every device - see sameMath.)
 export const compileCourt = (input: CourtInput): CourtTimeline =>
 	sameEverywhere(() => plainly(() => compileHere(input)));
-const compileHere = ({
-	events,
-	players,
-	gid,
-	gender = "male",
-	intro,
-	stakes,
-	step,
-	possession,
-}: CourtInput): CourtTimeline => {
+// ONE PART OF THE GAME (see parts.ts): the lines up to its start gone
+// through as for the whole game, what they put down cut back to where things
+// stand as it starts, and only its own staged on from there.
+export const compileCourtPart = (
+	input: CourtInput,
+	part: CourtPart,
+	last: boolean,
+): Staged =>
+	sameEverywhere(() => plainly(() => compileHere(input, part, last)));
+// What the staging worker is asked for: the whole game, or a part of it.
+export type StageInput = CourtInput & { part?: CourtPart; last?: boolean };
+export const compileStaged = ({ part, last, ...input }: StageInput): Staged =>
+	part ? compileCourtPart(input, part, last ?? true) : compileCourt(input);
+const compileHere = (
+	{
+		events,
+		players,
+		gid,
+		gender = "male",
+		intro,
+		stakes,
+		step,
+		possession,
+	}: CourtInput,
+	part?: CourtPart,
+	last = true,
+): Staged => {
 	const d = new Director(
 		events,
 		players,
@@ -32557,7 +32580,14 @@ const compileHere = ({
 		step,
 		possession,
 	);
-	for (let i = 0; i < events.length; i++) {
+	const to = part ? Math.min(part.to, events.length - 1) : events.length - 1;
+	let from: number | undefined;
+	let ownFrom: Map<number, number> | undefined;
+	for (let i = 0; i <= to; i++) {
+		if (part && i === part.from && i > 0) {
+			from = d.T;
+			ownFrom = trimBefore(d, from);
+		}
 		const e = events[i];
 		if (!e || typeof e.type !== "string") {
 			continue;
@@ -32573,7 +32603,18 @@ const compileHere = ({
 		d.noteClock(e);
 		stagingBeat();
 	}
-	return d.finish();
+	const tl: Staged = d.finish();
+	if (from !== undefined) {
+		tl.from = from;
+		tl.ownFrom = ownFrom;
+	}
+	if (!last) {
+		tl.upTo = to + 1;
+		if (from === undefined) {
+			tl.opening = tl.end;
+		}
+	}
+	return tl;
 };
 
 // How dark the picture is at t for a cut between clips of a highlight reel:
