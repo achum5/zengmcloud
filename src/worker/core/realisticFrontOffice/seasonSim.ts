@@ -13,7 +13,7 @@ import { HOME_COURT_POINTS } from "./strength.ts";
 
 // Spread of a single game's margin around its expectation, in points: what is
 // left over in src/test/impact once both rosters and their minutes are known.
-const GAME_SIGMA = 13.1;
+export const GAME_SIGMA = 13.1;
 
 export type SeasonSimTeam = {
 	tid: number;

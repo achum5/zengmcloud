@@ -1,9 +1,13 @@
 import { assert, beforeAll, test } from "vitest";
-import { resetG } from "../../../test/helpers.ts";
+import { resetCache, resetG } from "../../../test/helpers.ts";
+import { idb } from "../../db/index.ts";
+import { g } from "../../util/index.ts";
 import {
 	colaPaths,
 	losingShifts,
 	outlookSettings,
+	resultsEdges,
+	resultsWeight,
 	retireChance,
 } from "./outlook.ts";
 
@@ -119,4 +123,84 @@ test("under COLA, a team that goes deep each year keeps few chances at the draw"
 	// Winning the draw with its own pick costs a team chances later.
 	const own = path(new Set(["1:2030", "1:2031"]));
 	assert.isBelow(own.get(1)!.get(2032)!, none.get(1)!.get(2032)!);
+});
+
+test("a team that has played better than its read is read better, for as much of it as isn't luck", async () => {
+	const season = g.get("season");
+	// Team 0 is read +5 and has played 26 games against team 1 (read -5) and
+	// 26 against team 2 (read 0), half of them at home: the reads expected
+	// +7.5 a game of it, and it won by 10.
+	const reads = new Map([
+		[0, 5],
+		[1, -5],
+		[2, 0],
+	]);
+	const pair = (won: number, pts: number, oppPts: number) => ({
+		won,
+		lost: 26 - won,
+		tied: 0,
+		otl: 0,
+		otw: 0,
+		pts,
+		oppPts,
+	});
+	const record = (tid: number, home: number) => ({
+		tid,
+		season,
+		won: 26,
+		lost: 26,
+		tied: 0,
+		otl: 0,
+		wonHome: home / 2,
+		lostHome: home / 2,
+		tiedHome: 0,
+		otlHome: 0,
+		wonAway: (52 - home) / 2,
+		lostAway: (52 - home) / 2,
+		tiedAway: 0,
+		otlAway: 0,
+	});
+	const stats = (tid: number, pts: number, oppPts: number) => ({
+		tid,
+		season,
+		playoffs: false,
+		gp: 52,
+		pts,
+		oppPts,
+	});
+	await resetCache({
+		teamStats: [
+			stats(0, 52 * 110, 52 * 100),
+			stats(1, 52 * 100, 52 * 106),
+			stats(2, 52 * 100, 52 * 104),
+		],
+		// Team 2 played 34 of its games at home.
+		teamSeasons: [record(0, 26), record(1, 26), record(2, 34)],
+	});
+	await idb.cache.headToHeads.put({
+		season,
+		regularSeason: {
+			0: {
+				1: pair(20, 26 * 112, 26 * 100),
+				2: pair(16, 26 * 108, 26 * 100),
+			},
+			1: { 2: pair(13, 26 * 100, 26 * 100) },
+		},
+		playoffs: {},
+	});
+	const edges = await resultsEdges(season, [0, 1, 2], (tid) => reads.get(tid)!);
+	const w = resultsWeight(52);
+	assert.isAbove(w, 0);
+	assert.isBelow(w, 0.5);
+	// Its weak schedule counts: 2.5 a game over what was expected, not 5.
+	assert.closeTo(edges.get(0)!, w * 2.5, 1e-9);
+	// Team 1 (-6 against -5 - 2.5 = -7.5 expected) has played better than
+	// read; team 2's home games were worth some of its margin.
+	assert.closeTo(edges.get(1)!, w * 1.5, 1e-9);
+	const homeEdge = edges.get(2)!;
+	assert.isBelow(homeEdge, w * (-4 - 0));
+	// The more games, the more of the margin is the team's.
+	assert.isBelow(resultsWeight(10), resultsWeight(52));
+	assert.isBelow(resultsWeight(52), resultsWeight(82));
+	assert.strictEqual(resultsWeight(0), 0);
 });

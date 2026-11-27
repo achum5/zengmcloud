@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 657,
+		date: "2026-11-27",
+		text: "Smart CPU: GMs now count how teams have actually played this season, not just their ratings. A team beating the margin its roster and schedule say it should gets credit for the part of that which isn't luck (about a sixth of it by the trade deadline), so its title chances and trade plans move a little with how it plays.",
+	},
+	{
 		n: 656,
 		date: "2026-11-27",
 		text: "3D game, New sim: players off the ball no longer stop dead on every spot and step straight back to where they came from. They keep walking from one spot into the next, and players running the play's routes carry on into their next run instead of stopping for half a second in between. Far fewer players stand around in a set.",

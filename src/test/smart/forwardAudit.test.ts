@@ -176,6 +176,99 @@ test.skipIf(!env.FA_LEAGUE)(
 				`DEAL ${g.get("season")} ph${g.get("phase")}: ${abbrev.get(deal.seller)} (${title(view, deal.seller)}%) gives [${[...deal.out.players, ...deal.out.picks].map((x: any) => named(x, deal.seller, view)).join("; ")}] to ${abbrev.get(deal.buyer)} (${title(view, deal.buyer)}%) for [${[...deal.offer.players, ...deal.offer.picks].map((x: any) => named(x, deal.buyer, view)).join("; ")}] | ${abbrev.get(deal.seller)} +${deal.sellerGain.toFixed(4)} (${split(view, deal.seller, deal.buyer, deal.offer, deal.out, deal.sellerGain)}) | ${abbrev.get(deal.buyer)} +${deal.buyerGain.toFixed(4)} (${split(view, deal.buyer, deal.seller, deal.out, deal.offer, deal.buyerGain)})`,
 			);
 		});
+		// FA_STRENGTH=<file>: every outlook's read of each team, with its
+		// record and points for and against so far in the season, and each
+		// season's games once its playoffs are over - to set the read against
+		// how the teams went on to play (tools/resultsProbe.py).
+		const strengthReads: unknown[] = [];
+		const strengthGames: unknown[] = [];
+		const readsDone: Promise<void>[] = [];
+		const writeStrength = async () => {
+			await Promise.all(readsDone);
+			fs.writeFileSync(
+				env.FA_STRENGTH!,
+				JSON.stringify({ reads: strengthReads, games: strengthGames }),
+			);
+		};
+		if (env.FA_STRENGTH) {
+			const { outlookWatchers } =
+				await import("../../worker/core/realisticFrontOffice/market.ts");
+			const { outlookSeason } =
+				await import("../../worker/core/realisticFrontOffice/outlook.ts");
+			const r3 = (x: number) => Math.round(x * 1000) / 1000;
+			outlookWatchers.push((outlook: any) => {
+				const entry: Record<string, unknown> = {
+					season: g.get("season"),
+					phase: g.get("phase"),
+					first: outlookSeason(outlook, 0),
+					progress: r3(outlook.progress),
+					teams: Object.fromEntries(
+						[...outlook.teams.values()].map((t: any) => [
+							t.tid,
+							{
+								s: t.strength.slice(0, 3).map(r3),
+								title: r3(t.title[0]),
+								edge: r3(outlook.recordEdge.get(t.tid) ?? 0),
+								...(outlook.resultsEdge
+									? { results: r3(outlook.resultsEdge.get(t.tid) ?? 0) }
+									: {}),
+							},
+						]),
+					),
+				};
+				strengthReads.push(entry);
+				// No games are played while the market works, so these stand
+				// as read.
+				if (
+					g.get("phase") === PHASE.REGULAR_SEASON ||
+					g.get("phase") === PHASE.AFTER_TRADE_DEADLINE
+				) {
+					readsDone.push(
+						(async () => {
+							const soFar: Record<number, number[]> = {};
+							for (const tid of outlook.teams.keys()) {
+								const stats = (await idb.cache.teamStats.indexGet(
+									"teamStatsByPlayoffsTid",
+									[false, tid],
+								)) as any;
+								soFar[tid] = [
+									stats?.gp ?? 0,
+									stats?.pts ?? 0,
+									stats?.oppPts ?? 0,
+								];
+							}
+							entry.soFar = soFar;
+						})(),
+					);
+				}
+			});
+		}
+		const saveSeasonGames = async (season: number) => {
+			const games = await idb.merged.games.getAll({ season } as any);
+			const teamSeasons = await idb.merged.teamSeasons.getAll({
+				season,
+			} as any);
+			strengthGames.push({
+				season,
+				games: (games as any[]).map((x) => [
+					x.day,
+					x.playoffs ? 1 : 0,
+					x.teams[0].tid,
+					x.teams[0].ovr,
+					x.teams[0].pts,
+					x.teams[1].tid,
+					x.teams[1].ovr,
+					x.teams[1].pts,
+				]),
+				teams: (teamSeasons as any[]).map((ts) => [
+					ts.tid,
+					ts.won,
+					ts.lost,
+					ts.playoffRoundsWon,
+				]),
+			});
+			await writeStrength();
+		};
 		// Every room cleared for a free agent: what went, at what use and
 		// price to the team clearing, what came back, whom it was for.
 		const { clearRoomWatchers } =
@@ -523,6 +616,13 @@ test.skipIf(!env.FA_LEAGUE)(
 				ph === PHASE.AFTER_TRADE_DEADLINE
 			) {
 				await game.play(ph === PHASE.PLAYOFFS ? 100 : 7, {});
+				if (
+					env.FA_STRENGTH &&
+					ph === PHASE.PLAYOFFS &&
+					g.get("phase") > PHASE.PLAYOFFS
+				) {
+					await saveSeasonGames(g.get("season"));
+				}
 			} else if (ph === PHASE.DRAFT) {
 				const prospects = (
 					await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)

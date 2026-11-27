@@ -3138,3 +3138,94 @@ there do best at 1.3-1.55 (the table's last row).
 `outlookSettings.playoffScale` (`seasonSim`'s `playoffScale`): a play-in or
 playoff game's gap and home court times it, each team's draw of its strength
 as before. Off (1) until the owner chooses; 1.3 is what the seasons support.
+
+## How teams have played, in the read (2026-11-27)
+
+The owner asked why Toronto, 42-10 at the 2025 deadline in their DBA league,
+had made no move to get better. The outlook read it at +8.8 a game and 5.5%
+to win the title, where it had played +12.6; Milwaukee +15.7 and 61%, where
+it had played +13.8. The read was ratings only: wins past what the read made
+of the games played counted as luck that helps the standings (`recordOdds`),
+never as a sign of a better team. The owner chose to test whether margin of
+victory says more.
+
+**Measured.** Three arena leagues on vanilla's rules, four seasons each
+(`forwardAudit`, seeds 14, 15 and 17, `FA_STRENGTH`, read with
+`tools/resultsProbe.py`): at every in-season outlook, each team's margin so
+far against what the reads of it and of the teams it played expected of
+those games (the home edge in: 3.1 points), and the rest of its season
+against the same reads - 7,298 team-moments in 360 team-seasons. The read is
+right on average (the rest of the season on its expectation: slope 0.99). Of
+a team's margin over its read, this much showed up again in the rest of its
+season:
+
+| games played | moments | carried on  | READ_MISS 0.8 |
+| ------------ | ------- | ----------- | ------------- |
+| 5-15         | 1,104   | 0.03 ± 0.02 | 0.04          |
+| 15-25        | 1,178   | 0.10 ± 0.02 | 0.07          |
+| 25-35        | 1,294   | 0.11 ± 0.02 | 0.10          |
+| 35-45        | 1,142   | 0.15 ± 0.03 | 0.13          |
+| 45-55        | 1,247   | 0.17 ± 0.03 | 0.16          |
+| 55-65        | 762     | 0.15 ± 0.05 | 0.18          |
+| 65-78        | 571     | 0.11 ± 0.07 | 0.21          |
+
+As a read off by 0.8 points a game and each game's margin 13.1 either side
+of the teams' (`GAME_SIGMA`; 13.5 measured, the reads' own miss in it): at
+the deadline about a sixth of a team's margin over its read is the team, the
+rest luck. Weighed by the strength uncertainty instead (1.5), results counted
+for twice that and missed the rest of the season by more than ratings alone:
+2.487 points a game (games-weighted rms) against 2.461; at 0.8, 2.442.
+
+- **The playoffs: nothing more.** Set against the reads at the season's end,
+  a team's margin over them seemed to carry into its playoff games (+0.31 ±
+  0.12 a game for each point), but by the reads in effect at each game it
+  doesn't (-0.17 ± 0.17): a man hurt at the end and back for the playoffs,
+  which the outlook counts already (`playoffInjuries`).
+- **Next season: too little.** 0.10 ± 0.06 of a season's margin over its
+  reads shows up against the next preseason's read.
+- **Reads of the teams as they stand.** Past reads aren't kept, so the games
+  so far are set against today's reads. Teams read a point or more better now
+  than over their games (traded for better) get -0.33 for it, -0.11 by the
+  reads then; teams read a point worse (a man hurt now) +0.23, -0.06 by the
+  reads then. Both came in better than read over the rest of their seasons
+  either way (+0.53 and +0.19 left over), and across all teams the two fit
+  alike (2.4418 and 2.4419).
+
+**What a team does now** (`outlookSettings.resultsInRead`). In the season,
+its strength this season counts `resultsEdge` (`resultsEdges`): its margin a
+game, less its read and the average read of the teams it has played (each
+for the games it played them, from the head-to-heads) and the home edge for
+home games over away ones, times READ_MISS² / (READ_MISS² + GAME_SIGMA² /
+games). It is in the outlook's season sim and title curves and in every
+deal's pricing (`teamStrengths`), as the record's edge is, and the record's
+edge is what is left of the luck.
+
+**The owner's league** at the 2025 deadline (`strengthGapProbe`):
+
+| team | 2025  | played | read was | now    | title was | now   |
+| ---- | ----- | ------ | -------- | ------ | --------- | ----- |
+| MIL  | 40-13 | +13.8  | +15.68   | +15.41 | 60.7%     | 59.2% |
+| CLE  | 39-13 | +10.3  | +13.17   | +12.78 | 26.6%     | 25.3% |
+| TOR  | 42-10 | +12.6  | +8.81    | +9.35  | 5.5%      | 6.6%  |
+| POR  | 39-15 | +6.0   | +4.77    | +5.08  | 3.1%      | 4.2%  |
+
+Toronto played 3.3 a game better than its read expected of its games, and in
+this game's sim most of that is luck. Its record still counts for its seeding
+(+0.40 a game of record edge, from +0.57). What keeps it out of the market is
+what it was: sellers' prices, late firsts and salary at the tax line.
+
+**Played on** (the same three leagues, four seasons, master against the
+change): trades in season 170 to 178, in the offseason 48 to 48. Within the
+change's runs, the rest of each team's season against its blended read and
+against its ratings-only read, on the same games: 2.274 to 2.291 a game,
+better in all three leagues (2.221 to 2.251, 2.169 to 2.185, 2.416 to
+2.424). Edges were 0.18 a game at the median, 0.6 at the 95th percentile and
+1.5 at most. A market moment in the owner's league takes as long (36 s
+against 38 s); Toronto bids for 89 players there, against 55, and still finds
+no deal.
+
+Left open: teams read a point better now than over their games, or a point
+worse, came in better than read by 0.3-0.4 a game over the rest of their
+seasons even by the reads then; and near the deadline the read missed the
+rest of a season by about 1.5 a game past the luck, where the outlook's
+uncertainty says 1.3.

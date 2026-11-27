@@ -32,7 +32,12 @@ import {
 } from "./projection.ts";
 import classicDaysLeft from "../game/classicDaysLeft.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
-import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
+import {
+	GAME_SIGMA,
+	normalCdf,
+	simulateSeason,
+	winProbability,
+} from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
 import {
 	clearMarketView,
@@ -49,6 +54,7 @@ import {
 } from "./resignForecast.ts";
 import {
 	expectedRosterPoints,
+	HOME_COURT_POINTS,
 	lineSynergy,
 	SLOT_MINUTES,
 	lineMeasures,
@@ -283,6 +289,10 @@ export type LeagueOutlook = {
 	// season, in points of strength (outlookSettings.recordOdds). Empty when
 	// off or out of season.
 	recordEdge: Map<number, number>;
+	// How much better than its read each team has played this season, in
+	// points of strength, part of its strength this season (resultsEdges).
+	// Empty when off or out of season.
+	resultsEdge?: Map<number, number>;
 	// From the draft lottery to the end of the draft: the class, so the
 	// draft's picks are priced by who would go there (classPickAt).
 	classBoard?: ClassBoard;
@@ -851,6 +861,14 @@ export const outlookSettings = {
 	// two teams equally good, one with a lucky record and one with an unlucky
 	// one, do not have the same chances, and a deal is worth more to the first.
 	recordOdds: true,
+	// THE GAMES SO FAR. This season a team's read counts how it has played,
+	// not only its ratings (resultsEdges): its margin a game so far against
+	// what the reads of it and of the teams it played expected, for as much
+	// of that as is the team rather than the games' luck - about a sixth at
+	// the deadline. The record's edge (recordOdds) is then what is left of the
+	// luck. Off, a record past the read was all luck (the owner's 2025 DBA
+	// league: Toronto 42-10, played +12.6 and read +8.8 at the deadline).
+	resultsInRead: true,
 	// Before the deadline, injured players back for the playoffs count for
 	// them (teamPoints).
 	playoffInjuries: true,
@@ -3425,7 +3443,10 @@ export const teamStrengths = (
 		points -
 		outlook.meanPoints[y]! -
 		injuryShiftFor(outlook, tid, y) +
-		(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0);
+		(y === 0
+			? (outlook.recordEdge.get(tid) ?? 0) +
+				(outlook.resultsEdge?.get(tid) ?? 0)
+			: 0);
 	// The smart CPU on vanilla's rules runs a team from the GM's chair
 	// (owner, 2026-11-17): no owner, no profit, so money costs it nothing in
 	// itself. Salary still costs what it does to winning - the room it
@@ -3769,6 +3790,77 @@ const finalPlaces = async (season: number) => {
 	return new Map(rows.map((row, i) => [row.tid, i]));
 };
 
+// How far a team's play this season can be from the outlook's read of it
+// and stay that way, beyond the games' luck, in points a game (resultsEdges).
+// Measured in arena leagues (3 leagues x 4 seasons on vanilla's rules, every
+// team at every in-season outlook, tools/resultsProbe.py): of a team's margin
+// over its read, 0.10 ± 0.02 showed up again in the rest of its season after
+// 15-25 games and 0.17 ± 0.03 after 45-55, as 0.8 puts it. The strength
+// uncertainty (1.5) counted results for twice that and missed the rest of
+// the season by more than ratings alone.
+export const READ_MISS = 0.8;
+
+// The share of a team's margin over its read, after this many games, that is
+// the team and not the games' luck: a read off by READ_MISS about as often
+// as not, and a game's margin GAME_SIGMA either side of what the teams make
+// it, so over n games the luck is GAME_SIGMA / sqrt(n).
+export const resultsWeight = (games: number) =>
+	games > 0 ? READ_MISS ** 2 / (READ_MISS ** 2 + GAME_SIGMA ** 2 / games) : 0;
+
+// THE GAMES SO FAR: how much better than its read each team has played this
+// season. Its margin a game, less what the reads expected of the games it has
+// played - its own, less the average of its opponents' (each counted for the
+// games it played them, from the season's head-to-heads), and the home court
+// for each home game over away ones - times the share of that which is the
+// team (resultsWeight). The reads are of the teams as they stand - past
+// reads aren't kept - so a team that has just traded for better gets a little
+// less for its games than by the reads then, and one with a man hurt now a
+// little more; measured, across all teams the two fit alike.
+export const resultsEdges = async (
+	season: number,
+	tids: readonly number[],
+	readOf: (tid: number) => number,
+) => {
+	const edges = new Map<number, number>();
+	const h2h = (await idb.cache.headToHeads.get(season))?.regularSeason;
+	for (const tid of tids) {
+		const stats = await idb.cache.teamStats.indexGet("teamStatsByPlayoffsTid", [
+			false,
+			tid,
+		]);
+		const ts = await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [
+			season,
+			tid,
+		]);
+		const gp = stats && stats.season === season ? stats.gp : 0;
+		if (!stats || !ts || gp <= 0) {
+			continue;
+		}
+		let against = 0;
+		let games = 0;
+		for (const other of tids) {
+			if (other === tid) {
+				continue;
+			}
+			const r = h2h?.[Math.min(tid, other)]?.[Math.max(tid, other)];
+			if (r) {
+				const n = r.won + r.lost + r.tied + r.otl;
+				against += n * readOf(other);
+				games += n;
+			}
+		}
+		const home = ts.wonHome + ts.lostHome + ts.tiedHome + ts.otlHome;
+		const away = ts.wonAway + ts.lostAway + ts.tiedAway + ts.otlAway;
+		const expected =
+			readOf(tid) -
+			(games > 0 ? against / games : 0) +
+			(HOME_COURT_POINTS * (home - away)) / Math.max(1, home + away);
+		const margin = (stats.pts - stats.oppPts) / gp;
+		edges.set(tid, resultsWeight(gp) * (margin - expected));
+	}
+	return edges;
+};
+
 export const buildOutlook = async ({
 	iterations = 1000,
 }: { iterations?: number } = {}): Promise<LeagueOutlook> => {
@@ -3917,6 +4009,7 @@ export const buildOutlook = async ({
 		injuryShift: undefined as LeagueOutlook["injuryShift"],
 		progress: inSeason ? progress : 0,
 		recordEdge: new Map<number, number>(),
+		resultsEdge: new Map<number, number>(),
 		winShare: undefined as LeagueOutlook["winShare"],
 		slotPicks: outlookSettings.lottery
 			? await lotteryOdds(teams.length, season)
@@ -4067,6 +4160,21 @@ export const buildOutlook = async ({
 		}
 	}
 	base.basePoints = points;
+	// How each team has played so far this season, in its strength now.
+	if (
+		inSeason &&
+		phase >= PHASE.REGULAR_SEASON &&
+		outlookSettings.resultsInRead
+	) {
+		const meanNow =
+			teams.reduce((a, t) => a + points.get(t.tid)![0]!, 0) /
+			Math.max(1, teams.length);
+		base.resultsEdge = await resultsEdges(
+			season,
+			teams.map((t) => t.tid),
+			(tid) => points.get(tid)![0]! - meanNow,
+		);
+	}
 	// Only in the arena's version-against-version leagues: the average team at
 	// the other injury setting.
 	const otherMode = teams
@@ -4145,7 +4253,10 @@ export const buildOutlook = async ({
 			Math.max(1, teams.length);
 		base.meanPoints.push(mean);
 
-		const strengthOf = (tid: number) => points.get(tid)![y]! - mean;
+		const strengthOf = (tid: number) =>
+			points.get(tid)![y]! -
+			mean +
+			(y === 0 ? (base.resultsEdge.get(tid) ?? 0) : 0);
 		const doubt = strengthUncertainty(
 			y,
 			y === 0 && inSeason ? progress : 0,
