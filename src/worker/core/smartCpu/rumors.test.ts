@@ -156,3 +156,39 @@ test("no talks are kept between moments", async () => {
 	noteTalk({ stage: "shopped", seller: 0, p: players[0]!, buyers: [1, 2] });
 	assert.strictEqual((await moment([])).length, 0);
 });
+
+test("a player his team must move is told as open for offers, with who called", async () => {
+	const rumors = await moment([
+		{
+			stage: "shopped",
+			seller: 0,
+			p: players[4]!,
+			buyers: [1, 2],
+			mustMove: true,
+		},
+	]);
+	assert.strictEqual(rumors.length, 1);
+	assert.deepEqual(rumors[0]!.tids, [0, 1, 2]);
+	const text = strip(rumors[0]!.text);
+	assert.include(text, "Trail Blazers");
+	assert.include(text, "Jazz");
+});
+
+test("a team after many players is a story of its own, then quiet a while", async () => {
+	const busy = [0, 1, 2, 4, 5, 6].map(
+		(i): MarketTrace => ({
+			stage: "shopped",
+			seller: players[i]!.tid,
+			p: players[i]!,
+			buyers: [3],
+		}),
+	);
+	const rumors = await moment(busy);
+	assert.strictEqual(rumors.length, 1);
+	const r = rumors[0]!;
+	assert.deepEqual(r.tids, [3]);
+	assert.deepEqual(r.pids, [0, 1]);
+	assert.strictEqual(r.rumor?.team, 3);
+	assert.include(strip(r.text), "six players");
+	assert.strictEqual((await moment(busy)).length, 1);
+});

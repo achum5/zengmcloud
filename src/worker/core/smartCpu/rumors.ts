@@ -21,8 +21,19 @@ export const rumorSettings = {
 	deadlineNight: 3,
 	inSeason: 1,
 	offseason: 2,
-	// Only about the league's best players by the game's value, this many.
-	topPlayers: 150,
+	// Only about the league's best players by the game's value, as far down
+	// as each kind of story reaches: talks that came close or an offer nearly
+	// taken are news about a rotation player too; teams after a player, about
+	// a starter; a team asking about one far out of its reach, about a star
+	// alone (in the owner's league, half the stories had been that, about
+	// rotation players, every one alike).
+	topPlayers: {
+		close: 250,
+		near: 200,
+		available: 150,
+		interest: 120,
+		apart: 40,
+	},
 	// A player again only once his talks go further than the last story
 	// about him, or with another team once that story is this many days old
 	// (on classic days, this many stories about others back) - never the same
@@ -32,6 +43,9 @@ export const rumorSettings = {
 	quietStories: 8,
 	// Scored for the News Feed: a top player's story is bigger news.
 	starRank: 30,
+	// A team after at least this many players at a moment is a story of its
+	// own, then quiet for twice as long as a player.
+	busyTeam: 6,
 };
 
 // How far a talk got: someone wanting him (1), an offer his team turned
@@ -52,6 +66,8 @@ type Talk = {
 	// The teams that wanted him past what his team needs for him.
 	bidders: readonly number[];
 	tier: 0 | Tier;
+	// His deal ends, his team isn't contending and he isn't staying (plans.ts).
+	mustMove: boolean;
 	stage?: MarketTrace["stage"];
 	buyer?: number;
 	offer?: Holdings;
@@ -75,11 +91,14 @@ export const noteTalk = (t: MarketTrace) => {
 	}
 	let talk = talks.get(t.p.pid);
 	if (!talk) {
-		talk = { p: t.p, seller: t.seller, bidders: [], tier: 0 };
+		talk = { p: t.p, seller: t.seller, bidders: [], tier: 0, mustMove: false };
 		talks.set(t.p.pid, talk);
 	}
 	if (t.buyers) {
 		talk.bidders = t.buyers;
+	}
+	if (t.mustMove) {
+		talk.mustMove = true;
 	}
 	const tier = TIER_OF[t.stage];
 	if (tier !== undefined && tier >= talk.tier) {
@@ -92,10 +111,21 @@ export const noteTalk = (t: MarketTrace) => {
 };
 
 // What a talk makes for a story: talks that came close (3), an offer his team
-// nearly took (2), two or more teams after him (1), or an offer far short of
-// what his team wants (1) - its offer left out, as a buyer's most for a
-// player its team won't move makes no sense printed.
-type Kind = "close" | "near" | "interest" | "apart";
+// nearly took (2), his team open to moving him with his deal ending (1), two
+// or more teams after him (1), or an offer far short of what his team wants
+// (1) - its offer left out, as a buyer's most for a player its team won't
+// move makes no sense printed.
+type Kind = "close" | "near" | "available" | "interest" | "apart";
+// Which comes first when there's room for only some: the furthest talks,
+// and a team asking far out of its reach last.
+const RANK_OF: Record<Kind | "team", number> = {
+	close: 3,
+	near: 2,
+	available: 1.5,
+	team: 1.5,
+	interest: 1,
+	apart: 0,
+};
 const NEAR = 0.01;
 const kindOf = (
 	talk: Talk,
@@ -110,6 +140,9 @@ const kindOf = (
 		(talk.sellerGain ?? -1) > -NEAR
 	) {
 		return { kind: "near", tier: 2, buyer: talk.buyer };
+	}
+	if (talk.mustMove) {
+		return { kind: "available", tier: 1 };
 	}
 	if (talk.bidders.length >= 2) {
 		return { kind: "interest", tier: 1 };
@@ -142,6 +175,20 @@ const teamsOwn = (tid: number) =>
 
 const playerLink = (p: Player) =>
 	`<a href="${helpers.leagueUrl(["player", p.pid])}">${p.firstName} ${p.lastName}</a>`;
+
+const numberWord = (k: number) =>
+	[
+		"no",
+		"one",
+		"two",
+		"three",
+		"four",
+		"five",
+		"six",
+		"seven",
+		"eight",
+		"nine",
+	][k] ?? String(k);
 
 const count = (k: number, word: string) =>
 	`${["", "a", "two", "three", "four", "five"][k] ?? k} ${word}${k > 1 ? "s" : ""}`;
@@ -176,12 +223,28 @@ const story = (talk: Talk, kind: Kind, seed: number) => {
 	const p = playerLink(talk.p);
 	const S = team(talk.seller, true);
 	const s = team(talk.seller);
-	if (kind === "interest") {
-		const named = talk.bidders.slice(0, 2).map((tid) => team(tid));
+	const named = talk.bidders.slice(0, 2).map((tid) => team(tid));
+	if (kind === "available") {
+		const callers =
+			talk.bidders.length >= 2
+				? ` ${listOf(named)} are among the teams that have called.`
+				: talk.bidders.length === 1
+					? ` ${team(talk.bidders[0]!, true)} have called.`
+					: "";
 		return variant(
 			[
-				`${p} is drawing interest from ${talk.bidders.length} teams, ${listOf(named)} among them, league sources say.`,
-				`At least ${talk.bidders.length} teams have called ${s} about ${p}, per sources, including ${listOf(named)}.`,
+				`${S} are open to moving ${p}, whose contract is up after the season, league sources say.${callers}`,
+				`With his deal running out, ${p} could be on the move. ${S} are listening to offers, per sources.${callers}`,
+				`${S} aren't expected to re-sign ${p}, and are taking calls on him before the deadline, a league source said.${callers}`,
+			],
+			seed,
+		);
+	}
+	if (kind === "interest") {
+		return variant(
+			[
+				`${p} is drawing interest from ${numberWord(talk.bidders.length)} teams, ${listOf(named)} among them, league sources say.`,
+				`At least ${numberWord(talk.bidders.length)} teams have called ${s} about ${p}, per sources, including ${listOf(named)}.`,
 			],
 			seed,
 		);
@@ -236,6 +299,31 @@ const story = (talk: Talk, kind: Kind, seed: number) => {
 	);
 };
 
+// A team after many players: "The <a>Heat</a> have been one of the league's
+// most active teams ...".
+const teamStory = (
+	tid: number,
+	n: number,
+	targets: readonly Player[],
+	seed: number,
+) => {
+	const B = team(tid, true);
+	const b = team(tid);
+	const names = listOf(targets.map(playerLink));
+	const when =
+		g.get("phase") === PHASE.REGULAR_SEASON
+			? "ahead of the deadline"
+			: "this offseason";
+	return variant(
+		[
+			`${B} have been one of the league's most active teams ${when}, checking in on at least ${numberWord(n)} players, ${names} among them, league sources say.`,
+			`${B} are working the phones ${when}, per sources, with calls in on ${numberWord(n)} players, including ${names}.`,
+			`${names} are among the ${numberWord(n)} players ${b} have asked about ${when}, a league source said.`,
+		],
+		seed,
+	);
+};
+
 // The days from one "YYYY-MM-DD" to another.
 const daysBetween = (from: string, to: string) =>
 	Math.round(
@@ -272,21 +360,26 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 	const season = g.get("season");
 	const told = (await idb.cache.events.getAll())
 		.filter(
-			(e): e is EventBBGM & { rumor: { tier: number; buyer?: number } } =>
-				e.type === "rumor" && e.season === season && e.rumor !== undefined,
+			(
+				e,
+			): e is EventBBGM & {
+				rumor: NonNullable<EventBBGM["rumor"]>;
+			} => e.type === "rumor" && e.season === season && e.rumor !== undefined,
 		)
 		.sort((a, b) => a.eid - b.eid);
 	const today = await eventDate();
-	// Whether a story told then is still recent.
-	const recent = (e: EventBBGM, i: number) =>
+	// Whether a story told then is still recent (or, for a team's own story,
+	// recent by its longer quiet).
+	const recent = (e: EventBBGM, i: number, times = 1) =>
 		today !== undefined && e.date !== undefined
-			? daysBetween(e.date, today) < rumorSettings.quietDays
-			: told.length - 1 - i < rumorSettings.quietStories;
+			? daysBetween(e.date, today) < times * rumorSettings.quietDays
+			: told.length - 1 - i < times * rumorSettings.quietStories;
 	// A player again only once his talks go further, or with another team
 	// once the last story about him is old; never the same story twice.
 	const quiet = (pid: number, tier: number, buyer: number | undefined) =>
 		told.some(
 			(e, i) =>
+				e.rumor.team === undefined &&
 				e.pids?.[0] === pid &&
 				tier <= e.rumor.tier &&
 				(e.rumor.buyer === buyer || recent(e, i)),
@@ -300,40 +393,84 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 			}
 		}
 	}
-	const picked = [...now.values()]
-		.filter(
-			(talk) =>
-				!traded.has(talk.p.pid) &&
-				talk.p.tid === talk.seller &&
-				(rank.get(talk.p.pid) ?? Infinity) <= rumorSettings.topPlayers,
-		)
-		.flatMap((talk) => {
+	const still = (p: Player, tid: number) => !traded.has(p.pid) && p.tid === tid;
+	const penalty = (tids: readonly number[]) =>
+		4 * tids.reduce((sum, tid) => sum + (lately.get(tid) ?? 0), 0);
+	type Story = {
+		tids: number[];
+		pids: number[];
+		weight: number;
+		rumor: NonNullable<EventBBGM["rumor"]>;
+		text: (seed: number) => string;
+	};
+	const stories: Story[] = [...now.values()]
+		.filter((talk) => still(talk.p, talk.seller))
+		.flatMap((talk): Story[] => {
 			const kind = kindOf(talk);
-			if (!kind || quiet(talk.p.pid, kind.tier, kind.buyer)) {
+			if (
+				!kind ||
+				(rank.get(talk.p.pid) ?? Infinity) >
+					rumorSettings.topPlayers[kind.kind] ||
+				quiet(talk.p.pid, kind.tier, kind.buyer)
+			) {
 				return [];
 			}
 			const tids =
 				kind.buyer !== undefined
 					? [kind.buyer, talk.seller]
-					: [...talk.bidders.slice(0, 2), talk.seller];
+					: kind.kind === "available"
+						? [talk.seller, ...talk.bidders.slice(0, 2)]
+						: [...talk.bidders.slice(0, 2), talk.seller];
 			return [
 				{
-					talk,
-					...kind,
 					tids,
+					pids: [talk.p.pid],
 					// A talk that got further is bigger news, and so is a better
 					// player; a team already in the news less so.
-					weight:
-						talk.p.value +
-						4 * kind.tier -
-						4 * tids.reduce((sum, tid) => sum + (lately.get(tid) ?? 0), 0),
+					weight: talk.p.value + 6 * RANK_OF[kind.kind] - penalty(tids),
+					rumor: {
+						tier: kind.tier,
+						...(kind.buyer === undefined ? {} : { buyer: kind.buyer }),
+					},
+					text: (seed) => story(talk, kind.kind, talk.p.pid + seed),
 				},
 			];
-		})
-		.sort((a, b) => b.weight - a.weight || a.talk.p.pid - b.talk.p.pid);
+		});
+	// The busiest team after players this moment, named with its two best
+	// targets, unless it was such a story lately.
+	const after = new Map<number, Player[]>();
+	for (const talk of now.values()) {
+		for (const tid of talk.bidders) {
+			after.set(tid, [...(after.get(tid) ?? []), talk.p]);
+		}
+	}
+	const busiest = [...after]
+		.filter(
+			([tid, ps]) =>
+				ps.length >= rumorSettings.busyTeam &&
+				!told.some((e, i) => e.rumor.team === tid && recent(e, i, 2)),
+		)
+		.sort((a, b) => b[1].length - a[1].length || a[0] - b[0])[0];
+	if (busiest) {
+		const [tid, ps] = busiest;
+		const targets = ps
+			.filter((p) => p.tid >= 0 && !traded.has(p.pid))
+			.sort((a, b) => b.value - a.value || a.pid - b.pid)
+			.slice(0, 2);
+		if (targets.length === 2) {
+			stories.push({
+				tids: [tid],
+				pids: targets.map((p) => p.pid),
+				weight: targets[0]!.value + 6 * RANK_OF.team - penalty([tid]),
+				rumor: { tier: 1, team: tid },
+				text: (seed) => teamStory(tid, ps.length, targets, tid + seed),
+			});
+		}
+	}
+	stories.sort((a, b) => b.weight - a.weight || a.pids[0]! - b.pids[0]!);
 	const teamsTold = new Set<number>();
 	let n = 0;
-	for (const { talk, kind, tier, buyer, tids } of picked) {
+	for (const { tids, pids, rumor, text } of stories) {
 		if (n >= limit) {
 			break;
 		}
@@ -346,12 +483,12 @@ export const tellRumors = async (made: readonly SmartDeal[]) => {
 		}
 		await logEvent({
 			type: "rumor",
-			text: story(talk, kind, talk.p.pid + season + told.length + n),
-			pids: [talk.p.pid],
+			text: text(season + told.length + n),
+			pids,
 			tids,
 			score:
-				(rank.get(talk.p.pid) ?? Infinity) <= rumorSettings.starRank ? 15 : 10,
-			rumor: { tier, ...(buyer === undefined ? {} : { buyer }) },
+				(rank.get(pids[0]!) ?? Infinity) <= rumorSettings.starRank ? 15 : 10,
+			rumor,
 			showNotification: false,
 		});
 		n += 1;

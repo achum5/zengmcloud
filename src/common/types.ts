@@ -419,8 +419,9 @@ export type EventBBGMWithoutKey = (
 			revert?: TransactionRevert;
 
 			// Rumors only (smartCpu/rumors.ts): how far the talk got - someone
-			// wanting him (1), an offer turned down (2), close to a deal (3).
-			rumor?: { tier: number; buyer?: number };
+			// wanting him (1), an offer turned down (2), close to a deal (3);
+			// team, a story about one team's calls.
+			rumor?: { tier: number; buyer?: number; team?: number };
 	  }
 	| {
 			type: "sisyphus";

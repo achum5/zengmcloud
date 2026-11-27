@@ -528,7 +528,16 @@ export const dealsNow = async (
 		marketStats.candidates += 1;
 		const bidders = await timed("market: bidders", () => biddersFor(view, c));
 		const buyers = bidders.map((b) => b.tid);
-		trace({ stage: "shopped", seller: c.seller, p: c.p, buyers }, view);
+		trace(
+			{
+				stage: "shopped",
+				seller: c.seller,
+				p: c.p,
+				buyers,
+				mustMove: c.mustMove,
+			},
+			view,
+		);
 		const tried = offerStats.tried;
 		const real = await timed("market: offers", () =>
 			view.bestRealOffer(
@@ -659,6 +668,8 @@ export type MarketTrace = {
 	buyer?: number;
 	p: Player;
 	buyers?: readonly number[];
+	// Shopped: his team must move him before the deadline (plans.ts).
+	mustMove?: boolean;
 	why?: string;
 	sellerGain?: number;
 	buyerGain?: number;
