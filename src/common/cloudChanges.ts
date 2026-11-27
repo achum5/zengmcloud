@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 669,
+		date: "2026-11-27",
+		text: "Player Stats: one team in this season now shows only the players on its roster today, like the roster page, so guys traded away or released drop off. The Active roster switch above the table brings them back, and past seasons still show everyone who played for the team that year.",
+	},
+	{
 		n: 668,
 		date: "2026-11-27",
 		text: "3D game: the score bugs file now also has CBS's late-80s look (1987-88 to 1989-90: Sundays, the playoffs and the Finals) and TBS NBA Thursday's (1989-90 to 1994-95). A team name too long for a bug's room is now set smaller to fit.",

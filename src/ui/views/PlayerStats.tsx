@@ -13,6 +13,10 @@ import { PlusMinus } from "../components/PlusMinus.tsx";
 import { useLocal } from "../util/local.ts";
 import { contractValueCell } from "../util/contractValueCell.tsx";
 import { router } from "../router/index.ts";
+import { useState } from "react";
+import { safeLocalStorage } from "../util/safeLocalStorage.ts";
+
+const ACTIVE_ROSTER_KEY = "playerStatsActiveRoster";
 
 export const formatStatGameHigh = (
 	ps: any,
@@ -111,7 +115,18 @@ const PlayerStats = ({
 			view: "playerStats",
 		},
 	});
-	const { userTid } = useLocal(["userTid"]);
+	const { season: currentSeason, userTid } = useLocal(["season", "userTid"]);
+
+	// One team, this season: only the men on its roster now, like the roster
+	// page - not the ones traded away or released (a past season shows
+	// everyone who played for the team that year). On unless turned off.
+	const [activeRoster, setActiveRoster] = useState(
+		() => safeLocalStorage.getItem(ACTIVE_ROSTER_KEY) !== "false",
+	);
+	const showActiveRoster = typeof team === "number" && season === currentSeason;
+	if (showActiveRoster && activeRoster) {
+		players = players.filter((p) => p.tid === team);
+	}
 
 	const cols = getCols(
 		[
@@ -286,6 +301,32 @@ const PlayerStats = ({
 				Hall of Fame are <span className="text-danger">highlighted in red</span>
 				.
 			</p>
+
+			{showActiveRoster ? (
+				<div className="form-check form-switch mb-2">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						role="switch"
+						id="player-stats-active-roster"
+						checked={activeRoster}
+						onChange={() => {
+							const next = !activeRoster;
+							setActiveRoster(next);
+							safeLocalStorage.setItem(
+								ACTIVE_ROSTER_KEY,
+								next ? "true" : "false",
+							);
+						}}
+					/>
+					<label
+						className="form-check-label"
+						htmlFor="player-stats-active-roster"
+					>
+						Active roster
+					</label>
+				</div>
+			) : null}
 
 			<DataTable
 				key={sortStat ?? ""}
