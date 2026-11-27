@@ -32,7 +32,7 @@ import { drawJumbotron, ribbonScore, type Jumbotron } from "./jumbotron.ts";
 import type { CourtPicture } from "./courtTexture.ts";
 import type { Bowl } from "./bowlData.ts";
 import type { SeatedCrowd } from "./bowlFans.ts";
-import { drawBowl } from "./bowlGl.ts";
+import { type BowlLook, drawBowl } from "./bowlGl.ts";
 import {
 	BASELINE_RIG,
 	depthOf,
@@ -2031,6 +2031,44 @@ const clipInFront = (cam: Camera, ring: Pt3[]): Pt3[] => {
 	return out;
 };
 
+// The bowl as the frame has it (see bowlGl.ts): its crowd, its boards -
+// none somewhere else on the floor, or if it isn't built.
+export const bowlLookOf = (f: Frame): BowlLook | undefined => {
+	const { tl, arena } = f;
+	const { t } = f.moment;
+	if (f.venue || arena.bowl === undefined) {
+		return undefined;
+	}
+	const screen = boardAt(tl, t);
+	// The crowd behind each basket: its own, if it is up to more than the
+	// building is.
+	const endCrowd = (side: Side) => {
+		const own = f.crowd.ends?.[side];
+		return own && own.up > f.crowd.up ? own : f.crowd;
+	};
+	return {
+		crowd: arena.bowl.crowd,
+		seatColor: arena.bowl.seatColor,
+		full: seatsAt(tl, t),
+		stands: [f.crowd, endCrowd(0), endCrowd(1)],
+		wall: arena.boards.wall[screen],
+		ribbon: arena.boards.ribbon[screen],
+		...(arena.jumbotron && f.score
+			? {
+					score: {
+						pic: ribbonScore(arena.jumbotron, RIBBON_SCORE.w, RIBBON_SCORE.h, {
+							score: f.score,
+							clock: f.clock ?? "",
+							period: f.period ?? "",
+						}),
+						ft: RIBBON_SCORE_FT,
+					},
+				}
+			: {}),
+		rafters: arena.rafters,
+	};
+};
+
 export const drawFrame = (f: Frame) => {
 	const { ctx, cam, tl, arena } = f;
 	const { t, players, ball } = f.moment;
@@ -2078,44 +2116,11 @@ export const drawFrame = (f: Frame) => {
 	const venueBoards = f.venue?.boards;
 	const ribbon = venueBoards?.ribbon ?? arena.boards.ribbon[screen];
 	const wall = venueBoards?.wall ?? arena.boards.wall[screen];
-	// The crowd behind each basket: its own, if it is up to more than the
-	// building is.
-	const endCrowd = (side: Side) => {
-		const own = f.crowd.ends?.[side];
-		return own && own.up > f.crowd.up ? own : f.crowd;
-	};
 	// THE BOWL, if it is built (see bowlGl.ts) - in place of all of the
 	// stands' pictures below. (Not for somewhere else on the floor: draft
 	// night has its own building.)
-	const bowl =
-		!f.venue &&
-		arena.bowl !== undefined &&
-		drawBowl(ctx, cam, arena.bowl.data, {
-			crowd: arena.bowl.crowd,
-			seatColor: arena.bowl.seatColor,
-			full: seatsAt(tl, t),
-			stands: [f.crowd, endCrowd(0), endCrowd(1)],
-			wall,
-			ribbon,
-			...(arena.jumbotron && f.score
-				? {
-						score: {
-							pic: ribbonScore(
-								arena.jumbotron,
-								RIBBON_SCORE.w,
-								RIBBON_SCORE.h,
-								{
-									score: f.score,
-									clock: f.clock ?? "",
-									period: f.period ?? "",
-								},
-							),
-							ft: RIBBON_SCORE_FT,
-						},
-					}
-				: {}),
-			rafters: arena.rafters,
-		});
+	const look = bowlLookOf(f);
+	const bowl = look !== undefined && drawBowl(ctx, cam, arena.bowl!.data, look);
 	if (!bowl) {
 		// The building: the stands (on their feet after a big play), the LED
 		// ribbon, the floor round the court, the court, the table, the benches.

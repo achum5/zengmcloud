@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 670,
+		date: "2026-11-27",
+		text: "3D game, a faster way to draw it, to try: Global Settings > 3D Drawing > GPU (in progress) draws the whole game on your device's graphics chip in one picture, in plain kit colors for now, with its frame rate shown over it. Current + frame rate shows today's drawing with the same readout, to compare.",
+	},
+	{
 		n: 669,
 		date: "2026-11-27",
 		text: "Player Stats: one team in this season now shows only the players on its roster today, like the roster page, so guys traded away or released drop off. The Active roster switch above the table brings them back, and past seasons still show everyone who played for the team that year.",

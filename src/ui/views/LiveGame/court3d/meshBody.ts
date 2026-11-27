@@ -671,6 +671,16 @@ for (const [i, R] of REST_OF.entries()) {
 	);
 }
 let posedFlat = new Float64Array(0);
+// (For the graphics card to do what skinned does - see gpu/men.ts: each
+// piece at rest, each piece's turn and move to posed, and where each point
+// is held in each piece's frame.)
+export const MESH_REST = REST_FLAT;
+export const meshTurns = (bones: Posed[], H: number): Float64Array => {
+	turnsOf(bones, H);
+	return dq;
+};
+export const meshLocals = (hem = HEM_TODAY, flare = 1): Float32Array =>
+	localFor(meshOf(), hem, flare);
 
 // HIS SHORTS AS LONG AS HIS SEASON'S (see shortsEra.ts): the mesh is made
 // with today's, so the legs of them are drawn up his thighs or let down to

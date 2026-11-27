@@ -87,6 +87,9 @@ import { crowdFaces, crowdFacesMade, type CrowdFace } from "./crowdFaces.ts";
 import { type Bowl, bowlLoaded, loadBowl } from "./bowlData.ts";
 import { fanLooks, paintFanPool, seatCrowd } from "./bowlFans.ts";
 import { bowlHere } from "./bowlSetting.ts";
+import { drawGpu, gpuScene } from "./gpu/scene.ts";
+import { makeMeter, meterTick } from "./gpu/meter.ts";
+import { gpuMode } from "./gpu/setting.ts";
 import { gearFor, kitsFor, shade, streetClothes, type Look } from "./figure.ts";
 import { courtRosterOf, courtTeamsOf, introKindOf } from "./courtInput.ts";
 import { dressKit } from "./kitArt.ts";
@@ -202,6 +205,7 @@ import {
 	closeUpAim,
 	crowdAt,
 	drawFrame,
+	type Frame,
 	introAim,
 	momentAt,
 	replayAim,
@@ -859,11 +863,12 @@ const Court3D = ({
 	// The bowl built in Blender (Global Settings, "3D Arena": see bowlGl.ts),
 	// fetched once a visit - and the crowd sat in it once a game, with
 	// faces once there are.
+	// (And for the game drawn on the graphics card: see gpu/setting.ts.)
 	const [bowlData, setBowlData] = useState<Bowl | undefined>(() =>
-		bowlHere() ? bowlLoaded() : undefined,
+		bowlHere() || gpuMode() === "test" ? bowlLoaded() : undefined,
 	);
 	useEffect(() => {
-		if (!bowlHere()) {
+		if (!bowlHere() && gpuMode() !== "test") {
 			return;
 		}
 		let alive = true;
@@ -1244,6 +1249,11 @@ const Court3D = ({
 	// The score bug's clocks, fouls and possession marker (see writeBug).
 	const bugRefs = useBugRefs();
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	// Drawn on the graphics card instead, or its frame rate shown (see
+	// gpu/setting.ts): its canvas, and the frame rate over it.
+	const [drawing] = useState(gpuMode);
+	const gpuRef = useRef<HTMLCanvasElement | null>(null);
+	const meterRef = useRef<HTMLDivElement | null>(null);
 	const size = useViewSize(wrapRef);
 	const narrow = size.w < NARROW_W;
 
@@ -1599,10 +1609,19 @@ const Court3D = ({
 		// The picture is drawn small - pixel art - and the page blows it up
 		// without smoothing (see the canvas's style).
 		const scratch = makeScratch();
+		// All of it on the graphics card instead, if this device is to (see
+		// gpu/setting.ts) and has one - and the frame rate over it.
+		const drawn = gpuMode();
+		let gpu =
+			drawn === "test" && gpuRef.current ? gpuScene(gpuRef.current) : undefined;
+		const meter = drawn === "off" ? undefined : makeMeter();
+		const gpuLaid = { w: 0, h: 0 };
 		// Hands off the page's own thread to make new pictures on, where the
 		// device has them (see farm.ts).
 		const farm =
-			typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined"
+			gpu ||
+			typeof Worker === "undefined" ||
+			typeof OffscreenCanvas === "undefined"
 				? undefined
 				: makeFarm(
 						spawnCourtWorker,
@@ -1631,6 +1650,7 @@ const Court3D = ({
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
 
 		const tick = (now: number, draw: boolean, still: boolean) => {
+			const began = performance.now();
 			const p = live.current;
 			// (Whole possessions, or on to the action - see pacing.ts.)
 			showWhole(p.whole);
@@ -1762,9 +1782,22 @@ const Court3D = ({
 			if (w <= 0 || h <= 0) {
 				return;
 			}
+			// On the graphics card - the game itself only, not a scene of its
+			// own (draft night, a press conference: see authored.ts).
+			const card = !p.authored ? gpu : undefined;
+			const gpuCanvas = gpuRef.current;
+			if (gpuCanvas) {
+				const shown = card ? "visible" : "hidden";
+				if (gpuCanvas.style.visibility !== shown) {
+					gpuCanvas.style.visibility = shown;
+				}
+			}
 			// The picture: fine (see resolution.ts), each of its pixels a whole
 			// number of the screen's.
-			const { art, dpr, fw, fh } = sizeCanvas(canvas, p.size, res, laid);
+			const { art, dpr, fw, fh } =
+				card && gpuCanvas
+					? sizeCanvas(gpuCanvas, p.size, res, gpuLaid)
+					: sizeCanvas(canvas, p.size, res, laid);
 
 			const replay = s.replay;
 			const moment =
@@ -2003,7 +2036,7 @@ const Court3D = ({
 				p.authored?.crew ? cr.sceneCrew : cr.crew,
 			);
 			const drawStart = performance.now();
-			drawFrame({
+			const frame: Frame = {
 				ctx,
 				scratch,
 				sprites,
@@ -2076,9 +2109,24 @@ const Court3D = ({
 					: working.flashes,
 				teamColors: p.teamColors,
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
-			});
+			};
+			if (card && !drawGpu(card, frame, fw, fh)) {
+				// (The card lost: today's drawing from the next frame.)
+				gpu = undefined;
+			} else if (!card) {
+				drawFrame(frame);
+			}
+			if (meter) {
+				meterTick(meter, meterRef.current, now, performance.now() - began, {
+					gpu: drawn !== "test" || (gpu && !card) ? undefined : !!card,
+					fps: pacing.fps,
+					w: fw,
+					h: fh,
+				});
+			}
 			if (
 				!still &&
+				!card &&
 				adjust(
 					res,
 					h * dpr,
@@ -2283,6 +2331,28 @@ const Court3D = ({
 				/>
 			</div>
 			<PictureCanvas canvasRef={canvasRef} label="Live court" />
+			{drawing === "test" ? (
+				<PictureCanvas canvasRef={gpuRef} label="Live court" />
+			) : null}
+			{drawing !== "off" ? (
+				<div
+					ref={meterRef}
+					aria-hidden
+					style={{
+						position: "absolute",
+						left: 4,
+						top: 4,
+						zIndex: 5,
+						padding: "1px 5px",
+						font: "10px/1.4 monospace",
+						color: "#fff",
+						background: "rgba(0,0,0,0.6)",
+						borderRadius: 3,
+						maxWidth: "calc(100% - 8px)",
+						pointerEvents: "none",
+					}}
+				/>
+			) : null}
 			<Overlays
 				dipRef={dipRef}
 				flashRef={flashRef}

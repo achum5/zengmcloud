@@ -22,6 +22,11 @@ import {
 } from "../LiveGame/court3d/possession/setting.ts";
 import { bowlHere, setBowl } from "../LiveGame/court3d/bowlSetting.ts";
 import {
+	type GpuMode,
+	gpuMode,
+	setGpuMode,
+} from "../LiveGame/court3d/gpu/setting.ts";
+import {
 	SOUND_SHOWN,
 	setSound,
 	soundHere,
@@ -62,6 +67,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				: ("hide" as const),
 			possessionSim: possessionSimHere() ? "show" : ("hide" as const),
 			bowl: bowlHere() ? "show" : ("hide" as const),
+			gpuDrawing: gpuMode(),
 			gameSound: soundHere() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
@@ -127,6 +133,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setRefreshedLook(state.refreshedLook === "show");
 		setPossessionSim(state.possessionSim === "show");
 		setBowl(state.bowl === "show");
+		setGpuMode(state.gpuDrawing);
 		if (soundHere() !== (state.gameSound === "show")) {
 			setSound(state.gameSound === "show");
 			if (state.gameSound !== "show") {
@@ -344,6 +351,31 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 								"Current",
 							])
 						: null}
+					{__SPORT === "basketball" ? (
+						<div className="col-sm-3 col-6 mb-3">
+							<label
+								className="form-label"
+								htmlFor="options-gpuDrawing"
+								title="On this device"
+							>
+								3D Drawing
+							</label>
+							<select
+								id="options-gpuDrawing"
+								className="form-select"
+								onChange={(event) => {
+									const value = event.target.value as GpuMode;
+									setState((state2) => ({ ...state2, gpuDrawing: value }));
+									setDirty(true);
+								}}
+								value={state.gpuDrawing}
+							>
+								<option value="test">GPU (in progress)</option>
+								<option value="off">Current</option>
+								<option value="fps">Current + frame rate</option>
+							</select>
+						</div>
+					) : null}
 					{__SPORT === "basketball" && SOUND_SHOWN
 						? showHide("gameSound", "Game Sound", "On this device", [
 								"On (in progress)",

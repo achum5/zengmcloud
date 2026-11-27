@@ -450,6 +450,15 @@ const start = (bowl: Bowl): Card | null => {
 	if (!gl) {
 		return null;
 	}
+	return onto(gl, canvas, bowl);
+};
+// (Its programs and buffers on a card, whoever's it is - its own, above, or
+// the one the whole game is drawn on: see gpu/scene.ts.)
+const onto = (
+	gl: WebGL2RenderingContext,
+	canvas: HTMLCanvasElement,
+	bowl: Bowl,
+): Card | null => {
 	const shell = compile(gl, SHELL_VERT, SHELL_FRAG);
 	const seats = compile(gl, SEAT_VERT, SEAT_FRAG);
 	const fans = compile(gl, FAN_VERT, FAN_FRAG);
@@ -747,13 +756,58 @@ export const drawBowl = (
 	if (!tone) {
 		return false;
 	}
-	const { gl } = c;
 	const W = ctx.canvas.width;
 	const H = ctx.canvas.height;
 	if (c.canvas.width !== W || c.canvas.height !== H) {
 		c.canvas.width = W;
 		c.canvas.height = H;
 	}
+	paint(c, tone, cam, bowl, look, W, H);
+	ctx.drawImage(c.canvas, 0, 0);
+	return true;
+};
+
+// THE BOWL ON THE CARD THE WHOLE GAME IS DRAWN ON (see gpu/scene.ts), first,
+// into the picture `W` x `H` - false if it can't be yet.
+const onCards = new WeakMap<WebGL2RenderingContext, Card | null>();
+export const paintBowlOn = (
+	gl: WebGL2RenderingContext,
+	cam: Camera,
+	bowl: Bowl,
+	look: BowlLook,
+	W: number,
+	H: number,
+): boolean => {
+	let c = onCards.get(gl);
+	if (c === undefined || (c && c.bowl !== bowl)) {
+		try {
+			c = onto(gl, gl.canvas as HTMLCanvasElement, bowl);
+		} catch {
+			c = null;
+		}
+		onCards.set(gl, c);
+	}
+	if (!c || c.lost) {
+		return false;
+	}
+	const tone = toneOf(c);
+	if (!tone) {
+		return false;
+	}
+	paint(c, tone, cam, bowl, look, W, H);
+	return true;
+};
+
+const paint = (
+	c: Card,
+	tone: WebGLTexture,
+	cam: Camera,
+	bowl: Bowl,
+	look: BowlLook,
+	W: number,
+	H: number,
+) => {
+	const { gl } = c;
 	gl.viewport(0, 0, W, H);
 	gl.clearColor(0.027, 0.024, 0.039, 1);
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -879,8 +933,6 @@ export const drawBowl = (
 		gl.disable(gl.BLEND);
 	}
 	gl.bindVertexArray(null);
-	ctx.drawImage(c.canvas, 0, 0);
-	return true;
 };
 
 // (For the tests and whoever looks into it: the poses, in the atlas's
