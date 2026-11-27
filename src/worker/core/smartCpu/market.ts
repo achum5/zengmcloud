@@ -33,6 +33,7 @@ import {
 	type SmartView,
 } from "./worth.ts";
 import { marginShare, mustMove, plansOf, type Plan } from "./plans.ts";
+import { beginTalks, endTalks, noteTalk, tellRumors } from "./rumors.ts";
 
 // THE GM'S MARKET (docs/smart-cpu.md, layer 2). At each market moment every
 // team reads where it stands (plans.ts), and every CPU team reads every
@@ -671,6 +672,8 @@ const trace = (t: MarketTrace, view: SmartView) => {
 	if (!tracing) {
 		return;
 	}
+	// The moment's talks, for the rumor mill.
+	noteTalk(t);
 	for (const watch of smartTraceWatchers) {
 		watch(t, view);
 	}
@@ -769,6 +772,17 @@ const laterGains = async (
 export const marketMoment = () => timed("market", marketMomentNow);
 
 const marketMomentNow = async () => {
+	beginTalks();
+	try {
+		const made = await marketMomentDeals();
+		await tellRumors(made);
+		return made;
+	} finally {
+		endTalks();
+	}
+};
+
+const marketMomentDeals = async () => {
 	// A moment can hold the worker for minutes: the room's busy mark renewed
 	// first (sync/advanceLease.ts).
 	await holdRoomForAdvance();

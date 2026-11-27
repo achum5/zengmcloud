@@ -787,9 +787,35 @@ export default defineView({
 						text: helpers.correctLinkLid(g.get("lid"), event.text as any),
 					};
 				});
+			// The rumor mill (smartCpu/rumors.ts): this season's talk about him
+			// since he last moved - once traded or signed, it's old news - the
+			// newest first.
+			const lastMove = eventsAll.findLast(
+				(event) =>
+					event.type === "trade" ||
+					event.type === "freeAgent" ||
+					event.type === "reSigned" ||
+					event.type === "release" ||
+					event.type === "draft",
+			);
+			const rumors = eventsAll
+				.filter(
+					(event) =>
+						event.type === "rumor" &&
+						event.season === g.get("season") &&
+						(lastMove === undefined || event.eid > lastMove.eid),
+				)
+				.reverse()
+				.slice(0, 3)
+				.map((event) => ({
+					eid: event.eid,
+					date: event.date,
+					text: helpers.correctLinkLid(g.get("lid"), event.text as any),
+				}));
 			const eventsFiltered = eventsAll.filter((event) => {
 				// undefined is a temporary workaround for bug from commit 999b9342d9a3dc0e8f337696e0e6e664e7b496a4
 				return !(
+					event.type === "rumor" ||
 					event.type === "award" ||
 					event.type === "injured" ||
 					event.type === "healed" ||
@@ -867,6 +893,7 @@ export default defineView({
 				impact,
 				leaders,
 				ratings: RATINGS,
+				rumors,
 				social,
 			};
 		}

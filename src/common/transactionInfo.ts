@@ -37,6 +37,10 @@ export const categories = {
 		text: "Front Office",
 		className: "bg-primary",
 	},
+	rumor: {
+		text: "Rumors",
+		className: "bg-rumor",
+	},
 	team: {
 		text: "Teams",
 		className: "bg-light",
@@ -79,6 +83,10 @@ export const types: Partial<
 	frontOffice: {
 		text: "Front Office",
 		category: "frontOffice",
+	},
+	rumor: {
+		text: "Rumor",
+		category: "rumor",
 	},
 	reSigned: {
 		text: "Re-signing",

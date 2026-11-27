@@ -56,6 +56,7 @@ const Player2 = ({
 	randomDebutsForeverPids,
 	ratings,
 	retired,
+	rumors,
 	statTables,
 	statSummary,
 	teamColors,
@@ -197,6 +198,21 @@ const Player2 = ({
 				teamURL={teamURL}
 				willingToSign={willingToSign}
 			/>
+
+			{rumors.length > 0 ? (
+				<HideableSection title="Rumors">
+					{rumors.map((e) => (
+						<p key={e.eid}>
+							{e.date !== undefined ? (
+								<>
+									<b>{formatGameDate(e.date, "monthDay")}</b>:{" "}
+								</>
+							) : null}
+							<SafeHtml dirty={e.text} />
+						</p>
+					))}
+				</HideableSection>
+			) : null}
 
 			{statTables.map(({ key, name, onlyShowIf, stats, superCols }, i) => (
 				<StatsTable
