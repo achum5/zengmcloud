@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 677,
+		date: "2026-11-27",
+		text: "3D game, GPU drawing (Global Settings > 3D Drawing > GPU, in progress): the players now look the same as in today's drawing, with their own jerseys, numbers, names, faces, hair, shoes and hands, the dark edge around them, and their shadows and reflections on the floor. Court lines, baskets, the scoreboard, benches and refs come next.",
+	},
+	{
 		n: 676,
 		date: "2026-11-27",
 		text: "CPU teams over the roster limit no longer release a player with years left on a big contract while they could cut a cheaper spare. They first try to trade him away, with a pick attached if that's what it takes, and if nobody takes him they keep him and cut the player they owe least after this season.",

@@ -148,14 +148,11 @@ void main() {
 	o = uvec4(vTri, floatBitsToUint(vAt.x), floatBitsToUint(vAt.y), 1u);
 }`;
 
-// (After the sculptor's head and shared paint - see sculptGl.ts.)
-export const MESH_MAIN = `
+// What a point of the mesh is painted, and how it is lit - here, and in the
+// game drawn all in one picture (see gpu/men.ts). (After the sculptor's
+// head and shared paint - see sculptGl.ts.)
+export const MESH_PAINT = `
 precision highp usampler2D;
-uniform sampler2D uV;
-uniform sampler2D uRest;
-uniform usampler2D uTri;
-uniform usampler2D uI;
-uniform sampler2D uD;
 // What each kind of his faces is painted as: per mass its ends, its kind
 // (and side, 16 a side) and its group.
 uniform vec4 uMK[${N_MASSES * 2}];
@@ -169,10 +166,6 @@ uniform vec4 uTex0;
 uniform vec4 uTex1;
 uniform vec4 uHair;
 uniform vec4 uOpt;
-// Where 0 and 1 of the depths laid down are (see uBox above).
-uniform vec2 uZ;
-layout(location = 0) out vec4 oMesh;
-layout(location = 1) out uvec4 oZ;
 
 const int SHELL[${K}] = ${ints(SHELLS)};
 const int SIDE[${K}] = ${ints(SIDES)};
@@ -310,6 +303,85 @@ void faceOn(vec4 at) {
 	}
 }
 
+// What a point of him is painted (into ink, cloth and tone): of face kind
+// k, at P as posed - T where his trunk alone carries it - so much with his
+// arm, and where on his face it is. And which group of him it is.
+float meshPaint(int k, vec3 P, vec3 T, float arm, vec4 face) {
+	along = 0.0;
+	int mi;
+	if (!${MESH_LAYERED} && SHELL[k] == 3) {
+		// His shoe, painted where each point is on it as it stands at rest.
+		int o = SIDE[k] * 8;
+		vec3 d = P - uFoot[o].xyz;
+		P = uFoot[o + 4].xyz
+			+ uFoot[o + 5].xyz * dot(d, uFoot[o + 1].xyz)
+			+ uFoot[o + 6].xyz * dot(d, uFoot[o + 2].xyz)
+			+ uFoot[o + 7].xyz * dot(d, uFoot[o + 3].xyz);
+		mi = ${SHOES_AT} + SIDE[k];
+		along = raw(mi, P);
+	} else {
+		mi = massAt(k, P, arm);
+		// (His kit on his torso painted where it is on his torso.)
+		if (mi == ${TORSO_K}) {
+			mi = massAt(k, T, arm);
+			P = T;
+		}
+	}
+	cloth = false;
+	tone = 0.0;
+	Hit h = Hit(0.0, 0.0, 0.0, 0.0, 1.0, clamp(along, 0.0, 1.0), 1.0);
+	float group = uMK[mi * 2 + 1].w;
+	paint(
+		vec4(1.0, group, float(mKind(mi)), mSide(mi)),
+		h,
+		P,
+		mA(mi),
+		mB(mi),
+		0.0
+	);
+	if (uHair.w > 0.5 && (k == ${HEAD_K} || k == ${NECK_K})) {
+		faceOn(face);
+	}
+	return group;
+}
+// What is painted there (ink), lit as drawMesh lights him: his normal there
+// in the camera's frame (right, down, toward it). 0 - 255.
+vec3 meshLit(vec3 N) {
+	float nl = length(N);
+	vec3 s = N / (nl == 0.0 ? 1.0 : nl);
+	float lam = dot(s, MLIGHT);
+	float key = cloth ? max(0.0, lam) : max(0.0, (lam + 0.32) / 1.32);
+	float amb = 0.34 + 0.22 * (0.5 - 0.5 * s.y);
+	float kk = (amb + 0.66 * key) * (1.0 + tone);
+	float shade1 = 1.0 - key;
+	vec3 col = vec3(
+		ink.r * kk,
+		ink.g * kk * (cloth ? 1.0 : 1.0 - 0.06 * shade1),
+		ink.b * kk * (cloth ? 1.0 : 1.0 - 0.1 * shade1)
+	);
+	float e3 = clamp((dot(s, MBACK) - 0.55) / 0.4, 0.0, 1.0);
+	float lift = e3 * e3 * (3.0 - 2.0 * e3) * shade1 * (cloth ? 0.11 : 0.15);
+	float h0 = dot(s, MSHINE);
+	if (h0 > 0.0) {
+		lift += pow(h0, cloth ? 6.0 : 18.0) * (cloth ? 0.05 : 0.2);
+	}
+	if (lift > 0.0) {
+		col += (255.0 - col) * min(1.0, lift);
+	}
+	return col;
+}
+`;
+export const MESH_MAIN = `${MESH_PAINT}
+uniform sampler2D uV;
+uniform sampler2D uRest;
+uniform usampler2D uTri;
+uniform usampler2D uI;
+uniform sampler2D uD;
+// Where 0 and 1 of the depths laid down are (see uBox above).
+uniform vec2 uZ;
+layout(location = 0) out vec4 oMesh;
+layout(location = 1) out uvec4 oZ;
+
 vec4 pt(int v, int j) {
 	int i = v * ${PER_POINT} + j;
 	return texelFetch(uV, ivec2(i & ${ROW - 1}, i >> ${ROW_BITS}), 0);
@@ -367,64 +439,14 @@ void main() {
 		+ w1 * vec3(b0.w, b1.w, b2.w)
 		+ w2 * vec3(c0.w, c1.w, c2.w);
 	float arm = w0 * rest(a, 1).x + w1 * rest(b, 1).x + w2 * rest(c, 1).x;
-
-	along = 0.0;
-	int mi;
-	if (!${MESH_LAYERED} && SHELL[k] == 3) {
-		// His shoe, painted where each point is on it as it stands at rest.
-		int o = SIDE[k] * 8;
-		vec3 d = P - uFoot[o].xyz;
-		P = uFoot[o + 4].xyz
-			+ uFoot[o + 5].xyz * dot(d, uFoot[o + 1].xyz)
-			+ uFoot[o + 6].xyz * dot(d, uFoot[o + 2].xyz)
-			+ uFoot[o + 7].xyz * dot(d, uFoot[o + 3].xyz);
-		mi = ${SHOES_AT} + SIDE[k];
-		along = raw(mi, P);
-	} else {
-		mi = massAt(k, P, arm);
-		// (His kit on his torso painted where it is on his torso.)
-		if (mi == ${TORSO_K}) {
-			mi = massAt(k, T, arm);
-			P = T;
-		}
-	}
-	cloth = false;
-	tone = 0.0;
-	Hit h = Hit(0.0, 0.0, 0.0, 0.0, 1.0, clamp(along, 0.0, 1.0), 1.0);
-	float group = uMK[mi * 2 + 1].w;
-	paint(
-		vec4(1.0, group, float(mKind(mi)), mSide(mi)),
-		h,
+	float group = meshPaint(
+		k,
 		P,
-		mA(mi),
-		mB(mi),
-		0.0
+		T,
+		arm,
+		w0 * rest(a, 0) + w1 * rest(b, 0) + w2 * rest(c, 0)
 	);
-	if (uHair.w > 0.5 && (k == ${HEAD_K} || k == ${NECK_K})) {
-		faceOn(w0 * rest(a, 0) + w1 * rest(b, 0) + w2 * rest(c, 0));
-	}
-	// Lit as drawMesh lights him.
-	float nl = length(N);
-	vec3 s = N / (nl == 0.0 ? 1.0 : nl);
-	float lam = dot(s, MLIGHT);
-	float key = cloth ? max(0.0, lam) : max(0.0, (lam + 0.32) / 1.32);
-	float amb = 0.34 + 0.22 * (0.5 - 0.5 * s.y);
-	float kk = (amb + 0.66 * key) * (1.0 + tone);
-	float shade1 = 1.0 - key;
-	vec3 col = vec3(
-		ink.r * kk,
-		ink.g * kk * (cloth ? 1.0 : 1.0 - 0.06 * shade1),
-		ink.b * kk * (cloth ? 1.0 : 1.0 - 0.1 * shade1)
-	);
-	float e3 = clamp((dot(s, MBACK) - 0.55) / 0.4, 0.0, 1.0);
-	float lift = e3 * e3 * (3.0 - 2.0 * e3) * shade1 * (cloth ? 0.11 : 0.15);
-	float h0 = dot(s, MSHINE);
-	if (h0 > 0.0) {
-		lift += pow(h0, cloth ? 6.0 : 18.0) * (cloth ? 0.05 : 0.2);
-	}
-	if (lift > 0.0) {
-		col += (255.0 - col) * min(1.0, lift);
-	}
+	vec3 col = meshLit(N);
 	oMesh = vec4(clamp(col / 255.0, 0.0, 1.0), float(cov) / ${f1(MESH_SS * MESH_SS)});
 	oZ = uvec4(floatBitsToUint(uZ.x + near * uZ.y), uint(group + 0.5), 0u, 0u);
 }`;
@@ -709,7 +731,79 @@ let shownIx = new Uint16Array(0);
 const mk = new Float32Array(N_MASSES * 8);
 const foot = new Float32Array(16 * 4);
 const lifts = new Float32Array(MESH_LIFT);
+
+// His face's picture and his hair, as MESH_PAINT is told them (uTex0,
+// uTex1, uHair - none if he has no face's picture there, `faced`); and
+// whether he is in trousers (uOpt).
 const CUTS = { bald: 1, long: 2, big: 3 } as const;
+export const meshFaceOf = (look: Look, faced: boolean) => {
+	const ft = look.faceTex ?? look.head?.tex;
+	const cut = look.cut ?? "short";
+	const hair = rgb(look.hair);
+	return {
+		tex0: ft ? [ft.x0, ft.y0, ft.scale, ft.w] : [0, 0, 0, 0],
+		tex1: ft
+			? [
+					ft.h,
+					ft.hairSide,
+					ft.hairFront,
+					cut in CUTS ? CUTS[cut as keyof typeof CUTS] : 0,
+				]
+			: [0, 0, 0, 0],
+		hair: [hair[0], hair[1], hair[2], faced && ft ? 1 : 0],
+		opt: [look.outfit?.trousers === true ? 1 : 0, 0, 0, 0],
+	};
+};
+
+// What each kind of his faces is painted as (`mk`, see MESH_PAINT uMK), and
+// each foot as posed and at rest (`foot`, uFoot): for his rig as posed.
+export const meshPaintOf = (rig: ReturnType<typeof meshRig>, body: Body) => {
+	// What each kind of face is painted as.
+	const put = (
+		i: number,
+		c: {
+			A: { f: number; s: number; u: number };
+			B: { f: number; s: number; u: number };
+			kind: number;
+			group: number;
+			side: number;
+		},
+	) => {
+		const o = i * 8;
+		mk[o] = c.A.f;
+		mk[o + 1] = c.A.s;
+		mk[o + 2] = c.A.u;
+		mk[o + 3] = c.kind + c.side * 16;
+		mk[o + 4] = c.B.f;
+		mk[o + 5] = c.B.s;
+		mk[o + 6] = c.B.u;
+		mk[o + 7] = c.group;
+	};
+	rig.mk.forEach((c, i) => put(i, c));
+	rig.mkShorts.forEach((c, i) => put(SHORTS_AT + i, c));
+	rig.restShoes.forEach((c, i) => put(SHOES_AT + i, c));
+	// Each foot as posed, and at rest (see atRest).
+	const H = body.H;
+	rig.feet.forEach((bi, side) => {
+		const bone = rig.posed[bi]!;
+		const R = restOf(bi);
+		const o = side * 32;
+		const set = (j: number, v: { f: number; s: number; u: number }, k = 1) => {
+			foot[o + j * 4] = v.f * k;
+			foot[o + j * 4 + 1] = v.s * k;
+			foot[o + j * 4 + 2] = v.u * k;
+		};
+		set(0, bone.fr.h);
+		set(1, bone.fr.a, 1 / (H * bone.ax));
+		set(2, bone.fr.f, 1 / (H * bone.rad));
+		set(3, bone.fr.s, 1 / (H * bone.rad));
+		set(4, R.h, H);
+		set(5, R.a, H);
+		set(6, R.f, H);
+		set(7, R.s, H);
+	});
+	return { mk, foot };
+};
 
 export type MeshDrawn = {
 	// A box round him on the sprite (its pixels, ends included).
@@ -818,51 +912,7 @@ export const meshDraw = (
 		}
 	}
 
-	// What each kind of face is painted as.
-	const put = (
-		i: number,
-		c: {
-			A: { f: number; s: number; u: number };
-			B: { f: number; s: number; u: number };
-			kind: number;
-			group: number;
-			side: number;
-		},
-	) => {
-		const o = i * 8;
-		mk[o] = c.A.f;
-		mk[o + 1] = c.A.s;
-		mk[o + 2] = c.A.u;
-		mk[o + 3] = c.kind + c.side * 16;
-		mk[o + 4] = c.B.f;
-		mk[o + 5] = c.B.s;
-		mk[o + 6] = c.B.u;
-		mk[o + 7] = c.group;
-	};
-	rig.mk.forEach((c, i) => put(i, c));
-	rig.mkShorts.forEach((c, i) => put(SHORTS_AT + i, c));
-	rig.restShoes.forEach((c, i) => put(SHOES_AT + i, c));
-	// Each foot as posed, and at rest (see atRest).
-	const H = body.H;
-	rig.feet.forEach((bi, side) => {
-		const bone = rig.posed[bi]!;
-		const R = restOf(bi);
-		const o = side * 32;
-		const set = (j: number, v: { f: number; s: number; u: number }, k = 1) => {
-			foot[o + j * 4] = v.f * k;
-			foot[o + j * 4 + 1] = v.s * k;
-			foot[o + j * 4 + 2] = v.u * k;
-		};
-		set(0, bone.fr.h);
-		set(1, bone.fr.a, 1 / (H * bone.ax));
-		set(2, bone.fr.f, 1 / (H * bone.rad));
-		set(3, bone.fr.s, 1 / (H * bone.rad));
-		set(4, R.h, H);
-		set(5, R.a, H);
-		set(6, R.f, H);
-		set(7, R.s, H);
-	});
-
+	meshPaintOf(rig, body);
 	roomFor(gl, m, w, h);
 	const W2 = w * MESH_SS;
 	const H2 = h * MESH_SS;
@@ -955,20 +1005,13 @@ export const meshDraw = (
 		gl.bindTexture(gl.TEXTURE_2D, t.feat);
 		gl.activeTexture(gl.TEXTURE0 + unit("uHairA"));
 		gl.bindTexture(gl.TEXTURE_2D, t.hair);
-		gl.uniform4f(m.u.uTex0, ft.x0, ft.y0, ft.scale, ft.w);
-		const cut = look.cut ?? "short";
-		gl.uniform4f(
-			m.u.uTex1,
-			ft.h,
-			ft.hairSide,
-			ft.hairFront,
-			cut in CUTS ? CUTS[cut as keyof typeof CUTS] : 0,
-		);
 		faced = true;
 	}
-	const hair = rgb(look.hair);
-	gl.uniform4f(m.u.uHair, hair[0], hair[1], hair[2], faced ? 1 : 0);
-	gl.uniform4f(m.u.uOpt, look.outfit?.trousers === true ? 1 : 0, 0, 0, 0);
+	const face = meshFaceOf(look, faced);
+	gl.uniform4fv(m.u.uTex0, face.tex0);
+	gl.uniform4fv(m.u.uTex1, face.tex1);
+	gl.uniform4fv(m.u.uHair, face.hair);
+	gl.uniform4fv(m.u.uOpt, face.opt);
 	gl.uniform4fv(m.u.uP, params);
 	gl.uniform3fv(m.u.uT, twists);
 	gl.uniform4fv(m.u.uMK, mk);

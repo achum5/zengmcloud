@@ -681,6 +681,30 @@ export const meshTurns = (bones: Posed[], H: number): Float64Array => {
 };
 export const meshLocals = (hem = HEM_TODAY, flare = 1): Float32Array =>
 	localFor(meshOf(), hem, flare);
+// (And where his trunk alone carries each point - see skinned: for each of
+// the pieces that hold it, the piece whose frame carries it - its own, a
+// piece of his trunk; his chest, any other - and where in that frame.)
+export const meshTrunkOf = (LOCAL: Float32Array) => {
+	const m = meshOf();
+	const CR = chestRestOf(m, LOCAL);
+	const local = new Float32Array(m.weight.length * 3);
+	const bone = new Uint8Array(m.weight.length);
+	for (let j = 0; j < m.weight.length; j++) {
+		const bi = m.bone[j]!;
+		const own = TRUNK[bi]!;
+		bone[j] = own ? bi : CHEST;
+		for (let k = 0; k < 3; k++) {
+			local[j * 3 + k] = own ? LOCAL[j * 3 + k]! : CR[j * 3 + k]!;
+		}
+	}
+	return { local, bone };
+};
+// How far each arm is raised (his right, his left - see raisedOf): his
+// ribs under it kept where his trunk has them so much.
+export const meshRaised = (bones: readonly Posed[]): [number, number] => {
+	const chest = bones[CHEST]!.fr;
+	return [raisedOf(bones, 0, chest), raisedOf(bones, 1, chest)];
+};
 
 // HIS SHORTS AS LONG AS HIS SEASON'S (see shortsEra.ts): the mesh is made
 // with today's, so the legs of them are drawn up his thighs or let down to
@@ -918,11 +942,16 @@ const hangJersey = (m: Mesh, rest: Float64Array, local: Float32Array) => {
 // (Where each point his arms and neck hold is at rest, as his chest's - the
 // same whatever he does: worked out once, for each shape of him.)
 let chestRest: Float64Array | undefined;
-let chestRestOf: Float32Array | undefined;
+let chestRestLocal: Float32Array | undefined;
 const chestRestFor = (m: Mesh, LOCAL: Float32Array): Float64Array => {
-	if (chestRest && chestRestOf === LOCAL) {
+	if (chestRest && chestRestLocal === LOCAL) {
 		return chestRest;
 	}
+	chestRest = chestRestOf(m, LOCAL);
+	chestRestLocal = LOCAL;
+	return chestRest;
+};
+const chestRestOf = (m: Mesh, LOCAL: Float32Array): Float64Array => {
 	const out = new Float64Array(m.weight.length * 3);
 	for (let j = 0; j < m.weight.length; j++) {
 		const bi = m.bone[j]!;
@@ -940,8 +969,6 @@ const chestRestFor = (m: Mesh, LOCAL: Float32Array): Float64Array => {
 		out[j * 3 + 1] = rx * C0.f.f + ry * C0.f.s + rz * C0.f.u;
 		out[j * 3 + 2] = rx * C0.s.f + ry * C0.s.s + rz * C0.s.u;
 	}
-	chestRest = out;
-	chestRestOf = LOCAL;
 	return out;
 };
 export const skinned = (

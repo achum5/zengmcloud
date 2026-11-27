@@ -39,7 +39,7 @@ import { meshGlOk } from "./meshGl.ts";
 
 type RGB = [number, number, number];
 
-const OUTLINE: RGB = [22, 15, 13];
+export const OUTLINE: RGB = [22, 15, 13];
 
 export type Scratch = {
 	canvas: HTMLCanvasElement;
@@ -64,7 +64,7 @@ export const makeScratch = (): Scratch => {
 // laid under the edge's own soft pixels, so the edge stays smooth. Only
 // round what `isNew` says was just drawn, when asked.
 const RIM_ALPHA = 1;
-const SOLID = 140;
+export const SOLID = 140;
 let solid = new Uint8Array(0);
 export const rim = (
 	d: Uint8ClampedArray,
@@ -417,7 +417,7 @@ const remember = (cache: SpriteCache, key: string, k: Kept): Kept => {
 // A reflection's bands, from the floor up: how much of his height each
 // takes, and how strongly it shows (the rest, too faint to be worth
 // drawing).
-const SHINE_BANDS: [number, number][] = [
+export const SHINE_BANDS: [number, number][] = [
 	[0.3, 1],
 	[0.35, 0.45],
 ];

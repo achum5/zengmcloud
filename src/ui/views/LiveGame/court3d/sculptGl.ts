@@ -71,6 +71,7 @@ import {
 	TOWEL_RGB,
 	TURN_STEPS,
 	UPPER,
+	type Built,
 	type RGB,
 } from "./sculpt.ts";
 
@@ -220,8 +221,9 @@ void main() {
 
 // (What both of the card's sculptors are told - his masses' table, the
 // sheets he is painted from, the numbers above - and the paint they share:
-// see meshGl.ts for the other.)
-const FRAG_HEAD = `#version 300 es
+// see meshGl.ts for the other, and gpu/men.ts for the game drawn all in one
+// picture.)
+export const PAINT_HEAD = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -235,7 +237,7 @@ uniform vec3 uT[${(TURN_STEPS + 1) * 3}];
 uniform int uN;
 precision highp usampler2D;
 `;
-const FRAG_COMMON = `const float PI = 3.141592653589793;
+export const PAINT_COMMON = `const float PI = 3.141592653589793;
 const float ZT = 0.9;
 const vec3 LIGHT = ${v3(LIGHT)};
 
@@ -749,64 +751,13 @@ void paint(vec4 m2, Hit h, vec3 P, vec3 A, vec3 B, float len) {
 }
 
 `;
-// shade and paint (see sculpt.ts), a pixel of him at a time.
-const FRAG = `${FRAG_HEAD}layout(location = 0) out vec4 oCol;
-layout(location = 1) out vec4 oLate;
-// His body from the mesh of a man, if he is drawn as one (see meshGl.ts):
-// its colors and depths at ${MESH_SS} x ${MESH_SS} the sprite's pixels; the nearest and
-// furthest of him there.
-uniform int uMesh;
-uniform sampler2D uMC;
-uniform highp usampler2D uMZ;
-// Where his hands are (and what is in them): none of the masses is
-// anywhere else.
-uniform vec4 uHand;
-
-${FRAG_COMMON}// Up in front of his face: an arm, or the ball.
-bool lateOf(int g) {
-	bool right = g == ${G_ARM} || g == ${G_HAND}
-		|| (g >= ${G_FINGER} && g < ${G_FINGER + 5});
-	bool left = g == ${G_ARM + 1} || g == ${G_HAND + 1}
-		|| (g >= ${G_FINGER + 5} && g < ${G_FINGER + 10});
-	return (right && uP[LATE].x > 0.5)
-		|| (left && uP[LATE].y > 0.5)
-		|| (g == ${G_BALL} && uP[LATE].z > 0.5);
-}
-// The pixel of his body from the mesh (see meshGl.ts): its color, how much
-// of the pixel he covers, how near, which part of him.
-float meshA = 0.0;
-float meshZ = 1e30;
-vec3 meshC = vec3(0.0);
-int meshG = -1;
-void meshAt(vec2 p) {
-	ivec2 q = ivec2(p);
-	vec4 c = texelFetch(uMC, q, 0);
-	if (c.a > 0.0) {
-		uvec4 z = texelFetch(uMZ, q, 0);
-		meshA = c.a;
-		meshC = c.rgb * 255.0;
-		meshZ = uintBitsToFloat(z.x);
-		meshG = int(z.y);
-	}
-}
-// Just his body there, if it is (nothing over it).
-void meshOnly() {
-	if (meshA <= 0.0) {
-		discard;
-	}
-	oCol = vec4(meshC / 255.0, meshA);
-	oLate = vec4(lateOf(meshG) ? 1.0 : 0.0, 0.0, 0.0, 1.0);
-}
-
-void main() {
-	vec2 p = gl_FragCoord.xy;
-	if (uMesh == 1) {
-		meshAt(p);
-		if (p.x < uHand.x || p.y < uHand.y || p.x > uHand.z || p.y > uHand.w) {
-			meshOnly();
-			return;
-		}
-	}
+// The sculptor's own work at a pixel: shade and paint (see sculpt.ts). (Here
+// on the sprite's card, and in the game drawn all in one picture - see
+// gpu/men.ts.)
+export const SCULPT_AT = `// What his masses have to say about the pixel at p: how much of it they
+// cover (0: none of it), and there the color they are (0 - 255), how near
+// (feet), which group of him.
+float sculptAt(vec2 p, out vec3 c, out float near, out int gf) {
 	float zs = uP[MISC].x;
 	float lineW = uP[MISC].y;
 	float margin = uP[MISC].z;
@@ -838,8 +789,7 @@ void main() {
 		}
 	}
 	if (least < 0 || leastS > 0.5 + margin) {
-		meshOnly();
-		return;
+		return 0.0;
 	}
 	int f = best >= 0 ? best : least;
 	Hit hf = hl;
@@ -848,12 +798,8 @@ void main() {
 		hf = hb;
 		mf = mb;
 	}
-	// (Behind his body: not there.)
-	if (meshZ <= hf.z) {
-		meshOnly();
-		return;
-	}
-	int gf = int(mf.y + 0.5);
+	near = hf.z;
+	gf = int(mf.y + 0.5);
 	float S = hf.s;
 	vec3 nrm = vec3(hf.hx, hf.hy, hf.hn);
 	bool behind = false;
@@ -902,8 +848,7 @@ void main() {
 	}
 	float cover = 0.5 - S;
 	if (cover <= 0.0) {
-		meshOnly();
-		return;
+		return 0.0;
 	}
 	float nl = length(nrm);
 	vec3 sn = nrm / (nl == 0.0 ? 1.0 : nl);
@@ -949,7 +894,7 @@ void main() {
 		);
 		lift += e4 * e4 * (3.0 - 2.0 * e4) * ${f1(RICH.shine)};
 	}
-	vec3 c = cloth
+	c = cloth
 		? ink * ((0.79 + 0.21 * lit - ${f1(RICH.deep[0])} * deep) * dark)
 		// Skin in shadow warms.
 		: ink * (vec3(0.84, 0.74, 0.72) + vec3(0.16, 0.26, 0.28) * lit
@@ -962,6 +907,77 @@ void main() {
 	int kind = int(mf.z + 0.5);
 	if ((behind || kind == ${HAND} || kind == ${NAIL}) && S > -lineW) {
 		c += (ink * 0.38 - c) * min(1.0, (S + lineW) / lineW);
+	}
+	return cover;
+}
+`;
+// shade and paint (see sculpt.ts), a pixel of him at a time.
+const FRAG = `${PAINT_HEAD}layout(location = 0) out vec4 oCol;
+layout(location = 1) out vec4 oLate;
+// His body from the mesh of a man, if he is drawn as one (see meshGl.ts):
+// its colors and depths at ${MESH_SS} x ${MESH_SS} the sprite's pixels; the nearest and
+// furthest of him there.
+uniform int uMesh;
+uniform sampler2D uMC;
+uniform highp usampler2D uMZ;
+// Where his hands are (and what is in them): none of the masses is
+// anywhere else.
+uniform vec4 uHand;
+
+${PAINT_COMMON}// Up in front of his face: an arm, or the ball.
+bool lateOf(int g) {
+	bool right = g == ${G_ARM} || g == ${G_HAND}
+		|| (g >= ${G_FINGER} && g < ${G_FINGER + 5});
+	bool left = g == ${G_ARM + 1} || g == ${G_HAND + 1}
+		|| (g >= ${G_FINGER + 5} && g < ${G_FINGER + 10});
+	return (right && uP[LATE].x > 0.5)
+		|| (left && uP[LATE].y > 0.5)
+		|| (g == ${G_BALL} && uP[LATE].z > 0.5);
+}
+// The pixel of his body from the mesh (see meshGl.ts): its color, how much
+// of the pixel he covers, how near, which part of him.
+float meshA = 0.0;
+float meshZ = 1e30;
+vec3 meshC = vec3(0.0);
+int meshG = -1;
+void meshAt(vec2 p) {
+	ivec2 q = ivec2(p);
+	vec4 c = texelFetch(uMC, q, 0);
+	if (c.a > 0.0) {
+		uvec4 z = texelFetch(uMZ, q, 0);
+		meshA = c.a;
+		meshC = c.rgb * 255.0;
+		meshZ = uintBitsToFloat(z.x);
+		meshG = int(z.y);
+	}
+}
+// Just his body there, if it is (nothing over it).
+void meshOnly() {
+	if (meshA <= 0.0) {
+		discard;
+	}
+	oCol = vec4(meshC / 255.0, meshA);
+	oLate = vec4(lateOf(meshG) ? 1.0 : 0.0, 0.0, 0.0, 1.0);
+}
+
+${SCULPT_AT}
+void main() {
+	vec2 p = gl_FragCoord.xy;
+	if (uMesh == 1) {
+		meshAt(p);
+		if (p.x < uHand.x || p.y < uHand.y || p.x > uHand.z || p.y > uHand.w) {
+			meshOnly();
+			return;
+		}
+	}
+	vec3 c;
+	float near;
+	int gf;
+	float cover = sculptAt(p, c, near, gf);
+	// (Nothing of the masses there, or behind his body: his body.)
+	if (cover <= 0.0 || meshZ <= near) {
+		meshOnly();
+		return;
 	}
 	float a = min(1.0, cover);
 	if (meshA > 0.0 && cover < 1.0) {
@@ -1247,7 +1263,11 @@ const MESH_HEAD = MESH_KINDS.includes("head");
 const meshOf = (g: Gl): MeshGl | undefined => {
 	if (g.mesh === undefined) {
 		const lay = compile(g.gl, MESH_VERT, MESH_LAY);
-		const shade = compile(g.gl, VERT, `${FRAG_HEAD}${FRAG_COMMON}${MESH_MAIN}`);
+		const shade = compile(
+			g.gl,
+			VERT,
+			`${PAINT_HEAD}${PAINT_COMMON}${MESH_MAIN}`,
+		);
 		g.mesh = (lay && shade && meshGlStart(g.gl, lay, shade)) || null;
 		if (!g.mesh && glForced()) {
 			console.warn("court3d gl: no mesh");
@@ -1329,58 +1349,13 @@ const wrap = (i: number, w: ArtWrap) => {
 	set(i + 2, w.sideF);
 };
 
-export type GlSculpted = {
-	// His picture read back from the card: x, y to x + w, y + h of it, top
-	// row first, as an ImageData (sculpt.ts's colors, rimmed) - his body, or
-	// what goes over his head (if anything does: `over`).
-	read: (
-		x: number,
-		y: number,
-		w: number,
-		h: number,
-		over?: boolean,
-	) => ImageData | undefined;
-	over: boolean;
-	head: { x: number; y: number; r: number };
-	// A box round everything drawn (sprite pixels, ends included) - no
-	// tighter than it need be, nothing of him outside it.
-	box: { x0: number; y0: number; x1: number; y1: number };
-};
-
-// HIS SPRITE, as sculpt has it (w x h of its pixels, each px screen pixels,
-// its top left at (ox, oy) on the screen) - on the card's sheet. Nothing,
-// if he is not one for the card: sculpt him on the page.
-export const glSculpt = (
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	look: Look,
-	px: number,
-	ox: number,
-	oy: number,
-	w: number,
-	h: number,
-): GlSculpted | undefined => {
-	const g = glCard();
-	if (!g || w > MAX_SIDE / 2 || h > MAX_SIDE) {
-		return undefined;
-	}
-	if (g.gl.isContextLost()) {
-		off = true;
-		why = "context lost";
-		return undefined;
-	}
-	// (Drawn as a man - see sculpt.ts: his body from the mesh, here too, if
-	// it can be; his hands, and what is in them, sculpted over it.)
-	const real = look.real === true && meshReady();
-	const mesh = real && meshGlOk() ? meshOf(g) : undefined;
-	if (real && (!mesh || w * MESH_SS > MAX_SIDE || h * MESH_SS > MAX_SIDE)) {
-		return undefined;
-	}
-	const b = build(cam, st, body, look, px, ox, oy, true);
-	// (Drawn as a man whose head is in the mesh, his head is drawn with the
-	// rest of him: nothing goes over it - see sculpt.ts.)
-	const late = !(real && MESH_HEAD);
+// His masses as the sculptor is told them (see PAINT_COMMON M, RAD: a row
+// each, then the joints) - just his hands and what is in them, if he is
+// drawn as a man (`real`, his body from the mesh) - with the box round them
+// (sprite pixels), the sculptor's line and reach, and the radius of the
+// ball in his hands (0: none). Undefined if there are too many.
+export const MASS_TABLE = { w: TEX_W, h: TEX_H } as const;
+export const massTable = (b: Built, real: boolean) => {
 	const masses = real
 		? b.masses.filter((c) => MESH_KEEPS.has(c.kind))
 		: b.masses;
@@ -1388,7 +1363,6 @@ export const glSculpt = (
 	if (n > MAX_MASSES || b.joins.length > MAX_JOINS) {
 		return undefined;
 	}
-	const { gl } = g;
 
 	// His masses, a row each.
 	const lineW = Math.max(0.7, 0.028 * b.k);
@@ -1443,7 +1417,25 @@ export const glSculpt = (
 		table[o + 1] = j.y;
 		table[o + 2] = j.reach;
 	});
+	return { table, n, lineW, margin, ball, x0, y0, x1, y1 };
+};
 
+// The numbers the paint is told for him (uP, uT - see PAINT_COMMON), and
+// what he is painted from: his lettering's sheet, his uniform's picture (if
+// it is drawn from one), the print on the ball in his hands. `late`: what is
+// up in front of his face drawn over his head; `lineW`, `margin` the
+// sculptor's; `ball` the radius of the ball in his hands (0, none).
+export const paintParams = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	b: Built,
+	late: boolean,
+	lineW: number,
+	margin: number,
+	ball: number,
+) => {
 	const pal = paletteOf(look);
 	const outfit = look.outfit;
 	const { rt, dn, tw, zs, kap } = b.frame;
@@ -1581,6 +1573,82 @@ export const glSculpt = (
 	if (b.untwist) {
 		twists.set(b.untwist);
 	}
+
+	return {
+		params,
+		twists,
+		sheet,
+		art: wraps && art ? art : undefined,
+		print,
+	};
+};
+
+export type GlSculpted = {
+	// His picture read back from the card: x, y to x + w, y + h of it, top
+	// row first, as an ImageData (sculpt.ts's colors, rimmed) - his body, or
+	// what goes over his head (if anything does: `over`).
+	read: (
+		x: number,
+		y: number,
+		w: number,
+		h: number,
+		over?: boolean,
+	) => ImageData | undefined;
+	over: boolean;
+	head: { x: number; y: number; r: number };
+	// A box round everything drawn (sprite pixels, ends included) - no
+	// tighter than it need be, nothing of him outside it.
+	box: { x0: number; y0: number; x1: number; y1: number };
+};
+
+// HIS SPRITE, as sculpt has it (w x h of its pixels, each px screen pixels,
+// its top left at (ox, oy) on the screen) - on the card's sheet. Nothing,
+// if he is not one for the card: sculpt him on the page.
+export const glSculpt = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	ox: number,
+	oy: number,
+	w: number,
+	h: number,
+): GlSculpted | undefined => {
+	const g = glCard();
+	if (!g || w > MAX_SIDE / 2 || h > MAX_SIDE) {
+		return undefined;
+	}
+	if (g.gl.isContextLost()) {
+		off = true;
+		why = "context lost";
+		return undefined;
+	}
+	// (Drawn as a man - see sculpt.ts: his body from the mesh, here too, if
+	// it can be; his hands, and what is in them, sculpted over it.)
+	const real = look.real === true && meshReady();
+	const mesh = real && meshGlOk() ? meshOf(g) : undefined;
+	if (real && (!mesh || w * MESH_SS > MAX_SIDE || h * MESH_SS > MAX_SIDE)) {
+		return undefined;
+	}
+	const b = build(cam, st, body, look, px, ox, oy, true);
+	// (Drawn as a man whose head is in the mesh, his head is drawn with the
+	// rest of him: nothing goes over it - see sculpt.ts.)
+	const late = !(real && MESH_HEAD);
+	const t = massTable(b, real);
+	if (!t) {
+		return undefined;
+	}
+	const { n, lineW, margin, ball, x0, y0, x1, y1 } = t;
+	const { gl } = g;
+
+	const {
+		sheet,
+		art: artOn,
+		print,
+	} = paintParams(cam, st, body, look, b, late, lineW, margin, ball);
+	const art = artOn;
+	const wraps = artOn ? b.wraps : undefined;
 
 	// What he is painted from.
 	let sheetTex = g.blank;

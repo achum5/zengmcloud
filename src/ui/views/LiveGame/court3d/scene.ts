@@ -765,7 +765,7 @@ const fxLevel = (
 // out on it - and his name and number on the back in that color; not the
 // uniform's own picture.
 const warmups = new WeakMap<Look, Look>();
-const warmupLook = (look: Look, top: string): Look => {
+export const warmupLook = (look: Look, top: string): Look => {
 	if (look.street) {
 		return look;
 	}
