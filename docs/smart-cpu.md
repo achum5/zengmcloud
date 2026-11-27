@@ -3105,15 +3105,17 @@ before the deadline, `CAL_DEADLINE`, and as the playoffs begin,
 seasons by the game's own CPU, the outlook watching. Log-likelihood of the
 champions (higher is better) and the favourites' titles:
 
-| read at                 | titles | scale 1           | 1.3                | 1.55               |
-| ----------------------- | ------ | ----------------- | ------------------ | ------------------ |
-| preseason               | 220    | -332.0 (97 / 106) | -327.3 (111 / 105) | -331.0 (120 / 105) |
-| the day before deadline | 70     | -106.3 (30 / 34)  | -104.9 (34 / 34)   | -106.7 (37 / 34)   |
+| read at                                    | titles | scale 1            | 1.3                | 1.55               |
+| ------------------------------------------ | ------ | ------------------ | ------------------ | ------------------ |
+| preseason                                  | 340    | -509.0 (145 / 172) | -497.1 (167 / 172) | -499.4 (180 / 171) |
+| the day before the deadline                | 70     | -106.3 (30 / 34)   | -104.9 (34 / 34)   | -106.7 (37 / 34)   |
+| as the playoffs begin (with the fix below) | 90     | -131.5 (37 / 47)   | -126.4 (43 / 50)   | -125.0 (47 / 50)   |
 
-(said / won, for the favourite.) The lab's full 1.55 overstates favourites:
-over a season injuries, trades and the read's own misses blur who is best,
-which the lab's healthy rosters read off the model directly leave out. A
-third of the way there fits best wherever the GMs decide.
+(said / won, for the favourite.) As they were, the favourites were
+understated everywhere. The lab's full 1.55 overstates them from the
+preseason: over a season injuries, trades and the read's own misses blur who
+is best, which the lab's healthy rosters, read off the model directly, leave
+out. 1.3 fits best where the GMs decide, the preseason and the deadline.
 
 **What 1.3 moves** (`playoffScaleProbe`, the owner's league at the 2025
 preseason): Milwaukee 51.7% to win the title to 57.7%, Cleveland 33.5% to
@@ -3129,11 +3131,9 @@ playoff series the higher seed read 6 points worse won 49% of its games
 a player out even one game as out for all of this season - so for all of its
 playoffs. Now an injury in the playoffs counts against about the games a
 team plays in them (`playoffGamesNow`, three quarters of the most a run
-could last). With that, 4,094 games of 750 series read k = 1.45 against
-the GMs' read of the two teams as the playoffs begin - the lab's, about - and
-the champions of 50 seasons read from there are called best at 1.3 and 1.55
-alike (log-likelihood -81.0 both, -82.2 at 1; the favourites said 24.1 and
-26.4 titles, won 22).
+could last). With that, 7,395 games of 1,350 series read k = 1.35 against
+the GMs' read of the two teams as the playoffs begin, and the odds read
+there do best at 1.3-1.55 (the table's last row).
 
 `outlookSettings.playoffScale` (`seasonSim`'s `playoffScale`): a play-in or
 playoff game's gap and home court times it, each team's draw of its strength
