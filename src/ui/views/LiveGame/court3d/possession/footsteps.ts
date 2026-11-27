@@ -161,8 +161,11 @@ const LEAN_MOST = 0.9;
 const REACH_MOST = 1.7;
 // A foot down holds him only till his hips are this far past it (feet):
 // then it is up - and, running, the other down no more than so long after
-// (ms). (Looked for so far ahead, ms.)
+// (ms). (Looked for so far ahead, ms.) Running, further: a runner pushes
+// off a foot well behind him, his leg all but straight (see UNDER_RUN).
 const TRAIL = 2;
+const TRAIL_RUN = 2.4;
+const trailOf = (mode: StepMode) => (mode === "run" ? TRAIL_RUN : TRAIL);
 const FLIGHT_MOST = 160;
 const OUTRUN_LOOK = 2000;
 // Walking or running, under him a little before halfway through its time
@@ -170,6 +173,13 @@ const OUTRUN_LOOK = 2000;
 // he leaves it behind (walking, half a step out in front as it comes down,
 // and up off it as the other has been down a moment).
 const UNDER = 0.42;
+// Running, under him not even a third of the way through it: as people run,
+// a foot comes down a little out in front of his hips (about a foot, for a
+// typical player) and is behind him most of its time down, leaving the
+// floor well back - not reached out in front on a straight leg, his hips
+// dropping to get to it, and up off the floor under him on a bent one
+// (see poses.ts GAITS: a run's foot lands this share out in front, too).
+const UNDER_RUN = 0.3;
 // (His weight this high, as a share of his height: what he leans on.)
 const HIPS = 0.55;
 // Walking under this pace (feet a second), running from it - or going it
@@ -353,7 +363,8 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 	// changes over it.
 	const spotFor = (foot: 0 | 1, t0: number, t1: number, mode: StepMode): Pt => {
 		const mid =
-			t0 + (t1 - t0) * (mode === "run" || mode === "walk" ? UNDER : 0.5);
+			t0 +
+			(t1 - t0) * (mode === "run" ? UNDER_RUN : mode === "walk" ? UNDER : 0.5);
 		const c = posAt(mid);
 		let ax = 0;
 		let ay = 0;
@@ -725,7 +736,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 			{
 				const o = steps[last[next === 0 ? 1 : 0]]!;
 				if (o.t1 > t) {
-					const out = outrun(o, Math.max(t, o.t0), TRAIL * scale);
+					const out = outrun(o, Math.max(t, o.t0), trailOf(mode) * scale);
 					land = Math.min(land, out + (mode === "run" ? FLIGHT_MOST : 0));
 				}
 			}
@@ -867,7 +878,7 @@ export const footPlanner = (x: StepIn): FootPlanner => {
 			put({
 				foot,
 				t0: land,
-				t1: Math.min(land + down, outrun(at, land, TRAIL * scale)),
+				t1: Math.min(land + down, outrun(at, land, trailOf(mode) * scale)),
 				x: at.x,
 				y: at.y,
 				yaw: toeAt(land + down / 2, mode, foot),

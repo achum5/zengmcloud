@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 673,
+		date: "2026-11-27",
+		text: "3D game, New sim: players run like runners now, not like a quick walk. They push off a nearly straight back leg, bend less over the planted foot, and spring up between steps, measured against NBA players running the floor in game film. Ball handlers bringing it up ride higher in their legs too.",
+	},
+	{
 		n: 672,
 		date: "2026-11-27",
 		text: "3D game: no more freezes of up to a second and a half when Key Plays jumps on to the next play. Each jump now takes a few hundredths of a second, with the same picture as before.",

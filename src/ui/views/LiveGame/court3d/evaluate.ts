@@ -5193,13 +5193,19 @@ export const evalPlayer = (
 			};
 			// (His stride's beat his steps': his arms and hips go with them.)
 			if (striding) {
+				const running = RUN_GAITS.has(st.anim);
 				st = {
 					...st,
-					// (A foot swinging through, mid-swing, his stride's own.)
+					// (A foot swinging through, mid-swing, his stride's own - and one
+					// down, running, up onto its toes only as far as a runner's.)
 					feet: st.feet!.map((f) =>
-						f.swing === undefined || f.air || !f.stride
-							? f
-							: { ...f, w: f.w * (1 - ownSwing(f.swing)), on: f.w },
+						f.down
+							? running
+								? { ...f, roll: f.roll * RUN_ROLL }
+								: f
+							: f.swing === undefined || f.air || !f.stride
+								? f
+								: { ...f, w: f.w * (1 - ownSwing(f.swing)), on: f.w },
 					) as [FootHere, FootHere],
 					phase: feet.phase ?? st.phase,
 				};
@@ -5284,6 +5290,13 @@ const FOOT_SPAN_LEAST = 400;
 // stride has them (see ridingOf).
 const FOOT_BOUNCE_V = [2, 6] as const;
 const FOOT_BOUNCE = 0.4;
+// Running, a foot pushing off rolls up onto its toes only so much of as far
+// as a foot points (some 36 degrees - as people run: see poses.ts GAITS
+// roll, 32 jogging to 46 sprinting). Any further, his ankle comes up and on
+// over his toes, and he leaves the floor off a bent knee, not the all but
+// straight leg a runner pushes off.
+const RUN_ROLL = 0.65;
+const RUN_GAITS = new Set<AnimName>(["jog", "run", "sprint", "dribble"]);
 // HIS HIPS OVER HIS OWN STEPS (see poses.ts strideHips): riding as his
 // stride has them, not as low as his stride picture's lower foot puts them
 // (a little higher or lower each step as one leg or the other is the lower,
@@ -5579,8 +5592,11 @@ const stepsIn = (
 	return planner.feet;
 };
 // (Coming up off the floor and down onto it over this share of its swing,
-// each.)
+// each - a stride's foot up off it quicker: once it leaves the floor behind
+// him it goes on with him, its heel folding up, not dragged on back along
+// the floor as he goes, his thigh driven on back after it.)
 const SWING_ENDS = 0.25;
+const STRIDE_UP = 0.12;
 // Striding, a foot swinging through goes as his stride's own picture has it
 // (fit to how people run and walk: the heel folded up behind him, the knee
 // driven through) - its leg over to that from where it came up off the
@@ -5643,16 +5659,18 @@ const footOn = (
 	const c0 = hips(s.t1);
 	const c1 = hips(n.t0);
 	const c = hips(t);
-	const m = smooth01(u / SWING_ENDS) * smooth01((1 - u) / SWING_ENDS);
+	const d = Math.hypot(n.x - s.x, n.y - s.y);
+	const stride =
+		d >= STRIDE_LEAST &&
+		Math.abs(wrapAngle(Math.atan2(n.y - s.y, n.x - s.x) - n.yaw)) <= STRIDE_OFF;
+	const m =
+		smooth01(u / (stride ? STRIDE_UP : SWING_ENDS)) *
+		smooth01((1 - u) / SWING_ENDS);
 	const at = (k: "x" | "y") => {
 		const floor = s[k] + (n[k] - s[k]) * p;
 		const withHim = c[k] + s[k] - c0[k] + (n[k] - c1[k] - (s[k] - c0[k])) * p;
 		return floor + (withHim - floor) * m;
 	};
-	const d = Math.hypot(n.x - s.x, n.y - s.y);
-	const stride =
-		d >= STRIDE_LEAST &&
-		Math.abs(wrapAngle(Math.atan2(n.y - s.y, n.x - s.x) - n.yaw)) <= STRIDE_OFF;
 	// (A step swung straight through, not as a stride's picture has it, up
 	// off the floor only as far as a step clears it.)
 	const high = stride ? swingHigh(d, T) : Math.min(STEP_HIGH, swingHigh(d, T));

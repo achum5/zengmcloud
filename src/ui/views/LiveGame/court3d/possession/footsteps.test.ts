@@ -59,8 +59,11 @@ const run = (
 	stance = false,
 ): FootStep[] => footsteps(inOf(at, to, yaw, stance));
 
-const along = (s: FootStep, at: (t: number) => Pt, dir: Pt) => {
-	const c = at((s.t0 + Math.min(s.t1, s.t0 + 2000)) / 2);
+// (Where the foot is against him partway through its time down: a running
+// foot is under him under a third of the way through - see UNDER_RUN.)
+const RUN_UNDER = 0.3;
+const along = (s: FootStep, at: (t: number) => Pt, dir: Pt, share = 0.5) => {
+	const c = at(s.t0 + (Math.min(s.t1, s.t0 + 2000) - s.t0) * share);
 	return (s.x - c.x) * dir.x + (s.y - c.y) * dir.y;
 };
 
@@ -77,9 +80,9 @@ describe("3D possession sim: where his feet come down", () => {
 			assert.notEqual(a.foot, b.foot);
 			assert.closeTo(b.t0 - a.t0, 1000 / rate, 30);
 			assert.closeTo(b.x - a.x, 15 / rate, 0.5);
-			// (About halfway through its time down, under him - out to its own
-			// side.)
-			assert.closeTo(along(b, at, { x: 1, y: 0 }), 0, 0.3);
+			// (Under him a third of the way through its time down - out to its
+			// own side.)
+			assert.closeTo(along(b, at, { x: 1, y: 0 }, RUN_UNDER), 0, 0.3);
 			const side = b.y - at((b.t0 + b.t1) / 2).y;
 			// (Going +x, his left is -y: see bodyPoint in evaluate.ts.)
 			assert.isTrue(b.foot === 0 ? side > 0 : side < 0, "on its own side");
@@ -97,12 +100,12 @@ describe("3D possession sim: where his feet come down", () => {
 		// (A foot down as it starts, under him - not both set and skating.)
 		const down = steps.filter((s) => s.t0 <= 0 && s.t1 > 0);
 		assert.equal(down.length, 1);
-		assert.closeTo(along(down[0]!, at, { x: 1, y: 0 }), 0, 0.3);
+		assert.closeTo(along(down[0]!, at, { x: 1, y: 0 }, RUN_UNDER), 0, 0.3);
 		// (The next one on his beat.)
 		const first = steps.find((s) => s.t0 > 0)!;
 		assert.notEqual(first.foot, down[0]!.foot);
 		assert.closeTo(first.t0 - down[0]!.t0, 1000 / rate, 30);
-		assert.closeTo(along(first, at, { x: 1, y: 0 }), 0, 0.3);
+		assert.closeTo(along(first, at, { x: 1, y: 0 }, RUN_UNDER), 0, 0.3);
 	});
 
 	test("pulling up: braking steps out in front, then set, feet side by side", () => {

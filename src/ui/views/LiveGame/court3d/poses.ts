@@ -1151,10 +1151,14 @@ const BACK_WALK_STRIDE = 3.4;
 const GAITS: Record<GaitMode, Gait> = {
 	// (As people run - fit to motion capture, nine strides at 11-14 ft/s
 	// (CMU subjects 9 and 16; tools/court3d-mocap): off the floor on a
-	// straight back leg, still driving it back, then the heel folded up
-	// behind him as the thigh comes through; leaning into it; his arms bent
-	// past a right angle, swinging less than his legs do, each against its
-	// own leg's thigh - so a little ahead of a walk's.)
+	// straight back leg, the heel folding up behind him as soon as it is up
+	// and the thigh coming through; leaning into it; his arms bent past a
+	// right angle, swinging less than his legs do, each against its own
+	// leg's thigh - so a little ahead of a walk's. (The swing's first keys
+	// come sooner than the fit had them - its foot was off the floor once
+	// the ball of it was, the toes still pushing: so it had the leg go on
+	// back straight after it was up, a kick back through the air that no
+	// runner makes. Likewise each running gait's.))
 	run: {
 		stride: 8.6,
 		duty: 0.3,
@@ -1164,9 +1168,9 @@ const GAITS: Record<GaitMode, Gait> = {
 		flat: 0.45,
 		roll: 40,
 		swing: [
-			[0.1, -6, -14],
-			[0.25, -24, 44],
-			[0.4, -4, 88],
+			[0.1, -3, 16],
+			[0.25, -14, 68],
+			[0.4, 6, 96],
 			[0.55, 26, 108],
 			[0.7, 40, 86],
 			[0.85, 36, 42],
@@ -1189,9 +1193,9 @@ const GAITS: Record<GaitMode, Gait> = {
 		flat: 0.4,
 		roll: 46,
 		swing: [
-			[0.1, -2, 4],
-			[0.25, -28, 60],
-			[0.4, 0, 112],
+			[0.1, 0, 22],
+			[0.25, -22, 76],
+			[0.4, 8, 118],
 			[0.55, 40, 126],
 			[0.7, 62, 96],
 			[0.85, 60, 50],
@@ -1216,9 +1220,9 @@ const GAITS: Record<GaitMode, Gait> = {
 		flat: 0.5,
 		roll: 32,
 		swing: [
-			[0.1, -6, -6],
-			[0.25, -19, 44],
-			[0.4, -2, 83],
+			[0.1, -2, 14],
+			[0.25, -12, 62],
+			[0.4, 6, 92],
 			[0.55, 24, 104],
 			[0.7, 36, 86],
 			[0.85, 32, 46],
@@ -1236,19 +1240,21 @@ const GAITS: Record<GaitMode, Gait> = {
 	// 13-14 ft/s (CMU subject 78): lower than a run, longer through the
 	// legs, leaning well into it, his shoulders turning with it; the other
 	// arm pumping hard, driven well back behind him. See dribbleArm for the
-	// ball.)
+	// ball. His hips ride higher and spring more than the capture's: NBA
+	// handlers bringing it up, measured off broadcast film, bend about 50
+	// degrees over the planted foot and leave it on a near straight leg.)
 	dribble: {
 		stride: 8.2,
 		duty: 0.33,
 		ahead: 0.3,
-		hips: 2.62,
-		bob: 0.14,
+		hips: 2.66,
+		bob: 0.2,
 		flat: 0.45,
 		roll: 38,
 		swing: [
-			[0.1, -11, -3],
-			[0.25, -31, 53],
-			[0.4, -8, 97],
+			[0.1, -4, 14],
+			[0.25, -22, 66],
+			[0.4, 0, 101],
 			[0.55, 25, 111],
 			[0.7, 45, 87],
 			[0.85, 44, 43],
@@ -13312,13 +13318,26 @@ export const strideHips = (
 	}
 	const k = len ? (len[0] + len[1]) / 2 : 1;
 	const ph = frac(phase);
-	const g = GAITS[mode];
+	const g = ridden(GAITS[mode]);
 	const here = hipsAt({ ...g, bob: g.bob * Math.min(1, k) }, ph);
 	const up = RUNS_UP[mode];
 	return k > 1 && up
-		? here + (hipsAt(GAITS[up], ph) - here) * towardUp(mode, up, k)
+		? here + (hipsAt(ridden(GAITS[up]), ph) - here) * towardUp(mode, up, k)
 		: here;
 };
+// Running on steps of his own (each foot down where a runner's is, a little
+// out in front as it lands and well back as it leaves - see
+// possession/footsteps.ts UNDER_RUN), he runs taller than his stride's
+// picture has him and springs higher off each step: as people run, up off
+// an all but straight leg, his knee bent no more than about 45 degrees
+// over the foot under him, his hips 2 inches or so higher between steps
+// than over it - not sat down in his legs, gliding along at one height.
+const RIDE_UP = 0.08;
+const RIDE_BOB = 1.5;
+const ridden = (g: Gait): Gait =>
+	g.duty < 0.5 && g.bob > 0
+		? { ...g, hips: g.hips + RIDE_UP, bob: g.bob * RIDE_BOB }
+		: g;
 
 // The pose partway through an animation - an act from start (0) to finish
 // (1), a cycle or loop through one turn - blended between its key frames, so
