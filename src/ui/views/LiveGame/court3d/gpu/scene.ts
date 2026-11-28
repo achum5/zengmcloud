@@ -176,8 +176,18 @@ type Scene = {
 	// The time the last frame spent on each part of it (ms - for the frame
 	// rate meter: see meter.ts).
 	ms: Record<string, number>;
+	// How long the card took to finish a frame after it was all handed over
+	// (ms), now and then - for the meter: how much of a frame goes on the
+	// card itself, which the page's own time says nothing about.
+	cardMs?: number;
+	cardAt: number;
+	// (This frame's wait for it, if it was waited for: not the page's own
+	// time.)
+	waited: number;
 	lost: boolean;
 };
+// (Every so often, ms: a frame waited for - see cardMs.)
+const CARD_EVERY = 2000;
 export type GpuScene = Scene;
 
 // The card, on the canvas the game is shown on - undefined if there is
@@ -235,6 +245,8 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 		frame: 0,
 		ready: [],
 		ms: {},
+		cardAt: -Infinity,
+		waited: 0,
 		lost: false,
 	};
 	canvas.addEventListener("webglcontextlost", () => {
@@ -320,6 +332,7 @@ export const drawGpu = (
 	const { cam } = f;
 	const ms: Record<string, number> = {};
 	sc.ms = ms;
+	sc.waited = 0;
 	let from = performance.now();
 	const lap = (part: string) => {
 		const now = performance.now();
@@ -591,8 +604,15 @@ export const drawGpu = (
 	}
 	gl.bindVertexArray(null);
 	lap("items");
+	if (from - sc.cardAt > CARD_EVERY) {
+		// (One pixel read back: only once the card has drawn all of it.)
+		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, ONE_PIXEL);
+		sc.cardAt = performance.now();
+		sc.cardMs = sc.waited = sc.cardAt - from;
+	}
 	return true;
 };
+const ONE_PIXEL = new Uint8Array(4);
 
 // The shadows the men cast, drawn a third the size of the picture (on a
 // sheet of their own) and laid over the floor drawn back up, so soft-edged

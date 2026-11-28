@@ -3,8 +3,10 @@
 // thread spent on each (the mean, and the slowest twentieth) and on each
 // part of it (the game worked out - where everybody is, the camera, the
 // clocks - then the men's poses and the drawing, or today's drawing), the
-// slowest frame and the part of it that took longest, the picture's size
-// and - where the browser tells - the page's memory.
+// time between frames off the page's own (the card, the browser), how long
+// the card itself took over a frame now and then, the slowest frame and the
+// part of it that took longest, the picture's size and - where the browser
+// tells - the page's memory.
 
 const SPAN_MS = 2000;
 const EVERY_MS = 500;
@@ -34,7 +36,15 @@ export const meterTick = (
 		fps,
 		w,
 		h,
-	}: { gpu: boolean | undefined; fps: number; w: number; h: number },
+		card,
+	}: {
+		gpu: boolean | undefined;
+		fps: number;
+		w: number;
+		h: number;
+		// The card's own time on a frame, now and then (see GpuScene cardMs).
+		card?: number;
+	},
 ) => {
 	m.at.push(now);
 	m.work.push(workMs);
@@ -80,7 +90,10 @@ export const meterTick = (
 		`${Math.round(rate)} fps${fps < 60 ? ` (held to ${fps})` : ""}`,
 		`${Math.round((late / (m.at.length - 1)) * 100)}% late`,
 		`${mean.toFixed(1)} ms (${p95.toFixed(1)})`,
+		// (Between frames, off the page's own time: the card, the browser.)
+		`between ${Math.max(0, 1000 / rate - mean).toFixed(1)}`,
 		...each,
+		...(card === undefined ? [] : [`card ${card.toFixed(1)}`]),
 		`worst ${Math.round(m.work[worst]!)}${wp ? ` (${wp[0]} ${Math.round(wp[1])})` : ""}`,
 		`${w}×${h}`,
 		...(mem ? [`${Math.round(mem.usedJSHeapSize / 2 ** 20)} MB`] : []),

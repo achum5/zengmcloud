@@ -2177,7 +2177,7 @@ const Court3D = ({
 					meter,
 					meterRef.current,
 					now,
-					done - began,
+					done - began - (card?.waited ?? 0),
 					card
 						? {
 								// (The game's part: the moment, the way the ball faces
@@ -2193,6 +2193,7 @@ const Court3D = ({
 						fps: pacing.fps,
 						w: fw,
 						h: fh,
+						card: card?.cardMs,
 					},
 				);
 			}
