@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 679,
+		date: "2026-11-28",
+		text: "3D game, GPU drawing (in progress): faster on phones with benches and refs on the court. Heads are only redrawn when they change, and far fewer steps go to the graphics card each frame. The frame rate meter now shows the time each part of the picture takes.",
+	},
+	{
 		n: 678,
 		date: "2026-11-27",
 		text: "3D game, GPU drawing (Global Settings > 3D Drawing > GPU, in progress): the court lines, baskets, ball, scoreboard over center court, scorer's table, courtside seats, benches, refs and photographers are now in, looking the same as in today's drawing. Next: the other 3D scenes.",

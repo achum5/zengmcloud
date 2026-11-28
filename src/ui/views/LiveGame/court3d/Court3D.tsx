@@ -2133,13 +2133,7 @@ const Court3D = ({
 					meterRef.current,
 					now,
 					done - began,
-					card
-						? {
-								game,
-								men: card.menMs,
-								gl: done - drawStart - card.menMs,
-							}
-						: { game, draw: done - drawStart },
+					card ? { game, ...card.ms } : { game, draw: done - drawStart },
 					{
 						gpu: drawn !== "test" || (gpu && !card) ? undefined : !!card,
 						fps: pacing.fps,

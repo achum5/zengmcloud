@@ -2,7 +2,7 @@ import { drawGlints, FLOOR_EDGE } from "../arena.ts";
 import { type Camera, depthOf, project } from "../camera.ts";
 import { bowlMatrix } from "../bowlData.ts";
 import { paintBowlOn } from "../bowlGl.ts";
-import { drawHeadAt, headOf } from "../figure.ts";
+import { drawHeadAt, headKey, headOf } from "../figure.ts";
 import { bodyPoint, type PlayerState } from "../evaluate.ts";
 import type { Body } from "../poses.ts";
 import { atTable } from "../crew.ts";
@@ -24,12 +24,13 @@ import {
 	type FloorGl,
 	floorOnto,
 	floorPainter,
+	floorPools,
 	itemsDraw,
 	linesDraw,
 } from "./floor.ts";
 import { attrib, buffer, compile, type Prog, rgb } from "./gl.ts";
 import {
-	drawHands,
+	drawAllHands,
 	drawMan,
 	type ManReady,
 	menCamera,
@@ -37,6 +38,7 @@ import {
 	type MenGl,
 	MEN_ROWS,
 	menRows,
+	menUnknown,
 	readyMan,
 } from "./men.ts";
 
@@ -63,16 +65,8 @@ in vec2 vUv;
 uniform sampler2D uPic;
 uniform vec4 uColor;
 uniform float uPicOn;
-// A soft pool of shadow (see arena.ts drawShadow): so dark at its middle.
-uniform float uPool;
 out vec4 o;
 void main() {
-	if (uPool > 0.0) {
-		float d = length(vUv * 2.0 - 1.0);
-		float a = d < 0.6 ? mix(0.5, 0.3, d / 0.6) : mix(0.3, 0.0, min(1.0, (d - 0.6) / 0.4));
-		o = vec4(0.0, 0.0, 0.0, a * uPool);
-		return;
-	}
 	o = uPicOn > 0.5 ? texture(uPic, vUv) : uColor;
 }`;
 
@@ -160,13 +154,18 @@ type Scene = {
 	floor?: FloorGl | null;
 	head: Prog;
 	headVao: WebGLVertexArrayObject;
+	// Where a man's head is drawn before it goes on the card, and each
+	// man's head on it (see heads), by pid.
 	heads: CanvasRenderingContext2D;
-	headTex: WebGLTexture;
+	headPics: Map<number, HeadPic>;
+	// Frames drawn.
+	frame: number;
 	// The shadows the men cast, drawn small (see softOf).
 	soft?: Soft;
 	ready: ManReady[];
-	// The time the last frame spent working out the men (ms).
-	menMs: number;
+	// The time the last frame spent on each part of it (ms - for the frame
+	// rate meter: see meter.ts).
+	ms: Record<string, number>;
 	lost: boolean;
 };
 export type GpuScene = Scene;
@@ -188,7 +187,10 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 	}
 	const flat = compile(gl, FLAT_VERT, FLAT_FRAG);
 	const head = compile(gl, HEAD_VERT, HEAD_FRAG);
-	const heads = document.createElement("canvas").getContext("2d");
+	// (Kept off the card by the browser: see floor.ts sheetOnto.)
+	const heads = document
+		.createElement("canvas")
+		.getContext("2d", { willReadFrequently: true });
 	if (!flat || !head || !heads) {
 		return undefined;
 	}
@@ -214,12 +216,6 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 	buffer(gl, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.ELEMENT_ARRAY_BUFFER);
 	gl.bindVertexArray(null);
 	const court = gl.createTexture();
-	const headTex = gl.createTexture();
-	gl.bindTexture(gl.TEXTURE_2D, headTex);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 	const sc: Scene = {
 		gl,
 		flat,
@@ -229,9 +225,10 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 		head,
 		headVao,
 		heads,
-		headTex,
+		headPics: new Map(),
+		frame: 0,
 		ready: [],
-		menMs: 0,
+		ms: {},
 		lost: false,
 	};
 	canvas.addEventListener("webglcontextlost", () => {
@@ -315,6 +312,14 @@ export const drawGpu = (
 		return false;
 	}
 	const { cam } = f;
+	const ms: Record<string, number> = {};
+	sc.ms = ms;
+	let from = performance.now();
+	const lap = (part: string) => {
+		const now = performance.now();
+		ms[part] = (ms[part] ?? 0) + now - from;
+		from = now;
+	};
 	const look = f.black ? undefined : bowlLookOf(f);
 	const bowl =
 		look !== undefined && paintBowlOn(gl, cam, f.arena.bowl!.data, look, W, H);
@@ -352,6 +357,7 @@ export const drawGpu = (
 	// table they stand in front of - not, say, the floor in front of the
 	// basket's stand, nearer than its rim, hiding the foot of it.)
 	gl.clear(gl.DEPTH_BUFFER_BIT);
+	lap("bowl");
 	// Round it: the table, the seats on the floor, the benches, the boards'
 	// shine (as the page's drawing has them - see scene.ts dressFloor); the
 	// court's lines; the lights' glints in the floor.
@@ -369,11 +375,11 @@ export const drawGpu = (
 		drawGlints(painter, cam);
 		floorDraw(gl, fl, m);
 	}
+	lap("floor");
 
 	// The men: each one worked out (the page's own work), then drawn,
 	// nearest first.
 	sc.men ??= menOnto(gl);
-	const ready = performance.now();
 	const men: ManReady[] = [];
 	// Who shows in the floor (his shadows, his reflection) - not a man sat
 	// down, nor the four at the table - and who has a pool of shadow round
@@ -424,9 +430,11 @@ export const drawGpu = (
 		men.sort((a, b) => a.depth - b.depth);
 		men.length = Math.min(men.length, MEN_MAX);
 	}
-	sc.menMs = performance.now() - ready;
+	lap("men");
 	if (sc.men) {
 		const g = sc.men;
+		// (The bowl and the floor have had the card's texture units.)
+		menUnknown(g, true);
 		menRows(gl, g, men);
 		menCamera(gl, g, m);
 		// What is laid over the floor under them - their reflections in it,
@@ -462,13 +470,20 @@ export const drawGpu = (
 		gl.disable(gl.CULL_FACE);
 		gl.depthFunc(gl.LEQUAL);
 		gl.disable(gl.STENCIL_TEST);
-		pools(
-			sc,
-			f,
-			men.filter((man) => pooled.has(man)),
-			m,
-		);
+		if (fl) {
+			pools(
+				sc,
+				fl,
+				f,
+				men.filter((man) => pooled.has(man)),
+				m,
+			);
+		}
+		gl.enable(gl.BLEND);
+		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		gl.depthMask(false);
 		gl.useProgram(g.prog.p);
+		menUnknown(g, false);
 		// (Drawn a third the size and laid over the floor drawn back up,
 		// soft-edged, as a shadow is - see softOf. Sharp, if that can't be.)
 		const soft = softOf(sc, W, H);
@@ -517,9 +532,11 @@ export const drawGpu = (
 			flatQuad(sc, -1, -1, 1, 1);
 			gl.depthFunc(gl.LEQUAL);
 			gl.useProgram(g.prog.p);
+			menUnknown(g, false);
 		}
 		gl.disable(gl.BLEND);
 		gl.depthMask(true);
+		lap("under");
 		// Each man: the dark edge round him, then him.
 		gl.enable(gl.CULL_FACE);
 		for (const [i, man] of men.entries()) {
@@ -532,21 +549,25 @@ export const drawGpu = (
 		// Their hands, over them (blended in at their soft edges).
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-		men.forEach((man, i) => drawHands(gl, g, man, i, W, H));
+		drawAllHands(gl, g, men, W, H);
 		gl.disable(gl.BLEND);
+		lap("bodies");
 	}
 	// The baskets, and the ball where nobody has it (in a man's hands, his:
 	// see drawHands) - as the page draws them.
 	if (fl) {
-		itemsDraw(gl, fl, m, cam, hoopsAndBalls(f, boardAt(f.tl, f.moment.t)));
+		itemsDraw(gl, fl, m, cam, hoopsAndBalls(f, boardAt(f.tl, f.moment.t)), 0);
 	}
+	lap("hoops");
 	heads(sc, f, men, m, W, H);
+	lap("heads");
 	// Over all of it: the board over center court, the name tag, the lights
 	// down for the lineups, the confetti...
 	if (fl) {
-		itemsDraw(gl, fl, m, cam, overlays(f, boardAt(f.tl, f.moment.t)));
+		itemsDraw(gl, fl, m, cam, overlays(f, boardAt(f.tl, f.moment.t)), 1);
 	}
 	gl.bindVertexArray(null);
+	lap("over");
 	return true;
 };
 
@@ -679,28 +700,29 @@ const castOf = (
 // (as scene.ts lays them), and under the ball.
 const pools = (
 	sc: Scene,
+	fl: FloorGl,
 	f: Frame,
 	men: readonly ManReady[],
 	m: Float32Array,
 ) => {
-	const { gl, flat } = sc;
-	gl.useProgram(flat.p);
-	gl.uniformMatrix4fv(flat.u("uM"), false, m);
-	gl.bindVertexArray(sc.flatVao);
-	const pool = (x: number, y: number, r: number, strength: number) => {
-		if (strength <= 0.01) {
-			return;
-		}
-		gl.uniform1f(flat.u("uPool"), strength);
-		flatQuad(sc, x - r, y - r, x + r, y + r, undefined, 0.005);
-	};
-	for (const { st } of men) {
+	const list = men.map(({ st }) => {
 		const lift = Math.min(1, Math.max(0, st.z) / 4);
-		pool(st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
-	}
+		return {
+			x: st.x,
+			y: st.y,
+			r: 1.25 * (1 - lift * 0.35),
+			dark: 1 - lift * 0.6,
+		};
+	});
 	const ball = f.moment.ball;
-	pool(ball.x, ball.y, 0.45, Math.max(0, 1 - ball.z / 14) * 0.9);
-	gl.uniform1f(flat.u("uPool"), 0);
+	list.push({
+		x: ball.x,
+		y: ball.y,
+		r: 0.45,
+		dark: Math.max(0, 1 - ball.z / 14) * 0.9,
+	});
+	floorPools(sc.gl, fl, list);
+	floorDraw(sc.gl, fl, m, true);
 };
 
 // Where a point is in the card's picture: its x, y (-1 to 1) and how near.
@@ -712,9 +734,26 @@ const clip = (m: Float32Array, p: { x: number; y: number; z: number }) => {
 };
 
 // THE HEADS, as today's court draws them (see figure.ts drawHeadAt): each
-// on a sheet of them, in a row; the sheet onto the card; each stood up
-// where his head is, furthest first, over what is behind it.
-const GAP = 3;
+// man's on a picture of its own on the card, drawn again only when it would
+// come out different (see headKey) - a man sat still on the bench, the
+// camera going by, kept as it was, moved over; each stood up where his head
+// is, furthest first, over what is behind it.
+type HeadPic = {
+	tex: WebGLTexture;
+	key: number[];
+	look: ManReady["look"];
+	// Its corner from the middle of his face (px), and its size.
+	dx: number;
+	dy: number;
+	w: number;
+	h: number;
+	// The frame it was last wanted.
+	seen: number;
+};
+// (One not wanted for so many frames is let go.)
+const HEAD_KEPT = 120;
+const sameKey = (a: readonly number[], b: readonly number[]) =>
+	a.length === b.length && a.every((v, i) => v === b[i]);
 const heads = (
 	sc: Scene,
 	f: Frame,
@@ -726,8 +765,11 @@ const heads = (
 	const { gl } = sc;
 	const ctx = sc.heads;
 	const { cam } = f;
+	sc.frame += 1;
+	gl.activeTexture(gl.TEXTURE0);
+	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
 	const cells = men.map((man) => {
-		const { st, body } = man;
+		const { st, body, look } = man;
 		// (Where today's drawing has his head - see figure.ts headOf - and
 		// the middle of his face on the picture, as the sculptor has it.)
 		const head = headOf(st, body);
@@ -736,49 +778,69 @@ const heads = (
 		const r = body.headR * p.k;
 		const x = p.x;
 		const y = p.y - r * FACE_LIFT;
-		const x0 = Math.floor(x - r * 1.9) - 2;
-		const y0 = Math.floor(y - r * 2) - 2;
-		return {
-			man,
-			head,
-			mid,
-			x,
-			y,
-			r,
-			x0,
-			y0,
-			w: Math.ceil(x + r * 1.9) + 2 - x0,
-			h: Math.ceil(y + r * 1.6) + 2 - y0,
-			at: 0,
-		};
+		const key = headKey(cam, st, body, head);
+		let pic = sc.headPics.get(st.pid);
+		if (!pic || pic.look !== look || !sameKey(pic.key, key)) {
+			const x0 = Math.floor(x - r * 1.9) - 2;
+			const y0 = Math.floor(y - r * 2) - 2;
+			const w = Math.ceil(x + r * 1.9) + 2 - x0;
+			const h = Math.ceil(y + r * 1.6) + 2 - y0;
+			const cv = ctx.canvas;
+			if (cv.width < w || cv.height < h) {
+				cv.width = Math.max(cv.width, Math.ceil(w / 32) * 32);
+				cv.height = Math.max(cv.height, Math.ceil(h / 32) * 32);
+			}
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			ctx.clearRect(0, 0, w, h);
+			ctx.setTransform(1, 0, 0, 1, -x0, -y0);
+			drawHeadAt(ctx, cam, st, body, look, head);
+			pic ??= {
+				tex: gl.createTexture(),
+				key,
+				look,
+				dx: 0,
+				dy: 0,
+				w: 0,
+				h: 0,
+				seen: 0,
+			};
+			pic.key = key;
+			pic.look = look;
+			pic.dx = x0 - x;
+			pic.dy = y0 - y;
+			pic.w = w;
+			pic.h = h;
+			gl.bindTexture(gl.TEXTURE_2D, pic.tex);
+			gl.texImage2D(
+				gl.TEXTURE_2D,
+				0,
+				gl.RGBA,
+				w,
+				h,
+				0,
+				gl.RGBA,
+				gl.UNSIGNED_BYTE,
+				cv,
+			);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+			sc.headPics.set(st.pid, pic);
+		}
+		pic.seen = sc.frame;
+		return { man, mid, x, y, r, pic };
 	});
-	const wide = cells.reduce((s, c) => s + c.w + GAP, GAP);
-	const tall = cells.reduce((s, c) => Math.max(s, c.h), 0) + GAP * 2;
-	if (wide <= GAP || tall <= GAP * 2) {
+	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+	for (const [pid, pic] of sc.headPics) {
+		if (sc.frame - pic.seen > HEAD_KEPT) {
+			gl.deleteTexture(pic.tex);
+			sc.headPics.delete(pid);
+		}
+	}
+	if (cells.length === 0) {
 		return;
 	}
-	const cv = ctx.canvas;
-	if (cv.width < wide || cv.height < tall) {
-		cv.width = Math.max(cv.width, Math.ceil(wide / 64) * 64);
-		cv.height = Math.max(cv.height, Math.ceil(tall / 16) * 16);
-	}
-	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	ctx.clearRect(0, 0, cv.width, cv.height);
-	let left = GAP;
-	for (const c of cells) {
-		c.at = left;
-		const { st, body, look } = c.man;
-		ctx.save();
-		ctx.setTransform(1, 0, 0, 1, left - c.x0, GAP - c.y0);
-		drawHeadAt(ctx, cam, st, body, look, c.head);
-		ctx.restore();
-		left += c.w + GAP;
-	}
-	gl.activeTexture(gl.TEXTURE0);
-	gl.bindTexture(gl.TEXTURE_2D, sc.headTex);
-	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
-	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 	const { head } = sc;
 	gl.useProgram(head.p);
 	gl.bindVertexArray(sc.headVao);
@@ -800,17 +862,14 @@ const heads = (
 	};
 	for (let i = cells.length - 1; i >= 0; i--) {
 		const c = cells[i]!;
-		const { mid } = c;
+		const { mid, pic } = c;
 		const zc = clip(m, mid).z;
 		const zf = clip(m, toCam(mid, c.man.body.headR)).z;
-		gl.uniform4f(head.u("uBox"), c.x0, c.y0, c.x0 + c.w, c.y0 + c.h);
-		gl.uniform4f(
-			head.u("uUv"),
-			c.at / cv.width,
-			GAP / cv.height,
-			(c.at + c.w) / cv.width,
-			(GAP + c.h) / cv.height,
-		);
+		const x0 = c.x + pic.dx;
+		const y0 = c.y + pic.dy;
+		gl.bindTexture(gl.TEXTURE_2D, pic.tex);
+		gl.uniform4f(head.u("uBox"), x0, y0, x0 + pic.w, y0 + pic.h);
+		gl.uniform4f(head.u("uUv"), 0, 0, 1, 1);
 		gl.uniform3f(head.u("uC"), c.x, c.y, c.r);
 		gl.uniform2f(head.u("uZ"), zc, zf);
 		gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);

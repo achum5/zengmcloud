@@ -285,12 +285,31 @@ export type MenGl = {
 	arts: WeakMap<KitArt, WebGLTexture>;
 	prints: WeakMap<PrintLevel, WebGLTexture>;
 	faces: WeakMap<FaceTex, { feat: WebGLTexture; hair: WebGLTexture }>;
+	// What is on each of the men's texture units, and the unit last made
+	// active, as far as is known (see bind, menUnknown) - so nothing is sent
+	// to the card twice.
+	bound: (WebGLTexture | null)[];
+	active: number;
 };
 
-const tex = (gl: WebGL2RenderingContext, unit: number, filter: number) => {
-	gl.activeTexture(gl.TEXTURE0 + unit);
+// Each frame, and whenever something other than the men has had the card
+// (its texture units may be anything; the active one is).
+export const menUnknown = (g: MenGl, units: boolean) => {
+	g.active = -1;
+	if (units) {
+		g.bound.fill(null);
+	}
+};
+
+type Known = Pick<MenGl, "bound" | "active">;
+const tex = (
+	gl: WebGL2RenderingContext,
+	g: Known,
+	unit: number,
+	filter: number,
+) => {
 	const t = gl.createTexture();
-	gl.bindTexture(gl.TEXTURE_2D, t);
+	bind(gl, g, unit, t, t);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -420,7 +439,9 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 	for (const [name, unit] of Object.entries(UNITS)) {
 		gl.uniform1i(hands.u(name), unit);
 	}
-	const bones = tex(gl, UNITS.uBones, gl.NEAREST);
+	// (Nothing known on the units yet.)
+	const known = { bound: [] as (WebGLTexture | null)[], active: -1 };
+	const bones = tex(gl, known, UNITS.uBones, gl.NEAREST);
 	gl.texImage2D(
 		gl.TEXTURE_2D,
 		0,
@@ -432,7 +453,7 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 		gl.FLOAT,
 		null,
 	);
-	const blank = tex(gl, UNITS.uM, gl.NEAREST);
+	const blank = tex(gl, known, UNITS.uM, gl.NEAREST);
 	gl.texImage2D(
 		gl.TEXTURE_2D,
 		0,
@@ -461,6 +482,10 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 		arts: new WeakMap(),
 		prints: new WeakMap(),
 		faces: new WeakMap(),
+		bound: Object.values(UNITS)
+			.map(() => null)
+			.concat([null]),
+		active: -1,
 	};
 };
 
@@ -660,8 +685,7 @@ export const menRows = (
 	if (n === 0) {
 		return;
 	}
-	gl.activeTexture(gl.TEXTURE0 + UNITS.uBones);
-	gl.bindTexture(gl.TEXTURE_2D, g.bones);
+	bind(gl, g, UNITS.uBones, g.bones, g.blank);
 	gl.texSubImage2D(
 		gl.TEXTURE_2D,
 		0,
@@ -689,7 +713,7 @@ export const menCamera = (
 const sheetTex = (gl: WebGL2RenderingContext, g: MenGl, sheet: object) => {
 	let t = g.sheets.get(sheet);
 	if (!t) {
-		t = tex(gl, UNITS.uSheet, gl.LINEAR);
+		t = tex(gl, g, UNITS.uSheet, gl.LINEAR);
 		gl.texParameteri(
 			gl.TEXTURE_2D,
 			gl.TEXTURE_MIN_FILTER,
@@ -715,7 +739,7 @@ const artTex = (gl: WebGL2RenderingContext, g: MenGl, art: KitArt) => {
 	let t = g.arts.get(art);
 	if (!t) {
 		const aw = ART_W * art.scale;
-		t = tex(gl, UNITS.uArt, gl.NEAREST);
+		t = tex(gl, g, UNITS.uArt, gl.NEAREST);
 		gl.texImage2D(
 			gl.TEXTURE_2D,
 			0,
@@ -740,7 +764,7 @@ const printTex = (gl: WebGL2RenderingContext, g: MenGl, print: PrintLevel) => {
 			both[i * 2] = all[i]!;
 			both[i * 2 + 1] = ink[i]!;
 		}
-		t = tex(gl, UNITS.uPrint, gl.NEAREST);
+		t = tex(gl, g, UNITS.uPrint, gl.NEAREST);
 		gl.texImage2D(
 			gl.TEXTURE_2D,
 			0,
@@ -759,7 +783,7 @@ const printTex = (gl: WebGL2RenderingContext, g: MenGl, print: PrintLevel) => {
 const faceTex = (gl: WebGL2RenderingContext, g: MenGl, ft: FaceTex) => {
 	let t = g.faces.get(ft);
 	if (!t) {
-		const feat = tex(gl, UNITS.uFeat, gl.NEAREST);
+		const feat = tex(gl, g, UNITS.uFeat, gl.NEAREST);
 		gl.texImage2D(
 			gl.TEXTURE_2D,
 			0,
@@ -771,7 +795,7 @@ const faceTex = (gl: WebGL2RenderingContext, g: MenGl, ft: FaceTex) => {
 			gl.UNSIGNED_BYTE,
 			new Uint8Array(ft.feat.buffer, ft.feat.byteOffset, ft.w * ft.h * 4),
 		);
-		const hair = tex(gl, UNITS.uHairA, gl.NEAREST);
+		const hair = tex(gl, g, UNITS.uHairA, gl.NEAREST);
 		gl.texImage2D(
 			gl.TEXTURE_2D,
 			0,
@@ -788,15 +812,24 @@ const faceTex = (gl: WebGL2RenderingContext, g: MenGl, ft: FaceTex) => {
 	}
 	return t;
 };
-const bind = (
+function bind(
 	gl: WebGL2RenderingContext,
+	g: Known,
 	unit: number,
 	t: WebGLTexture | undefined,
 	blank: WebGLTexture,
-) => {
-	gl.activeTexture(gl.TEXTURE0 + unit);
-	gl.bindTexture(gl.TEXTURE_2D, t ?? blank);
-};
+) {
+	const want = t ?? blank;
+	if (g.bound[unit] === want) {
+		return;
+	}
+	if (g.active !== unit) {
+		gl.activeTexture(gl.TEXTURE0 + unit);
+		g.active = unit;
+	}
+	gl.bindTexture(gl.TEXTURE_2D, want);
+	g.bound[unit] = want;
+}
 
 // How one of him is drawn (see VERT uMode): himself, the dark edge round
 // him, a shadow he casts (so far across the floor and toward the camera
@@ -824,7 +857,7 @@ export const drawMan = (
 	const { st, body, look } = man;
 	const { u } = g.prog;
 	gl.bindVertexArray(arrayFor(gl, g, man.local));
-	bind(gl, UNITS.uBones, g.bones, g.blank);
+	bind(gl, g, UNITS.uBones, g.bones, g.blank);
 	gl.uniform1i(u("uRow"), i);
 	gl.uniform4f(u("uAt"), st.x, st.y, st.z, st.yaw);
 	gl.uniform1f(u("uH"), body.H);
@@ -843,12 +876,12 @@ export const drawMan = (
 		}
 		const ft = look.faceTex ?? look.head?.tex;
 		const face = ft ? faceTex(gl, g, ft) : undefined;
-		bind(gl, UNITS.uSheet, man.sheet && sheetTex(gl, g, man.sheet), g.blank);
-		bind(gl, UNITS.uArt, man.art && artTex(gl, g, man.art), g.blank);
-		bind(gl, UNITS.uPrint, man.print && printTex(gl, g, man.print), g.blank);
-		bind(gl, UNITS.uFeat, face?.feat, g.blank);
-		bind(gl, UNITS.uHairA, face?.hair, g.blank);
-		bind(gl, UNITS.uM, g.blank, g.blank);
+		bind(gl, g, UNITS.uSheet, man.sheet && sheetTex(gl, g, man.sheet), g.blank);
+		bind(gl, g, UNITS.uArt, man.art && artTex(gl, g, man.art), g.blank);
+		bind(gl, g, UNITS.uPrint, man.print && printTex(gl, g, man.print), g.blank);
+		bind(gl, g, UNITS.uFeat, face?.feat, g.blank);
+		bind(gl, g, UNITS.uHairA, face?.hair, g.blank);
+		bind(gl, g, UNITS.uM, g.blank, g.blank);
 		gl.uniformMatrix3fv(u("uSee"), false, man.see);
 		gl.uniform4fv(u("uP"), man.params);
 		gl.uniform3fv(u("uT"), man.twists);
@@ -864,8 +897,20 @@ export const drawMan = (
 };
 
 // His hands, and what is in them: after all the men's bodies, the `i`th's
+// All their hands, over all of them (blended in at their soft edges).
+export const drawAllHands = (
+	gl: WebGL2RenderingContext,
+	g: MenGl,
+	men: readonly ManReady[],
+	W: number,
+	H: number,
+) => {
+	gl.useProgram(g.hands.p);
+	men.forEach((man, i) => drawHands(gl, g, man, i, W, H));
+};
+
 // (blended in at their soft edges). `W` x `H`: the picture.
-export const drawHands = (
+const drawHands = (
 	gl: WebGL2RenderingContext,
 	g: MenGl,
 	man: ManReady,
@@ -879,7 +924,7 @@ export const drawHands = (
 	}
 	let t = g.tables[i];
 	if (!t) {
-		t = tex(gl, UNITS.uM, gl.NEAREST);
+		t = tex(gl, g, UNITS.uM, gl.NEAREST);
 		gl.texImage2D(
 			gl.TEXTURE_2D,
 			0,
@@ -893,8 +938,7 @@ export const drawHands = (
 		);
 		g.tables[i] = t;
 	}
-	gl.activeTexture(gl.TEXTURE0 + UNITS.uM);
-	gl.bindTexture(gl.TEXTURE_2D, t);
+	bind(gl, g, UNITS.uM, t, t);
 	gl.texSubImage2D(
 		gl.TEXTURE_2D,
 		0,
@@ -906,9 +950,8 @@ export const drawHands = (
 		gl.FLOAT,
 		man.table,
 	);
-	bind(gl, UNITS.uPrint, man.print && printTex(gl, g, man.print), g.blank);
+	bind(gl, g, UNITS.uPrint, man.print && printTex(gl, g, man.print), g.blank);
 	const { u } = g.hands;
-	gl.useProgram(g.hands.p);
 	gl.uniform4f(u("uBox"), box.x0, box.y0, box.x1 + 1, box.y1 + 1);
 	gl.uniform2f(u("uSize"), W, H);
 	gl.uniform4fv(u("uP"), man.params);

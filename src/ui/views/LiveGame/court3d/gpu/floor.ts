@@ -69,15 +69,37 @@ export type FloorGl = {
 	runs: Run[];
 	pics: WeakMap<HTMLCanvasElement, WebGLTexture>;
 	white: WebGLTexture;
+	// A pool of shadow (see floorPools), made the first time.
+	pool?: WebGLTexture;
 	// The widest and tallest picture the card takes.
 	most: number;
-	// The sheet the baskets and the ball are drawn on each frame (see
-	// itemsDraw), and it on the card.
-	sheet: CanvasRenderingContext2D | null;
-	sheetTex: WebGLTexture;
+	// The sheets the baskets and the ball, and what goes over everything,
+	// are drawn on each frame (see itemsDraw), and them on the card.
+	sheets: [Sheet, Sheet];
 	// The court's lines: so many points of paint, then of their middles.
 	lines: { vao: WebGLVertexArrayObject; paint: number; all: number };
 };
+
+type Sheet = {
+	ctx: CanvasRenderingContext2D | null;
+	tex: WebGLTexture;
+	// The size of it on the card.
+	w: number;
+	h: number;
+};
+// (Kept off the graphics card by the browser - drawn by the page, read back
+// each frame to go on the card, it would only have to be fetched back.)
+const sheetOnto = (gl: WebGL2RenderingContext): Sheet => ({
+	ctx:
+		typeof document === "undefined"
+			? null
+			: document
+					.createElement("canvas")
+					.getContext("2d", { willReadFrequently: true }),
+	tex: gl.createTexture(),
+	w: 0,
+	h: 0,
+});
 
 export const floorOnto = (gl: WebGL2RenderingContext): FloorGl | undefined => {
 	const prog = compile(gl, VERT, FRAG);
@@ -119,11 +141,7 @@ export const floorOnto = (gl: WebGL2RenderingContext): FloorGl | undefined => {
 		pics: new WeakMap(),
 		white,
 		most: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
-		sheet:
-			typeof document === "undefined"
-				? null
-				: document.createElement("canvas").getContext("2d"),
-		sheetTex: gl.createTexture(),
+		sheets: [sheetOnto(gl), sheetOnto(gl)],
 		lines: linesOnto(gl, prog),
 	};
 };
@@ -336,6 +354,68 @@ export const floorPainter = (
 	};
 };
 
+// A SOFT POOL OF SHADOW (see arena.ts drawShadow) round each of these on the
+// floor - (x, y) its middle, r its radius (feet), so dark - each over what is
+// under it, after all else on the list.
+const POOL_PX = 128;
+export const floorPools = (
+	gl: WebGL2RenderingContext,
+	fl: FloorGl,
+	pools: readonly { x: number; y: number; r: number; dark: number }[],
+) => {
+	if (!fl.pool) {
+		const t = gl.createTexture();
+		const px = new Uint8Array(POOL_PX * POOL_PX * 4);
+		for (let j = 0; j < POOL_PX; j++) {
+			for (let i = 0; i < POOL_PX; i++) {
+				const d = Math.hypot(
+					((i + 0.5) / POOL_PX) * 2 - 1,
+					((j + 0.5) / POOL_PX) * 2 - 1,
+				);
+				const a =
+					d < 0.6
+						? 0.5 + (0.3 - 0.5) * (d / 0.6)
+						: 0.3 * (1 - Math.min(1, (d - 0.6) / 0.4));
+				// (Black, its strength as it is laid over: premultiplied.)
+				px[(j * POOL_PX + i) * 4 + 3] = Math.round(a * 255);
+			}
+		}
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, t);
+		gl.texImage2D(
+			gl.TEXTURE_2D,
+			0,
+			gl.RGBA,
+			POOL_PX,
+			POOL_PX,
+			0,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			px,
+		);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		fl.pool = t;
+	}
+	for (const { x, y, r, dark } of pools) {
+		if (dark <= 0.01) {
+			continue;
+		}
+		const c = [dark, dark, dark, dark] as const;
+		// (A hair over the floor.)
+		const z = 0.005;
+		runFor(fl, fl.pool, false, false, false, 6);
+		point(fl, x - r, y - r, z, c, 0, 0);
+		point(fl, x + r, y - r, z, c, 1, 0);
+		point(fl, x + r, y + r, z, c, 1, 1);
+		point(fl, x - r, y - r, z, c, 0, 0);
+		point(fl, x + r, y + r, z, c, 1, 1);
+		point(fl, x - r, y + r, z, c, 0, 1);
+	}
+};
+
 // What is on the list, in order, each over what is under it - writing how
 // far off it is where it stands in front of the men drawn after it (see
 // Painter.solid); then the list emptied.
@@ -364,12 +444,23 @@ export const floorDraw = (
 	gl.enable(gl.BLEND);
 	gl.depthFunc(tested ? gl.LEQUAL : gl.ALWAYS);
 	gl.activeTexture(gl.TEXTURE0);
+	// (Only what changes from one to the next told to the card.)
+	let was: Run | undefined;
 	for (const r of fl.runs) {
-		gl.bindTexture(gl.TEXTURE_2D, r.tex);
-		gl.uniform1f(prog.u("uOn"), r.on ? 1 : 0);
-		gl.blendFunc(gl.ONE, r.add ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
-		gl.depthMask(r.solid);
+		if (r.tex !== was?.tex) {
+			gl.bindTexture(gl.TEXTURE_2D, r.tex);
+		}
+		if (r.on !== was?.on) {
+			gl.uniform1f(prog.u("uOn"), r.on ? 1 : 0);
+		}
+		if (r.add !== was?.add) {
+			gl.blendFunc(gl.ONE, r.add ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+		}
+		if (r.solid !== was?.solid) {
+			gl.depthMask(r.solid);
+		}
 		gl.drawArrays(gl.TRIANGLES, r.first, r.count);
+		was = r;
 	}
 	gl.depthMask(true);
 	gl.depthFunc(gl.LEQUAL);
@@ -423,8 +514,11 @@ export const itemsDraw = (
 	m: Float32Array,
 	cam: Camera,
 	items: readonly FrameItem[],
+	// Which sheet (see FloorGl sheets).
+	which: 0 | 1,
 ) => {
-	const ctx = fl.sheet;
+	const sheet = fl.sheets[which];
+	const ctx = sheet.ctx;
 	if (!ctx || items.length === 0) {
 		return;
 	}
@@ -495,7 +589,7 @@ export const itemsDraw = (
 		cv.height = Math.max(cv.height, Math.ceil(tall / 64) * 64);
 	}
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	ctx.clearRect(0, 0, cv.width, cv.height);
+	ctx.clearRect(0, 0, wide, tall);
 	for (const c of cells) {
 		ctx.save();
 		ctx.setTransform(1, 0, 0, 1, c.sx - c.x0, c.sy - c.y0);
@@ -506,14 +600,41 @@ export const itemsDraw = (
 		ctx.restore();
 	}
 	gl.activeTexture(gl.TEXTURE0);
-	gl.bindTexture(gl.TEXTURE_2D, fl.sheetTex);
+	// (On the card as big as the sheet, made so once; only the part of it
+	// drawn on sent over each frame.)
+	gl.bindTexture(gl.TEXTURE_2D, sheet.tex);
+	if (sheet.w !== cv.width || sheet.h !== cv.height) {
+		gl.texImage2D(
+			gl.TEXTURE_2D,
+			0,
+			gl.RGBA,
+			cv.width,
+			cv.height,
+			0,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			null,
+		);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		sheet.w = cv.width;
+		sheet.h = cv.height;
+	}
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+	gl.texSubImage2D(
+		gl.TEXTURE_2D,
+		0,
+		0,
+		0,
+		Math.min(wide, cv.width),
+		Math.min(tall, cv.height),
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		cv,
+	);
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 	const A = (BOWL_FAR + BOWL_NEAR) / (BOWL_FAR - BOWL_NEAR);
 	const B = (-2 * BOWL_FAR * BOWL_NEAR) / (BOWL_FAR - BOWL_NEAR);
 	fl.n = 0;
@@ -529,7 +650,7 @@ export const itemsDraw = (
 		const u1 = (c.sx + c.w) / cv.width;
 		const v0 = c.sy / cv.height;
 		const v1 = (c.sy + c.h) / cv.height;
-		runFor(fl, fl.sheetTex, true, false, true, 6);
+		runFor(fl, sheet.tex, true, false, true, 6);
 		point(fl, X0, Y0, z, one, u0, v0);
 		point(fl, X1, Y0, z, one, u1, v0);
 		point(fl, X1, Y1, z, one, u1, v1);

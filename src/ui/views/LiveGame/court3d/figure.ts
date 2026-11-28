@@ -247,6 +247,50 @@ export const drawHeadAt = (
 		q.grin,
 	);
 };
+// What his head as drawHeadAt draws it comes out as, but for where it is on
+// the picture: how big and which way round (the picture's px across his head
+// each way from its middle), how far round to the camera he is, turned on his
+// neck, his mouth, his head bowed, his grin - each to what moves what is
+// drawn a quarter of a px. The same, and it is the same picture of his head
+// moved over (see gpu/scene.ts heads).
+export const headKey = (
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	head = headOf(st, body),
+): number[] => {
+	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
+	const c = at(head);
+	const R = body.headR;
+	// (Each to a quarter of a px, at his head's size on the picture.)
+	const px = 4 * R * c.k;
+	const out: number[] = [];
+	for (const d of [
+		{ f: R, s: 0, u: 0 },
+		{ f: 0, s: R, u: 0 },
+		{ f: 0, s: 0, u: R },
+	]) {
+		const q = at({ f: head.f + d.f, s: head.s + d.s, u: head.u + d.u });
+		out.push(Math.round((q.x - c.x) * 4), Math.round((q.y - c.y) * 4));
+	}
+	const toCamX = cam.pos.x - st.x;
+	const toCamY = cam.pos.y - st.y;
+	const toCamL = Math.hypot(toCamX, toCamY) || 1;
+	const turned = ((st.look ?? 0) * Math.PI) / 180;
+	const front =
+		(Math.cos(st.yaw + turned) * toCamX + Math.sin(st.yaw + turned) * toCamY) /
+		toCamL;
+	const q = poseOf(st);
+	out.push(
+		Math.round(front * px),
+		Math.round(turned * px),
+		Math.round(Math.max(yellOf(st), q.yell) * px * 0.4),
+		whistleOf(st) ? 1 : 0,
+		Math.round(bowOf(q, body) * px),
+		Math.round(q.grin * px * 0.4),
+	);
+	return out;
+};
 // How far his head is bowed (to 1) or tipped back (to -1) for his face: as
 // far as his neck has it - and, bowing it, as far over as all of him is
 // with it (bent forward in his chair, his head down too).
