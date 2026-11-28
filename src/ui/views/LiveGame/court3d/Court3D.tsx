@@ -1758,14 +1758,6 @@ const Court3D = ({
 					s.last = now;
 				}
 			}
-			if (!staging) {
-				const zw = window as any;
-				zw.__zzEnd = tl.end;
-				if (zw.__zzJump !== undefined) {
-					s.t = zw.__zzJump;
-					zw.__zzJump = undefined;
-				}
-			} // ZZDBG
 			const { dt, rate, cut } = stepPlay(
 				s,
 				p,
