@@ -79,6 +79,7 @@ import {
 	evalBall,
 	evalPlayer,
 	handWorld,
+	fromCut,
 	inOneFrame,
 	shownAt,
 	offenseAt,
@@ -408,7 +409,12 @@ export const momentAt = (
 	// How fast it is being shown, and the picture's own clock (ms) - see
 	// fastLegs.
 	look?: { rate: number; wall: number },
-): Moment => inOneFrame(() => momentNow(tl, t, roster, bodyFor, look));
+	// Just cut to (see fromCut).
+	cut = false,
+): Moment =>
+	cut
+		? fromCut(() => inOneFrame(() => momentNow(tl, t, roster, bodyFor, look)))
+		: inOneFrame(() => momentNow(tl, t, roster, bodyFor, look));
 const momentNow = (
 	tl: CourtTimeline,
 	t: number,

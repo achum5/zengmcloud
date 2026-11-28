@@ -285,6 +285,15 @@ const SPRITE_BUDGET_MS = 6;
 // A player whose face is a photo is drawn in this, head to toe.
 const SILHOUETTE = "#101012";
 
+// A jump in the moment shown from one frame to the next this far on (game
+// ms) - or any back - is a cut (see fromCut), and the frames just after it
+// worked out as just cut to. (Taken for one while the game plays on - a
+// slow frame at the fastest through dead time - it changes nothing: what
+// it would begin afresh is worked out already, carried on from the frame
+// before.)
+const CUT_JUMP = 6000;
+const CUT_FRAMES = 3;
+
 // What goes across the back of his jersey: everything after his first name.
 const lastNameOf = (name: string | undefined): string => {
 	const n = (name ?? "").trim();
@@ -1360,6 +1369,10 @@ const Court3D = ({
 		// last frame (timeline ms) - for how slowly poses come round.
 		darkFrom: -Infinity,
 		drawnAt: undefined as number | undefined,
+		// The game moment worked out last frame, and for how many frames more
+		// it is worked out as just cut to (see fromCut).
+		evalAt: -Infinity,
+		cutLeft: 0,
 		// The timeline last drawn (the warm-ups' or the game's).
 		shown: undefined as CourtTimeline | undefined,
 		prevCursor: -1,
@@ -1823,6 +1836,14 @@ const Court3D = ({
 					: sizeCanvas(canvas, p.size, res, laid);
 
 			const replay = s.replay;
+			// Cut to (on to the next key play, back into a replay, on past
+			// what is skipped): worked out afresh round there for a few
+			// frames, not carried on from what was shown before (see fromCut).
+			const at = replay ? replay.at : s.t;
+			if (at < s.evalAt || at > s.evalAt + CUT_JUMP) {
+				s.cutLeft = CUT_FRAMES;
+			}
+			const cold = s.cutLeft > 0;
 			const evalFrom = performance.now();
 			const moment =
 				staging && p.authored
@@ -1831,11 +1852,16 @@ const Court3D = ({
 						? warmupMoment(p.pregame, s.t, bodyOfPid)
 						: momentAt(
 								tl,
-								replay ? replay.at : s.t,
+								at,
 								rosterRef.current,
 								bodyOfPid,
 								replay ? undefined : { rate, wall: now },
+								cold,
 							);
+			if (!staging) {
+				s.evalAt = at;
+				s.cutLeft = Math.max(0, s.cutLeft - 1);
+			}
 			// (For the frame rate meter: the moment worked out.)
 			const evalMs = performance.now() - evalFrom;
 			// Over a break, a look round the building; in close on a man at the

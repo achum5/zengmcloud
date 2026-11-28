@@ -1181,6 +1181,26 @@ export const whereIs = (
 	const here = spotAt(tr, t);
 	return { x: here.x, y: here.y };
 };
+// JUST CUT TO. Some of what a man does carries on from what he did before
+// it - his strides from run to run, his steps through a stretch of them,
+// the way the ball's print faces from hand to hand since the tip - worked
+// out from where it began and kept as the game plays on. Cut straight to a
+// moment far on (the next of the key plays, a replay), all of that since it
+// began was worked out in one frame: most of a second on a phone, the
+// picture stuck. Just after a cut nothing on the screen is there for it to
+// carry on from, so (asked through this) it begins afresh a little before
+// the moment shown instead - and carries on from there as the game plays.
+let cutTo = false;
+export const fromCut = <T>(f: () => T): T => {
+	const was = cutTo;
+	cutTo = true;
+	try {
+		return f();
+	} finally {
+		cutTo = was;
+	}
+};
+
 // A FRAME'S SPOTS. Where each man is at each moment asked, kept while one
 // frame is worked out (see momentAt): asked the same of the same man again
 // and again in one frame - his lean, his drive, his gait, which way the
@@ -1480,6 +1500,10 @@ export const KEPT_MOST = 3 * KEEP_RUNS + KEEP_FOOTFALLS;
 // HIS STRIDES THROUGH A RUN (see stepping.ts), once a run - carried on
 // from the run before, where he goes straight on from it.
 const steppings = new WeakMap<Track, Map<Move, Stepping>>();
+const stepped = (byMove: Map<Move, Stepping>, run: Run): boolean => {
+	const had = byMove.get(run.mv);
+	return had !== undefined && had.s0 === run.s0 && had.s1 === run.s1;
+};
 const steppingOf = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1491,9 +1515,8 @@ const steppingOf = (
 		byMove = new Map();
 		steppings.set(tr, byMove);
 	}
-	const had = byMove.get(run.mv);
-	if (had && had.s0 === run.s0 && had.s1 === run.s1) {
-		return had;
+	if (stepped(byMove, run)) {
+		return byMove.get(run.mv)!;
 	}
 	const anim = stepsOf(tl, tr, run);
 	const S = strideOf(anim);
@@ -1512,14 +1535,17 @@ const steppingOf = (
 	const most = beat ? lenMost(anim) : 1;
 	let { ph, R, L } = freshStart(anim, stretch);
 	const first = legPhases(anim, ph);
+	const before = k > 0 ? runOf(tr, k - 1) : undefined;
 	if (
-		k > 0 &&
-		(run.v0 > 0 || tr.moves[k]!.t0 - tr.moves[k - 1]!.t1 <= STRIDE_ON_MS)
+		before &&
+		(run.v0 > 0 || tr.moves[k]!.t0 - tr.moves[k - 1]!.t1 <= STRIDE_ON_MS) &&
+		// (Just cut to, his strides through the run before not worked out
+		// yet: begun afresh on this one - see fromCut.)
+		!(cutTo && !stepped(byMove, before))
 	) {
 		// (Counted at the stride he was showing as it ended - backpedaling by
 		// then, say - so he goes on from where his feet were: each foot's
 		// stride as long in feet as it was.)
-		const before = runOf(tr, k - 1);
 		const was = steppingOf(tl, tr, k - 1, before);
 		const m = was.ph.length - 1;
 		const ended = endStepsOf(tl, tr, k - 1, before);
@@ -5280,7 +5306,14 @@ type FootSpan = { t0: number; t1: number; into?: FootEdge; out?: FootEdge };
 type FootPlan = {
 	spans: FootSpan[];
 	plans: (FootPlanner | undefined)[];
+	// Where each was begun: its stretch's start - or, just cut to far into
+	// it, a moment before what was shown (see fromCut).
+	from: number[];
 };
+// (Just cut to more than so far into a stretch, ms: his steps begun this
+// long before the moment shown.)
+const FOOT_CUT = 3000;
+const FOOT_BACK = 1000;
 const footPlans = new WeakMap<Track, FootPlan>();
 // (A stretch shorter than this, ms, is not worth stepping.)
 const FOOT_SPAN_LEAST = 400;
@@ -5547,7 +5580,7 @@ const footPlanOf = (tl: CourtTimeline, tr: Track): FootPlan | undefined => {
 			spans.push({ t0: from, t1: b, into });
 		}
 	}
-	plan = { spans, plans: spans.map(() => undefined) };
+	plan = { spans, plans: spans.map(() => undefined), from: [] };
 	footPlans.set(tr, plan);
 	return plan;
 };
@@ -5560,16 +5593,22 @@ const stepsIn = (
 	t: number,
 ): [FootStep[], FootStep[]] => {
 	let planner = plan.plans[k];
+	// (Begun after it, just cut to - and now wanted before that: from the
+	// stretch's start this time.)
+	if (planner && t < plan.from[k]!) {
+		planner = undefined;
+	}
 	if (!planner) {
 		const own = tl.gaits!.get(tr.pid)!;
-		const { t0: from, t1: to, into } = plan.spans[k]!;
+		const { t0, t1: to, into } = plan.spans[k]!;
+		const from = cutTo && t - t0 > FOOT_CUT ? t - FOOT_BACK : t0;
 		const moveAt = (at: number) => tr.moves[Math.max(0, lastT0(tr.moves, at))];
 		const legs = stepInchesOf(own.inches);
 		planner = footPlanner({
 			from,
 			to,
 			// (Down out of a jump, on both feet - where it has them.)
-			set: into === "air",
+			set: from === t0 && into === "air",
 			own: (at) => ownFeetAt(tl, tr, own.inches, at),
 			at: (at) => {
 				const p = spotAt(tr, at, false);
@@ -5587,6 +5626,7 @@ const stepsIn = (
 			height: legs / 12,
 		});
 		plan.plans[k] = planner;
+		plan.from[k] = from;
 	}
 	planner.through(t);
 	return planner.feet;
@@ -9751,6 +9791,8 @@ type Faces = { segs: BallSeg[]; inn: number[]; off: number[] };
 const facesMemo = new WeakMap<CourtTimeline, Faces>();
 // Before anybody has had it.
 const FIRST_FACE = 0.6;
+// (Just cut to: begun this many pieces back - see fromCut.)
+const FACES_BACK = 4;
 // The way he faces then, as playerAt has it - only that, not the rest of
 // him (his arms drawn in off the men near him, his legs, where he looks):
 // worked out for each time the ball changes hands since the opening tip.
@@ -9764,17 +9806,34 @@ const facesTo = (tl: CourtTimeline, i: number): Faces => {
 		f = { segs: [], inn: [], off: [] };
 		facesMemo.set(tl, f);
 	}
-	let from = f.segs.length;
-	for (let j = 0; j < Math.min(from, i + 1); j++) {
-		if (f.segs[j] !== tl.ball[j]) {
-			from = j;
+	// (Pieces changed since - the game staged further on: worked out again
+	// from the first of them.)
+	let had = f.segs.length;
+	for (let j = 0; j < Math.min(had, i + 1); j++) {
+		const seg = f.segs[j];
+		if (seg !== undefined && seg !== tl.ball[j]) {
+			had = j;
 			break;
 		}
 	}
-	f.segs.length = f.inn.length = f.off.length = from;
+	f.segs.length = f.inn.length = f.off.length = had;
+	if (f.segs[i] !== undefined) {
+		return f;
+	}
+	// On from the last piece worked out before it - or, just cut to far on
+	// from that, from a few pieces back, as if it had just been tipped (see
+	// fromCut).
+	let from = i;
+	while (from > 0 && f.segs[from - 1] === undefined) {
+		from--;
+	}
+	const fresh = cutTo && i - from > FACES_BACK ? i - FACES_BACK : -1;
+	if (fresh >= 0) {
+		from = fresh;
+	}
 	for (let j = from; j <= i; j++) {
 		const seg = tl.ball[j]!;
-		const prev = tl.ball[j - 1];
+		const prev = j === fresh ? undefined : tl.ball[j - 1];
 		const inn = !prev
 			? FIRST_FACE
 			: prev.kind === "hold"
