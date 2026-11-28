@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 684,
+		date: "2026-11-28",
+		text: "3D game, GPU drawing (in progress): the players take much less of the graphics card. Each player's body is now bent into its pose once a frame, instead of once for each of his reflection, his two shadows, his outline and himself.",
+	},
+	{
 		n: 683,
 		date: "2026-11-28",
 		text: "3D game: no more freezes of most of a second when Key Plays cuts to the next highlight or into a replay. The players' steps were being worked out all the way from the tip at every cut; they now start just before the moment shown.",

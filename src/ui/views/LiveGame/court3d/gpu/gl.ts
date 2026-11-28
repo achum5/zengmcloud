@@ -1,5 +1,7 @@
 // THE LITTLE THE GPU DRAWING NEEDS OF WEBGL2 ITSELF (see scene.ts): a
-// program from its two shaders, a buffer, an attribute read from one.
+// program from its two shaders (and what of its vertex shader's it writes
+// into a buffer, if anything - see men.ts SKIN_VERT), a buffer, an
+// attribute read from one.
 
 export type Prog = {
 	p: WebGLProgram;
@@ -10,6 +12,7 @@ export const compile = (
 	gl: WebGL2RenderingContext,
 	vert: string,
 	frag: string,
+	kept?: string[],
 ): Prog | undefined => {
 	const p = gl.createProgram();
 	for (const [type, src] of [
@@ -27,6 +30,9 @@ export const compile = (
 			return undefined;
 		}
 		gl.attachShader(p, sh);
+	}
+	if (kept) {
+		gl.transformFeedbackVaryings(p, kept, gl.INTERLEAVED_ATTRIBS);
 	}
 	gl.linkProgram(p);
 	if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {

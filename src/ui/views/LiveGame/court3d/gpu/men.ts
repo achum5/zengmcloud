@@ -50,14 +50,13 @@ const BONE = 6;
 const ROWS = 64;
 export const MEN_ROWS = ROWS;
 
-const VERT = `#version 300 es
+const SKIN_VERT = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 in vec4 aBone;
 in vec4 aW;
 in vec3 aN;
-in vec4 aFace;
 // The kind of face it is in, how much it goes with his arm, how much it is
 // kept to his trunk under a raised arm, and which arm.
 in vec4 aMisc;
@@ -72,30 +71,17 @@ in vec3 aC1;
 in vec3 aC2;
 in vec3 aC3;
 in vec4 aCB;
-uniform mat4 uView;
 // Each piece at rest: where it starts, along it, forward, his left.
 uniform vec4 uRest[${B * 3}];
 uniform sampler2D uBones;
 uniform int uRow;
-uniform vec4 uAt;
 uniform float uH;
 uniform vec2 uRaised;
-// Drawn as: 0 himself, 1 the dark edge round him (his back faces, a pixel
-// out), 2 his shadow cast over the floor, 3 his reflection in it.
-uniform int uMode;
-// His shadow: so far across the floor and toward the camera for each foot
-// up he is.
-uniform vec2 uCast;
-// A pixel, in the picture's -1 to 1.
-uniform vec2 uPx;
-// How far up him a point is (off the floor under him, feet).
-out float vUp;
-out vec3 vP;
-out vec3 vT;
-out vec3 vN;
-out vec4 vFace;
-out float vArm;
-flat out int vKind;
+// Where it is in his frame, where his trunk alone carries it, which way
+// its face looks (for each drawing of him - see VERT).
+out vec3 xP;
+out vec3 xT;
+out vec3 xN;
 vec4 bt(int b, int j) {
 	return texelFetch(uBones, ivec2(b * ${BONE} + j, uRow), 0);
 }
@@ -150,8 +136,54 @@ void main() {
 	p += (T - p) * kept;
 	vec3 tn = 2.0 * cross(qv, aN);
 	vec3 nn = aN + R.x * tn + cross(qv, tn);
+	xP = p;
+	xT = T;
+	xN = nn;
+	gl_Position = vec4(0.0);
+	gl_PointSize = 1.0;
+}`;
+// (Bent, not drawn: no pixels.)
+const SKIN_FRAG = `#version 300 es
+precision mediump float;
+out vec4 oCol;
+void main() {
+	oCol = vec4(0.0);
+}`;
+
+// Each drawing of him, from the points as bent this frame (see SKIN_VERT).
+const VERT = `#version 300 es
+precision highp float;
+precision highp int;
+in vec3 aP;
+in vec3 aT;
+in vec3 aN;
+in vec4 aFace;
+// The kind of face it is in, how much it goes with his arm (and, for
+// SKIN_VERT, how much it is kept to his trunk, and which arm).
+in vec4 aMisc;
+uniform mat4 uView;
+uniform vec4 uAt;
+// Drawn as: 0 himself, 1 the dark edge round him (his back faces, a pixel
+// out), 2 his shadow cast over the floor, 3 his reflection in it.
+uniform int uMode;
+// His shadow: so far across the floor and toward the camera for each foot
+// up he is.
+uniform vec2 uCast;
+// A pixel, in the picture's -1 to 1.
+uniform vec2 uPx;
+// How far up him a point is (off the floor under him, feet).
+out float vUp;
+out vec3 vP;
+out vec3 vT;
+out vec3 vN;
+out vec4 vFace;
+out float vArm;
+flat out int vKind;
+void main() {
+	vec3 p = aP;
+	vec3 nn = aN;
 	vP = p;
-	vT = T;
+	vT = aT;
 	vN = nn;
 	vFace = aFace;
 	vArm = aMisc.y;
@@ -265,8 +297,18 @@ const UNITS = {
 } as const;
 
 export type MenGl = {
+	// Each man's points bent as posed, once a frame (see menSkin)...
+	skin: Prog;
+	// ... and him drawn from them, each way he is drawn (see drawMan).
 	prog: Prog;
 	hands: Prog;
+	// The points as bent, each man's in turn (rows of them for so many men,
+	// made more of as wanted), and what writes them; for each man's place in
+	// it, a vertex array that reads them.
+	bent: WebGLBuffer;
+	bentRows: number;
+	feedback: WebGLTransformFeedback;
+	drawn: WebGLVertexArrayObject[];
 	// Each man's masses, a picture of numbers each (see massTable).
 	tables: WebGLTexture[];
 	// What is the same of every point whatever the length of his shorts...
@@ -323,9 +365,10 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 	if (!m) {
 		return undefined;
 	}
+	const skin = compile(gl, SKIN_VERT, SKIN_FRAG, ["xP", "xT", "xN"]);
 	const prog = compile(gl, VERT, FRAG);
 	const hands = compile(gl, HANDS_VERT, HANDS_FRAG);
-	if (!prog || !hands) {
+	if (!skin || !prog || !hands) {
 		return undefined;
 	}
 	// Each point at rest (a man 1 foot tall), for its normal.
@@ -430,10 +473,12 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 		gl.ELEMENT_ARRAY_BUFFER,
 	);
 	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-	gl.useProgram(prog.p);
-	gl.uniform4fv(prog.u("uRest"), new Float32Array(R));
-	for (const [name, unit] of Object.entries(UNITS)) {
-		gl.uniform1i(prog.u(name), unit);
+	for (const pr of [skin, prog]) {
+		gl.useProgram(pr.p);
+		gl.uniform4fv(pr.u("uRest"), new Float32Array(R));
+		for (const [name, unit] of Object.entries(UNITS)) {
+			gl.uniform1i(pr.u(name), unit);
+		}
 	}
 	gl.useProgram(hands.p);
 	for (const [name, unit] of Object.entries(UNITS)) {
@@ -465,9 +510,15 @@ export const menOnto = (gl: WebGL2RenderingContext): MenGl | undefined => {
 		gl.UNSIGNED_BYTE,
 		new Uint8Array(4),
 	);
+	const bent = gl.createBuffer();
 	return {
+		skin,
 		prog,
 		hands,
+		bent,
+		bentRows: 0,
+		feedback: gl.createTransformFeedback(),
+		drawn: [],
 		tables: [],
 		fixed,
 		index: ix,
@@ -517,7 +568,7 @@ const arrayFor = (
 	}
 	const vao = gl.createVertexArray();
 	gl.bindVertexArray(vao);
-	const { prog } = g;
+	const prog = g.skin;
 	const S = 19 * 4;
 	attrib(gl, prog, "aBone", g.fixed, 4, S, 0);
 	attrib(gl, prog, "aW", g.fixed, 4, S, 16);
@@ -534,6 +585,90 @@ const arrayFor = (
 	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.index);
 	gl.bindVertexArray(null);
 	g.byHem.set(LOCAL, vao);
+	return vao;
+};
+
+// THE MEN'S POINTS BENT AS POSED, ONCE A FRAME (see SKIN_VERT): each the
+// sum of his pieces' turns and moves, a few texture reads each, worked out
+// once and kept on the card for every drawing of him after (his
+// reflection, his two shadows, his edge, him) - not again for each. After
+// menRows; the `i`th of `men` into the `i`th place.
+const BENT = 9 * 4;
+export const menSkin = (
+	gl: WebGL2RenderingContext,
+	g: MenGl,
+	men: readonly ManReady[],
+) => {
+	const n = Math.min(ROWS, men.length);
+	if (n === 0) {
+		return;
+	}
+	const V = g.from.length;
+	if (n > g.bentRows) {
+		// (Room for more of them: a new place, so new vertex arrays for it.)
+		g.bentRows = Math.min(ROWS, Math.max(n, 2 * g.bentRows, 16));
+		gl.bindBuffer(gl.ARRAY_BUFFER, g.bent);
+		gl.bufferData(gl.ARRAY_BUFFER, g.bentRows * V * BENT, gl.DYNAMIC_COPY);
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		for (const vao of g.drawn) {
+			gl.deleteVertexArray(vao);
+		}
+		g.drawn = [];
+	}
+	gl.useProgram(g.skin.p);
+	const { u } = g.skin;
+	bind(gl, g, UNITS.uBones, g.bones, g.blank);
+	gl.enable(gl.RASTERIZER_DISCARD);
+	gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, g.feedback);
+	for (let i = 0; i < n; i++) {
+		const man = men[i]!;
+		gl.bindVertexArray(arrayFor(gl, g, man.local));
+		gl.uniform1i(u("uRow"), i);
+		gl.uniform1f(u("uH"), man.body.H);
+		gl.uniform2f(u("uRaised"), man.raised[0], man.raised[1]);
+		gl.bindBufferRange(
+			gl.TRANSFORM_FEEDBACK_BUFFER,
+			0,
+			g.bent,
+			i * V * BENT,
+			V * BENT,
+		);
+		gl.beginTransformFeedback(gl.POINTS);
+		gl.drawArrays(gl.POINTS, 0, V);
+		gl.endTransformFeedback();
+	}
+	gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
+	gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+	gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+	gl.disable(gl.RASTERIZER_DISCARD);
+	gl.bindVertexArray(null);
+};
+
+// The vertex array for the `i`th man's place among the points as bent
+// (made the first time).
+const drawnAt = (
+	gl: WebGL2RenderingContext,
+	g: MenGl,
+	i: number,
+): WebGLVertexArrayObject => {
+	let vao = g.drawn[i];
+	if (!vao) {
+		vao = gl.createVertexArray();
+		gl.bindVertexArray(vao);
+		const { prog } = g;
+		const S = 19 * 4;
+		attrib(gl, prog, "aFace", g.fixed, 4, S, 44);
+		attrib(gl, prog, "aMisc", g.fixed, 4, S, 60);
+		const at = i * g.from.length * BENT;
+		attrib(gl, prog, "aP", g.bent, 3, BENT, at);
+		attrib(gl, prog, "aT", g.bent, 3, BENT, at + 12);
+		attrib(gl, prog, "aN", g.bent, 3, BENT, at + 24);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.index);
+		gl.bindVertexArray(null);
+		// (Not left bound where the bending would find it.)
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		g.drawn[i] = vao;
+	}
 	return vao;
 };
 
@@ -856,12 +991,8 @@ export const drawMan = (
 	}
 	const { st, body, look } = man;
 	const { u } = g.prog;
-	gl.bindVertexArray(arrayFor(gl, g, man.local));
-	bind(gl, g, UNITS.uBones, g.bones, g.blank);
-	gl.uniform1i(u("uRow"), i);
+	gl.bindVertexArray(drawnAt(gl, g, i));
 	gl.uniform4f(u("uAt"), st.x, st.y, st.z, st.yaw);
-	gl.uniform1f(u("uH"), body.H);
-	gl.uniform2f(u("uRaised"), man.raised[0], man.raised[1]);
 	gl.uniform1i(u("uMode"), pass.mode);
 	if (pass.mode === 1) {
 		gl.uniform2f(u("uPx"), 2 / W, 2 / H);

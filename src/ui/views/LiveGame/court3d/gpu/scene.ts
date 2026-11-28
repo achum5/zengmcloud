@@ -48,6 +48,7 @@ import {
 	type MenGl,
 	MEN_ROWS,
 	menRows,
+	menSkin,
 	menUnknown,
 	readyMan,
 } from "./men.ts";
@@ -499,6 +500,7 @@ export const drawGpu = (
 		// (The bowl and the floor have had the card's texture units.)
 		menUnknown(g, true);
 		menRows(gl, g, men);
+		menSkin(gl, g, men);
 		menCamera(gl, g, m);
 		// What is laid over the floor under them - their reflections in it,
 		// soft pools of shadow round their feet, the shadows they cast - each
