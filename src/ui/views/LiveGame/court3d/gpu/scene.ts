@@ -176,12 +176,13 @@ type Scene = {
 	// The time the last frame spent on each part of it (ms - for the frame
 	// rate meter: see meter.ts).
 	ms: Record<string, number>;
-	// How long the card took to finish a frame after it was all handed over
-	// (ms), now and then - for the meter: how much of a frame goes on the
-	// card itself, which the page's own time says nothing about.
-	cardMs?: number;
+	// How long the card took over each part of a frame once it was handed
+	// over (ms - one pixel read back after each: only once the card has
+	// drawn all of it), now and then - for the meter: how much of a frame
+	// goes on the card itself, which the page's own time says nothing about.
+	card?: Record<string, number>;
 	cardAt: number;
-	// (This frame's wait for it, if it was waited for: not the page's own
+	// (This frame's waits for it, if it was waited for: not the page's own
 	// time.)
 	waited: number;
 	lost: boolean;
@@ -334,16 +335,36 @@ export const drawGpu = (
 	sc.ms = ms;
 	sc.waited = 0;
 	let from = performance.now();
+	// Now and then (see cardMs), the card waited for after each part as well:
+	// how long it took over each, the page's own time apart.
+	let probe = false;
+	const card: Record<string, number> = {};
+	const waitCard = () => {
+		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, ONE_PIXEL);
+		const done = performance.now();
+		sc.waited += done - from;
+		return done;
+	};
 	const lap = (part: string) => {
 		const now = performance.now();
 		ms[part] = (ms[part] ?? 0) + now - from;
 		from = now;
+		if (probe) {
+			const done = waitCard();
+			card[part] = (card[part] ?? 0) + done - now;
+			from = done;
+		}
 	};
 	if (f.black) {
 		gl.viewport(0, 0, W, H);
 		gl.clearColor(0.027, 0.024, 0.039, 1);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		return true;
+	}
+	if (from - sc.cardAt > CARD_EVERY) {
+		// (The frame before finished first.)
+		probe = true;
+		from = waitCard();
 	}
 	const m = bowlMatrix(cam);
 	if (sc.floor === undefined) {
@@ -604,11 +625,9 @@ export const drawGpu = (
 	}
 	gl.bindVertexArray(null);
 	lap("items");
-	if (from - sc.cardAt > CARD_EVERY) {
-		// (One pixel read back: only once the card has drawn all of it.)
-		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, ONE_PIXEL);
-		sc.cardAt = performance.now();
-		sc.cardMs = sc.waited = sc.cardAt - from;
+	if (probe) {
+		sc.cardAt = from;
+		sc.card = card;
 	}
 	return true;
 };

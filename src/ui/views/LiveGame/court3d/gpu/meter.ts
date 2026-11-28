@@ -42,8 +42,9 @@ export const meterTick = (
 		fps: number;
 		w: number;
 		h: number;
-		// The card's own time on a frame, now and then (see GpuScene cardMs).
-		card?: number;
+		// The card's own time on each part of a frame, now and then (see
+		// GpuScene card).
+		card?: Record<string, number>;
 	},
 ) => {
 	m.at.push(now);
@@ -93,9 +94,20 @@ export const meterTick = (
 		// (Between frames, off the page's own time: the card, the browser.)
 		`between ${Math.max(0, 1000 / rate - mean).toFixed(1)}`,
 		...each,
-		...(card === undefined ? [] : [`card ${card.toFixed(1)}`]),
+		...(card === undefined ? [] : [cardText(card)]),
 		`worst ${Math.round(m.work[worst]!)}${wp ? ` (${wp[0]} ${Math.round(wp[1])})` : ""}`,
 		`${w}×${h}`,
 		...(mem ? [`${Math.round(mem.usedJSHeapSize / 2 ** 20)} MB`] : []),
 	].join(" · ");
+};
+
+// The card's time on a frame, and on the parts that took it longest.
+const cardText = (card: Record<string, number>) => {
+	const all = Object.values(card).reduce((a, b) => a + b, 0);
+	const most = Object.entries(card)
+		.filter(([, ms]) => ms >= 0.5)
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 3)
+		.map(([k, ms]) => `${k} ${ms.toFixed(1)}`);
+	return `card ${all.toFixed(1)}${most.length > 0 ? ` (${most.join(", ")})` : ""}`;
 };
