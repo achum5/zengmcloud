@@ -618,11 +618,8 @@ const fastLegs = (
 	};
 };
 
-// The building's pictures, painted once a game.
-export type ArenaPaint = {
-	// The home floor, from the 2D court's drawing (see courtTexture) - until it
-	// is ready, plain wood.
-	court?: CourtPicture;
+// The stands' pictures: sat, on their feet, doing the wave.
+export type StandsPaint = {
 	stands: HTMLCanvasElement;
 	standsUp: HTMLCanvasElement;
 	standsWave: HTMLCanvasElement;
@@ -633,6 +630,16 @@ export type ArenaPaint = {
 	endStandsSparse?: HTMLCanvasElement;
 	// Behind each basket (the same pictures at both ends).
 	endStands?: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
+};
+
+// The building's pictures, painted once a game.
+export type ArenaPaint = {
+	// The home floor, from the 2D court's drawing (see courtTexture) - until it
+	// is ready, plain wood.
+	court?: CourtPicture;
+	// The stands' pictures - painted the first time they are drawn: never,
+	// with the bowl built (below) drawn in their place.
+	crowd: () => StandsPaint;
 	// The seats on the floor behind each basket and in the far corners (see
 	// paintCourtside).
 	courtside?: Courtside;
@@ -2445,18 +2452,19 @@ export const drawFrame = (f: Frame) => {
 		// ribbon, the floor round the court, the court, the table, the benches.
 		// Fewer in their seats: the half-empty stands, the full ones over them
 		// as faint as the seats are empty.
+		const stands = arena.crowd();
 		const full = seatsAt(tl, t);
-		const thin = full < 0.999 && arena.standsSparse !== undefined;
+		const thin = full < 0.999 && stands.standsSparse !== undefined;
 		const fill = thin ? Math.max(0, (full - 0.55) / 0.45) : 1;
 		if (thin) {
-			drawTexturedPlane(ctx, cam, STANDS, arena.standsSparse!, 24, 6);
+			drawTexturedPlane(ctx, cam, STANDS, stands.standsSparse!, 24, 6);
 		}
 		if (fill > 0.01) {
 			drawTexturedPlane(
 				ctx,
 				cam,
 				STANDS,
-				f.crowd.clap && arena.standsClap ? arena.standsClap : arena.stands,
+				f.crowd.clap && stands.standsClap ? stands.standsClap : stands.stands,
 				24,
 				6,
 				fill,
@@ -2467,7 +2475,7 @@ export const drawFrame = (f: Frame) => {
 				ctx,
 				cam,
 				STANDS,
-				f.crowd.wave ? arena.standsWave : arena.standsUp,
+				f.crowd.wave ? stands.standsWave : stands.standsUp,
 				24,
 				6,
 				f.crowd.up,
@@ -2501,11 +2509,11 @@ export const drawFrame = (f: Frame) => {
 				NEAR_STANDS,
 				f.crowd.up > 0.5
 					? f.crowd.wave
-						? arena.standsWave
-						: arena.standsUp
-					: f.crowd.clap && arena.standsClap
-						? arena.standsClap
-						: arena.stands,
+						? stands.standsWave
+						: stands.standsUp
+					: f.crowd.clap && stands.standsClap
+						? stands.standsClap
+						: stands.stands,
 				24,
 				6,
 			);
@@ -2524,7 +2532,7 @@ export const drawFrame = (f: Frame) => {
 		);
 		// Round the ends: the stands, and the boards along their front.
 		for (const side of [0, 1] as const) {
-			if (arena.endStands) {
+			if (stands.endStands) {
 				// (This end's own, if it is up to more than the building is.)
 				const own = f.crowd.ends?.[side];
 				const c = own && own.up > f.crowd.up ? own : f.crowd;
@@ -2534,12 +2542,12 @@ export const drawFrame = (f: Frame) => {
 					cam,
 					END_STANDS[side],
 					[
-						...(thin && arena.endStandsSparse
-							? [{ img: arena.endStandsSparse, alpha: 1 }]
+						...(thin && stands.endStandsSparse
+							? [{ img: stands.endStandsSparse, alpha: 1 }]
 							: []),
-						{ img: arena.endStands[0], alpha: fill > 0.01 ? fill : 0 },
+						{ img: stands.endStands[0], alpha: fill > 0.01 ? fill : 0 },
 						{
-							img: arena.endStands[c.wave ? 2 : 1],
+							img: stands.endStands[c.wave ? 2 : 1],
 							alpha: c.up > 0.01 ? c.up : 0,
 						},
 					],

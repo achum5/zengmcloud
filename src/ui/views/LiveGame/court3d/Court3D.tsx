@@ -210,6 +210,7 @@ import {
 	momentAt,
 	replayAim,
 	replayRig,
+	type StandsPaint,
 } from "./scene.ts";
 
 // THE 3D COURT: the game as a broadcast - the home team's own floor, the
@@ -290,6 +291,23 @@ const lastNameOf = (name: string | undefined): string => {
 	const i = n.indexOf(" ");
 	return i < 0 ? n : n.slice(i + 1);
 };
+
+// The building's pictures together. (Put together here, not in a closure
+// of Court3D's own: every function made in one of its renders shares what
+// any of them uses, and React keeps some of them - an effect's clean-up, a
+// memo's getter - for many renders after, so the first night's pictures,
+// before the crowd's faces were in, were kept all game beside the new ones:
+// about 37 MB more on a phone.)
+const usePainted = <P extends object, R, J, B>(
+	paint: P,
+	rafters: R,
+	jumbotron: J,
+	bowl: B,
+) =>
+	useMemo(
+		() => ({ ...paint, rafters, jumbotron, bowl }),
+		[paint, rafters, jumbotron, bowl],
+	);
 
 // How many of the page's events the picture has staged: the rest still to
 // come in (see parts.ts), the page held at the last of them meanwhile.
@@ -754,21 +772,26 @@ const Court3D = ({
 			end: 0 | undefined,
 			clap = false,
 		) => paintStands(h, a, seed, up, seats, end, fans, spec, playoffs, clap);
+		// (The stands painted only once they are drawn: on the graphics card,
+		// never - the bowl is drawn in their place. Nine pictures, 19 MB on a
+		// phone.)
+		let crowdPaint: StandsPaint | undefined;
 		return {
 			courtside: courtsideFor(h, a, spec, fans),
 			scorersTable: scorersTableFor(h, fans),
 			stanchion: paintStanchionPanel(h, h?.colors?.[0] ?? "#8c1d40"),
-			stands: stands(0, crowd, undefined),
-			standsUp: stands(1, crowd, undefined),
-			standsWave: stands(2, crowd, undefined),
-			standsClap: stands(0, crowd, undefined, true),
-			standsSparse: stands(0, sparse, undefined),
-			endStandsSparse: stands(0, sparse, 0),
-			endStands: [0, 1, 2].map((up) => stands(up as 0 | 1 | 2, crowd, 0)) as [
-				HTMLCanvasElement,
-				HTMLCanvasElement,
-				HTMLCanvasElement,
-			],
+			crowd: () =>
+				(crowdPaint ??= {
+					stands: stands(0, crowd, undefined),
+					standsUp: stands(1, crowd, undefined),
+					standsWave: stands(2, crowd, undefined),
+					standsClap: stands(0, crowd, undefined, true),
+					standsSparse: stands(0, sparse, undefined),
+					endStandsSparse: stands(0, sparse, 0),
+					endStands: [0, 1, 2].map((up) =>
+						stands(up as 0 | 1 | 2, crowd, 0),
+					) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
+				}),
 			boards: paintBoards(h, a, ads),
 			stanchionAds: ads.map((ad) => paintStanchionAd(ad)),
 			tableTop: table.top,
@@ -916,10 +939,7 @@ const Court3D = ({
 	);
 	// (The finals trophy is on the floor, at center court, on every court -
 	// see LiveCourt.)
-	const painted = useMemo(
-		() => ({ ...paint, rafters, jumbotron, bowl }),
-		[paint, rafters, jumbotron, bowl],
-	);
+	const painted = usePainted(paint, rafters, jumbotron, bowl);
 	const paintRef = useRef(painted);
 	paintRef.current = painted;
 
@@ -2079,13 +2099,7 @@ const Court3D = ({
 				period: p.period,
 				arena: {
 					court: courtPicture.current,
-					stands: pt.stands,
-					standsUp: pt.standsUp,
-					standsWave: pt.standsWave,
-					standsClap: pt.standsClap,
-					standsSparse: pt.standsSparse,
-					endStandsSparse: pt.endStandsSparse,
-					endStands: pt.endStands,
+					crowd: pt.crowd,
 					courtside: pt.courtside,
 					table: pt.scorersTable,
 					stanchion: pt.stanchion,

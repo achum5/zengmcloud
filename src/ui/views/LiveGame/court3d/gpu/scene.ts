@@ -326,63 +326,17 @@ export const drawGpu = (
 		ms[part] = (ms[part] ?? 0) + now - from;
 		from = now;
 	};
-	const look = f.black ? undefined : bowlLookOf(f);
-	const bowl =
-		look !== undefined && paintBowlOn(gl, cam, f.arena.bowl!.data, look, W, H);
-	if (!bowl) {
+	if (f.black) {
 		gl.viewport(0, 0, W, H);
 		gl.clearColor(0.027, 0.024, 0.039, 1);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-	}
-	if (f.black) {
 		return true;
 	}
 	const m = bowlMatrix(cam);
-	gl.disable(gl.BLEND);
-	gl.disable(gl.CULL_FACE);
-	gl.enable(gl.DEPTH_TEST);
-	gl.depthMask(true);
-
-	// The floor round the court and the court: over the bowl's own floor,
-	// whatever it is (as the page's drawing lays them over it).
-	gl.depthFunc(gl.ALWAYS);
-	gl.useProgram(sc.flat.p);
-	gl.uniformMatrix4fv(sc.flat.u("uM"), false, m);
-	gl.uniform1i(sc.flat.u("uPic"), 0);
-	gl.bindVertexArray(sc.flatVao);
-	const E = FLOOR_EDGE;
-	flatQuad(sc, E.x0, E.y0, E.x1, E.y1, rgb(f.apron ?? f.padColor, "#3a2a1a"));
-	const court = f.arena.court;
-	if (court) {
-		courtPic(sc, court.canvas);
-		flatQuad(sc, court.x, court.y, court.x + court.w, court.y + court.h);
-	}
-	gl.depthFunc(gl.LEQUAL);
-	// (All of that behind everything on it, as the page lays it down first:
-	// what is in front of what is only among the men, the baskets and the
-	// table they stand in front of - not, say, the floor in front of the
-	// basket's stand, nearer than its rim, hiding the foot of it.)
-	gl.clear(gl.DEPTH_BUFFER_BIT);
-	lap("bowl");
-	// Round it: the table, the seats on the floor, the benches, the boards'
-	// shine (as the page's drawing has them - see scene.ts dressFloor); the
-	// court's lines; the lights' glints in the floor.
 	if (sc.floor === undefined) {
 		sc.floor = floorOnto(gl) ?? null;
 	}
 	const fl = sc.floor;
-	if (fl && !f.venue) {
-		const painter = floorPainter(gl, fl, cam);
-		dressFloor(f, painter, boardAt(f.tl, f.moment.t), () => {});
-		floorDraw(gl, fl, m);
-		if (f.lineColor) {
-			linesDraw(gl, fl, m, f.lineColor);
-		}
-		drawGlints(painter, cam);
-		floorDraw(gl, fl, m);
-	}
-	lap("floor");
-
 	// The men: each one worked out (the page's own work), then drawn,
 	// nearest first.
 	sc.men ??= menOnto(gl);
@@ -437,6 +391,75 @@ export const drawGpu = (
 		men.length = Math.min(men.length, MEN_MAX);
 	}
 	lap("men");
+	// What the page draws, all on its sheet, sent to the card once (see
+	// floor.ts PageSheet): the baskets, and the ball where nobody has it (in
+	// a man's hands, his: see drawHands); the heads wanting drawing again;
+	// over all of it, the board over center court, the name tag, the lights
+	// down for the lineups, the confetti... (Painted and sent before anything
+	// is drawn this frame: sent after the drawing had begun, it took a phone
+	// about 2.5 ms however little of it there was - waiting, it seems, on
+	// what had been drawn so far.)
+	const sheet = sc.sheet;
+	const screen = boardAt(f.tl, f.moment.t);
+	sheetBegin(sheet);
+	const hoops = fl ? itemsPut(sheet, cam, hoopsAndBalls(f, screen)) : [];
+	const hd = headsPut(sc, f, men);
+	const over = fl ? itemsPut(sheet, cam, overlays(f, screen)) : [];
+	sheetPaint(sheet);
+	lap("paint");
+	sheetSend(gl, sheet);
+	headsKept(sc, hd);
+	// (Which way it went - see floor.ts sheetWay.)
+	lap(["send", "sendC", "sendP"][sheetWay(sheet)]!);
+	const look = bowlLookOf(f);
+	const bowl =
+		look !== undefined && paintBowlOn(gl, cam, f.arena.bowl!.data, look, W, H);
+	if (!bowl) {
+		gl.viewport(0, 0, W, H);
+		gl.clearColor(0.027, 0.024, 0.039, 1);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	}
+	gl.disable(gl.BLEND);
+	gl.disable(gl.CULL_FACE);
+	gl.enable(gl.DEPTH_TEST);
+	gl.depthMask(true);
+
+	// The floor round the court and the court: over the bowl's own floor,
+	// whatever it is (as the page's drawing lays them over it).
+	gl.depthFunc(gl.ALWAYS);
+	gl.useProgram(sc.flat.p);
+	gl.uniformMatrix4fv(sc.flat.u("uM"), false, m);
+	gl.uniform1i(sc.flat.u("uPic"), 0);
+	gl.bindVertexArray(sc.flatVao);
+	const E = FLOOR_EDGE;
+	flatQuad(sc, E.x0, E.y0, E.x1, E.y1, rgb(f.apron ?? f.padColor, "#3a2a1a"));
+	const court = f.arena.court;
+	if (court) {
+		courtPic(sc, court.canvas);
+		flatQuad(sc, court.x, court.y, court.x + court.w, court.y + court.h);
+	}
+	gl.depthFunc(gl.LEQUAL);
+	// (All of that behind everything on it, as the page lays it down first:
+	// what is in front of what is only among the men, the baskets and the
+	// table they stand in front of - not, say, the floor in front of the
+	// basket's stand, nearer than its rim, hiding the foot of it.)
+	gl.clear(gl.DEPTH_BUFFER_BIT);
+	lap("bowl");
+	// Round it: the table, the seats on the floor, the benches, the boards'
+	// shine (as the page's drawing has them - see scene.ts dressFloor); the
+	// court's lines; the lights' glints in the floor.
+	if (fl && !f.venue) {
+		const painter = floorPainter(gl, fl, cam);
+		dressFloor(f, painter, boardAt(f.tl, f.moment.t), () => {});
+		floorDraw(gl, fl, m);
+		if (f.lineColor) {
+			linesDraw(gl, fl, m, f.lineColor);
+		}
+		drawGlints(painter, cam);
+		floorDraw(gl, fl, m);
+	}
+	lap("floor");
+
 	if (sc.men) {
 		const g = sc.men;
 		// (The bowl and the floor have had the card's texture units.)
@@ -559,23 +582,6 @@ export const drawGpu = (
 		gl.disable(gl.BLEND);
 		lap("bodies");
 	}
-	// What the page draws, all on its sheet, sent to the card once (see
-	// floor.ts PageSheet): the baskets, and the ball where nobody has it (in
-	// a man's hands, his: see drawHands); the heads wanting drawing again;
-	// over all of it, the board over center court, the name tag, the lights
-	// down for the lineups, the confetti...
-	const sheet = sc.sheet;
-	const screen = boardAt(f.tl, f.moment.t);
-	sheetBegin(sheet);
-	const hoops = fl ? itemsPut(sheet, cam, hoopsAndBalls(f, screen)) : [];
-	const hd = headsPut(sc, f, men);
-	const over = fl ? itemsPut(sheet, cam, overlays(f, screen)) : [];
-	sheetPaint(sheet);
-	lap("paint");
-	sheetSend(gl, sheet);
-	headsKept(sc, hd);
-	// (Which way it went - see floor.ts sheetWay.)
-	lap(["send", "sendC", "sendP"][sheetWay(sheet)]!);
 	if (fl) {
 		itemsDraw(gl, fl, m, cam, sheet, hoops);
 	}

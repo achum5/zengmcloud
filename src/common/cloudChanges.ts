@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 682,
+		date: "2026-11-28",
+		text: "3D game: uses less of your phone's memory. An old copy of the crowd and the ad boards was being kept all game, and the GPU drawing (in progress) no longer paints crowd pictures it never shows. The GPU drawing also sends its pictures to the graphics card before each frame is drawn instead of partway through.",
+	},
+	{
 		n: 681,
 		date: "2026-11-28",
 		text: "3D game, GPU drawing (in progress): less is sent to the graphics card each frame, and the page now tries two ways of sending it on your device and keeps the faster one.",
