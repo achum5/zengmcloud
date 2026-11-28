@@ -217,9 +217,13 @@ export const drawHeadAt = (
 	st: PlayerState,
 	body: Body,
 	look: Look,
-	// Where his head is on his body (see headOf), if already known.
-	head = headOf(st, body),
+	// Where his head is on his body (see headOf), and his pose, if already
+	// known.
+	head?: V3,
+	pose?: PoseNow,
 ) => {
+	const q = pose ?? poseOf(st);
+	head ??= headOf(st, body, q);
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;
@@ -230,7 +234,6 @@ export const drawHeadAt = (
 		(Math.cos(st.yaw + turned) * toCamX + Math.sin(st.yaw + turned) * toCamY) /
 		toCamL;
 	const headC = at(head);
-	const q = poseOf(st);
 	drawHead(
 		ctx,
 		headC,
@@ -248,30 +251,39 @@ export const drawHeadAt = (
 	);
 };
 // What his head as drawHeadAt draws it comes out as, but for where it is on
-// the picture: how big and which way round (the picture's px across his head
-// each way from its middle), how far round to the camera he is, turned on his
-// neck, his mouth, his head bowed, his grin - each to what moves what is
-// drawn a quarter of a px. The same, and it is the same picture of his head
-// moved over (see gpu/scene.ts heads).
+// the picture and just how big: how big to within a step (HEAD_SIZES), which
+// way round (the picture's px across his head each way from its middle), how
+// far round to the camera he is, turned on his neck, his mouth, his head
+// bowed, his grin - each to what moves what is drawn a quarter of a px, at
+// that step's size. The same, and it is the same picture of his head moved
+// over and stretched to his size (`r`, his head's radius on the picture, px
+// - see gpu/scene.ts heads).
+export const HEAD_SIZES = 24;
 export const headKey = (
 	cam: Camera,
 	st: PlayerState,
 	body: Body,
-	head = headOf(st, body),
-): number[] => {
+	q: PoseNow = poseOf(st),
+	head = headOf(st, body, q),
+): { key: number[]; r: number } => {
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const c = at(head);
 	const R = body.headR;
-	// (Each to a quarter of a px, at his head's size on the picture.)
-	const px = 4 * R * c.k;
-	const out: number[] = [];
+	const r = R * c.k;
+	const size = Math.round(Math.log2(Math.max(r, 1e-3)) * HEAD_SIZES);
+	// (Each to a quarter of a px, at that size.)
+	const px = 4 * 2 ** (size / HEAD_SIZES);
+	const out: number[] = [size];
 	for (const d of [
 		{ f: R, s: 0, u: 0 },
 		{ f: 0, s: R, u: 0 },
 		{ f: 0, s: 0, u: R },
 	]) {
-		const q = at({ f: head.f + d.f, s: head.s + d.s, u: head.u + d.u });
-		out.push(Math.round((q.x - c.x) * 4), Math.round((q.y - c.y) * 4));
+		const p = at({ f: head.f + d.f, s: head.s + d.s, u: head.u + d.u });
+		out.push(
+			Math.round(((p.x - c.x) / r) * px * 0.5),
+			Math.round(((p.y - c.y) / r) * px * 0.5),
+		);
 	}
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;
@@ -280,7 +292,6 @@ export const headKey = (
 	const front =
 		(Math.cos(st.yaw + turned) * toCamX + Math.sin(st.yaw + turned) * toCamY) /
 		toCamL;
-	const q = poseOf(st);
 	out.push(
 		Math.round(front * px),
 		Math.round(turned * px),
@@ -289,7 +300,7 @@ export const headKey = (
 		Math.round(bowOf(q, body) * px),
 		Math.round(q.grin * px * 0.4),
 	);
-	return out;
+	return { key: out, r };
 };
 // How far his head is bowed (to 1) or tipped back (to -1) for his face: as
 // far as his neck has it - and, bowing it, as far over as all of him is
@@ -315,8 +326,13 @@ const BOW_DROP = 0.3;
 const TIP_SQUASH = 0.16;
 const TIP_LIFT = 0.12;
 // Where his head is on his body, in his pose.
-export const headOf = (st: PlayerState, body: Body): V3 =>
-	skeleton(body, poseOf(st)).head;
+export const headOf = (
+	st: PlayerState,
+	body: Body,
+	q: PoseNow = poseOf(st),
+): V3 => skeleton(body, q).head;
+// (His pose, as poseOf has it.)
+type PoseNow = ReturnType<typeof poseOf>;
 
 // How far round to the camera he is (1 facing it, -1 away) when his head
 // shows in profile, and when his face does instead. (Drawn in sixteen turns,

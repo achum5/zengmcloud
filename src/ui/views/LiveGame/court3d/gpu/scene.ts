@@ -4,7 +4,7 @@ import { bowlMatrix } from "../bowlData.ts";
 import { paintBowlOn } from "../bowlGl.ts";
 import { drawHeadAt, headKey, headOf } from "../figure.ts";
 import { bodyPoint, type PlayerState } from "../evaluate.ts";
-import type { Body } from "../poses.ts";
+import type { Body, V3 } from "../poses.ts";
 import { atTable } from "../crew.ts";
 import {
 	benchStates,
@@ -26,7 +26,16 @@ import {
 	floorPainter,
 	floorPools,
 	itemsDraw,
+	itemsPut,
 	linesDraw,
+	type PageSheet,
+	type Put,
+	sheetBegin,
+	sheetCopy,
+	sheetOnto,
+	sheetPaint,
+	sheetPut,
+	sheetSend,
 } from "./floor.ts";
 import { attrib, buffer, compile, type Prog, rgb } from "./gl.ts";
 import {
@@ -154,9 +163,9 @@ type Scene = {
 	floor?: FloorGl | null;
 	head: Prog;
 	headVao: WebGLVertexArrayObject;
-	// Where a man's head is drawn before it goes on the card, and each
-	// man's head on it (see heads), by pid.
-	heads: CanvasRenderingContext2D;
+	// What the page draws for the picture each frame (see floor.ts
+	// PageSheet), and each man's head on the card (see headsPut), by pid.
+	sheet: PageSheet;
 	headPics: Map<number, HeadPic>;
 	// Frames drawn.
 	frame: number;
@@ -187,11 +196,7 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 	}
 	const flat = compile(gl, FLAT_VERT, FLAT_FRAG);
 	const head = compile(gl, HEAD_VERT, HEAD_FRAG);
-	// (Kept off the card by the browser: see floor.ts sheetOnto.)
-	const heads = document
-		.createElement("canvas")
-		.getContext("2d", { willReadFrequently: true });
-	if (!flat || !head || !heads) {
+	if (!flat || !head) {
 		return undefined;
 	}
 	const flatVao = gl.createVertexArray();
@@ -224,7 +229,7 @@ export const gpuScene = (canvas: HTMLCanvasElement): GpuScene | undefined => {
 		court,
 		head,
 		headVao,
-		heads,
+		sheet: sheetOnto(gl),
 		headPics: new Map(),
 		frame: 0,
 		ready: [],
@@ -553,21 +558,31 @@ export const drawGpu = (
 		gl.disable(gl.BLEND);
 		lap("bodies");
 	}
-	// The baskets, and the ball where nobody has it (in a man's hands, his:
-	// see drawHands) - as the page draws them.
-	if (fl) {
-		itemsDraw(gl, fl, m, cam, hoopsAndBalls(f, boardAt(f.tl, f.moment.t)), 0);
-	}
-	lap("hoops");
-	heads(sc, f, men, m, W, H);
-	lap("heads");
-	// Over all of it: the board over center court, the name tag, the lights
+	// What the page draws, all on its sheet, sent to the card once (see
+	// floor.ts PageSheet): the baskets, and the ball where nobody has it (in
+	// a man's hands, his: see drawHands); the heads wanting drawing again;
+	// over all of it, the board over center court, the name tag, the lights
 	// down for the lineups, the confetti...
+	const sheet = sc.sheet;
+	const screen = boardAt(f.tl, f.moment.t);
+	sheetBegin(sheet);
+	const hoops = fl ? itemsPut(sheet, cam, hoopsAndBalls(f, screen)) : [];
+	const hd = headsPut(sc, f, men);
+	const over = fl ? itemsPut(sheet, cam, overlays(f, screen)) : [];
+	sheetPaint(sheet);
+	lap("paint");
+	sheetSend(gl, sheet);
+	headsKept(sc, hd);
+	lap("send");
 	if (fl) {
-		itemsDraw(gl, fl, m, cam, overlays(f, boardAt(f.tl, f.moment.t)), 1);
+		itemsDraw(gl, fl, m, cam, sheet, hoops);
+	}
+	headsDraw(sc, f, hd.cells, m, W, H);
+	if (fl) {
+		itemsDraw(gl, fl, m, cam, sheet, over);
 	}
 	gl.bindVertexArray(null);
-	lap("over");
+	lap("items");
 	return true;
 };
 
@@ -742,108 +757,156 @@ type HeadPic = {
 	tex: WebGLTexture;
 	key: number[];
 	look: ManReady["look"];
-	// Its corner from the middle of his face (px), and its size.
+	// Its corner from the middle of his face (px), its size, and his head's
+	// radius on it: stretched to his size now (see figure.ts headKey).
 	dx: number;
 	dy: number;
 	w: number;
 	h: number;
-	// The frame it was last wanted.
+	r: number;
+	// The frame it was last wanted, and drawn.
 	seen: number;
+	drawn: number;
 };
 // (One not wanted for so many frames is let go.)
 const HEAD_KEPT = 120;
-const sameKey = (a: readonly number[], b: readonly number[]) =>
-	a.length === b.length && a.every((v, i) => v === b[i]);
-const heads = (
-	sc: Scene,
-	f: Frame,
-	men: readonly ManReady[],
-	m: Float32Array,
-	W: number,
-	H: number,
-) => {
-	const { gl } = sc;
-	const ctx = sc.heads;
+// (So many drawn again in a frame, at most, of those only a little off their
+// pictures - the one kept waiting longest first, the rest a frame or two
+// later. One with no picture yet, or far off it - a cut to another camera -
+// drawn whatever: further off than this, a quarter of a px each.)
+const HEAD_REDRAWS = 5;
+const HEAD_FAR = 4;
+const keyOff = (a: readonly number[], b: readonly number[]) => {
+	if (a.length !== b.length) {
+		return Infinity;
+	}
+	// (Its size a step at a time - see HEAD_SIZES - each a few %.)
+	let off = Math.abs(a[0]! - b[0]!) * 4;
+	for (let i = 1; i < a.length; i++) {
+		off = Math.max(off, Math.abs(a[i]! - b[i]!));
+	}
+	return off;
+};
+// Which heads want drawing again (see keyOff), on the page's sheet; after it
+// is on the card, each copied into his own picture (headsKept); then all of
+// them drawn (headsDraw).
+type HeadCell = {
+	man: ManReady;
+	head: V3;
+	mid: { x: number; y: number; z: number };
+	x: number;
+	y: number;
+	r: number;
+	key: number[];
+	pic: HeadPic | undefined;
+	off: number;
+};
+type HeadsPut = {
+	cells: HeadCell[];
+	redrawn: { cell: HeadCell; put: Put }[];
+};
+const headsPut = (sc: Scene, f: Frame, men: readonly ManReady[]): HeadsPut => {
 	const { cam } = f;
 	sc.frame += 1;
-	gl.activeTexture(gl.TEXTURE0);
-	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-	const cells = men.map((man) => {
-		const { st, body, look } = man;
+	const cells = men.map((man): HeadCell => {
+		const { st, body } = man;
+		const { q } = man.b;
 		// (Where today's drawing has his head - see figure.ts headOf - and
 		// the middle of his face on the picture, as the sculptor has it.)
-		const head = headOf(st, body);
+		const head = headOf(st, body, q);
 		const mid = bodyPoint(st, head);
+		const { key, r } = headKey(cam, st, body, q, head);
 		const p = project(cam, mid);
-		const r = body.headR * p.k;
-		const x = p.x;
-		const y = p.y - r * FACE_LIFT;
-		const key = headKey(cam, st, body, head);
-		let pic = sc.headPics.get(st.pid);
-		if (!pic || pic.look !== look || !sameKey(pic.key, key)) {
-			const x0 = Math.floor(x - r * 1.9) - 2;
-			const y0 = Math.floor(y - r * 2) - 2;
-			const w = Math.ceil(x + r * 1.9) + 2 - x0;
-			const h = Math.ceil(y + r * 1.6) + 2 - y0;
-			const cv = ctx.canvas;
-			if (cv.width < w || cv.height < h) {
-				cv.width = Math.max(cv.width, Math.ceil(w / 32) * 32);
-				cv.height = Math.max(cv.height, Math.ceil(h / 32) * 32);
-			}
-			ctx.setTransform(1, 0, 0, 1, 0, 0);
-			ctx.clearRect(0, 0, w, h);
-			ctx.setTransform(1, 0, 0, 1, -x0, -y0);
-			drawHeadAt(ctx, cam, st, body, look, head);
-			pic ??= {
-				tex: gl.createTexture(),
-				key,
-				look,
-				dx: 0,
-				dy: 0,
-				w: 0,
-				h: 0,
-				seen: 0,
-			};
-			pic.key = key;
-			pic.look = look;
-			pic.dx = x0 - x;
-			pic.dy = y0 - y;
-			pic.w = w;
-			pic.h = h;
-			gl.bindTexture(gl.TEXTURE_2D, pic.tex);
-			gl.texImage2D(
-				gl.TEXTURE_2D,
-				0,
-				gl.RGBA,
-				w,
-				h,
-				0,
-				gl.RGBA,
-				gl.UNSIGNED_BYTE,
-				cv,
-			);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-			sc.headPics.set(st.pid, pic);
-		}
-		pic.seen = sc.frame;
-		return { man, mid, x, y, r, pic };
+		const pic = sc.headPics.get(st.pid);
+		const off = pic && pic.look === man.look ? keyOff(pic.key, key) : Infinity;
+		return { man, head, mid, x: p.x, y: p.y - r * FACE_LIFT, r, key, pic, off };
 	});
-	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+	const due = cells
+		.filter((c) => c.off > 0)
+		.sort(
+			(a, b) =>
+				Number(b.off > HEAD_FAR) - Number(a.off > HEAD_FAR) ||
+				(a.pic?.drawn ?? 0) - (b.pic?.drawn ?? 0),
+		);
+	const redrawn: HeadsPut["redrawn"] = [];
+	for (const [n, c] of due.entries()) {
+		if (n >= HEAD_REDRAWS && c.off <= HEAD_FAR) {
+			break;
+		}
+		const { st, body, look } = c.man;
+		const { x, y, r } = c;
+		const x0 = Math.floor(x - r * 1.9) - 2;
+		const y0 = Math.floor(y - r * 2) - 2;
+		const w = Math.ceil(x + r * 1.9) + 2 - x0;
+		const h = Math.ceil(y + r * 1.6) + 2 - y0;
+		const q = c.man.b.q;
+		const put = sheetPut(sc.sheet, x0, y0, w, h, (ctx) =>
+			drawHeadAt(ctx, cam, st, body, look, c.head, q),
+		);
+		if (put) {
+			redrawn.push({ cell: c, put });
+		}
+	}
+	for (const c of cells) {
+		if (c.pic) {
+			c.pic.seen = sc.frame;
+		}
+	}
+	return { cells, redrawn };
+};
+const headsKept = (sc: Scene, hd: HeadsPut) => {
+	const { gl } = sc;
+	const into = hd.redrawn.map(({ cell: c, put }) => {
+		const made = !!c.pic && c.pic.w === put.w && c.pic.h === put.h;
+		const pic = c.pic ?? {
+			tex: gl.createTexture(),
+			key: c.key,
+			look: c.man.look,
+			dx: 0,
+			dy: 0,
+			w: 0,
+			h: 0,
+			r: 1,
+			seen: sc.frame,
+			drawn: 0,
+		};
+		pic.key = c.key;
+		pic.look = c.man.look;
+		pic.dx = put.x0 - c.x;
+		pic.dy = put.y0 - c.y;
+		pic.w = put.w;
+		pic.h = put.h;
+		pic.r = c.r;
+		pic.drawn = sc.frame;
+		sc.headPics.set(c.man.st.pid, pic);
+		c.pic = pic;
+		return { put, tex: pic.tex, made, filter: gl.LINEAR };
+	});
+	sheetCopy(gl, sc.sheet, into);
 	for (const [pid, pic] of sc.headPics) {
 		if (sc.frame - pic.seen > HEAD_KEPT) {
 			gl.deleteTexture(pic.tex);
 			sc.headPics.delete(pid);
 		}
 	}
+};
+const headsDraw = (
+	sc: Scene,
+	f: Frame,
+	cells: readonly HeadCell[],
+	m: Float32Array,
+	W: number,
+	H: number,
+) => {
+	const { gl } = sc;
+	const { cam } = f;
 	if (cells.length === 0) {
 		return;
 	}
 	const { head } = sc;
 	gl.useProgram(head.p);
 	gl.bindVertexArray(sc.headVao);
+	gl.activeTexture(gl.TEXTURE0);
 	gl.uniform1i(head.u("uPic"), 0);
 	gl.uniform2f(head.u("uSize"), W, H);
 	gl.enable(gl.BLEND);
@@ -863,12 +926,17 @@ const heads = (
 	for (let i = cells.length - 1; i >= 0; i--) {
 		const c = cells[i]!;
 		const { mid, pic } = c;
+		if (!pic) {
+			continue;
+		}
 		const zc = clip(m, mid).z;
 		const zf = clip(m, toCam(mid, c.man.body.headR)).z;
-		const x0 = c.x + pic.dx;
-		const y0 = c.y + pic.dy;
+		// (Stretched about the middle of his face, from his size on it.)
+		const k = c.r / pic.r;
+		const x0 = c.x + pic.dx * k;
+		const y0 = c.y + pic.dy * k;
 		gl.bindTexture(gl.TEXTURE_2D, pic.tex);
-		gl.uniform4f(head.u("uBox"), x0, y0, x0 + pic.w, y0 + pic.h);
+		gl.uniform4f(head.u("uBox"), x0, y0, x0 + pic.w * k, y0 + pic.h * k);
 		gl.uniform4f(head.u("uUv"), 0, 0, 1, 1);
 		gl.uniform3f(head.u("uC"), c.x, c.y, c.r);
 		gl.uniform2f(head.u("uZ"), zc, zf);

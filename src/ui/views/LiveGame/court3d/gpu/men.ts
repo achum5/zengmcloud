@@ -16,7 +16,7 @@ import {
 } from "../meshBody.ts";
 import { MESH_PAINT, meshFaceOf, meshPaintOf } from "../meshGl.ts";
 import type { Body } from "../poses.ts";
-import { build, type Built, hemOf, meshRig } from "../sculpt.ts";
+import { build, type Built, hemOf, MESH_KEEPS, meshRig } from "../sculpt.ts";
 import { BOWL_FAR, BOWL_NEAR } from "../bowlData.ts";
 import {
 	MASS_TABLE,
@@ -574,7 +574,7 @@ export const readyMan = (
 ): ManReady => {
 	// His masses as the sprite's sculptor has them, at the picture's own
 	// pixels (his hands, later), and his mesh's rig.
-	const b = build(cam, st, body, look, 1, 0, 0, true);
+	const b = build(cam, st, body, look, 1, 0, 0, true, MESH_KEEPS);
 	const hem = hemOf(look);
 	const rig = meshRig(b, st, body, hem);
 	const { mk, foot } = meshPaintOf(rig, body);

@@ -32,6 +32,7 @@ import {
 	drawJumbotron,
 	type Jumbotron,
 	jumbotronBox,
+	jumbotronShown,
 	ribbonScore,
 } from "./jumbotron.ts";
 import type { CourtPicture } from "./courtTexture.ts";
@@ -2323,7 +2324,7 @@ export const overlays = (f: Frame, screen: BoardScreen): FrameItem[] => {
 	}
 	// The board over center court, when the picture takes it in.
 	const jumbotron = arena.jumbotron;
-	if (jumbotron && !venue) {
+	if (jumbotron && !venue && jumbotronShown(cam, jumbotron)) {
 		out.push({
 			depth: 0,
 			box: jumbotronBox(jumbotron),

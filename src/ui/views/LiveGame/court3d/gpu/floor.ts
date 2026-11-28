@@ -1,6 +1,7 @@
 import { BOWL_FAR, BOWL_NEAR } from "../bowlData.ts";
 import { depthOf, project, type Camera } from "../camera.ts";
 import { courtLineOutlines } from "../courtLines.ts";
+import type { Pt3 } from "../geometry.ts";
 import type { Painter } from "../painter.ts";
 import type { FrameItem } from "../scene.ts";
 import { attrib, buffer, compile, css, type Prog } from "./gl.ts";
@@ -73,33 +74,9 @@ export type FloorGl = {
 	pool?: WebGLTexture;
 	// The widest and tallest picture the card takes.
 	most: number;
-	// The sheets the baskets and the ball, and what goes over everything,
-	// are drawn on each frame (see itemsDraw), and them on the card.
-	sheets: [Sheet, Sheet];
 	// The court's lines: so many points of paint, then of their middles.
 	lines: { vao: WebGLVertexArrayObject; paint: number; all: number };
 };
-
-type Sheet = {
-	ctx: CanvasRenderingContext2D | null;
-	tex: WebGLTexture;
-	// The size of it on the card.
-	w: number;
-	h: number;
-};
-// (Kept off the graphics card by the browser - drawn by the page, read back
-// each frame to go on the card, it would only have to be fetched back.)
-const sheetOnto = (gl: WebGL2RenderingContext): Sheet => ({
-	ctx:
-		typeof document === "undefined"
-			? null
-			: document
-					.createElement("canvas")
-					.getContext("2d", { willReadFrequently: true }),
-	tex: gl.createTexture(),
-	w: 0,
-	h: 0,
-});
 
 export const floorOnto = (gl: WebGL2RenderingContext): FloorGl | undefined => {
 	const prog = compile(gl, VERT, FRAG);
@@ -141,7 +118,6 @@ export const floorOnto = (gl: WebGL2RenderingContext): FloorGl | undefined => {
 		pics: new WeakMap(),
 		white,
 		most: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
-		sheets: [sheetOnto(gl), sheetOnto(gl)],
 		lines: linesOnto(gl, prog),
 	};
 };
@@ -501,113 +477,139 @@ export const linesDraw = (
 	gl.bindVertexArray(null);
 };
 
-// THE BASKETS AND THE BALL WHERE NOBODY HAS IT (see scene.ts hoopsAndBalls):
-// each drawn as the page draws it, onto a sheet of them made anew each
-// frame; the sheet onto the card; each stood where it is on the picture, as
-// far off as it is put among the men - what is nearer in front of it, what
-// is further behind.
-const ITEM_GAP = 2;
+// THE PAGE'S SHEET: all the page draws for the picture each frame - the
+// baskets and the ball, what goes over everything, the heads drawn again
+// (see gpu/scene.ts heads) - on one sheet, sent to the card once. (Each
+// sheet sent on its own, on a phone, is a wait of its own.) Each laid out on
+// it first (sheetPut), then all painted on it (sheetPaint), then sent
+// (sheetSend).
+export type PageSheet = {
+	ctx: CanvasRenderingContext2D | null;
+	tex: WebGLTexture;
+	// (For copying out of it on the card: see sheetCopy.)
+	fbo: WebGLFramebuffer;
+	// The size of it on the card.
+	w: number;
+	h: number;
+	// The widest and tallest picture the card takes.
+	most: number;
+	// This frame's: each put on it, where on the sheet; the row being filled,
+	// how far along it and how tall; how far across and down any is.
+	puts: Put[];
+	left: number;
+	top: number;
+	row: number;
+	wide: number;
+	tall: number;
+};
+// A piece of the picture `w` x `h` from (`x0`, `y0`), on the sheet at
+// (`sx`, `sy`): `draw` draws it, as on the picture.
+export type Put = {
+	x0: number;
+	y0: number;
+	w: number;
+	h: number;
+	sx: number;
+	sy: number;
+	draw: (ctx: CanvasRenderingContext2D) => void;
+};
+const GAP = 2;
 const SHEET_W = 2048;
-export const itemsDraw = (
-	gl: WebGL2RenderingContext,
-	fl: FloorGl,
-	m: Float32Array,
-	cam: Camera,
-	items: readonly FrameItem[],
-	// Which sheet (see FloorGl sheets).
-	which: 0 | 1,
-) => {
-	const sheet = fl.sheets[which];
-	const ctx = sheet.ctx;
-	if (!ctx || items.length === 0) {
+// (Kept off the graphics card by the browser - drawn by the page, read back
+// each frame to go on the card, it would only have to be fetched back.)
+export const sheetOnto = (gl: WebGL2RenderingContext): PageSheet => ({
+	ctx:
+		typeof document === "undefined"
+			? null
+			: document
+					.createElement("canvas")
+					.getContext("2d", { willReadFrequently: true }),
+	tex: gl.createTexture(),
+	fbo: gl.createFramebuffer(),
+	w: 0,
+	h: 0,
+	most: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
+	puts: [],
+	left: GAP,
+	top: GAP,
+	row: 0,
+	wide: 0,
+	tall: 0,
+});
+export const sheetBegin = (s: PageSheet) => {
+	s.puts = [];
+	s.left = GAP;
+	s.top = GAP;
+	s.row = 0;
+	s.wide = 0;
+	s.tall = 0;
+};
+// Where it goes on the sheet - in a row, another row under it if the row is
+// full - if there is room on the card for it.
+export const sheetPut = (
+	s: PageSheet,
+	x0: number,
+	y0: number,
+	w: number,
+	h: number,
+	draw: Put["draw"],
+): Put | undefined => {
+	if (!s.ctx || w <= 0 || h <= 0) {
+		return undefined;
+	}
+	if (s.left + w + GAP > SHEET_W && s.left > GAP) {
+		s.left = GAP;
+		s.top += s.row + GAP;
+		s.row = 0;
+	}
+	if (s.left + w + GAP > s.most || s.top + h + GAP > s.most) {
+		return undefined;
+	}
+	const put = { x0, y0, w, h, sx: s.left, sy: s.top, draw };
+	s.puts.push(put);
+	s.left += w + GAP;
+	s.row = Math.max(s.row, h);
+	s.wide = Math.max(s.wide, s.left);
+	s.tall = Math.max(s.tall, s.top + s.row + GAP);
+	return put;
+};
+export const sheetPaint = (s: PageSheet) => {
+	const ctx = s.ctx;
+	if (!ctx || s.puts.length === 0) {
 		return;
 	}
-	const W = cam.viewW;
-	const H = cam.viewH;
-	// Where each comes out on the picture (all of it, if any of its box is
-	// behind the camera), in a row on the sheet - another row under it, if
-	// the row is full.
-	const cells: {
-		it: FrameItem;
-		x0: number;
-		y0: number;
-		w: number;
-		h: number;
-		sx: number;
-		sy: number;
-	}[] = [];
-	let left = ITEM_GAP;
-	let top = ITEM_GAP;
-	let row = 0;
-	let wide = 0;
-	for (const it of items) {
-		let [x0, y0, x1, y1] = it.rect ?? [0, 0, W, H];
-		const box = it.box;
-		if (box && box.every((p) => depthOf(cam, p) >= BOWL_NEAR)) {
-			x0 = Infinity;
-			y0 = Infinity;
-			x1 = -Infinity;
-			y1 = -Infinity;
-			for (const p of box) {
-				const q = project(cam, p);
-				x0 = Math.min(x0, q.x);
-				y0 = Math.min(y0, q.y);
-				x1 = Math.max(x1, q.x);
-				y1 = Math.max(y1, q.y);
-			}
-		}
-		x0 = Math.max(0, Math.floor(x0) - 4);
-		y0 = Math.max(0, Math.floor(y0) - 4);
-		x1 = Math.min(W, Math.ceil(x1) + 4);
-		y1 = Math.min(H, Math.ceil(y1) + 4);
-		const w = x1 - x0;
-		const h = y1 - y0;
-		if (w <= 0 || h <= 0) {
-			continue;
-		}
-		if (left + w + ITEM_GAP > SHEET_W && left > ITEM_GAP) {
-			left = ITEM_GAP;
-			top += row + ITEM_GAP;
-			row = 0;
-		}
-		// (Not one the card can't hold.)
-		if (left + w + ITEM_GAP > fl.most || top + h + ITEM_GAP > fl.most) {
-			continue;
-		}
-		cells.push({ it, x0, y0, w, h, sx: left, sy: top });
-		left += w + ITEM_GAP;
-		row = Math.max(row, h);
-		wide = Math.max(wide, left);
-	}
-	if (cells.length === 0) {
-		return;
-	}
-	const tall = top + row + ITEM_GAP;
 	const cv = ctx.canvas;
-	if (cv.width < wide || cv.height < tall) {
-		cv.width = Math.max(cv.width, Math.ceil(wide / 64) * 64);
-		cv.height = Math.max(cv.height, Math.ceil(tall / 64) * 64);
+	if (cv.width < s.wide || cv.height < s.tall) {
+		cv.width = Math.max(cv.width, Math.ceil(s.wide / 64) * 64);
+		cv.height = Math.max(cv.height, Math.ceil(s.tall / 64) * 64);
 	}
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	ctx.clearRect(0, 0, wide, tall);
-	for (const c of cells) {
+	ctx.clearRect(0, 0, s.wide, s.tall);
+	for (const p of s.puts) {
 		ctx.save();
-		ctx.setTransform(1, 0, 0, 1, c.sx - c.x0, c.sy - c.y0);
+		ctx.setTransform(1, 0, 0, 1, p.sx - p.x0, p.sy - p.y0);
 		ctx.beginPath();
-		ctx.rect(c.x0, c.y0, c.w, c.h);
+		ctx.rect(p.x0, p.y0, p.w, p.h);
 		ctx.clip();
-		c.it.draw(ctx);
+		p.draw(ctx);
 		ctx.restore();
 	}
+};
+export const sheetSend = (gl: WebGL2RenderingContext, s: PageSheet) => {
+	const ctx = s.ctx;
+	if (!ctx || s.puts.length === 0) {
+		return;
+	}
+	const cv = ctx.canvas;
 	gl.activeTexture(gl.TEXTURE0);
 	// (On the card as big as the sheet, made so once; only the part of it
 	// drawn on sent over each frame.)
-	gl.bindTexture(gl.TEXTURE_2D, sheet.tex);
-	if (sheet.w !== cv.width || sheet.h !== cv.height) {
+	gl.bindTexture(gl.TEXTURE_2D, s.tex);
+	if (s.w !== cv.width || s.h !== cv.height) {
 		gl.texImage2D(
 			gl.TEXTURE_2D,
 			0,
-			gl.RGBA,
+			gl.RGBA8,
 			cv.width,
 			cv.height,
 			0,
@@ -619,8 +621,17 @@ export const itemsDraw = (
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		sheet.w = cv.width;
-		sheet.h = cv.height;
+		s.w = cv.width;
+		s.h = cv.height;
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.fbo);
+		gl.framebufferTexture2D(
+			gl.READ_FRAMEBUFFER,
+			gl.COLOR_ATTACHMENT0,
+			gl.TEXTURE_2D,
+			s.tex,
+			0,
+		);
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
 	}
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
 	gl.texSubImage2D(
@@ -628,29 +639,158 @@ export const itemsDraw = (
 		0,
 		0,
 		0,
-		Math.min(wide, cv.width),
-		Math.min(tall, cv.height),
+		Math.min(s.wide, cv.width),
+		Math.min(s.tall, cv.height),
 		gl.RGBA,
 		gl.UNSIGNED_BYTE,
 		cv,
 	);
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+};
+// Pieces of the sheet, once it is on the card, copied each into a picture
+// of its own (made `w` x `h` if it is not), there for frames after.
+export const sheetCopy = (
+	gl: WebGL2RenderingContext,
+	s: PageSheet,
+	into: readonly {
+		put: Put;
+		tex: WebGLTexture;
+		made: boolean;
+		filter: number;
+	}[],
+) => {
+	if (into.length === 0 || s.w === 0) {
+		return;
+	}
+	gl.activeTexture(gl.TEXTURE0);
+	gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.fbo);
+	for (const { put, tex, made, filter } of into) {
+		gl.bindTexture(gl.TEXTURE_2D, tex);
+		if (!made) {
+			gl.texImage2D(
+				gl.TEXTURE_2D,
+				0,
+				gl.RGBA8,
+				put.w,
+				put.h,
+				0,
+				gl.RGBA,
+				gl.UNSIGNED_BYTE,
+				null,
+			);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		}
+		gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, put.sx, put.sy, put.w, put.h);
+	}
+	gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+};
+
+// THE BASKETS AND THE BALL WHERE NOBODY HAS IT (see scene.ts hoopsAndBalls),
+// AND WHAT GOES OVER EVERYTHING: each drawn as the page draws it, onto the
+// page's sheet; each stood where it is on the picture, as far off as it is
+// put among the men - what is nearer in front of it, what is further
+// behind.
+// Where a box comes out on the picture: the part of it in front of the
+// camera - each corner there, and where each line from one to a corner
+// behind comes through (as near as the picture is drawn true: see
+// camera.ts project) - nothing, if none of it is.
+const NEAREST = 0.5;
+const boxOn = (
+	cam: Camera,
+	box: readonly Pt3[],
+): [number, number, number, number] => {
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	const take = (p: Pt3) => {
+		const q = project(cam, p);
+		x0 = Math.min(x0, q.x);
+		y0 = Math.min(y0, q.y);
+		x1 = Math.max(x1, q.x);
+		y1 = Math.max(y1, q.y);
+	};
+	const d = box.map((p) => depthOf(cam, p));
+	for (const [i, a] of box.entries()) {
+		const da = d[i]!;
+		if (da >= NEAREST) {
+			take(a);
+			continue;
+		}
+		for (const [j, b] of box.entries()) {
+			const db = d[j]!;
+			if (db >= NEAREST) {
+				const u = (NEAREST - da) / (db - da);
+				take({
+					x: a.x + (b.x - a.x) * u,
+					y: a.y + (b.y - a.y) * u,
+					z: a.z + (b.z - a.z) * u,
+				});
+			}
+		}
+	}
+	return [x0, y0, x1, y1];
+};
+// Each on the sheet (all of the picture, if neither its box nor its part of
+// the picture is said).
+export type ItemPut = { it: FrameItem; put: Put };
+export const itemsPut = (
+	s: PageSheet,
+	cam: Camera,
+	items: readonly FrameItem[],
+): ItemPut[] => {
+	const W = cam.viewW;
+	const H = cam.viewH;
+	const out: ItemPut[] = [];
+	for (const it of items) {
+		let [x0, y0, x1, y1] = it.rect ?? [0, 0, W, H];
+		if (it.box) {
+			[x0, y0, x1, y1] = boxOn(cam, it.box);
+		}
+		x0 = Math.max(0, Math.floor(x0) - 4);
+		y0 = Math.max(0, Math.floor(y0) - 4);
+		x1 = Math.min(W, Math.ceil(x1) + 4);
+		y1 = Math.min(H, Math.ceil(y1) + 4);
+		const put = sheetPut(s, x0, y0, x1 - x0, y1 - y0, it.draw);
+		if (put) {
+			out.push({ it, put });
+		}
+	}
+	return out;
+};
+// And them on the picture, from the sheet once it is on the card.
+export const itemsDraw = (
+	gl: WebGL2RenderingContext,
+	fl: FloorGl,
+	m: Float32Array,
+	cam: Camera,
+	s: PageSheet,
+	puts: readonly ItemPut[],
+) => {
+	if (puts.length === 0 || s.w === 0) {
+		return;
+	}
+	const W = cam.viewW;
+	const H = cam.viewH;
 	const A = (BOWL_FAR + BOWL_NEAR) / (BOWL_FAR - BOWL_NEAR);
 	const B = (-2 * BOWL_FAR * BOWL_NEAR) / (BOWL_FAR - BOWL_NEAR);
 	fl.n = 0;
 	fl.runs = [];
 	const one = [1, 1, 1, 1] as const;
-	for (const c of cells) {
+	for (const { it, put: c } of puts) {
 		const X0 = (c.x0 / W) * 2 - 1;
 		const X1 = ((c.x0 + c.w) / W) * 2 - 1;
 		const Y0 = 1 - (c.y0 / H) * 2;
 		const Y1 = 1 - ((c.y0 + c.h) / H) * 2;
-		const z = A + B / Math.max(BOWL_NEAR, c.it.depth);
-		const u0 = c.sx / cv.width;
-		const u1 = (c.sx + c.w) / cv.width;
-		const v0 = c.sy / cv.height;
-		const v1 = (c.sy + c.h) / cv.height;
-		runFor(fl, sheet.tex, true, false, true, 6);
+		const z = A + B / Math.max(BOWL_NEAR, it.depth);
+		const u0 = c.sx / s.w;
+		const u1 = (c.sx + c.w) / s.w;
+		const v0 = c.sy / s.h;
+		const v1 = (c.sy + c.h) / s.h;
+		runFor(fl, s.tex, true, false, true, 6);
 		point(fl, X0, Y0, z, one, u0, v0);
 		point(fl, X1, Y0, z, one, u1, v0);
 		point(fl, X1, Y1, z, one, u1, v1);

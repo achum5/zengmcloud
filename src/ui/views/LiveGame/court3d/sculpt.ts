@@ -789,9 +789,11 @@ export type Built = {
 	untwist?: Float64Array;
 	// Sprite pixels to a foot, at his middle.
 	k: number;
-	// His skeleton as posed, and where a point of him lands on the sprite.
+	// His skeleton as posed, and where a point of him lands on the sprite;
+	// his pose (see poseOf).
 	sk: Skeleton;
 	P: (v: V3) => Seen;
+	q: ReturnType<typeof poseOf>;
 };
 
 // How his hands are held (see handMasses).
@@ -1122,6 +1124,8 @@ export type AddMass = (
 ) => void;
 export const massesFor = (
 	P: (v: V3) => Seen,
+	// (Only these kinds, if said: the rest not wanted.)
+	keep?: ReadonlySet<number>,
 ): { masses: Mass[]; add: AddMass } => {
 	const masses: Mass[] = [];
 	const add: AddMass = (
@@ -1134,6 +1138,9 @@ export const massesFor = (
 		flat = false,
 		least = 0,
 	) => {
+		if (keep && !keep.has(kind)) {
+			return;
+		}
 		const a = P(A);
 		const b = P(B);
 		const k = (a.k + b.k) / 2;
@@ -1996,7 +2003,8 @@ export const torsoMasses = (
 // else's.
 const MIC_OWN = 1.1;
 // (`noSheet`: his lettering not laid out as pixels - whoever asked paints it
-// from the big sheet itself, see bigSheet.)
+// from the big sheet itself, see bigSheet. `keep`: only the masses of these
+// kinds - see MESH_KEEPS, what is sculpted of a man drawn from the mesh.)
 export const build = (
 	cam: Camera,
 	st: PlayerState,
@@ -2006,6 +2014,7 @@ export const build = (
 	ox: number,
 	oy: number,
 	noSheet = false,
+	keep?: ReadonlySet<number>,
 ): Built => {
 	const q = poseOf(st);
 	// (Just let go of it, his hands come off where it was.)
@@ -2015,7 +2024,7 @@ export const build = (
 		? gripped(held.sk, st, body, q)
 		: onRim(skeleton(body, q), st, body);
 	const P = seerOf(cam, st, px, ox, oy);
-	const { masses, add } = massesFor(P);
+	const { masses, add } = massesFor(P, keep);
 	const sw = body.shoulderW;
 	const dp = body.depth;
 	const H = body.H;
@@ -2531,6 +2540,7 @@ export const build = (
 		fwd: fwdT,
 		sk,
 		P,
+		q,
 		...(noSheet
 			? {}
 			: { sheet: jerseySheet(look, body, kMid * 1.2, cut.waist) }),

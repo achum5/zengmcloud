@@ -1285,6 +1285,24 @@ export const jumbotronBox = (j: Jumbotron): Pt3[] => {
 	return xs.flatMap((x) => ys.flatMap((y) => zs.map((z) => ({ x, y, z }))));
 };
 
+// (Drawn only when most of it is in the picture - over a break, looking
+// round the building, the ring with the score on it and all - not as a strip
+// along the top edge of the game, or a screen cut off across the top of a
+// look up at the crowd.)
+export const jumbotronShown = (cam: Camera, j: Jumbotron): boolean => {
+	const s = j.shape;
+	const bottom = project(cam, { x: CX, y: s.y1, z: s.z0 });
+	const ring = s.tiers.find((tr) =>
+		tr.sides.some((x) => "pic" in x && x.pic === "barLong"),
+	);
+	const score = project(cam, { x: CX, y: s.y1, z: ring?.z0 ?? s.z1 });
+	return !(
+		bottom.y < cam.viewH * 0.3 ||
+		score.y < 0 ||
+		depthOf(cam, { x: CX, y: CY, z: s.z0 }) < 5
+	);
+};
+
 export const drawJumbotron = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
@@ -1295,22 +1313,10 @@ export const drawJumbotron = (
 	t: number,
 ) => {
 	const s = j.shape;
-	// (Drawn only when most of it is in the picture - over a break, looking
-	// round the building, the ring with the score on it and all - not as a
-	// strip along the top edge of the game, or a screen cut off across the
-	// top of a look up at the crowd.)
-	const bottom = project(cam, { x: CX, y: s.y1, z: s.z0 });
-	const ring = s.tiers.find((tr) =>
-		tr.sides.some((x) => "pic" in x && x.pic === "barLong"),
-	);
-	const score = project(cam, { x: CX, y: s.y1, z: ring?.z0 ?? s.z1 });
-	if (
-		bottom.y < cam.viewH * 0.3 ||
-		score.y < 0 ||
-		depthOf(cam, { x: CX, y: CY, z: s.z0 }) < 5
-	) {
+	if (!jumbotronShown(cam, j)) {
 		return;
 	}
+	const bottom = project(cam, { x: CX, y: s.y1, z: s.z0 });
 	// The score's own screen and the home team's logo by turns, over a
 	// break.
 	const alt = Math.floor(t / 8000) % 8 >= 4;
