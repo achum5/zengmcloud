@@ -1803,6 +1803,7 @@ const Court3D = ({
 					: sizeCanvas(canvas, p.size, res, laid);
 
 			const replay = s.replay;
+			const evalFrom = performance.now();
 			const moment =
 				staging && p.authored
 					? p.authored.moment(s.t, bodyOfPid)
@@ -1815,6 +1816,8 @@ const Court3D = ({
 								bodyOfPid,
 								replay ? undefined : { rate, wall: now },
 							);
+			// (For the frame rate meter: the moment worked out.)
+			const evalMs = performance.now() - evalFrom;
 			// Over a break, a look round the building; in close on a man at the
 			// line; at the starting lineups, each man called.
 			const arenaView = replay ? undefined : arenaAim(tl, s.t, p.narrow);
@@ -2033,9 +2036,11 @@ const Court3D = ({
 			}
 			// (The way the ball faces worked out a little ahead, each frame -
 			// see warmFaces.)
+			const warmFrom = performance.now();
 			if (!staging) {
 				warmFaces(tl, 1);
 			}
+			const warmMs = performance.now() - warmFrom;
 			const pt = paintRef.current;
 			const cr = crewRef.current;
 			const working = crewAt(
@@ -2133,7 +2138,16 @@ const Court3D = ({
 					meterRef.current,
 					now,
 					done - began,
-					card ? { game, ...card.ms } : { game, draw: done - drawStart },
+					card
+						? {
+								// (The game's part: the moment, the way the ball faces
+								// worked out ahead, the rest.)
+								eval: evalMs,
+								warm: warmMs,
+								game: game - evalMs - warmMs,
+								...card.ms,
+							}
+						: { game, draw: done - drawStart },
 					{
 						gpu: drawn !== "test" || (gpu && !card) ? undefined : !!card,
 						fps: pacing.fps,

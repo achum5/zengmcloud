@@ -480,8 +480,9 @@ export const linesDraw = (
 // THE PAGE'S SHEET: all the page draws for the picture each frame - the
 // baskets and the ball, what goes over everything, the heads drawn again
 // (see gpu/scene.ts heads) - on one sheet, sent to the card once. (Each
-// sheet sent on its own, on a phone, is a wait of its own.) Each laid out on
-// it first (sheetPut), then all painted on it (sheetPaint), then sent
+// sheet sent on its own, on a phone, is a wait of its own - and the more of
+// it sent, the longer.) Each put on it first (sheetPut); then all laid out
+// close together, tallest first, and painted on it (sheetPaint); then sent
 // (sheetSend).
 export type PageSheet = {
 	ctx: CanvasRenderingContext2D | null;
@@ -493,17 +494,18 @@ export type PageSheet = {
 	h: number;
 	// The widest and tallest picture the card takes.
 	most: number;
-	// This frame's: each put on it, where on the sheet; the row being filled,
-	// how far along it and how tall; how far across and down any is.
+	// This frame's: each put on it, and how far across and down any is.
 	puts: Put[];
-	left: number;
-	top: number;
-	row: number;
 	wide: number;
 	tall: number;
+	// How it is sent (see SEND_WAYS): each tried by turns over the first
+	// frames, timed, the quicker kept.
+	way?: SendWay;
+	tried: Record<SendWay, { ms: number; px: number; n: number }>;
+	sends: number;
 };
-// A piece of the picture `w` x `h` from (`x0`, `y0`), on the sheet at
-// (`sx`, `sy`): `draw` draws it, as on the picture.
+// A piece of the picture `w` x `h` from (`x0`, `y0`), at (`sx`, `sy`) on the
+// sheet once laid out (-1: no room): `draw` draws it, as on the picture.
 export type Put = {
 	x0: number;
 	y0: number;
@@ -513,8 +515,13 @@ export type Put = {
 	sy: number;
 	draw: (ctx: CanvasRenderingContext2D) => void;
 };
+// The two ways of sending it: the canvas itself, or its pixels read off it.
+// (Which is quicker is the browser's own business.)
+type SendWay = "canvas" | "pixels";
+const SEND_WAYS: readonly SendWay[] = ["canvas", "pixels"];
+// (So many sends of each, tried, before one is kept.)
+const SEND_TRIES = 30;
 const GAP = 2;
-const SHEET_W = 2048;
 // (Kept off the graphics card by the browser - drawn by the page, read back
 // each frame to go on the card, it would only have to be fetched back.)
 export const sheetOnto = (gl: WebGL2RenderingContext): PageSheet => ({
@@ -530,22 +537,20 @@ export const sheetOnto = (gl: WebGL2RenderingContext): PageSheet => ({
 	h: 0,
 	most: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
 	puts: [],
-	left: GAP,
-	top: GAP,
-	row: 0,
 	wide: 0,
 	tall: 0,
+	tried: {
+		canvas: { ms: 0, px: 0, n: 0 },
+		pixels: { ms: 0, px: 0, n: 0 },
+	},
+	sends: 0,
 });
 export const sheetBegin = (s: PageSheet) => {
 	s.puts = [];
-	s.left = GAP;
-	s.top = GAP;
-	s.row = 0;
 	s.wide = 0;
 	s.tall = 0;
 };
-// Where it goes on the sheet - in a row, another row under it if the row is
-// full - if there is room on the card for it.
+// It on the sheet, if there is room on the card for it.
 export const sheetPut = (
 	s: PageSheet,
 	x0: number,
@@ -554,30 +559,58 @@ export const sheetPut = (
 	h: number,
 	draw: Put["draw"],
 ): Put | undefined => {
-	if (!s.ctx || w <= 0 || h <= 0) {
+	if (
+		!s.ctx ||
+		w <= 0 ||
+		h <= 0 ||
+		w + 2 * GAP > s.most ||
+		h + 2 * GAP > s.most
+	) {
 		return undefined;
 	}
-	if (s.left + w + GAP > SHEET_W && s.left > GAP) {
-		s.left = GAP;
-		s.top += s.row + GAP;
-		s.row = 0;
-	}
-	if (s.left + w + GAP > s.most || s.top + h + GAP > s.most) {
-		return undefined;
-	}
-	const put = { x0, y0, w, h, sx: s.left, sy: s.top, draw };
+	const put = { x0, y0, w, h, sx: -1, sy: -1, draw };
 	s.puts.push(put);
-	s.left += w + GAP;
-	s.row = Math.max(s.row, h);
-	s.wide = Math.max(s.wide, s.left);
-	s.tall = Math.max(s.tall, s.top + s.row + GAP);
 	return put;
+};
+// Laid out in rows, tallest first, each row about as long as the sheet is
+// tall.
+const sheetLay = (s: PageSheet) => {
+	let area = 0;
+	let widest = 0;
+	for (const p of s.puts) {
+		area += (p.w + GAP) * (p.h + GAP);
+		widest = Math.max(widest, p.w + 2 * GAP);
+	}
+	const across = Math.min(
+		s.most,
+		Math.max(widest, Math.ceil(Math.sqrt(area) * 1.15)),
+	);
+	let left = GAP;
+	let top = GAP;
+	let row = 0;
+	for (const p of [...s.puts].sort((a, b) => b.h - a.h)) {
+		if (left + p.w + GAP > across && left > GAP) {
+			left = GAP;
+			top += row + GAP;
+			row = 0;
+		}
+		if (top + p.h + GAP > s.most) {
+			continue;
+		}
+		p.sx = left;
+		p.sy = top;
+		left += p.w + GAP;
+		row = Math.max(row, p.h);
+		s.wide = Math.max(s.wide, left);
+		s.tall = Math.max(s.tall, top + row + GAP);
+	}
 };
 export const sheetPaint = (s: PageSheet) => {
 	const ctx = s.ctx;
 	if (!ctx || s.puts.length === 0) {
 		return;
 	}
+	sheetLay(s);
 	const cv = ctx.canvas;
 	if (cv.width < s.wide || cv.height < s.tall) {
 		cv.width = Math.max(cv.width, Math.ceil(s.wide / 64) * 64);
@@ -586,6 +619,9 @@ export const sheetPaint = (s: PageSheet) => {
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.clearRect(0, 0, s.wide, s.tall);
 	for (const p of s.puts) {
+		if (p.sx < 0) {
+			continue;
+		}
 		ctx.save();
 		ctx.setTransform(1, 0, 0, 1, p.sx - p.x0, p.sy - p.y0);
 		ctx.beginPath();
@@ -595,9 +631,12 @@ export const sheetPaint = (s: PageSheet) => {
 		ctx.restore();
 	}
 };
+// (The way it is sent this time: the one kept, or the next to try.)
+const wayOf = (s: PageSheet): SendWay =>
+	s.way ?? SEND_WAYS[s.sends % SEND_WAYS.length]!;
 export const sheetSend = (gl: WebGL2RenderingContext, s: PageSheet) => {
 	const ctx = s.ctx;
-	if (!ctx || s.puts.length === 0) {
+	if (!ctx || s.puts.length === 0 || s.wide === 0) {
 		return;
 	}
 	const cv = ctx.canvas;
@@ -633,20 +672,53 @@ export const sheetSend = (gl: WebGL2RenderingContext, s: PageSheet) => {
 		);
 		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
 	}
+	const w = Math.min(s.wide, cv.width);
+	const h = Math.min(s.tall, cv.height);
+	const way = wayOf(s);
+	const t0 = performance.now();
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-	gl.texSubImage2D(
-		gl.TEXTURE_2D,
-		0,
-		0,
-		0,
-		Math.min(s.wide, cv.width),
-		Math.min(s.tall, cv.height),
-		gl.RGBA,
-		gl.UNSIGNED_BYTE,
-		cv,
-	);
+	if (way === "pixels") {
+		gl.texSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			0,
+			0,
+			w,
+			h,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			ctx.getImageData(0, 0, w, h).data,
+		);
+	} else {
+		gl.texSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			0,
+			0,
+			w,
+			h,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			cv,
+		);
+	}
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+	if (!s.way) {
+		const t = s.tried[way];
+		t.ms += performance.now() - t0;
+		t.px += w * h;
+		t.n += 1;
+		s.sends += 1;
+		if (SEND_WAYS.every((x) => s.tried[x].n >= SEND_TRIES)) {
+			const rate = (x: SendWay) => s.tried[x].ms / Math.max(1, s.tried[x].px);
+			s.way = SEND_WAYS.reduce((a, b) => (rate(b) < rate(a) ? b : a));
+		}
+	}
 };
+// Which way it is sent, for the frame rate meter: 1 the canvas itself, 2
+// its pixels (0: still trying both).
+export const sheetWay = (s: PageSheet): number =>
+	s.way === undefined ? 0 : SEND_WAYS.indexOf(s.way) + 1;
 // Pieces of the sheet, once it is on the card, copied each into a picture
 // of its own (made `w` x `h` if it is not), there for frames after.
 export const sheetCopy = (
@@ -665,6 +737,9 @@ export const sheetCopy = (
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.fbo);
 	for (const { put, tex, made, filter } of into) {
+		if (put.sx < 0) {
+			continue;
+		}
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		if (!made) {
 			gl.texImage2D(
@@ -781,6 +856,9 @@ export const itemsDraw = (
 	fl.runs = [];
 	const one = [1, 1, 1, 1] as const;
 	for (const { it, put: c } of puts) {
+		if (c.sx < 0) {
+			continue;
+		}
 		const X0 = (c.x0 / W) * 2 - 1;
 		const X1 = ((c.x0 + c.w) / W) * 2 - 1;
 		const Y0 = 1 - (c.y0 / H) * 2;

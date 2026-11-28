@@ -36,6 +36,7 @@ import {
 	sheetPaint,
 	sheetPut,
 	sheetSend,
+	sheetWay,
 } from "./floor.ts";
 import { attrib, buffer, compile, type Prog, rgb } from "./gl.ts";
 import {
@@ -573,7 +574,8 @@ export const drawGpu = (
 	lap("paint");
 	sheetSend(gl, sheet);
 	headsKept(sc, hd);
-	lap("send");
+	// (Which way it went - see floor.ts sheetWay.)
+	lap(["send", "sendC", "sendP"][sheetWay(sheet)]!);
 	if (fl) {
 		itemsDraw(gl, fl, m, cam, sheet, hoops);
 	}
@@ -856,32 +858,35 @@ const headsPut = (sc: Scene, f: Frame, men: readonly ManReady[]): HeadsPut => {
 };
 const headsKept = (sc: Scene, hd: HeadsPut) => {
 	const { gl } = sc;
-	const into = hd.redrawn.map(({ cell: c, put }) => {
-		const made = !!c.pic && c.pic.w === put.w && c.pic.h === put.h;
-		const pic = c.pic ?? {
-			tex: gl.createTexture(),
-			key: c.key,
-			look: c.man.look,
-			dx: 0,
-			dy: 0,
-			w: 0,
-			h: 0,
-			r: 1,
-			seen: sc.frame,
-			drawn: 0,
-		};
-		pic.key = c.key;
-		pic.look = c.man.look;
-		pic.dx = put.x0 - c.x;
-		pic.dy = put.y0 - c.y;
-		pic.w = put.w;
-		pic.h = put.h;
-		pic.r = c.r;
-		pic.drawn = sc.frame;
-		sc.headPics.set(c.man.st.pid, pic);
-		c.pic = pic;
-		return { put, tex: pic.tex, made, filter: gl.LINEAR };
-	});
+	// (Not one there was no room for on the sheet: his old picture kept.)
+	const into = hd.redrawn
+		.filter(({ put }) => put.sx >= 0)
+		.map(({ cell: c, put }) => {
+			const made = !!c.pic && c.pic.w === put.w && c.pic.h === put.h;
+			const pic = c.pic ?? {
+				tex: gl.createTexture(),
+				key: c.key,
+				look: c.man.look,
+				dx: 0,
+				dy: 0,
+				w: 0,
+				h: 0,
+				r: 1,
+				seen: sc.frame,
+				drawn: 0,
+			};
+			pic.key = c.key;
+			pic.look = c.man.look;
+			pic.dx = put.x0 - c.x;
+			pic.dy = put.y0 - c.y;
+			pic.w = put.w;
+			pic.h = put.h;
+			pic.r = c.r;
+			pic.drawn = sc.frame;
+			sc.headPics.set(c.man.st.pid, pic);
+			c.pic = pic;
+			return { put, tex: pic.tex, made, filter: gl.LINEAR };
+		});
 	sheetCopy(gl, sc.sheet, into);
 	for (const [pid, pic] of sc.headPics) {
 		if (sc.frame - pic.seen > HEAD_KEPT) {
